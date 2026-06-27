@@ -5,6 +5,9 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../shed/shed_dtos.dart';
 import '../../shed/shed_name.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
+import '../../widgets/primary_button.dart';
 
 /// Create a shed and stream live progress (the create-SSE path). Repo is entered
 /// as `owner/repo` text (the MVP RepoSource); leave blank for a base shed.
@@ -128,6 +131,9 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
     // collide with Flutter's painting-layer ImageInfo.)
     final images =
         ref.watch(imagesProvider(widget.serverName)).asData?.value ?? const [];
+    // Hoisted: the SSE log rebuilds on every progress event, and every line
+    // shares one style — build it once, not per line per rebuild.
+    final logStyle = monoStyle(fontSize: 12, color: context.shed.fg2);
     return Scaffold(
       key: const ValueKey('create-shed-screen'),
       appBar: AppBar(title: Text('Create shed on ${widget.serverName}')),
@@ -210,9 +216,10 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            FilledButton(
+            const SizedBox(height: 24),
+            PrimaryButton(
               key: const ValueKey('create-submit'),
+              label: _running ? 'Creating…' : 'Create',
               onPressed:
                   (_running ||
                       nameError != null ||
@@ -220,7 +227,6 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
                       memError != null)
                   ? null
                   : _create,
-              child: Text(_running ? 'Creating…' : 'Create'),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -234,10 +240,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
             Expanded(
               child: ListView(
                 key: const ValueKey('create-log'),
-                children: [
-                  for (final l in _lines)
-                    Text(l, style: const TextStyle(fontFamily: 'monospace')),
-                ],
+                children: [for (final l in _lines) Text(l, style: logStyle)],
               ),
             ),
           ],

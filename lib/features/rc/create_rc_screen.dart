@@ -5,6 +5,9 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_models.dart';
 import '../../rc/rc_service.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
+import '../../widgets/primary_button.dart';
 
 /// Create one RC session: pick the kind, optionally set a name / workdir /
 /// kickoff prompt / permission mode, then create with `--wait` so the result
@@ -89,18 +92,28 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Kind', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
+            Text(
+              'Kind',
+              style: sansStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: context.shed.fg2,
+              ),
+            ),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 for (final k in RcKind.values)
-                  ChoiceChip(
+                  _KindChip(
                     key: ValueKey('createrc-kind-${k.wire}'),
-                    label: Text(k.wire),
+                    label: k.wire,
                     selected: _kind == k,
-                    onSelected: _busy ? null : (_) => setState(() => _kind = k),
+                    onTap: _busy ? null : () => setState(() => _kind = k),
                   ),
+                // codex-rc is a future kind — shown as a disabled placeholder.
+                const _SoonChip(label: 'codex-rc · soon'),
               ],
             ),
             const SizedBox(height: 16),
@@ -155,11 +168,11 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                     : (v) => setState(() => _permissionMode = v),
               ),
             ],
-            const SizedBox(height: 20),
-            FilledButton(
+            const SizedBox(height: 28),
+            PrimaryButton(
               key: const ValueKey('createrc-submit'),
+              label: _busy ? 'Creating…' : 'Create',
               onPressed: _busy ? null : _create,
-              child: Text(_busy ? 'Creating…' : 'Create'),
             ),
             if (_error != null) ...[
               const SizedBox(height: 16),
@@ -172,6 +185,72 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A selectable segmented kind option (the design's `segStyle`): accent-tinted
+/// when selected, hairline-bordered otherwise.
+class _KindChip extends StatelessWidget {
+  const _KindChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    // Restore the button/selected semantics that ChoiceChip gave for free.
+    return Semantics(
+      button: true,
+      selected: selected,
+      enabled: onTap != null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? shed.accentSoft : Colors.transparent,
+            border: Border.all(color: selected ? shed.accent : shed.line),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(
+            label,
+            style: monoStyle(
+              fontSize: 12.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? shed.fg : shed.fg2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A non-interactive "coming soon" kind placeholder.
+class _SoonChip extends StatelessWidget {
+  const _SoonChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: shed.line),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(label, style: monoStyle(fontSize: 12.5, color: shed.fg3)),
     );
   }
 }

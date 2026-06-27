@@ -189,13 +189,5 @@ ThemeData buildShedTheme(Brightness brightness) {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     ),
-    chipTheme: ChipThemeData(
-      backgroundColor: Colors.transparent,
-      selectedColor: c.accentSoft,
-      side: BorderSide(color: c.line),
-      labelStyle: monoStyle(fontSize: 12.5, color: c.fg2),
-      secondaryLabelStyle: monoStyle(fontSize: 12.5, color: c.fg),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-    ),
   );
 }
