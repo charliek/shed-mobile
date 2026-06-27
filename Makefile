@@ -1,4 +1,4 @@
-.PHONY: get fmt check analyze test build-macos build-linux
+.PHONY: get fmt check analyze test build-macos build-linux docs docs-serve
 
 get:
 	flutter pub get
@@ -23,3 +23,13 @@ build-macos:
 
 build-linux:
 	flutter build linux --debug
+
+# Build the documentation site (output: site-build/).
+docs:
+	uv sync --group docs
+	uv run mkdocs build
+
+# Serve the documentation locally (http://127.0.0.1:7072).
+docs-serve:
+	uv sync --group docs
+	uv run mkdocs serve

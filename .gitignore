@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Docs site (mkdocs) + Python tooling for it
+site-build/
+.venv/
+__pycache__/
