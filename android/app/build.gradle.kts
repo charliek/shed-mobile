@@ -1,4 +1,3 @@
-import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -7,17 +6,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Release signing (M5): drop a keystore + an android/key.properties (both
-// gitignored) to sign release builds with your own key. Without it, release falls
-// back to the debug key so `flutter build apk --release` still works for local
-// sideloading. key.properties keys: storeFile, storePassword, keyAlias, keyPassword.
+// Release signing (pattern copied from tapper). Two sources, both gitignored:
+//   - CI: KEYSTORE_PATH / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD env vars.
+//   - Local: android/key.properties (storeFile/storePassword/keyAlias/keyPassword).
+// With neither, release falls back to the debug key so `flutter build apk
+// --release` still works for local sideloading.
 val keystorePropertiesFile = rootProject.file("key.properties")
+val hasKeystore = keystorePropertiesFile.exists()
 val keystoreProperties = Properties().apply {
-    if (keystorePropertiesFile.exists()) {
-        load(FileInputStream(keystorePropertiesFile))
+    if (hasKeystore) {
+        keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
-val hasReleaseKeystore = keystorePropertiesFile.exists()
+val hasEnvSigning = System.getenv("KEYSTORE_PATH") != null
 
 android {
     namespace = "com.charliek.shed.shed_mobile"
@@ -41,7 +42,14 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseKeystore) {
+        if (hasEnvSigning) {
+            create("release") {
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+                storeFile = file(System.getenv("KEYSTORE_PATH")!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        } else if (hasKeystore) {
             create("release") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
@@ -53,9 +61,9 @@ android {
 
     buildTypes {
         release {
-            // Sign with the release keystore when present (see key.properties
-            // above); otherwise fall back to debug so local release builds work.
-            signingConfig = if (hasReleaseKeystore) {
+            // Sign with the release key (env or key.properties) when available;
+            // otherwise fall back to debug so local release builds still work.
+            signingConfig = if (hasEnvSigning || hasKeystore) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

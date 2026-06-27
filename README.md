@@ -65,27 +65,40 @@ Release builds tree-shake the debug-only Marionette instrumentation
 
 ### Android signing (release)
 
-Without a keystore, release builds fall back to the **debug** key (installable for
-personal sideloading). To sign with your own key, create a keystore and an
-`android/key.properties` (both are gitignored):
+Signed with the same upload keystore as tapper. `android/app/build.gradle.kts`
+(pattern copied from tapper) resolves a release key from two sources, both
+gitignored; with neither, release falls back to the **debug** key so local
+sideload builds still work.
 
-```properties
-storeFile=/absolute/path/to/release.jks
-storePassword=…
-keyAlias=…
-keyPassword=…
-```
+- **Local:** `android/app/upload-keystore.jks` + `android/key.properties`:
 
-`android/app/build.gradle.kts` picks it up automatically.
+  ```properties
+  storeFile=upload-keystore.jks
+  storePassword=…
+  keyAlias=upload
+  keyPassword=…
+  ```
+
+- **CI:** `KEYSTORE_PATH` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`
+  environment variables.
 
 ### ⛔ Human gates (need credentials / hardware)
 
-- **Android on-device acceptance:** generate the device key in-app → paste its
-  public half into GitHub (Settings → SSH and GPG keys; ~1h propagation) →
-  connect to a `github_users`-trusting shed → full flow on a real device. The
-  in-app keygen output is verified byte-identical to `ssh-keygen` in unit tests,
-  but the GitHub-paste + device run can't be automated.
-- **macOS signing / notarization:** needs an Apple Developer certificate.
+- **Android on-device acceptance:** generate the device key in-app → trust its
+  public half on the shed → connect → full flow on a real device. Two ways to
+  trust the key:
+  - **GitHub:** paste it into Settings → SSH and GPG keys (~1h propagation); the
+    shed pulls it via `auth.ssh.github_users`.
+  - **Local (no GitHub):** add it to the shed-server's `auth.ssh.authorized_keys`
+    (e.g. `/opt/homebrew/etc/shed/server.yaml`) and `brew services restart shed`.
+    Validated end-to-end on the Pixel 8 emulator (onboarding keygen → key in local
+    config → mint → list → start → RC → terminal), reaching the host shed at
+    `10.0.2.2:2222`.
+- **macOS signing / notarization (deployment only, NOT needed now):** needs an
+  Apple Developer certificate, and only to distribute the `.app` to other Macs
+  (Gatekeeper) or to use the macOS Keychain. Local use runs unsigned via
+  `flutter run` — the app deliberately uses a 0600 `FileSecretStore` (not the
+  Keychain) so no signing cert is required for development.
 - **Foreground-service background survival:** the keep-alive FGS can only be
   validated on a real Android device (battery-opt prompt, doze behavior).
 
