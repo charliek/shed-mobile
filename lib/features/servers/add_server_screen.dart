@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../servers/add_server_flow.dart';
+import '../../theme/shed_theme.dart';
+import '../../widgets/primary_button.dart';
 
 /// Add-server flow: enter host+port, SSH-mint to learn the fingerprints + token,
 /// confirm both fingerprints, then persist. Trust root = the SSH host key.
@@ -118,10 +120,10 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
             ),
             const SizedBox(height: 16),
             if (preview == null)
-              FilledButton(
+              PrimaryButton(
                 key: const ValueKey('addserver-connect'),
+                label: _busy ? 'Connecting…' : 'Connect & verify',
                 onPressed: _busy ? null : _connect,
-                child: Text(_busy ? 'Connecting…' : 'Connect & verify'),
               ),
             if (preview != null) ...[
               const Text('Verify the fingerprints, then add:'),
@@ -137,10 +139,10 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
               const SizedBox(height: 8),
               Text('API: ${preview.apiUrl}'),
               const SizedBox(height: 16),
-              FilledButton(
+              PrimaryButton(
                 key: const ValueKey('addserver-confirm'),
+                label: _busy ? 'Adding…' : 'Trust & add',
                 onPressed: _busy ? null : _confirm,
-                child: Text(_busy ? 'Adding…' : 'Trust & add'),
               ),
             ],
             if (_error != null) ...[
@@ -171,12 +173,7 @@ class _Fingerprint extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: Theme.of(context).textTheme.labelMedium),
-          SelectableText(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-          ),
+          SelectableText(value, style: monoStyle(fontSize: 12.5)),
         ],
       ),
     );

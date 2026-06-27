@@ -11,6 +11,8 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
 import 'terminal_keys.dart';
 
 /// In-app terminal: an xterm view wired to a [PtySession] that attaches to a
@@ -144,47 +146,53 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         'font=${_fontSize.round()}',
       );
     }
-    return Scaffold(
-      key: const ValueKey('terminal-screen'),
-      appBar: AppBar(
-        leading: IconButton(
-          key: const ValueKey('terminal-back'),
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Detach',
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: Text(widget.title),
-        actions: [
-          if (active) ...[
-            IconButton(
-              key: const ValueKey('terminal-font-dec'),
-              icon: const Icon(Icons.text_decrease),
-              tooltip: 'Smaller text',
-              onPressed: () => _adjustFont(-1),
-            ),
-            IconButton(
-              key: const ValueKey('terminal-font-inc'),
-              icon: const Icon(Icons.text_increase),
-              tooltip: 'Larger text',
-              onPressed: () => _adjustFont(1),
-            ),
-            IconButton(
-              key: const ValueKey('terminal-paste'),
-              icon: const Icon(Icons.content_paste),
-              tooltip: 'Paste',
-              onPressed: _paste,
-            ),
+    // The terminal view is always dark, so force the dark theme on the
+    // surrounding chrome (app bar, key toolbar, banners) regardless of the app's
+    // light/dark setting — light chrome around a dark terminal looks broken.
+    return Theme(
+      data: shedDarkTheme,
+      child: Scaffold(
+        key: const ValueKey('terminal-screen'),
+        appBar: AppBar(
+          leading: IconButton(
+            key: const ValueKey('terminal-back'),
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Detach',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          title: Text(widget.title),
+          actions: [
+            if (active) ...[
+              IconButton(
+                key: const ValueKey('terminal-font-dec'),
+                icon: const Icon(Icons.text_decrease),
+                tooltip: 'Smaller text',
+                onPressed: () => _adjustFont(-1),
+              ),
+              IconButton(
+                key: const ValueKey('terminal-font-inc'),
+                icon: const Icon(Icons.text_increase),
+                tooltip: 'Larger text',
+                onPressed: () => _adjustFont(1),
+              ),
+              IconButton(
+                key: const ValueKey('terminal-paste'),
+                icon: const Icon(Icons.content_paste),
+                tooltip: 'Paste',
+                onPressed: _paste,
+              ),
+            ],
+            if (_exitCode != null || _error != null)
+              IconButton(
+                key: const ValueKey('terminal-reconnect'),
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Reconnect',
+                onPressed: _connect,
+              ),
           ],
-          if (_exitCode != null || _error != null)
-            IconButton(
-              key: const ValueKey('terminal-reconnect'),
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Reconnect',
-              onPressed: _connect,
-            ),
-        ],
+        ),
+        body: _body(),
       ),
-      body: _body(),
     );
   }
 
@@ -208,11 +216,14 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         if (_exitCode != null)
           Container(
             width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            // The terminal chrome is always dark, but this reads the State's
+            // (ambient) context above the Theme wrap, so pin the dark token.
+            color: ShedColors.dark.surface2,
             padding: const EdgeInsets.all(8),
             child: Text(
               'Session ended (exit $_exitCode). Tap reconnect to reattach.',
               key: const ValueKey('terminal-ended'),
+              style: TextStyle(color: ShedColors.dark.fg),
             ),
           ),
         Expanded(

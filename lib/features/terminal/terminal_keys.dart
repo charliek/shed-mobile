@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../../theme/shed_colors.dart';
+
 /// One virtual key in the terminal toolbar: an id, a label, and the bytes it
 /// sends to the PTY.
 typedef TerminalKey = ({String id, String label, List<int> bytes});
@@ -54,12 +56,17 @@ class TerminalKeys extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shed = context.shed;
     return ExcludeFocus(
-      child: SizedBox(
-        height: 44,
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: shed.surface,
+          border: Border(top: BorderSide(color: shed.line)),
+        ),
         child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           children: [
             _KeyButton(
               key: const ValueKey('term-key-ctrl'),

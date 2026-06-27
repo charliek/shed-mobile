@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../keys/key_manager.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
+import '../../widgets/primary_button.dart';
 
 /// Mobile first-run: generate the device's ed25519 key in-app, show its public
 /// half for the user to paste into GitHub (Settings → SSH and GPG keys), then
@@ -79,10 +82,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
             const SizedBox(height: 20),
             if (key == null)
-              FilledButton(
+              PrimaryButton(
                 key: const ValueKey('onboarding-generate'),
+                label: _busy ? 'Generating…' : 'Generate device key',
                 onPressed: _busy ? null : _generate,
-                child: Text(_busy ? 'Generating…' : 'Generate device key'),
               ),
             if (key != null) ...[
               Text('Public key', style: Theme.of(context).textTheme.labelLarge),
@@ -96,14 +99,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 child: SelectableText(
                   key.authorizedKey,
                   key: const ValueKey('onboarding-pubkey'),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: monoStyle(fontSize: 12),
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 key.fingerprint,
                 key: const ValueKey('onboarding-fingerprint'),
-                style: Theme.of(context).textTheme.bodySmall,
+                style: monoStyle(fontSize: 12, color: context.shed.fg2),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
@@ -118,10 +121,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 'continue and add a server.',
               ),
               const SizedBox(height: 12),
-              FilledButton(
+              PrimaryButton(
                 key: const ValueKey('onboarding-continue'),
+                label: 'Continue',
                 onPressed: _continue,
-                child: const Text('Continue'),
               ),
             ],
             if (_error != null) ...[

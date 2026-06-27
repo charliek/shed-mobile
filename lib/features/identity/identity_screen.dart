@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../keys/key_manager.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
 
 /// View the device's SSH public key + fingerprint, copy it, and (mobile only)
 /// regenerate it. Shows only public material — never the private key.
@@ -130,14 +132,14 @@ class IdentityScreen extends ConsumerWidget {
             child: SelectableText(
               id.authorizedKey,
               key: const ValueKey('identity-pubkey'),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: monoStyle(fontSize: 12),
             ),
           ),
           const SizedBox(height: 8),
           Text(
             id.fingerprint,
             key: const ValueKey('identity-fingerprint'),
-            style: Theme.of(context).textTheme.bodySmall,
+            style: monoStyle(fontSize: 12, color: context.shed.fg2),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
