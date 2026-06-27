@@ -6,8 +6,32 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_models.dart';
+import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
+import '../../widgets/app_bar_count_title.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/error_retry.dart';
+import '../../widgets/square_icon_button.dart';
+import '../../widgets/status_badge.dart';
 import '../terminal/terminal_screen.dart';
 import 'create_rc_screen.dart';
+
+/// Tone + label for an RC session's derived state.
+(ShedStatusTone, String) rcStateTone(RcState state) => switch (state) {
+  RcState.ready => (ShedStatusTone.ok, 'ready'),
+  RcState.starting => (ShedStatusTone.warn, 'starting'),
+  RcState.reconnecting => (ShedStatusTone.warn, 'reconnecting'),
+  RcState.needsTrust => (ShedStatusTone.warn, 'needs trust'),
+  RcState.needsAuth => (ShedStatusTone.warn, 'needs auth'),
+  RcState.dead => (ShedStatusTone.err, 'dead'),
+};
+
+/// The agent-kind accent — the kind chip's colored left accent bar (and the
+/// terminal's `[kind]` label once that screen is rethemed).
+Color rcKindColor(ShedColors shed, RcKind kind) => switch (kind) {
+  RcKind.claudeBroker || RcKind.claudeRc => shed.kindClaude,
+  RcKind.shell => shed.kindShell,
+};
 
 /// One shed's remote-control sessions: list with derived state, copy/open the
 /// claude.ai URL, kill, and create. Driven by shed-ext-rc over SSH.
@@ -85,7 +109,11 @@ class ShedDetailScreen extends ConsumerWidget {
     return Scaffold(
       key: const ValueKey('rc-screen'),
       appBar: AppBar(
-        title: Text('$shedName · sessions'),
+        title: AppBarCountTitle(
+          title: shedName,
+          count: sessions.asData?.value.length,
+          noun: 'session',
+        ),
         actions: [
           IconButton(
             key: const ValueKey('rc-refresh'),
@@ -106,50 +134,45 @@ class ShedDetailScreen extends ConsumerWidget {
           // Skip a wasted SSH re-list when the user cancelled (popped null).
           if (created != null) ref.invalidate(rcSessionsProvider(_key));
         },
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.add, size: 20),
         label: const Text('New session'),
       ),
       body: sessions.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('$e', key: const ValueKey('rc-error')),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => ref.invalidate(rcSessionsProvider(_key)),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
+        error: (e, _) => ErrorRetry(
+          error: e,
+          messageKey: const ValueKey('rc-error'),
+          onRetry: () => ref.invalidate(rcSessionsProvider(_key)),
         ),
         data: (list) {
           logDriveState(
             'screen=rc server=$serverName shed=$shedName count=${list.length}',
           );
           if (list.isEmpty) {
-            return const Center(
+            return const EmptyState(
               key: ValueKey('rc-empty'),
-              child: Text('No sessions. Tap "New session".'),
+              title: 'No sessions',
+              message: 'Start an agent — Claude, Codex, or a plain shell.',
             );
           }
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(rcSessionsProvider(_key)),
-            child: ListView(
-              children: [
-                for (final s in list)
-                  _RcTile(
-                    session: s,
-                    onTerminal: () => _openTerminal(context, s),
-                    onCopy: () => _copy(context, s.url!),
-                    onOpen: () => _open(context, s.url!),
-                    onKill: () => _kill(context, ref, s.slug),
-                  ),
-              ],
+            child: ListView.separated(
+              padding: const EdgeInsets.only(bottom: 96),
+              itemCount: list.length,
+              separatorBuilder: (_, _) =>
+                  Divider(height: 1, color: context.shed.line),
+              itemBuilder: (_, i) {
+                final s = list[i];
+                return _SessionCard(
+                  key: ValueKey('rc-session-${s.slug}'),
+                  session: s,
+                  onTerminal: () => _openTerminal(context, s),
+                  onCopy: () => _copy(context, s.url!),
+                  onOpen: () => _open(context, s.url!),
+                  onKill: () => _kill(context, ref, s.slug),
+                );
+              },
             ),
           );
         },
@@ -158,8 +181,9 @@ class ShedDetailScreen extends ConsumerWidget {
   }
 }
 
-class _RcTile extends StatelessWidget {
-  const _RcTile({
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({
+    super.key,
     required this.session,
     required this.onTerminal,
     required this.onCopy,
@@ -175,47 +199,116 @@ class _RcTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final shed = context.shed;
     final s = session;
-    return ListTile(
-      key: ValueKey('rc-session-${s.slug}'),
-      title: Text(s.displayName),
-      subtitle: Column(
+    final (tone, label) = rcStateTone(s.state);
+    final kindColor = rcKindColor(shed, s.kind);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${s.kind.wire} · ${s.slug}'),
-          const SizedBox(height: 4),
-          _StateChip(state: s.state),
-        ],
-      ),
-      isThreeLine: true,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            key: ValueKey('rc-terminal-${s.slug}'),
-            icon: const Icon(Icons.terminal),
-            tooltip: 'Open terminal',
-            onPressed: onTerminal,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  s.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: sansStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w600,
+                    color: shed.fg,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              StatusBadge(
+                key: ValueKey('rc-state-${s.state.wire}'),
+                tone: tone,
+                label: label,
+              ),
+            ],
           ),
-          if (s.hasUrl) ...[
-            IconButton(
-              key: ValueKey('rc-copy-${s.slug}'),
-              icon: const Icon(Icons.copy),
-              tooltip: 'Copy URL',
-              onPressed: onCopy,
-            ),
-            IconButton(
-              key: ValueKey('rc-open-${s.slug}'),
-              icon: const Icon(Icons.open_in_new),
-              tooltip: 'Open in browser',
-              onPressed: onOpen,
-            ),
-          ],
-          IconButton(
-            key: ValueKey('rc-kill-${s.slug}'),
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Kill',
-            onPressed: onKill,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // Kind chip: a thin rounded box with a colored left accent bar.
+              // (A single non-uniform Border can't take a borderRadius, so the
+              // bar is a sibling inside a ClipRRect instead of a left border.)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: IntrinsicHeight(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 3, color: kindColor),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+                        decoration: BoxDecoration(
+                          color: shed.surface,
+                          border: Border(
+                            top: BorderSide(color: shed.line),
+                            right: BorderSide(color: shed.line),
+                            bottom: BorderSide(color: shed.line),
+                          ),
+                        ),
+                        child: Text(
+                          s.kind.wire,
+                          style: monoStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: shed.fg,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  s.slug,
+                  overflow: TextOverflow.ellipsis,
+                  style: monoStyle(fontSize: 11, color: shed.fg3),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _OpenButton(slug: s.slug, onTap: onTerminal),
+              ),
+              if (s.hasUrl) ...[
+                const SizedBox(width: 8),
+                SquareIconButton(
+                  key: ValueKey('rc-copy-${s.slug}'),
+                  icon: Icons.copy,
+                  tooltip: 'Copy URL',
+                  size: 40,
+                  onPressed: onCopy,
+                ),
+                const SizedBox(width: 8),
+                SquareIconButton(
+                  key: ValueKey('rc-open-${s.slug}'),
+                  icon: Icons.open_in_new,
+                  tooltip: 'Open in browser',
+                  size: 40,
+                  onPressed: onOpen,
+                ),
+              ],
+              const SizedBox(width: 8),
+              SquareIconButton(
+                key: ValueKey('rc-kill-${s.slug}'),
+                icon: Icons.delete_outline,
+                tooltip: 'Kill',
+                iconColor: shed.errFg,
+                size: 40,
+                onPressed: onKill,
+              ),
+            ],
           ),
         ],
       ),
@@ -223,33 +316,34 @@ class _RcTile extends StatelessWidget {
   }
 }
 
-class _StateChip extends StatelessWidget {
-  const _StateChip({required this.state});
-  final RcState state;
+/// The dark "›_ open" pill that launches the in-app terminal.
+class _OpenButton extends StatelessWidget {
+  const _OpenButton({required this.slug, required this.onTap});
+
+  final String slug;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final (color, label) = switch (state) {
-      RcState.ready => (Colors.green, 'ready'),
-      RcState.starting => (Colors.blueGrey, 'starting'),
-      RcState.reconnecting => (Colors.orange, 'reconnecting'),
-      RcState.needsTrust => (Colors.amber, 'needs trust'),
-      RcState.needsAuth => (Colors.amber, 'needs auth'),
-      RcState.dead => (Colors.red, 'dead'),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        key: ValueKey('rc-state-${state.wire}'),
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
+    final shed = context.shed;
+    return InkWell(
+      key: ValueKey('rc-terminal-$slug'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: shed.btnDark,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          '›_ open',
+          style: monoStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+            color: shed.btnDarkFg,
+          ),
         ),
       ),
     );
