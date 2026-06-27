@@ -21,7 +21,8 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [x] flutter create (macos, linux)
 - [x] pubspec deps + strict analysis_options + Makefile + PROGRESS + README + docs/PLAN
 - [x] .github/workflows/ci.yml (Flutter 3.44.2 pinned; format/analyze/test + linux build)
-- [x] `make check` green (deps resolve, analyze clean, test pass); first commit + push to main
+- [x] `make check` green (deps resolve, analyze clean, test pass); commit + push to main
+- [ ] CI green (fix: linux build needs libsecret-1-dev/libjsoncpp-dev — pushed, verifying)
 
 ## M0 — transport spike (desktop)  [critical path]
 - [x] T1: real dartssh2/pinenacl API smoke vs shed-mobile-test@localhost (c) — SMOKE PASS
