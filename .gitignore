@@ -48,3 +48,11 @@ app.*.map.json
 site-build/
 .venv/
 __pycache__/
+
+# Secret files tracked by the envsecrets CLI (push/pull to GCS) — never committed.
+# The "# envsecrets" line below starts the marker section the CLI reads; keep the
+# paths directly under it with no blank line or other comment in between. See
+# docs/android-release.md.
+# envsecrets
+android/key.properties
+android/app/upload-keystore.jks

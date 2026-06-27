@@ -24,6 +24,19 @@ fastlane. You promote drafts to testers in the Play Console.
   keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | grep -E 'Owner|SHA256'
   ```
 
+### Keystore backup / restore (envsecrets)
+
+The keystore and `key.properties` are gitignored but backed up encrypted via
+[envsecrets](https://github.com/charliek/envsecrets) — they're listed in the
+`# envsecrets` section of the repo's root `.gitignore`. On a new machine:
+
+```bash
+envsecrets pull        # restores android/key.properties + android/app/upload-keystore.jks
+```
+
+After changing either file, `envsecrets push -m "…"`. This is the durable backup
+of the upload key — without it, a lost keystore means you can't ship updates.
+
 ## One-time Play Console setup
 
 1. Create the app in the [Play Console](https://play.google.com/console): name
