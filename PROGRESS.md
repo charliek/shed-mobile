@@ -37,11 +37,13 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [x] ACCEPT: e2e PASS vs real shed — TOFU host key → mint → pinned `GET /api/sheds` lists `shed-mobile-test=running`; pin/token validated
 
 ## M1 — server mgmt + shed CRUD + create-SSE (desktop)
-- [ ] server registry (add/remove/persist; multi-host) (a/b)
-- [ ] full ShedClient port (CRUD/sessions/images) + tests (b)
-- [ ] createShedSSE (capped buffers) + SSE parser tests (a/b)
-- [ ] desktop UI: list/detail/create (repo as `owner/repo` text behind RepoSource seam)
-- [ ] ACCEPT: add server; create→SSE→complete; start/stop/delete; sessions/images (c)
+- [x] server registry: SecretStore + ServerStore + ServerRecord (add/remove/persist; multi-host) + tests (a)
+- [x] AddServerFlow (SSH-mint preview -> confirm fingerprints -> persist) (a)
+- [x] full ShedClient port (get/start/stop/delete/sessions/killSession/images) (b)
+- [x] createShed SSE (postSse over pinned client) + DTOs (sealed ShedCreateEvent) (a/b)
+- [ ] marionette drive infra + drive-shed-mobile skill (copy tapper patterns)
+- [ ] desktop UI: server list / add-server / shed list+detail / create (repo as `owner/repo` text)
+- [ ] ACCEPT: drive on macOS — add server (localhost) → list/start/stop sheds; create→SSE (c)
 
 ## M2 — RC sessions via shed-ext-rc (desktop)
 - [ ] rc_models + rc_classify (verbatim regexes) + tests (a)
