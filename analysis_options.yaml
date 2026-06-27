@@ -1,0 +1,17 @@
+# Stricter than tapper's defaults on purpose: this app ports security-sensitive
+# transport/credential code, so swallowed futures and implicit casts are errors
+# worth surfacing. (Deliberate adaptation, not a tapper clone — see PLAN §13 A6.)
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # Transport/security code must never silently drop a future.
+    unawaited_futures: warning
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    require_trailing_commas: true
