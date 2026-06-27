@@ -164,6 +164,10 @@ class ShedClient {
     final raw = decoded is List
         ? decoded
         : (decoded is Map<String, Object?> ? decoded[key] : null);
+    // A nil Go slice marshals to `null` (e.g. `{"sheds":null}` from a host with
+    // no sheds), so treat a null/absent list as empty — matching the
+    // orchestrator's `resp?.sheds ?? []`.
+    if (raw == null) return <T>[];
     if (raw is! List) {
       throw AppError('SHED_PARSE_ERROR', 'unexpected $key response shape');
     }
