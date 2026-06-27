@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'control/control_token_provider.dart';
 import 'control/token_bundle.dart';
+import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
 import 'net/pinned_http_client.dart';
 import 'rc/rc_models.dart';
@@ -20,10 +21,14 @@ import 'ssh/pty_session.dart';
 import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
+/// Mobile (Android/iOS) vs desktop — the two platforms diverge on secret storage
+/// and identity source. One definition so the branch can't drift.
+bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+
 final secretStoreProvider = Provider<SecretStore>((ref) {
   // Mobile uses the OS keychain/keystore; desktop uses a 0600 file (the macOS
   // keychain entitlement needs a dev cert the ad-hoc local build lacks).
-  if (Platform.isAndroid || Platform.isIOS) return FlutterSecureSecretStore();
+  if (_isMobile) return FlutterSecureSecretStore();
   final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
   return FileSecretStore('$home/.shed-mobile');
 });
@@ -32,10 +37,28 @@ final serverStoreProvider = Provider<ServerStore>(
   (ref) => ServerStore(ref.watch(secretStoreProvider)),
 );
 
-/// Desktop SSH identity — reuse `~/.ssh/id_ed25519`. M4 adds in-app keygen.
-final identitiesProvider = FutureProvider<List<SSHKeyPair>>(
-  (ref) async => KeyManager.defaultDesktopKey(),
+/// The device's in-app identity store (mobile keygen). Backed by secure storage.
+final identityStoreProvider = Provider<IdentityStore>(
+  (ref) => IdentityStore(ref.watch(secretStoreProvider)),
 );
+
+/// SSH identity. Desktop reuses `~/.ssh/id_ed25519`; mobile loads the in-app
+/// generated key from secure storage (the onboarding flow generates it first, so
+/// this throws a StateError on mobile until then — gated by
+/// [needsOnboardingProvider]).
+final identitiesProvider = FutureProvider<List<SSHKeyPair>>((ref) async {
+  if (_isMobile) return ref.watch(identityStoreProvider).load();
+  return KeyManager.defaultDesktopKey();
+});
+
+/// Whether to route to the keygen onboarding screen. Mobile-only: true until an
+/// in-app key has been generated. Desktop reuses `~/.ssh/id_ed25519` (a missing
+/// key there surfaces as a connection error, not an onboarding loop — desktop
+/// onboarding would write to the wrong place), so this is always false on desktop.
+final needsOnboardingProvider = FutureProvider<bool>((ref) async {
+  if (!_isMobile) return false;
+  return !await ref.watch(identityStoreProvider).hasKey();
+});
 
 /// TOFU host-key store used by the add-server flow (first contact).
 final addHostKeysProvider = Provider<HostKeyStore>((ref) => HostKeyStore());
