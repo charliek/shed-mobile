@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:xterm/xterm.dart';
 
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
+import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
 
 /// In-app terminal: an xterm view wired to a [PtySession] that attaches to a
@@ -80,6 +82,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       await pty.start(cols: _terminal.viewWidth, rows: _terminal.viewHeight);
       if (!mounted) return; // dispose() already closed the pty
       setState(() => _connecting = false);
+      // Keep the SSH session alive if the app is backgrounded (Android only;
+      // best-effort, no-op elsewhere). Generic text — the shed name/slug stays
+      // in-app rather than on the lock screen.
+      unawaited(ShedForegroundService.start(text: 'Terminal session active'));
       logDriveState('screen=terminal slug=${widget.slug} state=ready');
       logDriveResult('terminal-connect', ok: true);
     } catch (e) {
@@ -96,6 +102,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   @override
   void dispose() {
     _pty?.close();
+    unawaited(ShedForegroundService.stop());
     super.dispose();
   }
 

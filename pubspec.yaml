@@ -31,6 +31,9 @@ dependencies:
   # Local-test driving (mirrors tapper). Imported from lib/, so a regular dep;
   # debug-only — tree-shaken from release builds via kDebugMode gating in main().
   marionette_flutter: ^0.5.0
+  # Android specialUse foreground service — keeps the SSH/terminal session alive
+  # when backgrounded (M4). No-op on desktop.
+  flutter_foreground_task: ^9.2.2
 
 dev_dependencies:
   flutter_test:
