@@ -26,6 +26,8 @@ dependencies:
   xterm: ^4.0.0
   # ids.
   uuid: ^4.5.1
+  # Open a session's claude.ai URL in the system browser (RC hand-off).
+  url_launcher: ^6.3.1
   # Local-test driving (mirrors tapper). Imported from lib/, so a regular dep;
   # debug-only — tree-shaken from release builds via kDebugMode gating in main().
   marionette_flutter: ^0.5.0

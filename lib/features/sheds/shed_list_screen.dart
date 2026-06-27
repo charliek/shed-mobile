@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../shed/shed_client.dart';
+import '../rc/shed_detail_screen.dart';
 import 'create_shed_screen.dart';
 
 /// Sheds on one server: list, start/stop/delete, and create.
@@ -129,6 +130,14 @@ class ShedListScreen extends ConsumerWidget {
                     ),
                     title: Text(s.name),
                     subtitle: Text(s.status),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ShedDetailScreen(
+                          serverName: serverName,
+                          shedName: s.name,
+                        ),
+                      ),
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

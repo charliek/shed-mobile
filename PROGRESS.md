@@ -47,10 +47,11 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [x] ACCEPT: drive-verified on macOS — add server localhost (mint+TOFU+persist) → list → start/stop. (Create UI built; not yet drive-run against a real VM-provision.)
 
 ## M2 — RC sessions via shed-ext-rc (desktop)
-- [ ] rc_models + rc_classify (verbatim regexes) + tests (a)
-- [ ] rc_service: create/list/probe/prompt/kill; exit 2/3/4/127; --prompt-stdin/--session-id/--permission-mode/--skip; SSH stdin (b/c)
-- [ ] genSlug; UI list/create/kill/copy-open URL/prompt
-- [ ] ACCEPT: each kind; derived states; URL when ready; byte-compatible with shed CLI (c)
+- [x] rc_models (RcKind/RcState/RcSession DTO) + golden-DTO cross-check (byte-identical to shed-extensions fixture) + tests (a). **`rc_classify` intentionally NOT ported**: shed-ext-rc classifies panes server-side and returns `state`/`url` in the DTO, so a client classifier would be dead code (the machine/inline-tmux path that needs it is deferred). Documented in the commit.
+- [x] ssh_runner (reusable `<shed>@host` exec) + ssh_connection (shared connect/teardown primitive + `classifySshException`); BootstrapService.mint refactored onto it (no more duplicated connection) (a/c)
+- [x] rc_service: create/list/kill/prompt; exit 2/3/4/127 → AppError (domain codes before missing-binary check); --prompt-stdin (stdin) / --permission-mode / --session-id; DTO shape-failure → RC_FAILED 502 (a/c)
+- [x] genSlug (unambiguous alphabet) + tests (a); UI shed-detail (list w/ derived-state chip / create kind-picker+workdir+prompt+skip / kill / copy+open claude.ai URL)
+- [x] ACCEPT: drive-verified on macOS (create claude-rc → state=ready + real claude.ai URL → list count=1 → copy → kill → count=0) + raw `tool/e2e_rc.dart` (shell+claude-rc create/list/kill/idempotent-kill PASS vs real shed); provenance `SHED_RC_CREATED_BY=shed-mobile/<ver>`. /simplify: extracted shared SSH connection primitive (collapsed BootstrapService dup), classifySshException, named-record provider key, dedup kickoff, no-refresh-on-cancel/failed-kill. /codex:rescue: 7/8 clean (host-key pin enforced, no token leak, injection-safe, stdin-EOF ok); fixed DTO shape-failure → typed 502 (+4 tests). **M2 COMPLETE.**
 
 ## M3 — in-app terminal (desktop)  [L]
 - [ ] xterm.dart ↔ dartssh2 PTY (`tmux attach`); reject out-of-range dims; reconnect/resize
@@ -78,3 +79,4 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - 2026-06-26: M0 phase-3 — pinned-TLS client + SSH mint + host-key store + KeyManager + listSheds; tool/e2e_list.dart E2E PASS vs real shed (mint→pin→pinned GET /api/sheds → shed-mobile-test=running). 43 tests. /codex:rescue: fixed 401-retry token reuse + final-401 class, out-of-range https_port, raw-socket leak on construct failure. **M0 COMPLETE.**
 - 2026-06-26: M1 data — server store + add-server flow + full ShedClient CRUD + create-SSE (46 tests). Committed 4b1f4e4.
 - 2026-06-26: M1 UI — riverpod providers + screens (server list / add-server / shed list / create) + drive-shed-mobile skill (cloned tapper). FileSecretStore (desktop) + macOS sandbox removed + network entitlements. Drive-verified on macOS: add localhost → list → start/stop. /codex:rescue: create-SSE 401-retry, postSse error mapping, pinned-client autoDispose leak, atomic 0600 secret writes, setState-after-dispose guard. Mint hardened (trust stdout, not null exit code). **M1 COMPLETE.**
+- 2026-06-26: M2 — RC sessions via shed-ext-rc over SSH. New: ssh_runner + ssh_connection (shared connect/teardown primitive + transport classifier), rc_models (DTO + golden cross-check), rc_service (create/list/kill/prompt, exit-code mapping, genSlug), url_launcher dep, shed-detail + create-rc UI, rcServiceProvider/rcSessionsProvider. BootstrapService.mint refactored onto SshRunner. 83 unit tests; raw `tool/e2e_rc.dart` PASS; macOS drive-verified (claude-rc → ready + URL → kill). /simplify (4 agents) + /codex:rescue applied. `rc_classify` skipped by design (server-side classification). **M2 COMPLETE.**

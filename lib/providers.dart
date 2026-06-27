@@ -7,6 +7,8 @@ import 'control/control_token_provider.dart';
 import 'control/token_bundle.dart';
 import 'keys/key_manager.dart';
 import 'net/pinned_http_client.dart';
+import 'rc/rc_models.dart';
+import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
 import 'servers/server_store.dart';
@@ -14,6 +16,7 @@ import 'shed/shed_client.dart';
 import 'shed/shed_dtos.dart';
 import 'ssh/bootstrap_service.dart';
 import 'ssh/host_key_store.dart';
+import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
 final secretStoreProvider = Provider<SecretStore>((ref) {
@@ -92,3 +95,39 @@ final shedsProvider = FutureProvider.autoDispose.family<List<Shed>, String>((
   final client = await ref.watch(shedClientProvider(serverName).future);
   return client.listSheds();
 });
+
+/// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
+/// to the stored fingerprint) and drive shed-ext-rc. The advisory target label
+/// uses the server alias. The named-record key guards against swapping the two
+/// same-typed strings (a positional `(String, String)` would not).
+typedef ShedRef = ({String serverName, String shedName});
+
+final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
+  (ref, key) async {
+    final rec = await ref.watch(serverStoreProvider).get(key.serverName);
+    if (rec == null) throw StateError('unknown server: ${key.serverName}');
+    final identities = await ref.watch(identitiesProvider.future);
+    final hostKeys = HostKeyStore(
+      pins: {'${rec.host}:${rec.sshPort}': rec.hostKeyPin},
+      tofu: false,
+    );
+    final runner = SshRunner(
+      host: rec.host,
+      port: rec.sshPort,
+      user: key.shedName,
+      identities: identities,
+      hostKeys: hostKeys,
+    );
+    return RcService(
+      runner: runner.run,
+      shedName: key.shedName,
+      serverLabel: rec.name,
+    );
+  },
+);
+
+final rcSessionsProvider = FutureProvider.autoDispose
+    .family<List<RcSession>, ShedRef>((ref, key) async {
+      final svc = await ref.watch(rcServiceProvider(key).future);
+      return svc.list();
+    });
