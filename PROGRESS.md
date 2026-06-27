@@ -29,8 +29,9 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [ ] key import (~/.ssh/id_ed25519; passphrase guard) (a/c)
 - [ ] host_key_store TOFU + confirm-before-persist (a)
 - [ ] pinned HttpClient (SecurityContext withTrustedRoots:false) + fake-HTTPS pin tests (b)
-- [ ] bootstrap mint (`control shed-mobile`) + parseControlBundle (require pin) (a/c)
-- [ ] full ControlTokenProvider FSM + ported controlToken.test.ts cases (a)
+- [x] parseTokenBundle (fail-closed) + ServerTarget model + tests (a)
+- [ ] bootstrap mint over SSH (`control shed-mobile`) — wiring (c) [phase-3]
+- [x] full ControlTokenProvider FSM + ported controlToken.test.ts cases (a) — 37 tests
 - [ ] add-server flow per PLAN §S2; listSheds over pinned TLS (c)
 - [ ] ACCEPT: TOFU host key → mint → pinned `GET /api/sheds` lists; mismatches abort (c)
 
@@ -67,4 +68,5 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - 2026-06-26: M-init started; repo + Flutter scaffold (macos, linux) created.
 - 2026-06-26: M-init complete — deps resolve (no conflicts), `make check` green, pushed initial commit. Review gates (`/simplify` + `/codex:rescue`) begin at M0 where real logic lands; M-init is scaffold/config only.
 - 2026-06-26: Pre-M0 validation — ~/.ssh/id_ed25519 unencrypted; shed-mobile-test routing OK (shed-ext-rc/tmux/claude present); `_bootstrap 'control shed-mobile'` mint confirmed (bundle pin matches mac-mini).
-- 2026-06-26: M0 phase-1 — API smoke (PASS) + core ports (shell_quote/fingerprint/sse_parser/app_error), 19 tests. /simplify: cursor line-scan, dropped constant-time ceremony, renamed caps. /codex:rescue: per-line cap (DoS), AppError status→502 (errors.ts fidelity). Committed.
+- 2026-06-26: M0 phase-1 — API smoke (PASS) + core ports (shell_quote/fingerprint/sse_parser/app_error), 19 tests. /simplify: cursor line-scan, dropped constant-time ceremony, renamed caps. /codex:rescue: per-line cap (DoS), AppError status→502 (errors.ts fidelity). Committed 87c24f8.
+- 2026-06-26: M0 phase-2 — credential FSM (ServerTarget, parseTokenBundle, ControlTokenProvider), +18 tests (37 total). /codex:rescue: closed an in-flight-mint identity race the TS source leaves open (bound _inflight to identity + regression test). Committed.
