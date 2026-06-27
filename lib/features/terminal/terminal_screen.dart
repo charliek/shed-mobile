@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
@@ -9,6 +11,7 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
+import 'terminal_keys.dart';
 
 /// In-app terminal: an xterm view wired to a [PtySession] that attaches to a
 /// shed RC session's tmux pane (`tmux attach -t rc-<slug>`) over pinned SSH.
@@ -33,18 +36,38 @@ class TerminalScreen extends ConsumerStatefulWidget {
 
 class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   final _terminal = Terminal(maxLines: 10000);
+  final _terminalFocus = FocusNode();
   PtySession? _pty;
   bool _connecting = true;
   String? _error;
   int? _exitCode;
+  bool _ctrlArmed = false;
+  double _fontSize = 13;
 
   @override
   void initState() {
     super.initState();
-    // Keystrokes -> remote stdin; viewport changes -> remote PTY resize.
-    _terminal.onOutput = (data) => _pty?.write(utf8.encode(data));
+    // Keystrokes -> remote stdin (through the sticky-Ctrl filter); viewport
+    // changes -> remote PTY resize.
+    _terminal.onOutput = (data) {
+      _pty?.write(applyStickyCtrl(armed: _ctrlArmed, data: data));
+      if (_ctrlArmed) setState(() => _ctrlArmed = false); // any input disarms
+    };
     _terminal.onResize = (w, h, _, _) => _pty?.resize(w, h);
     _connect();
+  }
+
+  void _adjustFont(double delta) =>
+      setState(() => _fontSize = (_fontSize + delta).clamp(8.0, 28.0));
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    // Disarm first so a single-letter clipboard isn't turned into a control code
+    // when it routes through onOutput.
+    if (_ctrlArmed) setState(() => _ctrlArmed = false);
+    _terminal.paste(text); // honors bracketed-paste mode
   }
 
   Future<void> _connect() async {
@@ -86,7 +109,6 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       // best-effort, no-op elsewhere). Generic text — the shed name/slug stays
       // in-app rather than on the lock screen.
       unawaited(ShedForegroundService.start(text: 'Terminal session active'));
-      logDriveState('screen=terminal slug=${widget.slug} state=ready');
       logDriveResult('terminal-connect', ok: true);
     } catch (e) {
       logDriveResult('terminal-connect', ok: false, error: e);
@@ -102,12 +124,26 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   @override
   void dispose() {
     _pty?.close();
+    _terminalFocus.dispose();
     unawaited(ShedForegroundService.stop());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final active = !_connecting && _error == null && _exitCode == null;
+    if (kDebugMode && active) {
+      // Debug-only: reading viewInsets registers a keyboard dependency (rebuilds
+      // on the show/hide animation), so keep it behind kDebugMode. Re-logged when
+      // the keyboard inset or font changes (logDriveState dedups) — lets the
+      // drive assert the soft keyboard stays up on key taps.
+      final inset = MediaQuery.of(context).viewInsets.bottom;
+      logDriveState(
+        'screen=terminal slug=${widget.slug} state=ready '
+        'keyboardVisible=${inset > 0} inset=${inset.round()} '
+        'font=${_fontSize.round()}',
+      );
+    }
     return Scaffold(
       key: const ValueKey('terminal-screen'),
       appBar: AppBar(
@@ -119,6 +155,26 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         ),
         title: Text(widget.title),
         actions: [
+          if (active) ...[
+            IconButton(
+              key: const ValueKey('terminal-font-dec'),
+              icon: const Icon(Icons.text_decrease),
+              tooltip: 'Smaller text',
+              onPressed: () => _adjustFont(-1),
+            ),
+            IconButton(
+              key: const ValueKey('terminal-font-inc'),
+              icon: const Icon(Icons.text_increase),
+              tooltip: 'Larger text',
+              onPressed: () => _adjustFont(1),
+            ),
+            IconButton(
+              key: const ValueKey('terminal-paste'),
+              icon: const Icon(Icons.content_paste),
+              tooltip: 'Paste',
+              onPressed: _paste,
+            ),
+          ],
           if (_exitCode != null || _error != null)
             IconButton(
               key: const ValueKey('terminal-reconnect'),
@@ -163,9 +219,24 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
           child: TerminalView(
             _terminal,
             key: const ValueKey('terminal-view'),
+            focusNode: _terminalFocus,
             autofocus: true,
+            textStyle: TerminalStyle(fontSize: _fontSize),
           ),
         ),
+        // The virtual-key toolbar sits at the bottom, just above the soft
+        // keyboard (the Scaffold uses adjustResize). Hidden once the session ends.
+        if (_exitCode == null)
+          TerminalKeys(
+            ctrlArmed: _ctrlArmed,
+            onToggleCtrl: () => setState(() => _ctrlArmed = !_ctrlArmed),
+            onKey: (bytes) {
+              _pty?.write(bytes);
+              // Toolbar keys are literal; a pending Ctrl shouldn't carry over to
+              // the next soft-keyboard letter, so consume it like any input.
+              if (_ctrlArmed) setState(() => _ctrlArmed = false);
+            },
+          ),
       ],
     );
   }
