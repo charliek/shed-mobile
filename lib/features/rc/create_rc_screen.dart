@@ -6,9 +6,9 @@ import '../../providers.dart';
 import '../../rc/rc_models.dart';
 import '../../rc/rc_service.dart';
 
-/// Create one RC session: pick the kind, optionally set a workdir / kickoff
-/// prompt / skip-permissions, then create with `--wait` so the result already
-/// carries the derived state (and URL, for claude kinds).
+/// Create one RC session: pick the kind, optionally set a name / workdir /
+/// kickoff prompt / permission mode, then create with `--wait` so the result
+/// already carries the derived state (and URL, for claude kinds).
 class CreateRcScreen extends ConsumerStatefulWidget {
   const CreateRcScreen({
     required this.serverName,
@@ -25,9 +25,10 @@ class CreateRcScreen extends ConsumerStatefulWidget {
 
 class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   RcKind _kind = defaultRcKind;
+  final _name = TextEditingController();
   final _workdir = TextEditingController();
   final _prompt = TextEditingController();
-  bool _skipPermissions = false;
+  String? _permissionMode; // null = no flag (claude's own default)
   bool _busy = false;
   String? _error;
 
@@ -36,6 +37,7 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
 
   @override
   void dispose() {
+    _name.dispose();
     _workdir.dispose();
     _prompt.dispose();
     super.dispose();
@@ -48,13 +50,19 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
     });
     try {
       final svc = await ref.read(rcServiceProvider(_key).future);
+      final name = _name.text.trim();
       final workdir = _workdir.text.trim();
       final prompt = _prompt.text.trim();
       final session = await svc.create(
         kind: _kind,
+        // Blank name → null so the binary keeps the `<shed>/<slug>` default
+        // (never an empty display name).
+        displayName: name.isEmpty ? null : name,
         workdir: workdir.isEmpty ? null : workdir,
         prompt: prompt.isEmpty ? null : prompt,
-        permissionMode: _skipPermissions ? rcPermissionBypass : null,
+        // The service drops the mode for non-claude kinds, so a mode picked
+        // before switching to a shell is safely ignored.
+        permissionMode: _permissionMode,
       );
       logDriveState(
         'screen=create-rc created slug=${session.slug} '
@@ -97,6 +105,15 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('createrc-name'),
+              controller: _name,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Session name (optional — defaults to shed/slug)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               key: const ValueKey('createrc-workdir'),
               controller: _workdir,
               enabled: !_busy,
@@ -117,18 +134,25 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                 ),
               ),
             if (_kind.runsClaude) ...[
-              const SizedBox(height: 4),
-              SwitchListTile(
-                key: const ValueKey('createrc-skip'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Skip permission prompts'),
-                subtitle: const Text(
-                  'claude --permission-mode bypassPermissions',
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                key: const ValueKey('createrc-permission-mode'),
+                initialValue: _permissionMode,
+                decoration: const InputDecoration(
+                  labelText: 'Permission mode',
+                  helperText: 'claude --permission-mode',
                 ),
-                value: _skipPermissions,
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('(claude default)'),
+                  ),
+                  for (final m in rcPermissionModes)
+                    DropdownMenuItem(value: m, child: Text(m)),
+                ],
                 onChanged: _busy
                     ? null
-                    : (v) => setState(() => _skipPermissions = v),
+                    : (v) => setState(() => _permissionMode = v),
               ),
             ],
             const SizedBox(height: 20),

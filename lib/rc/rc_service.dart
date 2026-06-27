@@ -16,8 +16,8 @@ const String rcCreatedBy = '$rcToolName/$kAppVersion';
 /// The guest binary name (on PATH in the shed `full` image).
 const String _rcBin = 'shed-ext-rc';
 
-/// claude's `--permission-mode` value set. Empty means "don't pass the flag"
-/// (claude's own default). Mirrors shed-extensions `validPermissionModes`.
+/// claude's `--permission-mode` value set. A null/absent mode means "don't pass
+/// the flag" (claude's own default). Mirrors shed-extensions `validPermissionModes`.
 const Set<String> rcPermissionModes = {
   'default',
   'acceptEdits',
@@ -26,9 +26,6 @@ const Set<String> rcPermissionModes = {
   'dontAsk',
   'bypassPermissions',
 };
-
-/// claude's full-bypass mode (the `--skip` shorthand).
-const String rcPermissionBypass = 'bypassPermissions';
 
 /// Slug alphabet without visually-confusable characters (no l/i/o/0/1), so a
 /// short slug survives being read off a screen or typed. Port of rc.ts genSlug.
@@ -100,7 +97,11 @@ class RcService {
     String? prompt,
     String? permissionMode,
   }) async {
-    if (permissionMode != null && !rcPermissionModes.contains(permissionMode)) {
+    // Permission mode only applies to claude kinds; a shell has none, so drop it
+    // here (the same way a claude-broker's prompt is dropped below) rather than
+    // relying on every caller to gate it.
+    final mode = kind.runsClaude ? permissionMode : null;
+    if (mode != null && !rcPermissionModes.contains(mode)) {
       throw AppError('RC_BAD_REQUEST', 'invalid permission mode', 400);
     }
     final theSlug = slug ?? _slug();
@@ -128,8 +129,8 @@ class RcService {
     if (workdir != null && workdir.isNotEmpty) {
       args.addAll(['--workdir', workdir]);
     }
-    if (permissionMode != null) {
-      args.addAll(['--permission-mode', permissionMode]);
+    if (mode != null) {
+      args.addAll(['--permission-mode', mode]);
     }
     if (kickoff != null) args.add('--prompt-stdin');
 

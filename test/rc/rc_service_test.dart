@@ -139,13 +139,24 @@ void main() {
       await svc.create(
         kind: RcKind.claudeRc,
         workdir: '/work/dir',
-        permissionMode: rcPermissionBypass,
+        permissionMode: 'bypassPermissions',
       );
       expect(fake.argv, containsAllInOrder(['--workdir', '/work/dir']));
       expect(
         fake.argv,
         containsAllInOrder(['--permission-mode', 'bypassPermissions']),
       );
+    });
+
+    test('drops --permission-mode for a non-claude (shell) kind', () async {
+      // A shell has no permission mode; the service silently drops one even if a
+      // caller passes it (the UI hides the picker, but state can linger across a
+      // kind switch). No throw — like a claude-broker's dropped prompt.
+      final fake = _FakeRunner()
+        ..result = SshResult(0, _dto(kind: 'shell'), '');
+      final svc = _service(fake, slugGen: () => 'fixed1');
+      await svc.create(kind: RcKind.shell, permissionMode: 'plan');
+      expect(fake.argv, isNot(contains('--permission-mode')));
     });
 
     test('rejects an invalid permission mode before any SSH call', () async {
@@ -171,6 +182,30 @@ void main() {
       expect(fake.argv, containsAllInOrder(['--name', 'My Shell']));
       expect(fake.argv, containsAllInOrder(['--slug', 'mine12']));
     });
+
+    test('creates a named session with a non-bypass permission mode', () async {
+      final fake = _FakeRunner()..result = SshResult(0, _dto(), '');
+      final svc = _service(fake, slugGen: () => 'fixed1');
+      await svc.create(
+        kind: RcKind.claudeRc,
+        displayName: 'feature work',
+        permissionMode: 'plan',
+      );
+      expect(fake.argv, containsAllInOrder(['--name', 'feature work']));
+      expect(fake.argv, containsAllInOrder(['--permission-mode', 'plan']));
+    });
+
+    test(
+      'omits --permission-mode when none is chosen (claude default)',
+      () async {
+        // The create-RC screen maps a blank picker to a null permissionMode; the
+        // service must then pass no flag at all (claude uses its own default).
+        final fake = _FakeRunner()..result = SshResult(0, _dto(), '');
+        final svc = _service(fake, slugGen: () => 'fixed1');
+        await svc.create(kind: RcKind.claudeRc);
+        expect(fake.argv, isNot(contains('--permission-mode')));
+      },
+    );
   });
 
   group('list', () {
