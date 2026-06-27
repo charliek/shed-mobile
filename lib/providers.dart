@@ -154,6 +154,15 @@ final shedsProvider = FutureProvider.autoDispose.family<List<Shed>, String>((
   return client.listSheds();
 });
 
+/// Image variants available on a server (`GET /api/images`), for the create-shed
+/// Image picker. Never blocks creation — the picker falls back to "(server
+/// default)" if this errors.
+final imagesProvider = FutureProvider.autoDispose
+    .family<List<ImageInfo>, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      return client.listImages();
+    });
+
 /// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
 /// to the stored fingerprint) and drive shed-ext-rc. The advisory target label
 /// uses the server alias. The named-record key guards against swapping the two

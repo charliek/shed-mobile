@@ -74,6 +74,24 @@ void main() {
     });
   });
 
+  group('validatePositiveIntField', () {
+    test('empty is valid (use server default)', () {
+      expect(validatePositiveIntField(''), isNull);
+      expect(validatePositiveIntField('  '), isNull);
+    });
+    test('positive integers are valid', () {
+      expect(validatePositiveIntField('1'), isNull);
+      expect(validatePositiveIntField('4'), isNull);
+      expect(validatePositiveIntField(' 8192 '), isNull);
+    });
+    test('zero, negatives, and non-integers are rejected', () {
+      expect(validatePositiveIntField('0'), isNotNull);
+      expect(validatePositiveIntField('-2'), isNotNull);
+      expect(validatePositiveIntField('4x'), isNotNull);
+      expect(validatePositiveIntField('1.5'), isNotNull);
+    });
+  });
+
   group('CreateShedRequest.fromForm', () {
     test('omits blank/zero fields', () {
       final req = CreateShedRequest.fromForm(name: ' my-shed ', repo: '   ');

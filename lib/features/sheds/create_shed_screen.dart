@@ -20,9 +20,13 @@ class CreateShedScreen extends ConsumerStatefulWidget {
 class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   final _name = TextEditingController();
   final _repo = TextEditingController();
+  final _cpus = TextEditingController();
+  final _memory = TextEditingController();
   final _lines = <String>[];
   bool _running = false;
   bool _done = false;
+  bool _noProvision = false;
+  String? _image; // null = server default
   String? _error;
   // Last auto-suggested name — lets us refresh the suggestion as the repo
   // changes without ever overwriting a name the user typed themselves.
@@ -31,13 +35,15 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   @override
   void initState() {
     super.initState();
-    // Rebuild on name input so the Create button + validation re-evaluate
-    // (without this, the button never enables — the original bug).
-    _name.addListener(_onNameChanged);
+    // Rebuild on input so the Create button + field validation re-evaluate
+    // (without the name listener, the button never enables — the original bug).
+    _name.addListener(_rebuild);
     _repo.addListener(_onRepoChanged);
+    _cpus.addListener(_rebuild);
+    _memory.addListener(_rebuild);
   }
 
-  void _onNameChanged() {
+  void _rebuild() {
     if (mounted) setState(() {});
   }
 
@@ -60,6 +66,8 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   void dispose() {
     _name.dispose();
     _repo.dispose();
+    _cpus.dispose();
+    _memory.dispose();
     super.dispose();
   }
 
@@ -77,6 +85,10 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
       final req = CreateShedRequest.fromForm(
         name: _name.text,
         repo: _repo.text,
+        image: _image ?? '',
+        cpus: _cpus.text,
+        memoryMb: _memory.text,
+        noProvision: _noProvision,
       );
       await for (final e in client.createShed(req)) {
         if (!mounted) return;
@@ -109,6 +121,13 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   @override
   Widget build(BuildContext context) {
     final nameError = validateShedName(_name.text);
+    final cpusError = validatePositiveIntField(_cpus.text);
+    final memError = validatePositiveIntField(_memory.text);
+    // Images are best-effort: an empty list just leaves "(server default)".
+    // (Type is inferred as List<ImageInfo> from asData; naming it here would
+    // collide with Flutter's painting-layer ImageInfo.)
+    final images =
+        ref.watch(imagesProvider(widget.serverName)).asData?.value ?? const [];
     return Scaffold(
       key: const ValueKey('create-shed-screen'),
       appBar: AppBar(title: Text('Create shed on ${widget.serverName}')),
@@ -138,10 +157,69 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
                 labelText: 'Repo (owner/repo, optional)',
               ),
             ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              key: const ValueKey('create-image'),
+              initialValue: _image,
+              decoration: const InputDecoration(labelText: 'Image'),
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('(server default)'),
+                ),
+                for (final img in images)
+                  DropdownMenuItem(value: img.name, child: Text(img.name)),
+              ],
+              onChanged: _running ? null : (v) => setState(() => _image = v),
+            ),
+            ExpansionTile(
+              key: const ValueKey('create-advanced'),
+              title: const Text('Advanced'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              children: [
+                TextField(
+                  key: const ValueKey('create-cpus'),
+                  controller: _cpus,
+                  enabled: !_running,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'vCPUs (optional)',
+                    errorText: cpusError,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('create-memory'),
+                  controller: _memory,
+                  enabled: !_running,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Memory MB (optional)',
+                    errorText: memError,
+                  ),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('create-noprovision'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Skip provisioning'),
+                  value: _noProvision,
+                  onChanged: _running
+                      ? null
+                      : (v) => setState(() => _noProvision = v),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             FilledButton(
               key: const ValueKey('create-submit'),
-              onPressed: (_running || nameError != null) ? null : _create,
+              onPressed:
+                  (_running ||
+                      nameError != null ||
+                      cpusError != null ||
+                      memError != null)
+                  ? null
+                  : _create,
               child: Text(_running ? 'Creating…' : 'Create'),
             ),
             if (_error != null) ...[

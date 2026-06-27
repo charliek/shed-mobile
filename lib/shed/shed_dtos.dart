@@ -45,6 +45,24 @@ class ImageInfo {
   );
 }
 
+/// Parse an optional positive-integer create-shed field (cpus, memory_mb).
+/// Returns the value when it's a positive whole number, else null. The single
+/// rule shared by [CreateShedRequest.fromForm] (which omits the field) and
+/// [validatePositiveIntField] (which surfaces a UI message) so they can't drift.
+int? parsePositiveInt(String s) {
+  final v = int.tryParse(s.trim());
+  return (v == null || v <= 0) ? null : v;
+}
+
+/// Validate an optional positive-integer create-shed field for the UI. Returns
+/// null when valid — empty means "use the server default", otherwise it must be a
+/// positive whole number — else a short message. Lets a bad value fail in the UI
+/// instead of being silently dropped by [CreateShedRequest.fromForm].
+String? validatePositiveIntField(String s) {
+  if (s.trim().isEmpty) return null;
+  return parsePositiveInt(s) == null ? 'Must be a positive whole number' : null;
+}
+
 /// Request body for `POST /api/sheds`. `repo` and `localDir` are exclusive.
 class CreateShedRequest {
   const CreateShedRequest({
@@ -70,17 +88,13 @@ class CreateShedRequest {
     bool noProvision = false,
   }) {
     String? str(String s) => s.trim().isEmpty ? null : s.trim();
-    int? posInt(String s) {
-      final v = int.tryParse(s.trim());
-      return (v == null || v <= 0) ? null : v;
-    }
 
     return CreateShedRequest(
       name: name.trim(),
       repo: str(repo),
       image: str(image),
-      cpus: posInt(cpus),
-      memoryMb: posInt(memoryMb),
+      cpus: parsePositiveInt(cpus),
+      memoryMb: parsePositiveInt(memoryMb),
       noProvision: noProvision ? true : null,
     );
   }
