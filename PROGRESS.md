@@ -24,8 +24,8 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [x] `make check` green (deps resolve, analyze clean, test pass); first commit + push to main
 
 ## M0 — transport spike (desktop)  [critical path]
-- [ ] T1: real dartssh2/pinenacl API smoke vs shed-mobile-test@localhost (c)
-- [ ] core ports: shell_quote, sse_parser (capped), fingerprint, result + unit tests (a)
+- [x] T1: real dartssh2/pinenacl API smoke vs shed-mobile-test@localhost (c) — SMOKE PASS
+- [x] core ports: shell_quote, sse_parser (capped), fingerprint, app_error + 19 unit tests (a)
 - [ ] key import (~/.ssh/id_ed25519; passphrase guard) (a/c)
 - [ ] host_key_store TOFU + confirm-before-persist (a)
 - [ ] pinned HttpClient (SecurityContext withTrustedRoots:false) + fake-HTTPS pin tests (b)
@@ -66,3 +66,5 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 ## Log
 - 2026-06-26: M-init started; repo + Flutter scaffold (macos, linux) created.
 - 2026-06-26: M-init complete — deps resolve (no conflicts), `make check` green, pushed initial commit. Review gates (`/simplify` + `/codex:rescue`) begin at M0 where real logic lands; M-init is scaffold/config only.
+- 2026-06-26: Pre-M0 validation — ~/.ssh/id_ed25519 unencrypted; shed-mobile-test routing OK (shed-ext-rc/tmux/claude present); `_bootstrap 'control shed-mobile'` mint confirmed (bundle pin matches mac-mini).
+- 2026-06-26: M0 phase-1 — API smoke (PASS) + core ports (shell_quote/fingerprint/sse_parser/app_error), 19 tests. /simplify: cursor line-scan, dropped constant-time ceremony, renamed caps. /codex:rescue: per-line cap (DoS), AppError status→502 (errors.ts fidelity). Committed.
