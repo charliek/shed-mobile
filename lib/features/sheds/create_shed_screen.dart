@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../shed/shed_dtos.dart';
+import '../../shed/shed_name.dart';
 
 /// Create a shed and stream live progress (the create-SSE path). Repo is entered
 /// as `owner/repo` text (the MVP RepoSource); leave blank for a base shed.
@@ -23,6 +24,37 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   bool _running = false;
   bool _done = false;
   String? _error;
+  // Last auto-suggested name — lets us refresh the suggestion as the repo
+  // changes without ever overwriting a name the user typed themselves.
+  String _lastSuggestion = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuild on name input so the Create button + validation re-evaluate
+    // (without this, the button never enables — the original bug).
+    _name.addListener(_onNameChanged);
+    _repo.addListener(_onRepoChanged);
+  }
+
+  void _onNameChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onRepoChanged() {
+    // Suggest a name from the repo, but only while the field is empty or still
+    // shows our last suggestion (never clobber a user-typed name).
+    if (_name.text.isEmpty || _name.text == _lastSuggestion) {
+      final suggestion = suggestShedName(_repo.text);
+      _lastSuggestion = suggestion;
+      if (_name.text != suggestion) {
+        _name.value = TextEditingValue(
+          text: suggestion,
+          selection: TextSelection.collapsed(offset: suggestion.length),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -42,10 +74,9 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
       final client = await ref.read(
         shedClientProvider(widget.serverName).future,
       );
-      final repo = _repo.text.trim();
-      final req = CreateShedRequest(
-        name: _name.text.trim(),
-        repo: repo.isEmpty ? null : repo,
+      final req = CreateShedRequest.fromForm(
+        name: _name.text,
+        repo: _repo.text,
       );
       await for (final e in client.createShed(req)) {
         if (!mounted) return;
@@ -77,6 +108,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final nameError = validateShedName(_name.text);
     return Scaffold(
       key: const ValueKey('create-shed-screen'),
       appBar: AppBar(title: Text('Create shed on ${widget.serverName}')),
@@ -89,7 +121,13 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
               key: const ValueKey('create-name'),
               controller: _name,
               enabled: !_running,
-              decoration: const InputDecoration(labelText: 'Shed name'),
+              decoration: InputDecoration(
+                labelText: 'Shed name',
+                helperText: 'lowercase letters, digits, hyphens',
+                // Only nag once something invalid is typed; an empty field just
+                // leaves Create disabled.
+                errorText: _name.text.trim().isEmpty ? null : nameError,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -103,9 +141,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
             const SizedBox(height: 16),
             FilledButton(
               key: const ValueKey('create-submit'),
-              onPressed: (_running || _name.text.trim().isEmpty)
-                  ? null
-                  : _create,
+              onPressed: (_running || nameError != null) ? null : _create,
               child: Text(_running ? 'Creating…' : 'Create'),
             ),
             if (_error != null) ...[

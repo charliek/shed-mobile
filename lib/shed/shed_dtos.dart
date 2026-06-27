@@ -58,6 +58,33 @@ class CreateShedRequest {
     this.noProvision,
   });
 
+  /// Build from raw create-shed form fields, omitting blanks/zeros. Pure, so the
+  /// "empty/zero -> omitted" shaping is unit-tested. The image/numeric/no_provision
+  /// fields are wired by the create-shed Advanced section (Phase 2).
+  factory CreateShedRequest.fromForm({
+    required String name,
+    String repo = '',
+    String image = '',
+    String cpus = '',
+    String memoryMb = '',
+    bool noProvision = false,
+  }) {
+    String? str(String s) => s.trim().isEmpty ? null : s.trim();
+    int? posInt(String s) {
+      final v = int.tryParse(s.trim());
+      return (v == null || v <= 0) ? null : v;
+    }
+
+    return CreateShedRequest(
+      name: name.trim(),
+      repo: str(repo),
+      image: str(image),
+      cpus: posInt(cpus),
+      memoryMb: posInt(memoryMb),
+      noProvision: noProvision ? true : null,
+    );
+  }
+
   final String name;
   final String? repo;
   final String? localDir;

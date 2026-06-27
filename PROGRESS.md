@@ -72,9 +72,17 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [ ] ⛔ **Human-gated:** macOS signing/notarization (Apple Developer cert); a real release keystore for Android distribution.
 - [ ] (deferred seams) repo picker (OAuth/public) + `machine:` targets + iOS — architecture leaves seams; not pulled into scope. (Nice-to-have noted by /simplify: a shared error/async-action widget across the 4 form screens.)
 
+## M6 — UI polish & feature gaps  (panel-reviewed; see docs/PLAN-ui-polish.md)
+- [x] **Phase 0a:** fixed the create-shed Create button (never enabled — no rebuild on name input; added controller listeners). New `lib/shed/shed_name.dart` (`validateShedName` mirroring the server regex, `suggestShedName` repo→name) + `CreateShedRequest.fromForm`. Inline validation + auto-suggest (won't clobber a typed name). 108 tests; drive-verified on Pixel 8 emulator (button enables, repo auto-suggests a valid name, create end-to-end `shed-create ok`, delete ok).
+- [ ] **Phase 0b:** SSH identity view/copy/regenerate screen.
+- [ ] **Phase 1:** terminal mobile key toolbar + font size + paste.
+- [ ] **Phase 2:** create-shed Image picker + Advanced (cpus/memory/no_provision).
+- [ ] **Phase 3:** create-RC session name + permission-mode picker.
+
 ---
 
 ## Log
+- 2026-06-27: M6 Phase 0a — fixed the create-shed Create button (added `_name`/`_repo` controller listeners so the button + validation rebuild on input; it never enabled before). New pure `lib/shed/shed_name.dart` (`validateShedName` = server regex `^[a-z][a-z0-9-]*[a-z0-9]$`, ≤63; `suggestShedName` repo→sanitized name) + `CreateShedRequest.fromForm`; inline errorText; auto-suggest that won't overwrite a typed name. 108 tests; drive-verified on the Pixel 8 emulator (disabled-when-empty → repo auto-suggests `my-test-repo` from `charliek/My_Test.Repo.git` → enabled → base shed create end-to-end → delete). /simplify (moved builder to `fromForm`, hoisted nameError) + /codex:rescue (no bugs). Plan panel-reviewed (Codex+CodeRabbit) in docs/PLAN-ui-polish.md (9679430).
 - 2026-06-26: M-init started; repo + Flutter scaffold (macos, linux) created.
 - 2026-06-26: M-init complete — deps resolve (no conflicts), `make check` green, pushed initial commit. Review gates (`/simplify` + `/codex:rescue`) begin at M0 where real logic lands; M-init is scaffold/config only.
 - 2026-06-26: Pre-M0 validation — ~/.ssh/id_ed25519 unencrypted; shed-mobile-test routing OK (shed-ext-rc/tmux/claude present); `_bootstrap 'control shed-mobile'` mint confirmed (bundle pin matches mac-mini).
