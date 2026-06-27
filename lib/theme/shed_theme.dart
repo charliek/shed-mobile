@@ -11,13 +11,19 @@ final ThemeData shedLightTheme = buildShedTheme(Brightness.light);
 final ThemeData shedDarkTheme = buildShedTheme(Brightness.dark);
 
 /// IBM Plex Sans text style. Mirrors [monoStyle] for the one-off UI labels (e.g.
-/// button text) that need a specific size/weight outside the [TextTheme].
-TextStyle sansStyle({double? fontSize, FontWeight? fontWeight, Color? color}) =>
-    GoogleFonts.ibmPlexSans(
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      color: color,
-    );
+/// button text, the brand title) that need a specific size/weight outside the
+/// [TextTheme], making the family explicit rather than relying on inheritance.
+TextStyle sansStyle({
+  double? fontSize,
+  FontWeight? fontWeight,
+  Color? color,
+  double? letterSpacing,
+}) => GoogleFonts.ibmPlexSans(
+  fontSize: fontSize,
+  fontWeight: fontWeight,
+  color: color,
+  letterSpacing: letterSpacing,
+);
 
 /// IBM Plex Mono text style — the design's `.mono` class (hosts/URLs, ids, status
 /// labels, helper text). Centralized so every monospace bit shares one family.
