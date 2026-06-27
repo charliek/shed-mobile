@@ -1,0 +1,111 @@
+name: Release Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play Store track"
+        required: true
+        default: "internal"
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      build_number_offset:
+        description: "Build number offset (added to run_number)"
+        required: false
+        default: "100"
+        type: string
+      release_notes:
+        description: "Release notes for this version"
+        required: false
+        type: string
+
+# shed-mobile is a single Flutter project (the repo root is the app), so unlike
+# tapper there is no apps/flutter_client working-directory. Mirrors tapper's
+# release flow otherwise: build a signed AAB, upload to Play as a draft.
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # Pinned exactly to match CI (do not drift on `channel: stable`).
+          flutter-version: 3.44.2
+          channel: stable
+
+      - name: Flutter checks
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Calculate build number
+        id: version
+        run: |
+          BUILD_NUMBER=$(( ${{ github.run_number }} + ${{ inputs.build_number_offset }} ))
+          VERSION_NAME=$(grep '^version:' pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
+          RELEASE_NAME="${VERSION_NAME} (${BUILD_NUMBER})"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+
+      - name: Build app bundle
+        env:
+          KEYSTORE_PATH: upload-keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          flutter build appbundle \
+            --release \
+            --build-number=${{ steps.version.outputs.build_number }} \
+            --build-name=${{ steps.version.outputs.version_name }}
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: android
+
+      - name: Write Play Store credentials
+        run: echo '${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}' > /tmp/play-store-key.json
+
+      - name: Write release notes
+        if: inputs.release_notes != ''
+        run: |
+          mkdir -p android/fastlane/metadata/android/en-US/changelogs
+          echo "${{ inputs.release_notes }}" > "android/fastlane/metadata/android/en-US/changelogs/${{ steps.version.outputs.build_number }}.txt"
+
+      - name: Upload to Play Store
+        env:
+          PLAY_STORE_JSON_KEY_PATH: /tmp/play-store-key.json
+          PLAY_STORE_TRACK: ${{ inputs.track }}
+          RELEASE_NAME: ${{ steps.version.outputs.release_name }}
+        working-directory: android
+        run: bundle exec fastlane deploy
+
+      - name: Clean up secrets
+        if: always()
+        run: |
+          rm -f android/app/upload-keystore.jks
+          rm -f /tmp/play-store-key.json
+
+      - name: Summary
+        run: |
+          echo "### Android Release Uploaded" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Release**: ${{ steps.version.outputs.release_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Track**: ${{ inputs.track }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Action required**: This release was uploaded as a draft. Go to the [Google Play Console](https://play.google.com/console) and promote it to testers on the **${{ inputs.track }}** track." >> "$GITHUB_STEP_SUMMARY"

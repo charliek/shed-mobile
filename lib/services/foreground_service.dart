@@ -42,7 +42,7 @@ class ShedForegroundService {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'shed_mobile_session',
-        channelName: 'shed-mobile session',
+        channelName: 'Shed session',
         channelDescription: 'Keeps your shed terminal/SSH session connected.',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
@@ -75,7 +75,7 @@ class ShedForegroundService {
       if (await FlutterForegroundTask.isRunningService) return;
       await FlutterForegroundTask.startService(
         serviceTypes: const [ForegroundServiceTypes.specialUse],
-        notificationTitle: 'shed-mobile',
+        notificationTitle: 'Shed',
         notificationText: text,
         callback: shedForegroundCallback,
       );

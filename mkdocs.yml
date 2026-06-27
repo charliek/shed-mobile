@@ -100,7 +100,9 @@ nav:
   - Platforms:
       - Desktop (macOS / Linux): platforms/desktop.md
       - Android: platforms/android.md
-  - Building & Releasing: building-and-releasing.md
+  - Building & Releasing:
+      - Overview: building-and-releasing.md
+      - Android Release: android-release.md
   - Development:
       - Testing & Drive Harness: development/testing.md
       - For AI Agents: development/agents.md

@@ -3,7 +3,8 @@
 Android adds an in-app key generator, a paste-to-trust onboarding flow, and a
 foreground service that keeps the SSH session alive when backgrounded.
 
-Application ID: `com.charliek.shed.shed_mobile`.
+Application ID: `ai.stridelabs.shed` (display name **Shed**). Releasing to the
+Play Store is documented in [Android release](../android-release.md).
 
 ## In-app key generation
 

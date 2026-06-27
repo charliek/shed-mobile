@@ -1,4 +1,4 @@
-package com.charliek.shed.shed_mobile
+package ai.stridelabs.shed
 
 import io.flutter.embedding.android.FlutterActivity
 

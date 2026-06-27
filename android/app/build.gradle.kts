@@ -21,7 +21,7 @@ val keystoreProperties = Properties().apply {
 val hasEnvSigning = System.getenv("KEYSTORE_PATH") != null
 
 android {
-    namespace = "com.charliek.shed.shed_mobile"
+    namespace = "ai.stridelabs.shed"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,8 +31,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.charliek.shed.shed_mobile"
+        // The permanent Google Play package id (Stride Labs namespace). Lowercase,
+        // mirroring tapper's ai.stridelabs.tapper. Distinct from the Dart package
+        // name (shed_mobile) and the macOS bundle id.
+        applicationId = "ai.stridelabs.shed"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

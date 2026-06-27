@@ -12,3 +12,11 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Fastlane (Play Store upload). The Appfile/Fastfile/Gemfile are committed; the
+# generated reports + bundler install dir are not.
+fastlane/metadata/
+fastlane/report.xml
+fastlane/README.md
+vendor/bundle/
+.bundle/

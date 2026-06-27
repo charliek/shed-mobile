@@ -17,7 +17,7 @@ class ServerListScreen extends ConsumerWidget {
     return Scaffold(
       key: const ValueKey('servers-screen'),
       appBar: AppBar(
-        title: const Text('shed-mobile'),
+        title: const Text('Shed'),
         actions: [
           IconButton(
             key: const ValueKey('servers-identity'),

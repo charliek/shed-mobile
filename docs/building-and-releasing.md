@@ -14,7 +14,8 @@ Release builds tree-shake the debug-only Marionette/drive instrumentation
 
 ## Android signing
 
-Signed with the same upload keystore as tapper. `android/app/build.gradle.kts`
+App ID `ai.stridelabs.shed`, signed with a **dedicated** Shed upload keystore
+(`CN=Shed`, alias `upload`) — not tapper's. `android/app/build.gradle.kts`
 resolves a release key from two sources, both gitignored; with neither, release
 falls back to the **debug** key so local sideload builds still work.
 
@@ -23,11 +24,16 @@ falls back to the **debug** key so local sideload builds still work.
 | Local | `android/app/upload-keystore.jks` + `android/key.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). |
 | CI | `KEYSTORE_PATH` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` env vars. |
 
-Verify which key signed an APK:
+Verify which key signed the artifact (the `.aab` is what Play wants):
 
 ```bash
-apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep DN
+keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | grep -E 'Owner|SHA256'
 ```
+
+## Play Store release
+
+Full flow (first manual upload + the automated `Release Android` workflow + the
+GitHub secrets it needs) is in [Android release](android-release.md).
 
 ## CI
 
