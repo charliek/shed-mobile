@@ -90,11 +90,20 @@ class PinnedHttpClient {
     }
     final resp = await req.close();
     if (resp.statusCode != 200) {
-      // Drain so the socket can be reused/closed, then surface a typed error.
-      await resp.drain<void>();
+      // Read the body so 401/auth and upstream {error:{code,message}} survive.
+      final body = await resp.transform(utf8.decoder).join();
+      Map<String, Object?>? err;
+      try {
+        final d = jsonDecode(body);
+        if (d is Map<String, Object?> && d['error'] is Map<String, Object?>) {
+          err = d['error'] as Map<String, Object?>;
+        }
+      } on FormatException {
+        // non-JSON body
+      }
       throw AppError(
-        'SHED_SERVER_ERROR',
-        'POST $path -> HTTP ${resp.statusCode}',
+        (err?['code'] as String?) ?? 'SHED_SERVER_ERROR',
+        (err?['message'] as String?) ?? 'POST $path -> HTTP ${resp.statusCode}',
         resp.statusCode,
       );
     }

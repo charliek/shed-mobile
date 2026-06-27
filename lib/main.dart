@@ -1,7 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'features/servers/server_list_screen.dart';
+import 'marionette/marionette_init.dart';
+
 void main() {
+  if (kDebugMode) initMarionetteDriver();
   runApp(const ProviderScope(child: ShedMobileApp()));
 }
 
@@ -21,22 +26,7 @@ class ShedMobileApp extends StatelessWidget {
         colorSchemeSeed: Colors.indigo,
         brightness: Brightness.dark,
       ),
-      home: const HomePage(),
-    );
-  }
-}
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('shed-mobile')),
-      body: const Center(
-        key: ValueKey('home-placeholder'),
-        child: Text('shed-mobile - scaffolding in progress'),
-      ),
+      home: const ServerListScreen(),
     );
   }
 }

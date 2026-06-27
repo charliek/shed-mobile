@@ -14,6 +14,9 @@ class ShedClient {
   final PinnedHttpClient http;
   final TokenSource tokens;
 
+  /// Release the underlying pinned HTTP client (call on provider dispose).
+  void close() => http.close();
+
   Future<List<Shed>> listSheds() async =>
       _list((await _send('GET', '/api/sheds')), 'sheds', Shed.fromJson);
 
@@ -42,10 +45,32 @@ class ShedClient {
   Future<List<ImageInfo>> listImages() async =>
       _list(await _send('GET', '/api/images'), 'images', ImageInfo.fromJson);
 
-  /// Create a shed, streaming progress. Mints a token up front (the provider
-  /// refreshes proactively); the long-lived SSE stream is not retried mid-flight.
+  /// Create a shed, streaming progress. 401 on stream-open invalidates the token
+  /// and retries once with a fresh, different token (the create stream's own
+  /// errors arrive as `event: error`, not exceptions, so a retry only ever
+  /// happens before any event is yielded).
   Stream<ShedCreateEvent> createShed(CreateShedRequest req) async* {
     final token = await tokens.get();
+    try {
+      yield* _createOnce(req, token);
+    } on AppError catch (e) {
+      if (e.statusCode == 401 && token != null) {
+        tokens.invalidate(token);
+        final next = await tokens.get();
+        if (next != null && next != token) {
+          yield* _createOnce(req, next);
+          return;
+        }
+        throw AppError.authExpired();
+      }
+      rethrow;
+    }
+  }
+
+  Stream<ShedCreateEvent> _createOnce(
+    CreateShedRequest req,
+    String? token,
+  ) async* {
     await for (final e in http.postSse(
       '/api/sheds',
       body: req.toJson(),

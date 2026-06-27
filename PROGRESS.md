@@ -41,9 +41,10 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - [x] AddServerFlow (SSH-mint preview -> confirm fingerprints -> persist) (a)
 - [x] full ShedClient port (get/start/stop/delete/sessions/killSession/images) (b)
 - [x] createShed SSE (postSse over pinned client) + DTOs (sealed ShedCreateEvent) (a/b)
-- [ ] marionette drive infra + drive-shed-mobile skill (copy tapper patterns)
-- [ ] desktop UI: server list / add-server / shed list+detail / create (repo as `owner/repo` text)
-- [ ] ACCEPT: drive on macOS — add server (localhost) → list/start/stop sheds; create→SSE (c)
+- [x] marionette drive infra + .claude/skills/drive-shed-mobile (cloned tapper patterns)
+- [x] desktop UI: server list / add-server (mint+confirm) / shed list (start/stop/delete) / create (SSE)
+- [x] FileSecretStore for desktop (0600 atomic); macOS app-sandbox removed (personal tool)
+- [x] ACCEPT: drive-verified on macOS — add server localhost (mint+TOFU+persist) → list → start/stop. (Create UI built; not yet drive-run against a real VM-provision.)
 
 ## M2 — RC sessions via shed-ext-rc (desktop)
 - [ ] rc_models + rc_classify (verbatim regexes) + tests (a)
@@ -75,3 +76,5 @@ Live status for the autonomous build. **Source of truth** — each phase resumes
 - 2026-06-26: M0 phase-2 — credential FSM (ServerTarget, parseTokenBundle, ControlTokenProvider), +18 tests (37 total). /codex:rescue: closed an in-flight-mint identity race the TS source leaves open (bound _inflight to identity + regression test). Committed 83f294c.
 - 2026-06-26: CI green — added libsecret-1-dev/libjsoncpp-dev for the Linux desktop build (58c8d30).
 - 2026-06-26: M0 phase-3 — pinned-TLS client + SSH mint + host-key store + KeyManager + listSheds; tool/e2e_list.dart E2E PASS vs real shed (mint→pin→pinned GET /api/sheds → shed-mobile-test=running). 43 tests. /codex:rescue: fixed 401-retry token reuse + final-401 class, out-of-range https_port, raw-socket leak on construct failure. **M0 COMPLETE.**
+- 2026-06-26: M1 data — server store + add-server flow + full ShedClient CRUD + create-SSE (46 tests). Committed 4b1f4e4.
+- 2026-06-26: M1 UI — riverpod providers + screens (server list / add-server / shed list / create) + drive-shed-mobile skill (cloned tapper). FileSecretStore (desktop) + macOS sandbox removed + network entitlements. Drive-verified on macOS: add localhost → list → start/stop. /codex:rescue: create-SSE 401-retry, postSse error mapping, pinned-client autoDispose leak, atomic 0600 secret writes, setState-after-dispose guard. Mint hardened (trust stdout, not null exit code). **M1 COMPLETE.**

@@ -39,11 +39,12 @@ class BootstrapService {
         onVerifyHostKey: hostKeys.verifier('${target.host}:${target.sshPort}'),
       );
       final res = await client.runWithResult(wireCmd(['control', _clientKind]));
-      if (res.exitCode != 0) throw AppError.authExpired();
-      return parseControlBundle(
-        utf8.decode(res.stdout),
-        expectedPin: expectedPin,
-      );
+      // dartssh2 can report a null/late exit code even on success, so the bundle
+      // on stdout is the real success signal; only an empty stdout is a failure.
+      // Never surface stdout/stderr on failure (could echo token material).
+      final out = utf8.decode(res.stdout);
+      if (out.trim().isEmpty) throw AppError.authExpired();
+      return parseControlBundle(out, expectedPin: expectedPin);
     } finally {
       // SSHClient.close() owns the socket; if construction threw, close it directly.
       if (client != null) {
