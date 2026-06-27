@@ -11,6 +11,10 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
+  # Theming: IBM Plex Sans/Mono (the design's typeface) and the owl brand SVGs.
+  google_fonts: ^6.3.0
+  flutter_svg: ^2.0.10
+
   # SSH: exec (runWithResult) + PTY (tmux attach) + ed25519 generate/import.
   # Exact pin — SHA256 host-key fmt + AES-GCM rekey fix; see docs/PLAN.md §0.
   dartssh2: 2.18.0
@@ -47,3 +51,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/owl/

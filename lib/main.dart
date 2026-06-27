@@ -6,28 +6,25 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'features/servers/server_list_screen.dart';
 import 'marionette/marionette_init.dart';
 import 'providers.dart';
+import 'theme/shed_theme.dart';
+import 'theme/theme_mode_provider.dart';
 
 void main() {
   if (kDebugMode) initMarionetteDriver();
   runApp(const ProviderScope(child: ShedMobileApp()));
 }
 
-class ShedMobileApp extends StatelessWidget {
+class ShedMobileApp extends ConsumerWidget {
   const ShedMobileApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'Shed',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.dark,
-      ),
+      theme: shedLightTheme,
+      darkTheme: shedDarkTheme,
+      themeMode: ref.watch(themeModeProvider),
       home: const _Home(),
     );
   }
