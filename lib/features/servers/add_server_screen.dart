@@ -42,10 +42,7 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
         sshPort: int.tryParse(_port.text.trim()) ?? 2222,
       );
       if (!mounted) return;
-      setState(() {
-        _preview = preview;
-        if (_name.text.isEmpty) _name.text = preview.host;
-      });
+      setState(() => _preview = preview);
       logDriveState('screen=add-server step=confirm host=${preview.host}');
     } catch (e) {
       if (!mounted) return;
@@ -63,7 +60,11 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
     });
     try {
       final flow = await ref.read(addServerFlowProvider.future);
-      await flow.commit(name: _name.text.trim(), preview: _preview!);
+      final name = _name.text.trim();
+      await flow.commit(
+        name: name.isEmpty ? _preview!.host : name,
+        preview: _preview!,
+      );
       logDriveResult('add-server', ok: true);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -104,6 +105,17 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'SSH port'),
             ),
+            const SizedBox(height: 12),
+            // Optional friendly name — handy when the host is a raw IP (no
+            // MagicDNS). Editable at any step; defaults to the host if left blank.
+            TextField(
+              key: const ValueKey('addserver-name'),
+              controller: _name,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Name (optional — defaults to the host)',
+              ),
+            ),
             const SizedBox(height: 16),
             if (preview == null)
               FilledButton(
@@ -124,13 +136,6 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
               ),
               const SizedBox(height: 8),
               Text('API: ${preview.apiUrl}'),
-              const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey('addserver-name'),
-                controller: _name,
-                enabled: !_busy,
-                decoration: const InputDecoration(labelText: 'Name'),
-              ),
               const SizedBox(height: 16),
               FilledButton(
                 key: const ValueKey('addserver-confirm'),
