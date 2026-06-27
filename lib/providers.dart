@@ -16,6 +16,7 @@ import 'shed/shed_client.dart';
 import 'shed/shed_dtos.dart';
 import 'ssh/bootstrap_service.dart';
 import 'ssh/host_key_store.dart';
+import 'ssh/pty_session.dart';
 import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
@@ -53,13 +54,17 @@ final serversProvider = FutureProvider<List<ServerRecord>>(
   (ref) async => ref.watch(serverStoreProvider).list(),
 );
 
+/// A host-key store pinned (non-TOFU) to a saved server's stored fingerprint —
+/// the trust anchor shared by every SSH path to that server (mint, RC, PTY).
+HostKeyStore pinnedHostKeysFor(ServerRecord rec) => HostKeyStore(
+  pins: {'${rec.host}:${rec.sshPort}': rec.hostKeyPin},
+  tofu: false,
+);
+
 /// Build a ShedClient for a saved server: pinned-TLS HTTP + a token provider
 /// whose minter re-mints over SSH (host key verified against the stored pin).
 ShedClient _buildShedClient(ServerRecord rec, List<SSHKeyPair> identities) {
-  final hostKeys = HostKeyStore(
-    pins: {'${rec.host}:${rec.sshPort}': rec.hostKeyPin},
-    tofu: false,
-  );
+  final hostKeys = pinnedHostKeysFor(rec);
   final bootstrap = BootstrapService(identities, hostKeys);
   final target = rec.toTarget();
   final http = PinnedHttpClient(
@@ -107,16 +112,12 @@ final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
     final rec = await ref.watch(serverStoreProvider).get(key.serverName);
     if (rec == null) throw StateError('unknown server: ${key.serverName}');
     final identities = await ref.watch(identitiesProvider.future);
-    final hostKeys = HostKeyStore(
-      pins: {'${rec.host}:${rec.sshPort}': rec.hostKeyPin},
-      tofu: false,
-    );
     final runner = SshRunner(
       host: rec.host,
       port: rec.sshPort,
       user: key.shedName,
       identities: identities,
-      hostKeys: hostKeys,
+      hostKeys: pinnedHostKeysFor(rec),
     );
     return RcService(
       runner: runner.run,
@@ -131,3 +132,27 @@ final rcSessionsProvider = FutureProvider.autoDispose
       final svc = await ref.watch(rcServiceProvider(key).future);
       return svc.list();
     });
+
+/// Build (but don't start) a [PtySession] for attaching a terminal to a shed's RC
+/// session. A plain factory — NOT an autoDispose provider — so a one-shot read
+/// can't dispose its Ref mid-connect; the terminal screen owns the returned
+/// instance's lifecycle. Reads only the stable serverStore/identities providers.
+/// Mirrors how [rcServiceProvider] assembles its SshRunner.
+Future<PtySession> buildPtySession(
+  WidgetRef ref, {
+  required String serverName,
+  required String shedName,
+  required String slug,
+}) async {
+  final rec = await ref.read(serverStoreProvider).get(serverName);
+  if (rec == null) throw StateError('unknown server: $serverName');
+  final identities = await ref.read(identitiesProvider.future);
+  return PtySession(
+    host: rec.host,
+    port: rec.sshPort,
+    user: shedName,
+    identities: identities,
+    hostKeys: pinnedHostKeysFor(rec),
+    slug: slug,
+  );
+}

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_models.dart';
+import '../terminal/terminal_screen.dart';
 import 'create_rc_screen.dart';
 
 /// One shed's remote-control sessions: list with derived state, copy/open the
@@ -49,6 +50,20 @@ class ShedDetailScreen extends ConsumerWidget {
         context,
       ).showSnackBar(const SnackBar(content: Text('URL copied')));
     }
+  }
+
+  void _openTerminal(BuildContext context, RcSession s) {
+    logDriveResult('terminal-open', ok: true);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TerminalScreen(
+          serverName: serverName,
+          shedName: shedName,
+          slug: s.slug,
+          title: '$shedName/${s.slug}',
+        ),
+      ),
+    );
   }
 
   Future<void> _open(BuildContext context, String url) async {
@@ -129,6 +144,7 @@ class ShedDetailScreen extends ConsumerWidget {
                 for (final s in list)
                   _RcTile(
                     session: s,
+                    onTerminal: () => _openTerminal(context, s),
                     onCopy: () => _copy(context, s.url!),
                     onOpen: () => _open(context, s.url!),
                     onKill: () => _kill(context, ref, s.slug),
@@ -145,12 +161,14 @@ class ShedDetailScreen extends ConsumerWidget {
 class _RcTile extends StatelessWidget {
   const _RcTile({
     required this.session,
+    required this.onTerminal,
     required this.onCopy,
     required this.onOpen,
     required this.onKill,
   });
 
   final RcSession session;
+  final VoidCallback onTerminal;
   final VoidCallback onCopy;
   final VoidCallback onOpen;
   final VoidCallback onKill;
@@ -173,6 +191,12 @@ class _RcTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            key: ValueKey('rc-terminal-${s.slug}'),
+            icon: const Icon(Icons.terminal),
+            tooltip: 'Open terminal',
+            onPressed: onTerminal,
+          ),
           if (s.hasUrl) ...[
             IconButton(
               key: ValueKey('rc-copy-${s.slug}'),
