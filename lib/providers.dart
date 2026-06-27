@@ -60,6 +60,36 @@ final needsOnboardingProvider = FutureProvider<bool>((ref) async {
   return !await ref.watch(identityStoreProvider).hasKey();
 });
 
+/// Whether the device key can be (re)generated in-app — mobile only (desktop
+/// reuses `~/.ssh`). Exposed as a provider so the platform branch stays out of
+/// widget build methods (and is overridable in tests).
+final canRegenerateKeyProvider = Provider<bool>((ref) => _isMobile);
+
+/// The device's PUBLIC identity (authorized_keys line + `SHA256:` fingerprint),
+/// for the identity screen. Public material only — never the private key. Mobile
+/// reads the stored public line; desktop derives the public half of the first
+/// `~/.ssh` identity. Null when no key is available or the stored line is
+/// unparseable.
+final publicIdentityProvider = FutureProvider.autoDispose<PublicIdentity?>((
+  ref,
+) async {
+  if (_isMobile) {
+    final line = await ref.watch(identityStoreProvider).authorizedKey();
+    if (line == null) return null;
+    try {
+      return PublicIdentity.fromAuthorizedKeyLine(line);
+    } on FormatException {
+      return null;
+    }
+  }
+  final identities = await ref.watch(identitiesProvider.future);
+  if (identities.isEmpty) return null;
+  return PublicIdentity.fromBlob(
+    identities.first.toPublicKey().encode(),
+    comment: 'desktop (~/.ssh)',
+  );
+});
+
 /// TOFU host-key store used by the add-server flow (first contact).
 final addHostKeysProvider = Provider<HostKeyStore>((ref) => HostKeyStore());
 

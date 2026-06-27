@@ -60,6 +60,71 @@ void main() {
       skip: _which('ssh-keygen') == null ? 'ssh-keygen not on PATH' : false,
     );
   });
+
+  group('PublicIdentity', () {
+    test('fromAuthorizedKeyLine round-trips a generated key', () {
+      final g = KeyManager.generateEd25519(comment: 'rt@test');
+      final id = PublicIdentity.fromAuthorizedKeyLine(g.authorizedKey);
+      // Derived fingerprint matches the generator's (shared fingerprintOfBlob).
+      expect(id.fingerprint, g.fingerprint);
+      expect(id.authorizedKey, g.authorizedKey.trim());
+    });
+
+    test('tolerates a comment with spaces', () {
+      final g = KeyManager.generateEd25519();
+      final base = g.authorizedKey.split(' ').take(2).join(' ');
+      final id = PublicIdentity.fromAuthorizedKeyLine('$base my laptop key');
+      expect(id.fingerprint, g.fingerprint);
+    });
+
+    test('tolerates an options prefix before the key type', () {
+      final g = KeyManager.generateEd25519();
+      final base = g.authorizedKey.split(' ').take(2).join(' ');
+      final id = PublicIdentity.fromAuthorizedKeyLine(
+        'command="x",no-pty $base',
+      );
+      expect(id.fingerprint, g.fingerprint);
+    });
+
+    test('fromBlob recovers the key type and matches the generator', () {
+      final g = KeyManager.generateEd25519();
+      final blob = base64.decode(g.authorizedKey.split(' ')[1]);
+      final id = PublicIdentity.fromBlob(blob);
+      expect(id.authorizedKey, startsWith('ssh-ed25519 '));
+      expect(id.fingerprint, g.fingerprint);
+    });
+
+    test('throws on malformed/empty lines', () {
+      expect(
+        () => PublicIdentity.fromAuthorizedKeyLine(''),
+        throwsFormatException,
+      );
+      expect(
+        () => PublicIdentity.fromAuthorizedKeyLine('not a key'),
+        throwsFormatException,
+      );
+      expect(
+        () => PublicIdentity.fromAuthorizedKeyLine(
+          'ssh-ed25519 @@@not-base64@@@',
+        ),
+        throwsFormatException,
+      );
+      // Decodes as base64 but isn't a real key blob.
+      expect(
+        () => PublicIdentity.fromAuthorizedKeyLine('ssh-ed25519 AAAA'),
+        throwsFormatException,
+      );
+    });
+
+    test('rejects a blob whose embedded type mismatches the token', () {
+      final g = KeyManager.generateEd25519();
+      final b64 = g.authorizedKey.split(' ')[1]; // a real ssh-ed25519 blob
+      expect(
+        () => PublicIdentity.fromAuthorizedKeyLine('ssh-rsa $b64'),
+        throwsFormatException,
+      );
+    });
+  });
 }
 
 String? _which(String bin) {

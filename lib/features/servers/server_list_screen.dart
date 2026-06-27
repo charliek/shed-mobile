@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
+import '../identity/identity_screen.dart';
 import '../sheds/shed_list_screen.dart';
 import 'add_server_screen.dart';
 
@@ -15,7 +16,19 @@ class ServerListScreen extends ConsumerWidget {
     final servers = ref.watch(serversProvider);
     return Scaffold(
       key: const ValueKey('servers-screen'),
-      appBar: AppBar(title: const Text('shed-mobile')),
+      appBar: AppBar(
+        title: const Text('shed-mobile'),
+        actions: [
+          IconButton(
+            key: const ValueKey('servers-identity'),
+            icon: const Icon(Icons.vpn_key),
+            tooltip: 'SSH identity',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const IdentityScreen()),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('servers-add'),
         onPressed: () async {
