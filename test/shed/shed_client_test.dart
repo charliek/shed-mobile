@@ -69,41 +69,6 @@ void main() {
     );
   });
 
-  group('listAllSessions parsing', () {
-    test('a bare array (CLI shape) parses', () async {
-      final s = await _client(
-        '[{"name":"rc-aaa","shed_name":"s","rc":{"kind":"claude-rc","state":"ready"}}]',
-      ).listAllSessions();
-      expect(s, hasLength(1));
-      expect(s.first.name, 'rc-aaa');
-      expect(s.first.isRc, isTrue);
-      expect(s.first.rc!.kind, 'claude-rc');
-    });
-
-    test('the {"sessions":[…]} wrapper (HTTP shape) parses', () async {
-      final s = await _client(
-        '{"sessions":[{"name":"rc-aaa","shed_name":"s","rc":{"kind":"shell","state":"idle"}}]}',
-      ).listAllSessions();
-      expect(s, hasLength(1));
-    });
-
-    test(
-      'the client returns all rows (rc filtering is the provider\'s job)',
-      () async {
-        final s = await _client(
-          '[{"name":"rc-aaa","shed_name":"s","rc":{"kind":"shell","state":"ready"}},'
-          '{"name":"plain","shed_name":"s"}]',
-        ).listAllSessions();
-        expect(s, hasLength(2));
-        expect(s.where((x) => x.isRc), hasLength(1));
-      },
-    );
-
-    test('{"sessions":null} is empty, not an error', () async {
-      expect(await _client('{"sessions":null}').listAllSessions(), isEmpty);
-    });
-  });
-
   group('getSystemDf parsing', () {
     test('totals parse (physical bytes is the rendered field)', () async {
       final df = await _client(

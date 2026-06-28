@@ -112,6 +112,37 @@ void main() {
     });
   });
 
+  group('ageLabel / sessionMetaLine', () {
+    final now = DateTime.parse('2026-06-28T12:00:00Z');
+    test('ageLabel is compact and null when unknown/future', () {
+      expect(ageLabel(null, now: now), isNull);
+      expect(ageLabel(DateTime.parse('2026-06-28T09:00:00Z'), now: now), '3h');
+      expect(ageLabel(DateTime.parse('2026-06-26T12:00:00Z'), now: now), '2d');
+      expect(
+        ageLabel(DateTime.parse('2026-06-28T13:00:00Z'), now: now),
+        isNull,
+      );
+    });
+    test(
+      'sessionMetaLine joins shed · tmux · made-ago, dropping a null/zero age',
+      () {
+        expect(
+          sessionMetaLine('web', 'rc-a', null, now: now),
+          'web · tmux rc-a',
+        );
+        // Go zero created_at → no "made … ago" tail.
+        expect(
+          sessionMetaLine('web', 'rc-a', '0001-01-01T00:00:00Z', now: now),
+          'web · tmux rc-a',
+        );
+        expect(
+          sessionMetaLine('web', 'rc-a', '2026-06-28T10:00:00Z', now: now),
+          'web · tmux rc-a · made 2h ago',
+        );
+      },
+    );
+  });
+
   group('formatBytes', () {
     test('zero renders as the design empty label', () {
       expect(formatBytes(0), 'Zero KB');
@@ -155,70 +186,6 @@ void main() {
       });
       expect(df.serverName, '?');
       expect(df.backend, isNull);
-    });
-  });
-
-  group('HostSession.fromJson', () {
-    test('an rc row exposes the rc block', () {
-      final s = HostSession.fromJson({
-        'name': 'rc-baxjjh',
-        'shed_name': 'scroll-test',
-        'server_name': 'mac-mini',
-        'attached': false,
-        'rc': {
-          'kind': 'claude-rc',
-          'state': 'starting',
-          'managed': true,
-          'display_name': 'test',
-        },
-      });
-      expect(s.isRc, isTrue);
-      expect(s.name, 'rc-baxjjh');
-      expect(s.shedName, 'scroll-test');
-      expect(s.rc!.kind, 'claude-rc');
-      expect(s.rc!.state, 'starting');
-      expect(s.rc!.displayName, 'test');
-    });
-
-    test('the Go zero created_at parses to null (no fake "age")', () {
-      final s = HostSession.fromJson({
-        'name': 'rc-a',
-        'shed_name': 's',
-        'created_at': '0001-01-01T00:00:00Z',
-        'rc': {'kind': 'shell', 'state': 'ready'},
-      });
-      expect(s.createdAt, isNull);
-    });
-
-    test('a real created_at parses', () {
-      final s = HostSession.fromJson({
-        'name': 'rc-a',
-        'shed_name': 's',
-        'created_at': '2026-06-28T10:00:00Z',
-        'rc': {'kind': 'shell', 'state': 'ready'},
-      });
-      expect(s.createdAt, DateTime.parse('2026-06-28T10:00:00Z'));
-    });
-
-    test('a plain tmux session (no rc block) is not an rc row', () {
-      final s = HostSession.fromJson({'name': 'plain', 'shed_name': 's'});
-      expect(s.isRc, isFalse);
-      expect(s.rc, isNull);
-    });
-
-    test('wrong-typed string fields fall back instead of throwing', () {
-      final s = HostSession.fromJson({
-        'name': 42,
-        'shed_name': false,
-        'server_name': ['host'],
-        'rc': {'kind': 9, 'state': true, 'display_name': 7},
-      });
-      expect(s.name, '?');
-      expect(s.shedName, '?');
-      expect(s.serverName, isNull);
-      expect(s.rc!.kind, 'shell');
-      expect(s.rc!.state, 'idle');
-      expect(s.rc!.displayName, isNull);
     });
   });
 }

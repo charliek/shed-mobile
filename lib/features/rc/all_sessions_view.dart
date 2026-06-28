@@ -5,10 +5,11 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
+import 'session_card.dart';
 
-/// Cross-host Sessions — every host's rc sessions grouped by host (one HTTP call
-/// per host). P2a renders a minimal per-host summary; the rich session cards with
-/// kind chips + open/delete land in P4.
+/// Cross-host Sessions — every host's rc sessions grouped by host, gathered by
+/// fanning `shed-ext-rc list` over SSH across each host's running sheds. Cards:
+/// status badge, kind chip, meta, "›_ open" (→ terminal), delete.
 class AllSessionsView extends StatelessWidget {
   const AllSessionsView({super.key});
 
@@ -27,22 +28,34 @@ class _HostSessions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final shed = context.shed;
     final sessions = ref.watch(hostSessionsProvider(serverName));
     return sessions.when(
       loading: () => const HostNote('Loading…'),
       error: (e, _) {
         logDriveState('all-sessions host=$serverName reachable=false');
-        return HostNote('unreachable', color: shed.errFg);
+        return HostBanner(
+          key: ValueKey('all-sessions-unreachable-$serverName'),
+          text: 'Unreachable',
+          tone: ShedStatusTone.warn,
+        );
       },
       data: (list) {
         logDriveState(
           'all-sessions host=$serverName reachable=true count=${list.length}',
         );
         if (list.isEmpty) return const HostNote('No sessions');
-        return HostNote(
-          '${list.length} ${list.length == 1 ? 'session' : 'sessions'}: '
-          '${list.map((s) => s.rc?.displayName ?? s.name).join(', ')}',
+        return Column(
+          children: [
+            for (final e in list)
+              SessionCard(
+                key: ValueKey(
+                  'all-session-$serverName-${e.shedName}-${e.session.slug}',
+                ),
+                serverName: serverName,
+                shedName: e.shedName,
+                session: e.session,
+              ),
+          ],
         );
       },
     );

@@ -49,19 +49,47 @@ String shedMetaLine(Shed s, {DateTime? now}) => [
   ?uptimeLabel(s.startedAt, now: now),
 ].join(' · ');
 
+/// Compact relative age ("2d"/"3h"/"30m"/"0m") since a timestamp; null when the
+/// timestamp is null or in the future (clock skew). The shared core of
+/// [uptimeLabel] and [ageLabel]. Pure.
+String? _compactAge(DateTime? t, {DateTime? now}) {
+  if (t == null) return null;
+  final d = (now ?? DateTime.now()).difference(t);
+  if (d.isNegative) return null;
+  if (d.inDays > 0) return '${d.inDays}d';
+  if (d.inHours > 0) return '${d.inHours}h';
+  if (d.inMinutes > 0) return '${d.inMinutes}m';
+  return '0m';
+}
+
 /// "up Nd"/"up Nh"/"up Nm" from a VM start time; null when unknown (stopped sheds,
 /// firecracker without a boot heartbeat, or a future timestamp). Pure.
 String? uptimeLabel(DateTime? startedAt, {DateTime? now}) {
-  if (startedAt == null) return null;
-  final d = (now ?? DateTime.now()).difference(startedAt);
-  if (d.isNegative) return null;
-  if (d.inDays > 0) return 'up ${d.inDays}d';
-  if (d.inHours > 0) return 'up ${d.inHours}h';
-  if (d.inMinutes > 0) return 'up ${d.inMinutes}m';
-  return 'up 0m';
+  final a = _compactAge(startedAt, now: now);
+  return a == null ? null : 'up $a';
 }
 
+/// Compact relative age for a "made … ago" line; null when unknown. Pure.
+String? ageLabel(DateTime? t, {DateTime? now}) => _compactAge(t, now: now);
+
 String _memLabel(int mb) => mb % 1024 == 0 ? '${mb ~/ 1024} GB' : '$mb MB';
+
+/// The cross-host session card's mono meta line — `shed · tmux rc-… · made N ago`,
+/// dropping the age for a missing/zero/unparseable created_at. Pure; takes plain
+/// fields (the rc DTO's createdAt is an ISO string) so it stays decoupled.
+String sessionMetaLine(
+  String shedName,
+  String tmuxSession,
+  String? createdAtIso, {
+  DateTime? now,
+}) {
+  final age = ageLabel(_parseServerTime(createdAtIso), now: now);
+  return [
+    shedName,
+    'tmux $tmuxSession',
+    if (age != null) 'made $age ago',
+  ].join(' · ');
+}
 
 /// A tmux session inside a shed (`GET /api/sheds/:name/sessions`).
 class Session {
@@ -264,73 +292,6 @@ String formatBytes(int bytes) {
   }
   if (s[end - 1] == '.') end--;
   return '${s.substring(0, end)} ${units[i]}';
-}
-
-// ---- Cross-host sessions (`GET /api/sessions`) -----------------------------
-
-/// One session row from `GET /api/sessions` (every shed on a host in one call).
-/// The endpoint wraps rows as `{sessions:[…]}` but the CLI returns a bare array;
-/// the client's `_list` helper accepts both. A plain tmux session has no `rc` block
-/// ([isRc] false); the cross-host Sessions view shows rc sessions only.
-class HostSession {
-  const HostSession({
-    required this.name,
-    required this.shedName,
-    this.serverName,
-    this.createdAt,
-    this.attached = false,
-    this.rc,
-  });
-
-  final String name; // tmux session name, e.g. "rc-baxjjh"
-  final String shedName;
-  final String? serverName;
-  final DateTime? createdAt; // null when the server reports the Go zero value
-  final bool attached;
-  final HostSessionRc? rc;
-
-  bool get isRc => rc != null;
-
-  factory HostSession.fromJson(Map<String, Object?> j) => HostSession(
-    name: _nonEmpty(j['name']) ?? '?',
-    shedName: _nonEmpty(j['shed_name']) ?? '?',
-    serverName: _nonEmpty(j['server_name']),
-    createdAt: _parseServerTime(j['created_at']),
-    attached: j['attached'] == true,
-    rc: HostSessionRc.fromJsonOrNull(_map(j['rc'])),
-  );
-}
-
-/// The remote-control metadata on a session (`session.rc`). `kind`/`state` are raw
-/// wire strings (mapped to color/tone via `kindColor`/`shedStatusTone`).
-class HostSessionRc {
-  const HostSessionRc({
-    required this.kind,
-    required this.state,
-    this.managed = false,
-    this.displayName,
-    this.url,
-    this.createdBy,
-  });
-
-  final String kind; // claude-rc | claude-broker | codex-rc | shell | …
-  final String state; // ready | starting | reconnecting | needs-auth | dead | …
-  final bool managed;
-  final String? displayName;
-  final String? url;
-  final String? createdBy;
-
-  static HostSessionRc? fromJsonOrNull(Map<String, Object?>? j) {
-    if (j == null) return null;
-    return HostSessionRc(
-      kind: _nonEmpty(j['kind']) ?? 'shell',
-      state: _nonEmpty(j['state']) ?? 'idle',
-      managed: j['managed'] == true,
-      displayName: _nonEmpty(j['display_name']),
-      url: _nonEmpty(j['url']),
-      createdBy: _nonEmpty(j['created_by']),
-    );
-  }
 }
 
 // ---- shared tolerant parsing helpers --------------------------------------
