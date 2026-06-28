@@ -5,10 +5,11 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
+import 'shed_card.dart';
 
-/// Cross-host Sheds — every host's sheds grouped by host. P2a renders a minimal
-/// per-host summary so the shell is data-wired and drivable; the rich cards with
-/// runtime badges + start/stop/restart land in P3.
+/// Cross-host Sheds — every host's sheds grouped by host, as rich cards (status
+/// dot, runtime badge, image chip, meta). Desktop cards carry inline
+/// open/restart/stop-start; mobile cards drill into the shed's sessions.
 class AllShedsView extends StatelessWidget {
   const AllShedsView({super.key});
 
@@ -27,22 +28,31 @@ class _HostSheds extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final shed = context.shed;
     final sheds = ref.watch(shedsProvider(serverName));
     return sheds.when(
       loading: () => const HostNote('Loading…'),
       error: (e, _) {
         logDriveState('all-sheds host=$serverName reachable=false');
-        return HostNote('unreachable', color: shed.errFg);
+        return HostBanner(
+          key: ValueKey('all-sheds-unreachable-$serverName'),
+          text: 'Unreachable',
+          tone: ShedStatusTone.warn,
+        );
       },
       data: (list) {
         logDriveState(
           'all-sheds host=$serverName reachable=true count=${list.length}',
         );
         if (list.isEmpty) return const HostNote('No sheds');
-        return HostNote(
-          '${list.length} ${list.length == 1 ? 'shed' : 'sheds'}: '
-          '${list.map((s) => s.name).join(', ')}',
+        return Column(
+          children: [
+            for (final s in list)
+              ShedCard(
+                key: ValueKey('all-shed-$serverName-${s.name}'),
+                serverName: serverName,
+                shed: s,
+              ),
+          ],
         );
       },
     );

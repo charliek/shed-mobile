@@ -46,6 +46,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
     required this.kindOpencode,
     required this.kindShell,
     required this.sidebar,
+    required this.runtimeVzBg,
+    required this.runtimeVzFg,
+    required this.runtimeFcBg,
+    required this.runtimeFcFg,
   });
 
   final Color bg; // app background (scaffold)
@@ -88,6 +92,14 @@ class ShedColors extends ThemeExtension<ShedColors> {
 
   // Desktop chrome surface (no clean Material slot).
   final Color sidebar; // the desktop sidebar background
+
+  // Runtime/backend badge colors (vz = blue, firecracker = amber). The
+  // wire→(colors, label) mapping lives in shed_status.dart's runtimeBadge,
+  // beside kindColor.
+  final Color runtimeVzBg;
+  final Color runtimeVzFg;
+  final Color runtimeFcBg;
+  final Color runtimeFcFg;
 
   Color toneBg(ShedStatusTone t) => switch (t) {
     ShedStatusTone.ok => okBg,
@@ -155,6 +167,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
     sidebar: Color(0xFFF2F0EB),
+    runtimeVzBg: Color(0xFFDCE9FB),
+    runtimeVzFg: Color(0xFF2A6FDB),
+    runtimeFcBg: Color(0xFFFBE6CF),
+    runtimeFcFg: Color(0xFFB5641A),
   );
 
   static const dark = ShedColors(
@@ -188,6 +204,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
     sidebar: Color(0xFF171A21),
+    runtimeVzBg: Color(0xFF1B2A44),
+    runtimeVzFg: Color(0xFF86B2F5),
+    runtimeFcBg: Color(0xFF3A2A18),
+    runtimeFcFg: Color(0xFFE0A86A),
   );
 
   @override
@@ -222,6 +242,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
     Color? kindOpencode,
     Color? kindShell,
     Color? sidebar,
+    Color? runtimeVzBg,
+    Color? runtimeVzFg,
+    Color? runtimeFcBg,
+    Color? runtimeFcFg,
   }) {
     return ShedColors(
       bg: bg ?? this.bg,
@@ -254,6 +278,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
       kindOpencode: kindOpencode ?? this.kindOpencode,
       kindShell: kindShell ?? this.kindShell,
       sidebar: sidebar ?? this.sidebar,
+      runtimeVzBg: runtimeVzBg ?? this.runtimeVzBg,
+      runtimeVzFg: runtimeVzFg ?? this.runtimeVzFg,
+      runtimeFcBg: runtimeFcBg ?? this.runtimeFcBg,
+      runtimeFcFg: runtimeFcFg ?? this.runtimeFcFg,
     );
   }
 
@@ -292,6 +320,10 @@ class ShedColors extends ThemeExtension<ShedColors> {
       kindOpencode: c(kindOpencode, other.kindOpencode),
       kindShell: c(kindShell, other.kindShell),
       sidebar: c(sidebar, other.sidebar),
+      runtimeVzBg: c(runtimeVzBg, other.runtimeVzBg),
+      runtimeVzFg: c(runtimeVzFg, other.runtimeVzFg),
+      runtimeFcBg: c(runtimeFcBg, other.runtimeFcBg),
+      runtimeFcFg: c(runtimeFcFg, other.runtimeFcFg),
     );
   }
 }
