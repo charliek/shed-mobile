@@ -27,6 +27,11 @@ const Set<String> rcPermissionModes = {
   'bypassPermissions',
 };
 
+/// The create-time default permission mode for claude kinds. `auto` keeps a
+/// session running autonomously rather than blocking on permission prompts (the
+/// new-session form pre-selects it). Must be a member of [rcPermissionModes].
+const String defaultRcPermissionMode = 'auto';
+
 /// Slug alphabet without visually-confusable characters (no l/i/o/0/1), so a
 /// short slug survives being read off a screen or typed. Port of rc.ts genSlug.
 const String _slugAlphabet = 'abcdefghjkmnpqrstuvwxyz23456789';

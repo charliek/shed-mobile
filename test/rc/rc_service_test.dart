@@ -55,6 +55,15 @@ String _dto({
 });
 
 void main() {
+  group('permission modes', () {
+    test('the create-time default is a valid permission mode', () {
+      // The new-session picker pre-selects this; if it weren't a member, the
+      // DropdownButtonFormField initialValue would have no matching item.
+      expect(rcPermissionModes, contains(defaultRcPermissionMode));
+      expect(defaultRcPermissionMode, 'auto');
+    });
+  });
+
   group('genSlug', () {
     test('is 6 chars from the unambiguous alphabet', () {
       const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';

@@ -31,7 +31,9 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   final _name = TextEditingController();
   final _workdir = TextEditingController();
   final _prompt = TextEditingController();
-  String? _permissionMode; // null = no flag (claude's own default)
+  // Pre-select `auto` so sessions run autonomously by default; the user can
+  // switch to "(claude default)" (null = no flag) or another mode.
+  String? _permissionMode = defaultRcPermissionMode;
   bool _busy = false;
   String? _error;
 
