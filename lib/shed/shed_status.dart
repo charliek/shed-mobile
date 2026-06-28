@@ -44,3 +44,16 @@ Color kindColor(ShedColors shed, String kind) {
   if (k == 'opencode') return shed.kindOpencode;
   return shed.kindShell;
 }
+
+/// A shed/host backend wire string → its badge colors + label, or null for an
+/// unknown or runtime-less backend (no badge). Kept beside [kindColor] (the color
+/// tokens live on [ShedColors]; the wire→label mapping lives here, with the other
+/// status/kind mappers).
+(Color bg, Color fg, String label)? runtimeBadge(
+  ShedColors shed,
+  String? backend,
+) => switch (backend) {
+  'vz' => (shed.runtimeVzBg, shed.runtimeVzFg, 'vz'),
+  'firecracker' => (shed.runtimeFcBg, shed.runtimeFcFg, 'firecracker'),
+  _ => null,
+};

@@ -15,6 +15,7 @@ import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/shed_detail_screen.dart';
 import 'create_shed_screen.dart';
+import 'shed_actions.dart';
 
 /// Sheds on one server: list, start/stop/delete, and create.
 class ShedListScreen extends ConsumerWidget {
@@ -35,22 +36,13 @@ class ShedListScreen extends ConsumerWidget {
     WidgetRef ref,
     String action,
     Future<void> Function(ShedClient c) op,
-  ) async {
-    try {
-      final client = await ref.read(shedClientProvider(serverName).future);
-      await op(client);
-      logDriveResult(action, ok: true);
-    } catch (e) {
-      logDriveResult(action, ok: false, error: e);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$action failed: $e')));
-      }
-    } finally {
-      ref.invalidate(shedsProvider(serverName));
-    }
-  }
+  ) => runShedAction(
+    ref,
+    context,
+    serverName: serverName,
+    action: action,
+    op: op,
+  );
 
   Future<void> _confirmDelete(
     BuildContext context,

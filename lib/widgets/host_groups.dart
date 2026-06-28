@@ -84,8 +84,8 @@ class HostGroupHeader extends StatelessWidget {
   }
 }
 
-/// A thin indented per-host line — used by the minimal section bodies and the
-/// per-host loading / unreachable states until the rich cards land (P3–P5).
+/// A thin indented per-host line — the per-host loading state and minimal
+/// summaries.
 class HostNote extends StatelessWidget {
   const HostNote(this.text, {this.color, super.key});
 
@@ -100,6 +100,51 @@ class HostNote extends StatelessWidget {
       child: Text(
         text,
         style: monoStyle(fontSize: 12, color: color ?? shed.fg2),
+      ),
+    );
+  }
+}
+
+/// A tinted per-host status banner (e.g. an unreachable host in the warn tone, or
+/// an old-agent "unavailable" host in the err tone). Shared by the Sheds,
+/// Sessions, and System sections.
+class HostBanner extends StatelessWidget {
+  const HostBanner({
+    required this.text,
+    required this.tone,
+    this.icon = Icons.warning_amber_rounded,
+    super.key,
+  });
+
+  final String text;
+  final ShedStatusTone tone;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: shed.toneBg(tone),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: shed.toneFg(tone)),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: monoStyle(
+                fontSize: 12,
+                color: shed.toneFg(tone),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

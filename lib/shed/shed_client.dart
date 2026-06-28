@@ -29,6 +29,14 @@ class ShedClient {
   Future<Shed> stopShed(String name) async =>
       Shed.fromJson(_obj(await _send('POST', '/api/sheds/${_e(name)}/stop')));
 
+  /// Restart = stop then start (the server has no atomic restart endpoint). A
+  /// start that fails after a successful stop leaves the shed stopped; callers
+  /// refetch to reflect the real state.
+  Future<Shed> restartShed(String name) async {
+    await stopShed(name);
+    return startShed(name);
+  }
+
   Future<void> deleteShed(String name) async =>
       _ok(await _send('DELETE', '/api/sheds/${_e(name)}'));
 
