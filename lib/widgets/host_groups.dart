@@ -1,0 +1,106 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../marionette/drive_state.dart';
+import '../providers.dart';
+import '../servers/server_record.dart';
+import '../theme/shed_colors.dart';
+import '../theme/shed_theme.dart';
+import 'empty_state.dart';
+import 'error_retry.dart';
+
+/// A cross-host section body: one group per saved host — a host header followed by
+/// [hostBuilder]'s widget for that host. Each host body is its own ConsumerWidget
+/// watching its own per-host provider, so hosts load and error **independently**
+/// (no all-or-nothing spinner). The shared cross-host iteration for the Sheds,
+/// Sessions, and System sections in both layouts.
+class HostGroups extends ConsumerWidget {
+  const HostGroups({
+    required this.section,
+    required this.emptyMessage,
+    required this.hostBuilder,
+    super.key,
+  });
+
+  /// Section id for ValueKeys / drive state (e.g. 'all-sheds').
+  final String section;
+  final String emptyMessage;
+  final Widget Function(ServerRecord server) hostBuilder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers = ref.watch(serversProvider);
+    return servers.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) =>
+          ErrorRetry(error: e, onRetry: () => ref.invalidate(serversProvider)),
+      data: (list) {
+        logDriveState('screen=$section hosts=${list.length}');
+        if (list.isEmpty) {
+          return EmptyState(
+            key: ValueKey('$section-empty'),
+            title: 'No hosts yet',
+            message: emptyMessage,
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(serversProvider),
+          child: ListView(
+            padding: const EdgeInsets.only(top: 6, bottom: 40),
+            children: [
+              for (final s in list) ...[
+                HostGroupHeader(name: s.name),
+                hostBuilder(s),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The uppercase mono host label above each group.
+class HostGroupHeader extends StatelessWidget {
+  const HostGroupHeader({required this.name, super.key});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+      child: Text(
+        name.toUpperCase(),
+        style: monoStyle(
+          fontSize: 10.5,
+          color: shed.fg3,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.9,
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin indented per-host line — used by the minimal section bodies and the
+/// per-host loading / unreachable states until the rich cards land (P3–P5).
+class HostNote extends StatelessWidget {
+  const HostNote(this.text, {this.color, super.key});
+
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+      child: Text(
+        text,
+        style: monoStyle(fontSize: 12, color: color ?? shed.fg2),
+      ),
+    );
+  }
+}

@@ -45,6 +45,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
     required this.kindCursor,
     required this.kindOpencode,
     required this.kindShell,
+    required this.sidebar,
   });
 
   final Color bg; // app background (scaffold)
@@ -84,6 +85,9 @@ class ShedColors extends ThemeExtension<ShedColors> {
   final Color kindCursor;
   final Color kindOpencode;
   final Color kindShell;
+
+  // Desktop chrome surface (no clean Material slot).
+  final Color sidebar; // the desktop sidebar background
 
   Color toneBg(ShedStatusTone t) => switch (t) {
     ShedStatusTone.ok => okBg,
@@ -150,6 +154,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
     kindCursor: _kindCursor,
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
+    sidebar: Color(0xFFF2F0EB),
   );
 
   static const dark = ShedColors(
@@ -182,6 +187,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
     kindCursor: _kindCursor,
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
+    sidebar: Color(0xFF171A21),
   );
 
   @override
@@ -215,6 +221,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
     Color? kindCursor,
     Color? kindOpencode,
     Color? kindShell,
+    Color? sidebar,
   }) {
     return ShedColors(
       bg: bg ?? this.bg,
@@ -246,6 +253,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
       kindCursor: kindCursor ?? this.kindCursor,
       kindOpencode: kindOpencode ?? this.kindOpencode,
       kindShell: kindShell ?? this.kindShell,
+      sidebar: sidebar ?? this.sidebar,
     );
   }
 
@@ -283,6 +291,7 @@ class ShedColors extends ThemeExtension<ShedColors> {
       kindCursor: c(kindCursor, other.kindCursor),
       kindOpencode: c(kindOpencode, other.kindOpencode),
       kindShell: c(kindShell, other.kindShell),
+      sidebar: c(sidebar, other.sidebar),
     );
   }
 }
