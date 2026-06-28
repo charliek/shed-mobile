@@ -52,11 +52,27 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     // Keystrokes -> remote stdin (through the sticky-Ctrl filter); viewport
     // changes -> remote PTY resize.
     _terminal.onOutput = (data) {
-      _pty?.write(applyStickyCtrl(armed: _ctrlArmed, data: data));
+      // Correct xterm's mouse-wheel SGR codes (68–71 → 64–67) so tmux + TUIs
+      // recognize the scroll, then apply sticky-Ctrl and forward to the PTY.
+      _pty?.write(
+        applyStickyCtrl(armed: _ctrlArmed, data: fixWheelReport(data)),
+      );
       if (_ctrlArmed) setState(() => _ctrlArmed = false); // any input disarms
     };
     _terminal.onResize = (w, h, _, _) => _pty?.resize(w, h);
+    // Report focus in/out to the remote (DECSET 1004) so tmux's focus-events and
+    // TUIs like claude can track when the terminal is focused. Gated on the app
+    // having enabled focus reporting, so nothing is injected otherwise.
+    _terminalFocus.addListener(_onFocusChange);
     _connect();
+  }
+
+  void _onFocusChange() {
+    final report = focusReport(
+      enabled: _terminal.reportFocusMode,
+      focused: _terminalFocus.hasFocus,
+    );
+    if (report != null) _pty?.write(report);
   }
 
   void _adjustFont(double delta) =>
@@ -126,7 +142,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   @override
   void dispose() {
     _pty?.close();
-    _terminalFocus.dispose();
+    _terminalFocus.dispose(); // also drops _onFocusChange
     unawaited(ShedForegroundService.stop());
     super.dispose();
   }

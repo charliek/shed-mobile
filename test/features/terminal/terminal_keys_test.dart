@@ -57,4 +57,54 @@ void main() {
       expect(applyStickyCtrl(armed: true, data: '\x1b[A'), [0x1b, 0x5b, 0x41]);
     });
   });
+
+  group('fixWheelReport', () {
+    test('wheel up 68 -> 64 (strips xterm\'s stray Shift bit)', () {
+      expect(fixWheelReport('\x1b[<68;1;1M'), '\x1b[<64;1;1M');
+    });
+
+    test('wheel down 69 -> 65, preserving coordinates', () {
+      expect(fixWheelReport('\x1b[<69;120;40M'), '\x1b[<65;120;40M');
+    });
+
+    test('wheel left/right 70/71 -> 66/67', () {
+      expect(fixWheelReport('\x1b[<70;1;1M'), '\x1b[<66;1;1M');
+      expect(fixWheelReport('\x1b[<71;1;1M'), '\x1b[<67;1;1M');
+    });
+
+    test('already-correct wheel code is unchanged (forward-safe)', () {
+      expect(fixWheelReport('\x1b[<64;1;1M'), '\x1b[<64;1;1M');
+    });
+
+    test('non-wheel mouse events are untouched (click, drag)', () {
+      expect(fixWheelReport('\x1b[<0;5;5M'), '\x1b[<0;5;5M'); // left click
+      expect(fixWheelReport('\x1b[<0;5;5m'), '\x1b[<0;5;5m'); // release
+      expect(fixWheelReport('\x1b[<35;5;5M'), '\x1b[<35;5;5M'); // motion
+      expect(fixWheelReport('\x1b[<4;5;5M'), '\x1b[<4;5;5M'); // shift+left
+    });
+
+    test('keystrokes / arrows pass through unchanged (fast path)', () {
+      expect(fixWheelReport('hello'), 'hello');
+      expect(fixWheelReport('\x1b[A'), '\x1b[A');
+    });
+
+    test('fixes every wheel report in a chunk', () {
+      expect(
+        fixWheelReport('\x1b[<68;1;1M\x1b[<68;1;1M'),
+        '\x1b[<64;1;1M\x1b[<64;1;1M',
+      );
+    });
+  });
+
+  group('focusReport', () {
+    test('enabled: focus-in is ESC[I, focus-out is ESC[O', () {
+      expect(focusReport(enabled: true, focused: true), [0x1b, 0x5b, 0x49]);
+      expect(focusReport(enabled: true, focused: false), [0x1b, 0x5b, 0x4f]);
+    });
+
+    test('disabled: nothing is sent (app did not enable 1004)', () {
+      expect(focusReport(enabled: false, focused: true), isNull);
+      expect(focusReport(enabled: false, focused: false), isNull);
+    });
+  });
 }

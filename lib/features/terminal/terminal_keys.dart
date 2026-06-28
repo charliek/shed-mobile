@@ -39,6 +39,39 @@ List<int> applyStickyCtrl({required bool armed, required String data}) {
   return utf8.encode(data);
 }
 
+/// SGR mouse report: `ESC [ < Cb ; Cx ; Cy (M|m)`.
+final _sgrMouseReportRe = RegExp(r'\x1b\[<(\d+);(\d+);(\d+)([Mm])');
+
+/// Correct xterm 4.0.0's mouse-wheel encoding before it reaches the PTY.
+///
+/// xterm encodes wheel buttons as SGR codes 68–71 — it adds the wheel offset
+/// (64) to button ids 4–7 instead of 0–3, so the report carries a spurious Shift
+/// bit (4). tmux then routes it to the unbound `S-WheelUpPane` (no scroll) and a
+/// mouse-aware TUI like Claude sees shift+wheel (no scroll). Rewrite wheel codes
+/// back to the standard 64–67 by clearing that Shift bit. A no-op for clicks and
+/// once xterm is fixed upstream. (See the xterm wheel button ids 64+4..64+7.)
+String fixWheelReport(String data) {
+  // Fast path: keystrokes/paste never contain an SGR mouse report.
+  if (!data.contains('\x1b[<')) return data;
+  return data.replaceAllMapped(_sgrMouseReportRe, (m) {
+    var cb = int.parse(m[1]!);
+    if ((cb & 64) != 0 && (cb & 4) != 0) cb -= 4; // wheel + stray Shift → wheel
+    return '\x1b[<$cb;${m[2]};${m[3]}${m[4]}';
+  });
+}
+
+/// Focus in/out report (DECSET 1004) to send when the terminal gains or loses
+/// focus: `ESC[I` on focus-in, `ESC[O` on focus-out. Returns null when the app
+/// hasn't enabled focus reporting ([enabled] = `Terminal.reportFocusMode`), so we
+/// never inject these into an app that didn't ask — e.g. tmux only turns 1004 on
+/// with `focus-events on`, and then forwards focus to TUIs like claude.
+List<int>? focusReport({required bool enabled, required bool focused}) {
+  if (!enabled) return null;
+  return focused
+      ? const [0x1b, 0x5b, 0x49] // ESC [ I
+      : const [0x1b, 0x5b, 0x4f]; // ESC [ O
+}
+
 /// A horizontally-scrolling toolbar of virtual keys above the terminal. Wrapped
 /// in [ExcludeFocus] so tapping a key can't steal focus from the terminal — the
 /// soft keyboard stays up (the Flutter analog of the web's preventDefault).
