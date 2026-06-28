@@ -33,13 +33,18 @@ TextStyle sansStyle({
 
 /// IBM Plex Mono text style — the design's `.mono` class (hosts/URLs, ids, status
 /// labels, helper text). Centralized so every monospace bit shares one family.
-TextStyle monoStyle({double? fontSize, FontWeight? fontWeight, Color? color}) =>
-    TextStyle(
-      fontFamily: monoFamily,
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      color: color,
-    );
+TextStyle monoStyle({
+  double? fontSize,
+  FontWeight? fontWeight,
+  Color? color,
+  double? letterSpacing,
+}) => TextStyle(
+  fontFamily: monoFamily,
+  fontSize: fontSize,
+  fontWeight: fontWeight,
+  color: color,
+  letterSpacing: letterSpacing,
+);
 
 /// Build the Shed [ThemeData] for a brightness from the design tokens
 /// ([ShedColors]). Material slots that map directly to the design live on the

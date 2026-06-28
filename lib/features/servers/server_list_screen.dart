@@ -6,10 +6,10 @@ import '../../providers.dart';
 import '../../servers/server_record.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
-import '../../theme/theme_mode_provider.dart';
 import '../../widgets/count_chip.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/owl.dart';
+import '../../widgets/theme_toggle_button.dart';
 import '../identity/identity_screen.dart';
 import '../sheds/shed_list_screen.dart';
 import 'add_server_screen.dart';
@@ -56,18 +56,7 @@ class ServerListScreen extends ConsumerWidget {
           ),
         ),
         actions: [
-          IconButton(
-            key: const ValueKey('servers-theme-toggle'),
-            icon: Icon(
-              Theme.of(context).brightness == Brightness.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined,
-            ),
-            tooltip: 'Toggle theme',
-            onPressed: () => ref
-                .read(themeModeProvider.notifier)
-                .toggle(Theme.of(context).brightness),
-          ),
+          const ThemeToggleButton(key: ValueKey('servers-theme-toggle')),
           IconButton(
             key: const ValueKey('servers-identity'),
             icon: const Icon(Icons.vpn_key_outlined),

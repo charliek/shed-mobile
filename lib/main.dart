@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/app_shell.dart';
 import 'features/onboarding/onboarding_screen.dart';
-import 'features/servers/server_list_screen.dart';
 import 'marionette/marionette_init.dart';
 import 'providers.dart';
 import 'theme/shed_theme.dart';
@@ -41,11 +41,10 @@ class _Home extends ConsumerWidget {
     return needsOnboarding.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      // On error, fall through to the server list, which surfaces the real key
+      // On error, fall through to the app shell, which surfaces the real key
       // error when a connection is attempted.
-      error: (_, _) => const ServerListScreen(),
-      data: (needs) =>
-          needs ? const OnboardingScreen() : const ServerListScreen(),
+      error: (_, _) => const AppShell(),
+      data: (needs) => needs ? const OnboardingScreen() : const AppShell(),
     );
   }
 }
