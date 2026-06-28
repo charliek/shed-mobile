@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_models.dart';
+import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
@@ -16,22 +17,24 @@ import '../../widgets/status_badge.dart';
 import '../terminal/terminal_screen.dart';
 import 'create_rc_screen.dart';
 
-/// Tone + label for an RC session's derived state.
-(ShedStatusTone, String) rcStateTone(RcState state) => switch (state) {
-  RcState.ready => (ShedStatusTone.ok, 'ready'),
-  RcState.starting => (ShedStatusTone.warn, 'starting'),
-  RcState.reconnecting => (ShedStatusTone.warn, 'reconnecting'),
-  RcState.needsTrust => (ShedStatusTone.warn, 'needs trust'),
-  RcState.needsAuth => (ShedStatusTone.warn, 'needs auth'),
-  RcState.dead => (ShedStatusTone.err, 'dead'),
-};
+/// Tone + label for an RC session's derived state. The tone comes from the shared
+/// [shedStatusTone] table (keyed by the wire string) so it matches the cross-host
+/// Sessions view; the label stays here (a few states read nicer with a space).
+(ShedStatusTone, String) rcStateTone(RcState state) => (
+  shedStatusTone(state.wire).tone,
+  switch (state) {
+    RcState.ready => 'ready',
+    RcState.starting => 'starting',
+    RcState.reconnecting => 'reconnecting',
+    RcState.needsTrust => 'needs trust',
+    RcState.needsAuth => 'needs auth',
+    RcState.dead => 'dead',
+  },
+);
 
 /// The agent-kind accent — the kind chip's colored left accent bar (and the
-/// terminal's `[kind]` label once that screen is rethemed).
-Color rcKindColor(ShedColors shed, RcKind kind) => switch (kind) {
-  RcKind.claudeBroker || RcKind.claudeRc => shed.kindClaude,
-  RcKind.shell => shed.kindShell,
-};
+/// terminal's `[kind]` label). Delegates to the shared string-keyed [kindColor].
+Color rcKindColor(ShedColors shed, RcKind kind) => kindColor(shed, kind.wire);
 
 /// One shed's remote-control sessions: list with derived state, copy/open the
 /// claude.ai URL, kill, and create. Driven by shed-ext-rc over SSH.

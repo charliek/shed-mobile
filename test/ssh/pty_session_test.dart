@@ -25,4 +25,25 @@ void main() {
       expect(rcAttachCommand('x; rm -rf /'), "tmux attach -t 'rc-x; rm -rf /'");
     });
   });
+
+  group('rcSlugFromTmux', () {
+    test('recovers the slug from an rc-<slug> tmux name', () {
+      expect(rcSlugFromTmux('rc-baxjjh'), 'baxjjh');
+    });
+
+    test('round-trips the rc-<slug> convention rcAttachCommand relies on', () {
+      // `GET /api/sessions` returns the tmux `name`; opening a terminal must
+      // recover the exact slug rcAttachCommand re-prefixes.
+      const slug = 'abc234';
+      expect(rcSlugFromTmux('rc-$slug'), slug);
+    });
+
+    test('passes a non rc- prefixed name through (foreign/legacy session)', () {
+      expect(rcSlugFromTmux('mysession'), 'mysession');
+    });
+
+    test('a bare "rc-" yields empty (caller treats as not-openable)', () {
+      expect(rcSlugFromTmux('rc-'), '');
+    });
+  });
 }
