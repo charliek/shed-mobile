@@ -20,6 +20,15 @@ int clampPtyDim(int v) => v < 1 ? 1 : (v > _maxDim ? _maxDim : v);
 String rcAttachCommand(String slug) =>
     wireCmd(['tmux', 'attach', '-t', 'rc-$slug']);
 
+/// Inverse of the `rc-<slug>` tmux naming [rcAttachCommand] relies on: recover the
+/// slug from a tmux session name. `GET /api/sessions` returns the tmux `name`
+/// (e.g. `rc-baxjjh`), not the slug, so the cross-host Sessions view derives the
+/// slug here to build a [PtySession]. Tolerant — a name without the `rc-` prefix is
+/// returned unchanged so a foreign/legacy session yields a non-empty value the
+/// caller can reject. Pure; round-trip tested against [rcAttachCommand].
+String rcSlugFromTmux(String tmuxName) =>
+    tmuxName.startsWith('rc-') ? tmuxName.substring(3) : tmuxName;
+
 /// A long-lived interactive PTY attached to an RC session's tmux pane over a
 /// host-key-pinned SSH connection. Built on [withSshClient] (the same connection
 /// primitive the one-shot [SshRunner] and the bootstrap mint use), but keeps the

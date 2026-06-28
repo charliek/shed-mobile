@@ -5,23 +5,63 @@ class Shed {
     required this.name,
     required this.status,
     this.backend,
+    this.image,
+    this.repo,
+    this.cpus,
+    this.memoryMb,
+    this.startedAt,
     this.raw = const {},
   });
 
   final String name;
   final String status;
-  final String? backend;
+  final String? backend; // "vz" | "firecracker"
+  final String? image; // image variant the shed was created from
+  final String? repo; // source repo (e.g. github.com:owner/name)
+  final int? cpus; // vCPUs, when reported
+  final int? memoryMb; // memory in MiB, when reported
+  final DateTime? startedAt; // VM boot time (VM backends only) for uptime
   final Map<String, Object?> raw;
 
   bool get isRunning => status == 'running';
 
   factory Shed.fromJson(Map<String, Object?> j) => Shed(
-    name: (j['name'] as String?) ?? '?',
-    status: (j['status'] as String?) ?? 'unknown',
-    backend: j['backend'] as String?,
+    name: _nonEmpty(j['name']) ?? '?',
+    status: _nonEmpty(j['status']) ?? 'unknown',
+    backend: _nonEmpty(j['backend']),
+    image: _nonEmpty(j['image']),
+    repo: _nonEmpty(j['repo']),
+    cpus: _posIntOrNull(j['cpus']),
+    memoryMb: _posIntOrNull(j['memory_mb']),
+    startedAt: _parseServerTime(j['started_at']),
     raw: j,
   );
 }
+
+/// The cross-host shed card's mono meta line — `repo · N vCPU · mem · up Nh`,
+/// dropping any absent part. Pure (pass [now] in tests). Mirrors the design's
+/// `meta:[s.repo, s.vcpu+' vCPU', s.mem, s.uptime].filter(Boolean).join(' · ')`.
+String shedMetaLine(Shed s, {DateTime? now}) => [
+  // `repo` is parsed via _nonEmpty, so it's already null-or-non-blank.
+  ?s.repo,
+  if (s.cpus != null) '${s.cpus} vCPU',
+  if (s.memoryMb != null) _memLabel(s.memoryMb!),
+  ?uptimeLabel(s.startedAt, now: now),
+].join(' · ');
+
+/// "up Nd"/"up Nh"/"up Nm" from a VM start time; null when unknown (stopped sheds,
+/// firecracker without a boot heartbeat, or a future timestamp). Pure.
+String? uptimeLabel(DateTime? startedAt, {DateTime? now}) {
+  if (startedAt == null) return null;
+  final d = (now ?? DateTime.now()).difference(startedAt);
+  if (d.isNegative) return null;
+  if (d.inDays > 0) return 'up ${d.inDays}d';
+  if (d.inHours > 0) return 'up ${d.inHours}h';
+  if (d.inMinutes > 0) return 'up ${d.inMinutes}m';
+  return 'up 0m';
+}
+
+String _memLabel(int mb) => mb % 1024 == 0 ? '${mb ~/ 1024} GB' : '$mb MB';
 
 /// A tmux session inside a shed (`GET /api/sheds/:name/sessions`).
 class Session {
@@ -140,4 +180,179 @@ class ShedCreateError extends ShedCreateEvent {
   const ShedCreateError(this.code, this.message);
   final String code;
   final String message;
+}
+
+// ---- System / disk usage (`GET /api/system/df`) ---------------------------
+
+/// A logical+physical byte pair (`{logical_bytes, physical_bytes}`). Physical is
+/// the actual on-disk footprint (CoW/dedup makes it diverge from logical); the
+/// System view renders physical.
+class DiskSize {
+  const DiskSize({this.logicalBytes = 0, this.physicalBytes = 0});
+  final int logicalBytes;
+  final int physicalBytes;
+
+  factory DiskSize.fromJson(Map<String, Object?>? j) => DiskSize(
+    logicalBytes: _asInt(j?['logical_bytes']),
+    physicalBytes: _asInt(j?['physical_bytes']),
+  );
+}
+
+/// Per-category disk totals (`df.totals`): the four buckets plus their sum.
+class DiskTotals {
+  const DiskTotals({
+    this.images = const DiskSize(),
+    this.sheds = const DiskSize(),
+    this.snapshots = const DiskSize(),
+    this.orphans = const DiskSize(),
+    this.all = const DiskSize(),
+  });
+
+  final DiskSize images;
+  final DiskSize sheds;
+  final DiskSize snapshots;
+  final DiskSize orphans;
+  final DiskSize all;
+
+  factory DiskTotals.fromJson(Map<String, Object?>? j) => DiskTotals(
+    images: DiskSize.fromJson(_map(j?['images'])),
+    sheds: DiskSize.fromJson(_map(j?['sheds'])),
+    snapshots: DiskSize.fromJson(_map(j?['snapshots'])),
+    orphans: DiskSize.fromJson(_map(j?['orphans'])),
+    all: DiskSize.fromJson(_map(j?['all'])),
+  );
+}
+
+/// One host's disk usage (`GET /api/system/df`). Tolerant: a missing `totals`
+/// (or an old agent that 404s, surfaced as an error upstream) yields zeros.
+class SystemDiskUsage {
+  const SystemDiskUsage({
+    required this.serverName,
+    this.backend,
+    this.totals = const DiskTotals(),
+  });
+
+  final String serverName;
+  final String? backend; // "vz" | "firecracker" | "none"
+  final DiskTotals totals;
+
+  factory SystemDiskUsage.fromJson(Map<String, Object?> j) => SystemDiskUsage(
+    serverName: _nonEmpty(j['server_name']) ?? '?',
+    backend: _nonEmpty(j['backend']),
+    totals: DiskTotals.fromJson(_map(j['totals'])),
+  );
+}
+
+/// Human-readable bytes (binary units), e.g. `1610612736 → "1.5 GB"`. Zero renders
+/// as "Zero KB" to match the design's empty label. Pure.
+String formatBytes(int bytes) {
+  if (bytes <= 0) return 'Zero KB';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  var size = bytes.toDouble();
+  var i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  // Two fixed decimals, then trim trailing zeros (and a dangling dot) without a
+  // per-call regex — this renders on the System view's refresh path:
+  // "1.50" → "1.5", "1.00" → "1", "13.51" → "13.51".
+  final s = size.toStringAsFixed(2);
+  var end = s.length;
+  while (s[end - 1] == '0') {
+    end--;
+  }
+  if (s[end - 1] == '.') end--;
+  return '${s.substring(0, end)} ${units[i]}';
+}
+
+// ---- Cross-host sessions (`GET /api/sessions`) -----------------------------
+
+/// One session row from `GET /api/sessions` (every shed on a host in one call).
+/// The endpoint wraps rows as `{sessions:[…]}` but the CLI returns a bare array;
+/// the client's `_list` helper accepts both. A plain tmux session has no `rc` block
+/// ([isRc] false); the cross-host Sessions view shows rc sessions only.
+class HostSession {
+  const HostSession({
+    required this.name,
+    required this.shedName,
+    this.serverName,
+    this.createdAt,
+    this.attached = false,
+    this.rc,
+  });
+
+  final String name; // tmux session name, e.g. "rc-baxjjh"
+  final String shedName;
+  final String? serverName;
+  final DateTime? createdAt; // null when the server reports the Go zero value
+  final bool attached;
+  final HostSessionRc? rc;
+
+  bool get isRc => rc != null;
+
+  factory HostSession.fromJson(Map<String, Object?> j) => HostSession(
+    name: _nonEmpty(j['name']) ?? '?',
+    shedName: _nonEmpty(j['shed_name']) ?? '?',
+    serverName: _nonEmpty(j['server_name']),
+    createdAt: _parseServerTime(j['created_at']),
+    attached: j['attached'] == true,
+    rc: HostSessionRc.fromJsonOrNull(_map(j['rc'])),
+  );
+}
+
+/// The remote-control metadata on a session (`session.rc`). `kind`/`state` are raw
+/// wire strings (mapped to color/tone via `kindColor`/`shedStatusTone`).
+class HostSessionRc {
+  const HostSessionRc({
+    required this.kind,
+    required this.state,
+    this.managed = false,
+    this.displayName,
+    this.url,
+    this.createdBy,
+  });
+
+  final String kind; // claude-rc | claude-broker | codex-rc | shell | …
+  final String state; // ready | starting | reconnecting | needs-auth | dead | …
+  final bool managed;
+  final String? displayName;
+  final String? url;
+  final String? createdBy;
+
+  static HostSessionRc? fromJsonOrNull(Map<String, Object?>? j) {
+    if (j == null) return null;
+    return HostSessionRc(
+      kind: _nonEmpty(j['kind']) ?? 'shell',
+      state: _nonEmpty(j['state']) ?? 'idle',
+      managed: j['managed'] == true,
+      displayName: _nonEmpty(j['display_name']),
+      url: _nonEmpty(j['url']),
+      createdBy: _nonEmpty(j['created_by']),
+    );
+  }
+}
+
+// ---- shared tolerant parsing helpers --------------------------------------
+
+String? _nonEmpty(Object? v) =>
+    v is String && v.trim().isNotEmpty ? v.trim() : null;
+
+int _asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
+
+int? _posIntOrNull(Object? v) {
+  final n = _asInt(v);
+  return n > 0 ? n : null;
+}
+
+Map<String, Object?>? _map(Object? v) => v is Map<String, Object?> ? v : null;
+
+/// Parse a server RFC3339 timestamp, returning null for an empty/invalid value or
+/// the Go zero value `0001-01-01T00:00:00Z` (which `GET /api/sessions` frequently
+/// reports for `created_at`).
+DateTime? _parseServerTime(Object? v) {
+  if (v is! String || v.isEmpty) return null;
+  final t = DateTime.tryParse(v);
+  if (t == null || t.year <= 1) return null;
+  return t;
 }

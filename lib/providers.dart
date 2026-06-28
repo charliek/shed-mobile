@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app/app_section.dart';
 import 'control/control_token_provider.dart';
 import 'control/token_bundle.dart';
 import 'keys/identity_store.dart';
@@ -161,6 +162,44 @@ final imagesProvider = FutureProvider.autoDispose
     .family<List<ImageInfo>, String>((ref, serverName) async {
       final client = await ref.watch(shedClientProvider(serverName).future);
       return client.listImages();
+    });
+
+/// The selected top-level section. Shared by both layouts (mobile bottom tabs /
+/// desktop sidebar); the desktop shell maps `hosts` → `sheds` via
+/// [sectionForDesktop]. Mobile lands on Hosts.
+final appSectionProvider = NotifierProvider<AppSectionNotifier, AppSection>(
+  AppSectionNotifier.new,
+);
+
+class AppSectionNotifier extends Notifier<AppSection> {
+  @override
+  AppSection build() => AppSection.hosts;
+
+  void select(AppSection section) => state = section;
+}
+
+/// Bound on a single host's fan-out call so one slow/offline host (e.g. a hung SSH
+/// mint) can't pin its group in a perpetual spinner — the per-host [AsyncValue]
+/// fails to a "unreachable" card instead. The cross-host views render one group
+/// per host, each watching its own per-host provider, so hosts fill in
+/// independently rather than all-or-nothing.
+const _hostFanoutTimeout = Duration(seconds: 12);
+
+/// Every rc session on one host (`GET /api/sessions`), filtered to rc-managed rows
+/// (the cross-host Sessions view's unit). One HTTP call per host — no SSH fan-out.
+final hostSessionsProvider = FutureProvider.autoDispose
+    .family<List<HostSession>, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      final all = await client.listAllSessions().timeout(_hostFanoutTimeout);
+      return all.where((s) => s.isRc).toList();
+    });
+
+/// One host's disk usage (`GET /api/system/df`) for the System view. Best-effort:
+/// an old agent throws here and the section renders that host as "unavailable".
+final hostSystemDfProvider = FutureProvider.autoDispose
+    .family<SystemDiskUsage, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      return client.getSystemDf().timeout(_hostFanoutTimeout);
     });
 
 /// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned

@@ -5,6 +5,7 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../shed/shed_client.dart';
 import '../../shed/shed_dtos.dart';
+import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
@@ -22,11 +23,12 @@ class ShedListScreen extends ConsumerWidget {
   final String serverName;
 
   /// Map a server-reported status string to a display tone + whether it pulses.
-  static (ShedStatusTone, bool) toneFor(String status) => switch (status) {
-    'running' => (ShedStatusTone.ok, false),
-    'starting' || 'creating' || 'provisioning' => (ShedStatusTone.warn, true),
-    _ => (ShedStatusTone.idle, false),
-  };
+  /// Delegates to the shared [shedStatusTone] table so the per-host list and the
+  /// cross-host views can't drift (this is how the list gains `error → err`).
+  static (ShedStatusTone, bool) toneFor(String status) {
+    final d = shedStatusTone(status);
+    return (d.tone, d.pulse);
+  }
 
   Future<void> _run(
     BuildContext context,
