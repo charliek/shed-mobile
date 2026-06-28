@@ -57,27 +57,7 @@ void main() {
     },
   );
 
-  test(
-    'hostSessionsProvider returns rc rows only (plain tmux filtered out)',
-    () async {
-      final container = ProviderContainer(
-        overrides: [
-          shedClientProvider.overrideWith(
-            (ref, name) async => _client(
-              200,
-              '[{"name":"rc-aaa","shed_name":"s","rc":{"kind":"claude-rc","state":"ready"}},'
-              '{"name":"plain","shed_name":"s"}]',
-            ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      container.listen(hostSessionsProvider('h'), (_, _) {});
-
-      final sessions = await container.read(hostSessionsProvider('h').future);
-      expect(sessions, hasLength(1));
-      expect(sessions.first.name, 'rc-aaa');
-      expect(sessions.first.isRc, isTrue);
-    },
-  );
+  // hostSessionsProvider fans `shed-ext-rc list` over SSH per running shed; its
+  // per-shed-tolerant aggregation is exercised at the widget/drive level rather
+  // than here (overriding the SSH RcService per shed adds little over that).
 }

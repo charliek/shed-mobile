@@ -185,13 +185,39 @@ class AppSectionNotifier extends Notifier<AppSection> {
 /// independently rather than all-or-nothing.
 const _hostFanoutTimeout = Duration(seconds: 12);
 
-/// Every rc session on one host (`GET /api/sessions`), filtered to rc-managed rows
-/// (the cross-host Sessions view's unit). One HTTP call per host — no SSH fan-out.
+/// One (shed, rc session) pair on a host — the cross-host Sessions view's unit.
+typedef ShedSession = ({String shedName, RcSession session});
+
+/// Every rc session on one host, by fanning `shed-ext-rc list` over SSH across the
+/// host's running sheds (one connection per running shed, bounded + tolerant; a
+/// shed that fails contributes no sessions). The HTTP `GET /api/sessions` is
+/// deliberately *not* used here: it returns tmux rows without the `rc`
+/// classification (kind/state) — the CLI fills that in client-side over SSH — so
+/// the rich cross-host view needs the SSH path too. (Ticket for the shed project:
+/// populate `rc` in /api/sessions so a future HTTP path can replace this fan-out.)
 final hostSessionsProvider = FutureProvider.autoDispose
-    .family<List<HostSession>, String>((ref, serverName) async {
-      final client = await ref.watch(shedClientProvider(serverName).future);
-      final all = await client.listAllSessions().timeout(_hostFanoutTimeout);
-      return all.where((s) => s.isRc).toList();
+    .family<List<ShedSession>, String>((ref, serverName) async {
+      final rec = await ref.read(serverStoreProvider).get(serverName);
+      if (rec == null) throw StateError('unknown server: $serverName');
+      final identities = await ref.read(identitiesProvider.future);
+      final sheds = await ref.watch(shedsProvider(serverName).future);
+      final running = sheds.where((s) => s.isRunning).toList();
+      final lists = await Future.wait(
+        running.map((shed) async {
+          try {
+            final svc = _rcServiceFor(rec, identities, shed.name);
+            final sessions = await svc.list().timeout(_hostFanoutTimeout);
+            return [
+              for (final s in sessions) (shedName: shed.name, session: s),
+            ];
+          } catch (_) {
+            // A shed whose SSH/list fails contributes no sessions (tolerant) —
+            // host-level reachability is surfaced by shedsProvider above.
+            return const <ShedSession>[];
+          }
+        }),
+      );
+      return [for (final l in lists) ...l];
     });
 
 /// One host's disk usage (`GET /api/system/df`) for the System view. Best-effort:
@@ -208,24 +234,42 @@ final hostSystemDfProvider = FutureProvider.autoDispose
 /// same-typed strings (a positional `(String, String)` would not).
 typedef ShedRef = ({String serverName, String shedName});
 
+/// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
+/// to the stored fingerprint) and drive shed-ext-rc. A plain factory reading only
+/// the stable serverStore/identities providers (like [buildPtySession]) so the
+/// cross-host fan-out can call it directly without the autoDispose-disposed-during
+/// -load race a one-shot `ref.read(rcServiceProvider.future)` would hit.
+/// Assemble an RcService from an already-resolved server record + identities, so
+/// the cross-host fan-out can resolve those once and reuse them across a host's
+/// sheds (rather than re-reading the keychain/server list per shed).
+RcService _rcServiceFor(
+  ServerRecord rec,
+  List<SSHKeyPair> identities,
+  String shedName,
+) {
+  final runner = SshRunner(
+    host: rec.host,
+    port: rec.sshPort,
+    user: shedName,
+    identities: identities,
+    hostKeys: pinnedHostKeysFor(rec),
+  );
+  return RcService(
+    runner: runner.run,
+    shedName: shedName,
+    serverLabel: rec.name,
+  );
+}
+
+Future<RcService> buildRcService(Ref ref, ShedRef key) async {
+  final rec = await ref.read(serverStoreProvider).get(key.serverName);
+  if (rec == null) throw StateError('unknown server: ${key.serverName}');
+  final identities = await ref.read(identitiesProvider.future);
+  return _rcServiceFor(rec, identities, key.shedName);
+}
+
 final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
-  (ref, key) async {
-    final rec = await ref.watch(serverStoreProvider).get(key.serverName);
-    if (rec == null) throw StateError('unknown server: ${key.serverName}');
-    final identities = await ref.watch(identitiesProvider.future);
-    final runner = SshRunner(
-      host: rec.host,
-      port: rec.sshPort,
-      user: key.shedName,
-      identities: identities,
-      hostKeys: pinnedHostKeysFor(rec),
-    );
-    return RcService(
-      runner: runner.run,
-      shedName: key.shedName,
-      serverLabel: rec.name,
-    );
-  },
+  (ref, key) => buildRcService(ref, key),
 );
 
 final rcSessionsProvider = FutureProvider.autoDispose

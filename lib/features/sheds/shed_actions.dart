@@ -5,22 +5,19 @@ import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../shed/shed_client.dart';
 
-/// Run a shed lifecycle action (start/stop/restart) against a server's client:
-/// resolve the client, run [op], log the drive result, surface a failure as a
-/// SnackBar, and always refetch `shedsProvider(serverName)` so the UI reflects
-/// the real post-op state. The single source for this kernel — shared by the
-/// per-host shed list and the cross-host shed cards (the card layers its own
-/// busy state on top).
-Future<void> runShedAction(
+/// The shared action kernel: run [op], log the drive result, surface a failure as
+/// a SnackBar, and always run [invalidate] so the UI refetches the real post-op
+/// state. [op] does its own work (resolve a client/service + call it) so this
+/// serves both HTTP shed actions and SSH session actions.
+Future<void> runAction(
   WidgetRef ref,
   BuildContext context, {
-  required String serverName,
   required String action,
-  required Future<void> Function(ShedClient c) op,
+  required Future<void> Function() op,
+  required void Function() invalidate,
 }) async {
   try {
-    final client = await ref.read(shedClientProvider(serverName).future);
-    await op(client);
+    await op();
     logDriveResult(action, ok: true);
   } catch (e) {
     logDriveResult(action, ok: false, error: e);
@@ -30,6 +27,26 @@ Future<void> runShedAction(
       ).showSnackBar(SnackBar(content: Text('$action failed: $e')));
     }
   } finally {
-    ref.invalidate(shedsProvider(serverName));
+    invalidate();
   }
 }
+
+/// A shed lifecycle action (start/stop/restart): resolves the server's client,
+/// runs [op] against it, and refetches `shedsProvider(serverName)`. Shared by the
+/// per-host shed list and the cross-host shed cards (the card layers busy state).
+Future<void> runShedAction(
+  WidgetRef ref,
+  BuildContext context, {
+  required String serverName,
+  required String action,
+  required Future<void> Function(ShedClient c) op,
+}) => runAction(
+  ref,
+  context,
+  action: action,
+  op: () async {
+    final client = await ref.read(shedClientProvider(serverName).future);
+    await op(client);
+  },
+  invalidate: () => ref.invalidate(shedsProvider(serverName)),
+);

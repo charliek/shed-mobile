@@ -12,6 +12,8 @@ import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/error_retry.dart';
+import '../../widgets/kind_chip.dart';
+import '../../widgets/open_pill.dart';
 import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
 import '../terminal/terminal_screen.dart';
@@ -31,10 +33,6 @@ import 'create_rc_screen.dart';
     RcState.dead => 'dead',
   },
 );
-
-/// The agent-kind accent — the kind chip's colored left accent bar (and the
-/// terminal's `[kind]` label). Delegates to the shared string-keyed [kindColor].
-Color rcKindColor(ShedColors shed, RcKind kind) => kindColor(shed, kind.wire);
 
 /// One shed's remote-control sessions: list with derived state, copy/open the
 /// claude.ai URL, kill, and create. Driven by shed-ext-rc over SSH.
@@ -59,6 +57,7 @@ class ShedDetailScreen extends ConsumerWidget {
       // Refresh only on success: a failed kill is a transport/server error, so
       // re-listing would just pay another doomed SSH round-trip.
       ref.invalidate(rcSessionsProvider(_key));
+      ref.invalidate(hostSessionsProvider(serverName));
     } catch (e) {
       logDriveResult('rc-kill', ok: false, error: e);
       if (context.mounted) {
@@ -135,7 +134,10 @@ class ShedDetailScreen extends ConsumerWidget {
             ),
           );
           // Skip a wasted SSH re-list when the user cancelled (popped null).
-          if (created != null) ref.invalidate(rcSessionsProvider(_key));
+          if (created != null) {
+            ref.invalidate(rcSessionsProvider(_key));
+            ref.invalidate(hostSessionsProvider(serverName));
+          }
         },
         icon: const Icon(Icons.add, size: 20),
         label: const Text('New session'),
@@ -205,7 +207,6 @@ class _SessionCard extends StatelessWidget {
     final shed = context.shed;
     final s = session;
     final (tone, label) = rcStateTone(s.state);
-    final kindColor = rcKindColor(shed, s.kind);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       child: Column(
@@ -235,39 +236,7 @@ class _SessionCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              // Kind chip: a thin rounded box with a colored left accent bar.
-              // (A single non-uniform Border can't take a borderRadius, so the
-              // bar is a sibling inside a ClipRRect instead of a left border.)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(5),
-                child: IntrinsicHeight(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 3, color: kindColor),
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
-                        decoration: BoxDecoration(
-                          color: shed.surface,
-                          border: Border(
-                            top: BorderSide(color: shed.line),
-                            right: BorderSide(color: shed.line),
-                            bottom: BorderSide(color: shed.line),
-                          ),
-                        ),
-                        child: Text(
-                          s.kind.wire,
-                          style: monoStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: shed.fg,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              KindChip(s.kind.wire),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -282,7 +251,10 @@ class _SessionCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _OpenButton(slug: s.slug, onTap: onTerminal),
+                child: OpenPill(
+                  key: ValueKey('rc-terminal-${s.slug}'),
+                  onTap: onTerminal,
+                ),
               ),
               if (s.hasUrl) ...[
                 const SizedBox(width: 8),
@@ -320,35 +292,3 @@ class _SessionCard extends StatelessWidget {
 }
 
 /// The dark "›_ open" pill that launches the in-app terminal.
-class _OpenButton extends StatelessWidget {
-  const _OpenButton({required this.slug, required this.onTap});
-
-  final String slug;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final shed = context.shed;
-    return InkWell(
-      key: ValueKey('rc-terminal-$slug'),
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 40,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: shed.btnDark,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          '›_ open',
-          style: monoStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w500,
-            color: shed.btnDarkFg,
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -53,15 +53,6 @@ class ShedClient {
   Future<List<ImageInfo>> listImages() async =>
       _list(await _send('GET', '/api/images'), 'images', ImageInfo.fromJson);
 
-  /// Every rc/tmux session across all sheds on this host in one call
-  /// (`GET /api/sessions`). The cross-host Sessions view filters to rc rows. The
-  /// `_list` helper tolerates both the `{sessions:[…]}` wrapper and a bare array.
-  Future<List<HostSession>> listAllSessions() async => _list(
-    await _send('GET', '/api/sessions'),
-    'sessions',
-    HostSession.fromJson,
-  );
-
   /// This host's disk usage broken down by images/sheds/snapshots/orphans
   /// (`GET /api/system/df`). Throws (→ a per-host "unavailable" card) if the agent
   /// is too old to serve it.
