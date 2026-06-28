@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'shed_colors.dart';
 
+/// The IBM Plex families, bundled as assets under `fonts:` in pubspec (not
+/// fetched at runtime) so text paints in the right face from the first frame
+/// with no network dependency.
+const sansFamily = 'IBM Plex Sans';
+const monoFamily = 'IBM Plex Mono';
+
 /// The default light/dark themes, built once. [buildShedTheme] is pure and a
 /// theme depends only on its brightness, so memoizing avoids re-running
-/// `ColorScheme.fromSeed` + the Google-Fonts text-theme build on every theme
-/// toggle (each `MaterialApp` rebuild).
+/// `ColorScheme.fromSeed` + the text-theme build on every theme toggle (each
+/// `MaterialApp` rebuild).
 final ThemeData shedLightTheme = buildShedTheme(Brightness.light);
 final ThemeData shedDarkTheme = buildShedTheme(Brightness.dark);
 
@@ -18,7 +23,8 @@ TextStyle sansStyle({
   FontWeight? fontWeight,
   Color? color,
   double? letterSpacing,
-}) => GoogleFonts.ibmPlexSans(
+}) => TextStyle(
+  fontFamily: sansFamily,
   fontSize: fontSize,
   fontWeight: fontWeight,
   color: color,
@@ -28,7 +34,8 @@ TextStyle sansStyle({
 /// IBM Plex Mono text style — the design's `.mono` class (hosts/URLs, ids, status
 /// labels, helper text). Centralized so every monospace bit shares one family.
 TextStyle monoStyle({double? fontSize, FontWeight? fontWeight, Color? color}) =>
-    GoogleFonts.ibmPlexMono(
+    TextStyle(
+      fontFamily: monoFamily,
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
@@ -70,9 +77,11 @@ ThemeData buildShedTheme(Brightness brightness) {
     brightness: brightness,
     colorScheme: scheme,
   );
-  final textTheme = GoogleFonts.ibmPlexSansTextTheme(
-    base.textTheme,
-  ).apply(bodyColor: c.fg, displayColor: c.fg);
+  final textTheme = base.textTheme.apply(
+    fontFamily: sansFamily,
+    bodyColor: c.fg,
+    displayColor: c.fg,
+  );
 
   return base.copyWith(
     scaffoldBackgroundColor: c.bg,
@@ -88,7 +97,7 @@ ThemeData buildShedTheme(Brightness brightness) {
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
-      titleTextStyle: GoogleFonts.ibmPlexSans(
+      titleTextStyle: sansStyle(
         fontSize: 18,
         fontWeight: FontWeight.w700,
         color: c.fg,
@@ -180,7 +189,7 @@ ThemeData buildShedTheme(Brightness brightness) {
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: c.fg,
-      contentTextStyle: GoogleFonts.ibmPlexSans(color: c.bg, fontSize: 13),
+      contentTextStyle: sansStyle(fontSize: 13, color: c.bg),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),

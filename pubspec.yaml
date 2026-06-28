@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
-  # Theming: IBM Plex Sans/Mono (the design's typeface) and the owl brand SVGs.
-  google_fonts: ^6.3.0
+  # The owl brand SVGs. (IBM Plex Sans/Mono — the design's typeface — are bundled
+  # as font assets below, not fetched at runtime.)
   flutter_svg: ^2.0.10
 
   # SSH: exec (runWithResult) + PTY (tmux attach) + ed25519 generate/import.
@@ -53,3 +53,22 @@ flutter:
   uses-material-design: true
   assets:
     - assets/owl/
+  fonts:
+    - family: IBM Plex Sans
+      fonts:
+        - asset: assets/fonts/IBMPlexSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSans-Bold.ttf
+          weight: 700
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexMono-SemiBold.ttf
+          weight: 600
