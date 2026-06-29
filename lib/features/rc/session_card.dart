@@ -8,6 +8,7 @@ import '../../shed/shed_dtos.dart';
 import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
+import '../../widgets/card_shell.dart';
 import '../../widgets/kind_chip.dart';
 import '../../widgets/open_pill.dart';
 import '../../widgets/square_icon_button.dart';
@@ -175,16 +176,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             ],
           );
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: body,
-    );
+    return CardShell(child: body);
   }
 
   Widget _deleteButton(ShedColors c) {

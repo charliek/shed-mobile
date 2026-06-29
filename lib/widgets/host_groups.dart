@@ -19,6 +19,8 @@ class HostGroups extends ConsumerWidget {
     required this.section,
     required this.emptyMessage,
     required this.hostBuilder,
+    this.header = true,
+    this.onRefresh,
     super.key,
   });
 
@@ -26,6 +28,15 @@ class HostGroups extends ConsumerWidget {
   final String section;
   final String emptyMessage;
   final Widget Function(ServerRecord server) hostBuilder;
+
+  /// Whether to render the uppercase host header above each group. Off for the
+  /// System section, whose per-host card carries the host name itself.
+  final bool header;
+
+  /// Pull-to-refresh hook. Defaults to re-listing the servers; sections pass one
+  /// that also invalidates their per-host family (so refresh re-fetches the data,
+  /// not just the host list).
+  final void Function(WidgetRef ref)? onRefresh;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -44,12 +55,14 @@ class HostGroups extends ConsumerWidget {
           );
         }
         return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(serversProvider),
+          onRefresh: () async => onRefresh != null
+              ? onRefresh!(ref)
+              : ref.invalidate(serversProvider),
           child: ListView(
             padding: const EdgeInsets.only(top: 6, bottom: 40),
             children: [
               for (final s in list) ...[
-                HostGroupHeader(name: s.name),
+                if (header) HostGroupHeader(name: s.name),
                 hostBuilder(s),
               ],
             ],

@@ -7,6 +7,7 @@ import '../../shed/shed_dtos.dart';
 import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
+import '../../widgets/card_shell.dart';
 import '../../widgets/runtime_badge.dart';
 import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
@@ -84,14 +85,7 @@ class _ShedCardState extends ConsumerState<ShedCard> {
     final st = shedStatusTone(s.status);
     final meta = shedMetaLine(s);
 
-    final body = Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.line),
-        borderRadius: BorderRadius.circular(13),
-      ),
+    final body = CardShell(
       child: Row(
         children: [
           StatusDot(tone: st.tone, animate: st.pulse, size: 10),
