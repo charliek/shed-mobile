@@ -65,9 +65,24 @@ class _SessionCardState extends ConsumerState<SessionCard> {
         ref,
         context,
         action: 'session-delete',
+        // Build the RcService from the stable serverStore/identities (like
+        // hostSessionsProvider), not the autoDispose rcServiceProvider: nothing
+        // keeps the latter alive in the cross-host view, so reading it here would
+        // dispose mid-load ("Cannot use Ref after disposed") and the kill would
+        // never run.
         op: () async {
-          final svc = await ref.read(rcServiceProvider(_key).future);
-          await svc.kill(widget.session.slug);
+          final rec = await ref
+              .read(serverStoreProvider)
+              .get(widget.serverName);
+          if (rec == null) {
+            throw StateError('unknown server: ${widget.serverName}');
+          }
+          final identities = await ref.read(identitiesProvider.future);
+          await rcServiceFor(
+            rec,
+            identities,
+            widget.shedName,
+          ).kill(widget.session.slug);
         },
         invalidate: () {
           ref.invalidate(hostSessionsProvider(widget.serverName));

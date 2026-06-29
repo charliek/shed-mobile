@@ -205,7 +205,7 @@ final hostSessionsProvider = FutureProvider.autoDispose
       final lists = await Future.wait(
         running.map((shed) async {
           try {
-            final svc = _rcServiceFor(rec, identities, shed.name);
+            final svc = rcServiceFor(rec, identities, shed.name);
             final sessions = await svc.list().timeout(_hostFanoutTimeout);
             return [
               for (final s in sessions) (shedName: shed.name, session: s),
@@ -242,7 +242,7 @@ typedef ShedRef = ({String serverName, String shedName});
 /// Assemble an RcService from an already-resolved server record + identities, so
 /// the cross-host fan-out can resolve those once and reuse them across a host's
 /// sheds (rather than re-reading the keychain/server list per shed).
-RcService _rcServiceFor(
+RcService rcServiceFor(
   ServerRecord rec,
   List<SSHKeyPair> identities,
   String shedName,
@@ -265,7 +265,7 @@ Future<RcService> buildRcService(Ref ref, ShedRef key) async {
   final rec = await ref.read(serverStoreProvider).get(key.serverName);
   if (rec == null) throw StateError('unknown server: ${key.serverName}');
   final identities = await ref.read(identitiesProvider.future);
-  return _rcServiceFor(rec, identities, key.shedName);
+  return rcServiceFor(rec, identities, key.shedName);
 }
 
 final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
