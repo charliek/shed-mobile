@@ -17,6 +17,10 @@ class AllShedsView extends StatelessWidget {
   Widget build(BuildContext context) => HostGroups(
     section: 'all-sheds',
     emptyMessage: 'Add a host to see its sheds.',
+    onRefresh: (ref) {
+      ref.invalidate(serversProvider);
+      ref.invalidate(shedsProvider);
+    },
     hostBuilder: (s) => _HostSheds(serverName: s.name),
   );
 }

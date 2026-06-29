@@ -17,6 +17,11 @@ class AllSessionsView extends StatelessWidget {
   Widget build(BuildContext context) => HostGroups(
     section: 'all-sessions',
     emptyMessage: 'Add a host to see its sessions.',
+    onRefresh: (ref) {
+      ref.invalidate(serversProvider);
+      ref.invalidate(shedsProvider);
+      ref.invalidate(hostSessionsProvider);
+    },
     hostBuilder: (s) => _HostSessions(serverName: s.name),
   );
 }
