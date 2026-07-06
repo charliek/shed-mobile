@@ -7,6 +7,7 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/create_rc_screen.dart';
+import '../servers/add_server_screen.dart';
 import '../sheds/create_shed_screen.dart';
 
 /// Create-from-tab entry points: the cross-host Sheds/Sessions views can't assume
@@ -35,6 +36,18 @@ Future<void> startCreate(
   CreateTarget.shed => newShedFromTab(context, ref),
   CreateTarget.session => newSessionFromTab(context, ref),
 };
+
+/// Open the add-host flow (push AddServerScreen, then refresh the host list).
+/// The single home for "add a host", shared by the mobile Hosts FAB, the desktop
+/// sidebar "+ Add" link, and the desktop Hosts-pane header button.
+Future<void> openAddHost(BuildContext context, WidgetRef ref) async {
+  logDriveResult('add-open', ok: true);
+  await Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => const AddServerScreen()));
+  if (!context.mounted) return;
+  ref.invalidate(serversProvider);
+}
 
 /// New shed: pick a host (auto-skip when there's one), then CreateShedScreen.
 /// CreateShedScreen self-invalidates shedsProvider on a successful create, so the

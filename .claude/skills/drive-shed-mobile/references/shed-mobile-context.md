@@ -72,6 +72,7 @@ pushes the existing CreateShedScreen / CreateRcScreen.
 |---|---|
 | `allsheds-create` / `allsessions-create` | mobile FAB → picker |
 | `desktop-new-shed` / `desktop-new-session` | desktop header button → picker |
+| `desktop-add-host-header` | desktop Hosts-pane header → AddServerScreen |
 | `pick-host-<name>` | host picker row (New shed; skipped when only one host) |
 | `pick-shed-<server>-<shed>` | running-shed picker row (New session) |
 | `pick-empty` | "start a shed first" hint (no running sheds) |

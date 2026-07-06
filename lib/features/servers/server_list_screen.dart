@@ -8,10 +8,10 @@ import '../../widgets/count_chip.dart';
 import '../../widgets/host_groups.dart';
 import '../../widgets/owl.dart';
 import '../../widgets/theme_toggle_button.dart';
+import '../create/target_picker.dart';
 import '../hosts/host_card.dart';
 import '../identity/identity_screen.dart';
 import '../sheds/shed_list_screen.dart';
-import 'add_server_screen.dart';
 
 /// The mobile Hosts tab: the configured hosts, each a merged [HostCard] (status +
 /// disk usage). Add a host, tap one to browse its sheds, or remove it. (Absorbed
@@ -73,12 +73,7 @@ class ServerListScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('servers-add'),
-        onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AddServerScreen()),
-          );
-          ref.invalidate(serversProvider);
-        },
+        onPressed: () => openAddHost(context, ref),
         icon: const Icon(Icons.add, size: 20),
         label: const Text('Add host'),
       ),
