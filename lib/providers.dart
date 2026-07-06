@@ -165,8 +165,8 @@ final imagesProvider = FutureProvider.autoDispose
     });
 
 /// The selected top-level section. Shared by both layouts (mobile bottom tabs /
-/// desktop sidebar); the desktop shell maps `hosts` → `sheds` via
-/// [sectionForDesktop]. Mobile lands on Hosts.
+/// desktop sidebar), which each render all three sections directly. Both land on
+/// Hosts.
 final appSectionProvider = NotifierProvider<AppSectionNotifier, AppSection>(
   AppSectionNotifier.new,
 );
@@ -220,13 +220,24 @@ final hostSessionsProvider = FutureProvider.autoDispose
       return [for (final l in lists) ...l];
     });
 
-/// One host's disk usage (`GET /api/system/df`) for the System view. Best-effort:
-/// an old agent throws here and the section renders that host as "unavailable".
+/// One host's disk usage (`GET /api/system/df`), shown inline on each Hosts-tab
+/// card (images/sheds/snapshots/orphans). Best-effort: an old agent throws here
+/// and the card renders "unavailable" without marking the host unreachable.
 final hostSystemDfProvider = FutureProvider.autoDispose
     .family<SystemDiskUsage, String>((ref, serverName) async {
       final client = await ref.watch(shedClientProvider(serverName).future);
       return client.getSystemDf().timeout(_hostFanoutTimeout);
     });
+
+/// Refresh everything the Hosts section renders: the saved-host list plus each
+/// host's sheds (reachability + summary) and disk usage. Shared by the mobile
+/// Hosts screen and the desktop Hosts pane so "what a Hosts refresh means" lives
+/// in one place.
+void invalidateHosts(WidgetRef ref) {
+  ref.invalidate(serversProvider);
+  ref.invalidate(shedsProvider);
+  ref.invalidate(hostSystemDfProvider);
+}
 
 /// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
 /// to the stored fingerprint) and drive shed-ext-rc. The advisory target label

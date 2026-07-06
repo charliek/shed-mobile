@@ -12,14 +12,13 @@ void main() {
     });
   });
 
-  group('sectionForDesktop', () {
-    test('hosts maps to sheds (desktop has no Hosts pane)', () {
-      expect(sectionForDesktop(AppSection.hosts), AppSection.sheds);
-    });
-    test('every other section is unchanged', () {
-      expect(sectionForDesktop(AppSection.sheds), AppSection.sheds);
-      expect(sectionForDesktop(AppSection.sessions), AppSection.sessions);
-      expect(sectionForDesktop(AppSection.system), AppSection.system);
+  group('AppSection', () {
+    test('is exactly the three merged sections (System folded into Hosts)', () {
+      expect(AppSection.values, [
+        AppSection.hosts,
+        AppSection.sheds,
+        AppSection.sessions,
+      ]);
     });
   });
 }

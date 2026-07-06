@@ -12,8 +12,8 @@ import 'error_retry.dart';
 /// A cross-host section body: one group per saved host — a host header followed by
 /// [hostBuilder]'s widget for that host. Each host body is its own ConsumerWidget
 /// watching its own per-host provider, so hosts load and error **independently**
-/// (no all-or-nothing spinner). The shared cross-host iteration for the Sheds,
-/// Sessions, and System sections in both layouts.
+/// (no all-or-nothing spinner). The shared cross-host iteration for the Hosts,
+/// Sheds, and Sessions sections in both layouts.
 class HostGroups extends ConsumerWidget {
   const HostGroups({
     required this.section,
@@ -21,6 +21,7 @@ class HostGroups extends ConsumerWidget {
     required this.hostBuilder,
     this.header = true,
     this.onRefresh,
+    this.bottomInset = 40,
     super.key,
   });
 
@@ -30,13 +31,17 @@ class HostGroups extends ConsumerWidget {
   final Widget Function(ServerRecord server) hostBuilder;
 
   /// Whether to render the uppercase host header above each group. Off for the
-  /// System section, whose per-host card carries the host name itself.
+  /// Hosts section, whose per-host card carries the host name itself.
   final bool header;
 
   /// Pull-to-refresh hook. Defaults to re-listing the servers; sections pass one
   /// that also invalidates their per-host family (so refresh re-fetches the data,
   /// not just the host list).
   final void Function(WidgetRef ref)? onRefresh;
+
+  /// Bottom list padding — raised (e.g. 96) on sections that float a FAB over the
+  /// list so the last card clears it.
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,7 +64,7 @@ class HostGroups extends ConsumerWidget {
               ? onRefresh!(ref)
               : ref.invalidate(serversProvider),
           child: ListView(
-            padding: const EdgeInsets.only(top: 6, bottom: 40),
+            padding: EdgeInsets.only(top: 6, bottom: bottomInset),
             children: [
               for (final s in list) ...[
                 if (header) HostGroupHeader(name: s.name),

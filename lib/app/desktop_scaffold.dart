@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/hosts/hosts_view.dart';
 import '../features/identity/identity_screen.dart';
 import '../features/rc/all_sessions_view.dart';
 import '../features/servers/add_server_screen.dart';
 import '../features/sheds/all_sheds_view.dart';
-import '../features/system/system_view.dart';
 import '../marionette/drive_state.dart';
 import '../providers.dart';
 import '../theme/shed_colors.dart';
@@ -23,8 +23,9 @@ class DesktopScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // The shared `hosts` section has no desktop pane; fold it onto Sheds.
-    final section = sectionForDesktop(ref.watch(appSectionProvider));
+    // Every section has a real desktop pane now (Hosts absorbed System), so the
+    // shared section renders directly — no cross-breakpoint fold.
+    final section = ref.watch(appSectionProvider);
     logDriveState(
       'layout=desktop section=${section.name} '
       'theme=${Theme.of(context).brightness.name}',
@@ -50,8 +51,8 @@ class _MainPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final shed = context.shed;
     final (title, body) = switch (section) {
+      AppSection.hosts => ('Hosts', const HostsView()),
       AppSection.sessions => ('Sessions', const AllSessionsView()),
-      AppSection.system => ('System', const SystemView()),
       _ => ('Sheds', const AllShedsView()),
     };
     return Column(
@@ -128,11 +129,13 @@ class _Sidebar extends ConsumerWidget {
             label: 'Sessions',
           ),
           const _NavItem(
-            section: AppSection.system,
-            icon: Icons.storage_outlined,
-            label: 'System',
+            section: AppSection.hosts,
+            icon: Icons.dns_outlined,
+            label: 'Hosts',
           ),
-          // Hosts pinned to the bottom (reverse), scrolling up on overflow.
+          // The saved-host quick list, pinned to the bottom (reverse), scrolling
+          // up on overflow. A reference list (not nav) — the Hosts nav item above
+          // opens the pane; these rows just show what's configured.
           Expanded(
             child: SingleChildScrollView(
               reverse: true,
@@ -189,7 +192,7 @@ class _NavItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final shed = context.shed;
-    final active = sectionForDesktop(ref.watch(appSectionProvider)) == section;
+    final active = ref.watch(appSectionProvider) == section;
     final fg = active ? shed.accent : shed.fg2;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),

@@ -7,15 +7,24 @@
 
 ## Screen key map
 
-### ServerListScreen (home) — Scaffold key `servers-screen`
+### Hosts screen (home) — Scaffold key `servers-screen`
+The mobile Hosts tab (`ServerListScreen`). Absorbed the old System section: each
+host is a merged `HostCard` (status + disk usage). Bottom tabs are `nav-hosts` /
+`nav-sheds` / `nav-sessions` — **no `nav-system`**. The desktop Hosts pane
+(sidebar `nav-hosts`) renders the same cards.
+
 | Key | What |
 |---|---|
 | `servers-add` | FAB → AddServerScreen |
-| `servers-empty` | empty-state text |
-| `server-<name>` | server tile (tap → ShedListScreen) |
-| `server-remove-<name>` | remove server |
+| `hosts-empty` | empty-state text (from the shared HostGroups body) |
+| `host-card-<name>` | host card (mobile: tap → ShedListScreen) |
+| `host-card-error-<name>` | host card when the host is unreachable |
+| `server-remove-<name>` | remove host (mobile card) |
+| `desktop-server-remove-<name>` | remove host (desktop pane card) |
 
-MSTATE: `screen=servers count=N`. MRESULT: `server-remove ok`.
+MSTATE: `screen=hosts hosts=N`; per card `host-card host=<name> reachable=t|f|-
+df=ok|error|loading sheds=N`; shell `layout=mobile|desktop section=hosts`.
+MRESULT: `server-remove ok`.
 
 ### AddServerScreen — `add-server-screen`
 | Key | What |
