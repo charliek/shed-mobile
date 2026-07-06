@@ -5,7 +5,6 @@ import '../features/create/target_picker.dart';
 import '../features/hosts/hosts_view.dart';
 import '../features/identity/identity_screen.dart';
 import '../features/rc/all_sessions_view.dart';
-import '../features/servers/add_server_screen.dart';
 import '../features/sheds/all_sheds_view.dart';
 import '../marionette/drive_state.dart';
 import '../providers.dart';
@@ -75,6 +74,10 @@ class _MainPane extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (section == AppSection.hosts)
+                const _AddHostHeaderButton(
+                  key: ValueKey('desktop-add-host-header'),
+                ),
               if (section == AppSection.sheds)
                 const _CreateButton(
                   key: ValueKey('desktop-new-shed'),
@@ -96,21 +99,22 @@ class _MainPane extends StatelessWidget {
   }
 }
 
-/// The desktop pane-header create action (accent text button): picks a target,
-/// then pushes the existing create screen. See [startCreate].
-class _CreateButton extends ConsumerWidget {
-  const _CreateButton({required this.target, super.key});
+/// A desktop pane-header action rendered as an accent "+ label" text button —
+/// the shared chrome for New shed / New session / Add host.
+class _AccentHeaderButton extends StatelessWidget {
+  const _AccentHeaderButton({required this.label, required this.onPressed});
 
-  final CreateTarget target;
+  final String label;
+  final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final shed = context.shed;
     return TextButton.icon(
-      onPressed: () => startCreate(context, ref, target),
+      onPressed: onPressed,
       icon: Icon(Icons.add, size: 17, color: shed.accent),
       label: Text(
-        createLabel(target),
+        label,
         style: sansStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -119,6 +123,31 @@ class _CreateButton extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The Sheds/Sessions pane-header create action: picks a target, then pushes the
+/// existing create screen. See [startCreate].
+class _CreateButton extends ConsumerWidget {
+  const _CreateButton({required this.target, super.key});
+
+  final CreateTarget target;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => _AccentHeaderButton(
+    label: createLabel(target),
+    onPressed: () => startCreate(context, ref, target),
+  );
+}
+
+/// The Hosts pane-header add-host action (matches New shed / New session).
+class _AddHostHeaderButton extends ConsumerWidget {
+  const _AddHostHeaderButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => _AccentHeaderButton(
+    label: 'Add host',
+    onPressed: () => openAddHost(context, ref),
+  );
 }
 
 class _Sidebar extends ConsumerWidget {
@@ -271,14 +300,7 @@ class _AddHostButton extends ConsumerWidget {
     final shed = context.shed;
     return InkWell(
       key: const ValueKey('desktop-add-host'),
-      onTap: () async {
-        logDriveResult('add-open', ok: true);
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const AddServerScreen()),
-        );
-        if (!context.mounted) return;
-        ref.invalidate(serversProvider);
-      },
+      onTap: () => openAddHost(context, ref),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
