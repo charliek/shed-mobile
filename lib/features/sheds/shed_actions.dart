@@ -6,9 +6,10 @@ import '../../providers.dart';
 import '../../shed/shed_client.dart';
 
 /// The shared action kernel: run [op], log the drive result, surface a failure as
-/// a SnackBar, and always run [invalidate] so the UI refetches the real post-op
-/// state. [op] does its own work (resolve a client/service + call it) so this
-/// serves both HTTP shed actions and SSH session actions.
+/// a SnackBar, and (while the widget is still mounted) run [invalidate] so the UI
+/// refetches the real post-op state. [op] does its own work (resolve a
+/// client/service + call it) so this serves both HTTP shed actions and SSH session
+/// actions.
 Future<void> runAction(
   WidgetRef ref,
   BuildContext context, {
@@ -27,7 +28,11 @@ Future<void> runAction(
       ).showSnackBar(SnackBar(content: Text('$action failed: $e')));
     }
   } finally {
-    invalidate();
+    // Guard against a disposed ref: if the widget unmounted while [op] was in
+    // flight, the caller's `ref.invalidate(...)` would throw "Cannot use Ref
+    // after disposed". Skipping it is safe — the invalidated data is served by
+    // autoDispose.family providers that refetch when next watched.
+    if (context.mounted) invalidate();
   }
 }
 
