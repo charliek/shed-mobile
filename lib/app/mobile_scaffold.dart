@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/rc/all_sessions_view.dart';
 import '../features/servers/server_list_screen.dart';
 import '../features/sheds/all_sheds_view.dart';
-import '../features/system/system_view.dart';
 import '../marionette/drive_state.dart';
 import '../providers.dart';
 import '../theme/shed_colors.dart';
@@ -12,9 +11,9 @@ import '../theme/shed_theme.dart';
 import 'app_section.dart';
 
 /// The mobile layout: the active section above a bottom tab bar (Hosts · Sheds ·
-/// Sessions · System). Drill-in screens (per-host sheds, sessions, create flows,
-/// terminal) push full-screen routes on the root Navigator, which naturally cover
-/// the tab bar — so there's no separate "hide tabs" state to track.
+/// Sessions). Drill-in screens (per-host sheds, sessions, create flows, terminal)
+/// push full-screen routes on the root Navigator, which naturally cover the tab
+/// bar — so there's no separate "hide tabs" state to track.
 class MobileScaffold extends ConsumerWidget {
   const MobileScaffold({super.key});
 
@@ -23,15 +22,15 @@ class MobileScaffold extends ConsumerWidget {
     final section = ref.watch(appSectionProvider);
     logDriveState('layout=mobile section=${section.name}');
     final body = switch (section) {
-      // The Hosts tab is the existing server list (its own Scaffold: brand
-      // header with the theme/identity actions, server tiles, Add-host FAB).
+      // The Hosts tab is the merged host list (its own Scaffold: brand header
+      // with the theme/identity actions, host cards with disk usage, Add-host
+      // FAB).
       AppSection.hosts => const ServerListScreen(),
       AppSection.sheds => const _Section(title: 'Sheds', child: AllShedsView()),
       AppSection.sessions => const _Section(
         title: 'Sessions',
         child: AllSessionsView(),
       ),
-      AppSection.system => const _Section(title: 'System', child: SystemView()),
     };
     return PopScope(
       // From a non-Hosts tab, Android back returns to Hosts before exiting.
@@ -82,7 +81,6 @@ class _TabBar extends StatelessWidget {
               _Tab(AppSection.hosts, Icons.dns_outlined, 'Hosts'),
               _Tab(AppSection.sheds, Icons.view_in_ar_outlined, 'Sheds'),
               _Tab(AppSection.sessions, Icons.terminal_outlined, 'Sessions'),
-              _Tab(AppSection.system, Icons.storage_outlined, 'System'),
             ],
           ),
         ),

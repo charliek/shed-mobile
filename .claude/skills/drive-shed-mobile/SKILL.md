@@ -51,7 +51,8 @@ or text entry worked.**
 
 Debug-only structured lines (tree-shaken from release):
 
-- `MSTATE screen=servers count=N` · `MSTATE screen=add-server step=input|confirm`
+- `MSTATE screen=hosts hosts=N` · `MSTATE layout=mobile|desktop section=…`
+  · `MSTATE screen=add-server step=input|confirm`
   · `MSTATE screen=sheds server=X count=N` · `MSTATE screen=create lines=N done=…`
 - `MRESULT add-server ok` · `MRESULT shed-start ok` · `MRESULT shed-delete ok` · …
 
@@ -69,7 +70,7 @@ $M tap --key addserver-connect
 until $M get-logs | grep -q 'screen=add-server step=confirm'; do sleep 1; done
 $M tap --key addserver-confirm                    # confirm the two fingerprints
 until $M get-logs | grep -q 'MRESULT add-server ok'; do sleep 1; done
-$M tap --key server-localhost                      # tile -> ShedListScreen (key = server-<name>)
+$M tap --key host-card-localhost                   # tile -> ShedListScreen (key = host-card-<name>)
 $M get-logs | grep MSTATE | tail -1                # screen=sheds count=N
 $M take-screenshots --output ./shed-mobile.png
 ```

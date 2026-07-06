@@ -6,7 +6,7 @@ import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/storage/secret_store.dart';
 
 void main() {
-  testWidgets('home renders the (empty) servers screen', (tester) async {
+  testWidgets('home renders the (empty) Hosts screen', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -17,7 +17,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('servers-screen')), findsOneWidget);
-    expect(find.byKey(const ValueKey('servers-empty')), findsOneWidget);
+    // The merged Hosts body is HostGroups, whose empty state keys `hosts-empty`.
+    expect(find.byKey(const ValueKey('hosts-empty')), findsOneWidget);
     expect(find.byKey(const ValueKey('servers-add')), findsOneWidget);
   });
 }
