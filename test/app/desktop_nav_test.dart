@@ -40,5 +40,14 @@ void main() {
     expect(find.byKey(const ValueKey('nav-system')), findsNothing);
     // The saved-host quick-reference row survives the merge.
     expect(find.byKey(const ValueKey('desktop-host-mini2')), findsOneWidget);
+
+    // The Sheds/Sessions panes carry the create header buttons; Hosts does not.
+    await tester.tap(find.byKey(const ValueKey('nav-sheds')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('desktop-new-shed')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('nav-sessions')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('desktop-new-session')), findsOneWidget);
   });
 }

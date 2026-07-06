@@ -17,6 +17,8 @@ class AllShedsView extends StatelessWidget {
   Widget build(BuildContext context) => HostGroups(
     section: 'all-sheds',
     emptyMessage: 'Add a host to see its sheds.',
+    // Extra bottom inset so the last card clears the "New shed" FAB (mobile).
+    bottomInset: 96,
     onRefresh: (ref) {
       ref.invalidate(serversProvider);
       ref.invalidate(shedsProvider);
