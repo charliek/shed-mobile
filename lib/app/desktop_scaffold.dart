@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/create/target_picker.dart';
 import '../features/hosts/hosts_view.dart';
 import '../features/identity/identity_screen.dart';
 import '../features/rc/all_sessions_view.dart';
@@ -74,12 +75,48 @@ class _MainPane extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (section == AppSection.sheds)
+                const _CreateButton(
+                  key: ValueKey('desktop-new-shed'),
+                  target: CreateTarget.shed,
+                ),
+              if (section == AppSection.sessions)
+                const _CreateButton(
+                  key: ValueKey('desktop-new-session'),
+                  target: CreateTarget.session,
+                ),
+              const SizedBox(width: 8),
               const ThemeToggleButton(key: ValueKey('desktop-theme-toggle')),
             ],
           ),
         ),
         Expanded(child: body),
       ],
+    );
+  }
+}
+
+/// The desktop pane-header create action (accent text button): picks a target,
+/// then pushes the existing create screen. See [startCreate].
+class _CreateButton extends ConsumerWidget {
+  const _CreateButton({required this.target, super.key});
+
+  final CreateTarget target;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shed = context.shed;
+    return TextButton.icon(
+      onPressed: () => startCreate(context, ref, target),
+      icon: Icon(Icons.add, size: 17, color: shed.accent),
+      label: Text(
+        createLabel(target),
+        style: sansStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: shed.accent,
+        ),
+      ),
     );
   }
 }

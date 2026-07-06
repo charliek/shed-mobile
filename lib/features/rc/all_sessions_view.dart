@@ -17,6 +17,8 @@ class AllSessionsView extends StatelessWidget {
   Widget build(BuildContext context) => HostGroups(
     section: 'all-sessions',
     emptyMessage: 'Add a host to see its sessions.',
+    // Extra bottom inset so the last card clears the "New session" FAB (mobile).
+    bottomInset: 96,
     onRefresh: (ref) {
       ref.invalidate(serversProvider);
       ref.invalidate(shedsProvider);

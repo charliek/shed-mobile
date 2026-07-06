@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/rc/all_sessions_view.dart';
 import '../features/servers/server_list_screen.dart';
 import '../features/sheds/all_sheds_view.dart';
+import '../features/create/target_picker.dart';
 import '../marionette/drive_state.dart';
 import '../providers.dart';
 import '../theme/shed_colors.dart';
@@ -26,9 +27,20 @@ class MobileScaffold extends ConsumerWidget {
       // with the theme/identity actions, host cards with disk usage, Add-host
       // FAB).
       AppSection.hosts => const ServerListScreen(),
-      AppSection.sheds => const _Section(title: 'Sheds', child: AllShedsView()),
+      AppSection.sheds => const _Section(
+        title: 'Sheds',
+        fab: _CreateFab(
+          key: ValueKey('allsheds-create'),
+          target: CreateTarget.shed,
+        ),
+        child: AllShedsView(),
+      ),
       AppSection.sessions => const _Section(
         title: 'Sessions',
+        fab: _CreateFab(
+          key: ValueKey('allsessions-create'),
+          target: CreateTarget.session,
+        ),
         child: AllSessionsView(),
       ),
     };
@@ -45,18 +57,38 @@ class MobileScaffold extends ConsumerWidget {
   }
 }
 
-/// A cross-host section tab: a titled app bar over the shared section view.
+/// A cross-host section tab: a titled app bar over the shared section view, with
+/// an optional create FAB (New shed / New session).
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({required this.title, required this.child, this.fab});
 
   final String title;
   final Widget child;
+  final Widget? fab;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: child,
+      floatingActionButton: fab,
+    );
+  }
+}
+
+/// The cross-host create FAB: picks a target (host for a shed, running shed for a
+/// session) then pushes the existing create screen. See [startCreate].
+class _CreateFab extends ConsumerWidget {
+  const _CreateFab({required this.target, super.key});
+
+  final CreateTarget target;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return FloatingActionButton.extended(
+      onPressed: () => startCreate(context, ref, target),
+      icon: const Icon(Icons.add, size: 20),
+      label: Text(createLabel(target)),
     );
   }
 }

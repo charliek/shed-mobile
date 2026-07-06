@@ -61,3 +61,19 @@ MSTATE: `screen=sheds server=X count=N`. MRESULT: `shed-start|shed-stop|shed-del
 | `create-log` | streamed progress lines |
 
 MSTATE: `screen=create lines=N done=…`. MRESULT: `shed-create ok|error`.
+
+### Cross-host create (from the Sheds / Sessions tabs)
+The top-level Sheds/Sessions views can create without drilling in. Mobile: a FAB
+(`allsheds-create` / `allsessions-create`). Desktop: a pane-header button
+(`desktop-new-shed` / `desktop-new-session`). Each opens a target picker, then
+pushes the existing CreateShedScreen / CreateRcScreen.
+
+| Key | What |
+|---|---|
+| `allsheds-create` / `allsessions-create` | mobile FAB → picker |
+| `desktop-new-shed` / `desktop-new-session` | desktop header button → picker |
+| `pick-host-<name>` | host picker row (New shed; skipped when only one host) |
+| `pick-shed-<server>-<shed>` | running-shed picker row (New session) |
+| `pick-empty` | "start a shed first" hint (no running sheds) |
+
+MRESULT: `pick-host ok`, `pick-shed ok`.

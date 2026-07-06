@@ -26,4 +26,24 @@ void main() {
     expect(find.byKey(const ValueKey('nav-sessions')), findsOneWidget);
     expect(find.byKey(const ValueKey('nav-system')), findsNothing);
   });
+
+  testWidgets('Sheds/Sessions tabs expose create FABs', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [serversProvider.overrideWith((ref) => <ServerRecord>[])],
+        child: MaterialApp(theme: shedLightTheme, home: const MobileScaffold()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('nav-sheds')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('allsheds-create')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('nav-sessions')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('allsessions-create')), findsOneWidget);
+  });
 }
