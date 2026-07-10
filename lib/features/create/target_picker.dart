@@ -65,7 +65,7 @@ Future<void> newShedFromTab(BuildContext context, WidgetRef ref) async {
 /// New session: pick a running shed across hosts, then CreateRcScreen. The picker
 /// only offers running sheds (a session needs one). On a created session,
 /// invalidate the host's sessions — CreateRcScreen pops the session but does not
-/// self-invalidate hostSessionsProvider, so this refresh is load-bearing.
+/// self-invalidate overviewProvider, so this refresh is load-bearing.
 Future<void> newSessionFromTab(BuildContext context, WidgetRef ref) async {
   final target = await pickShed(context, ref);
   if (target == null || !context.mounted) return;
@@ -77,7 +77,7 @@ Future<void> newSessionFromTab(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (created != null) {
-    ref.invalidate(hostSessionsProvider(serverName));
+    ref.invalidate(overviewProvider(serverName));
     ref.invalidate(
       rcSessionsProvider((serverName: serverName, shedName: shedName)),
     );

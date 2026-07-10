@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app_section.dart';
 import 'control/control_token_provider.dart';
 import 'control/token_bundle.dart';
+import 'core/app_error.dart';
 import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
 import 'net/pinned_http_client.dart';
+import 'rc/rc_capabilities.dart';
 import 'rc/rc_models.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
@@ -178,65 +180,102 @@ class AppSectionNotifier extends Notifier<AppSection> {
   void select(AppSection section) => state = section;
 }
 
-/// Bound on a single host's fan-out call so one slow/offline host (e.g. a hung SSH
-/// mint) can't pin its group in a perpetual spinner — the per-host [AsyncValue]
-/// fails to a "unreachable" card instead. The cross-host views render one group
-/// per host, each watching its own per-host provider, so hosts fill in
-/// independently rather than all-or-nothing.
+/// Bound on a single host's overview call so one slow/offline host (e.g. a hung
+/// TLS handshake) can't pin its group in a perpetual spinner — the per-host
+/// [AsyncValue] fails to an "unreachable" card instead. The cross-host views
+/// render one group per host, each watching its own per-host provider, so hosts
+/// fill in independently rather than all-or-nothing.
 const _hostFanoutTimeout = Duration(seconds: 12);
+
+/// The outcome of one host's overview fetch. Sealed so the old-server case is a
+/// terminal VALUE the views render as a "needs upgrade" card, not a retryable
+/// error: Riverpod 3 auto-retries thrown `Exception`s, and a server that
+/// predates GET /api/overview will never start serving it mid-session — leaving
+/// it an error would flicker the card and re-poll a server that can't change.
+/// Genuine transport errors still throw (retry stays useful for those).
+sealed class OverviewResult {
+  const OverviewResult();
+}
+
+/// A served overview snapshot.
+class OverviewData extends OverviewResult {
+  const OverviewData(this.overview);
+  final Overview overview;
+}
+
+/// The server predates GET /api/overview (404 on the route) — the Hosts and
+/// Sessions views hard-require an upgraded server (the breaking posture) and
+/// render a clear upgrade card, never silent emptiness.
+class OverviewUnsupported extends OverviewResult {
+  const OverviewUnsupported();
+}
+
+/// One host's whole snapshot in a single `GET /api/overview`: server features +
+/// disk usage + every shed with its rc-enriched sessions and capabilities. This
+/// replaces the former `shedsProvider` + `hostSystemDfProvider` +
+/// per-shed-SSH-`shed-ext-rc-list` fan-out that drove the Hosts and Sessions
+/// views. A server too old to serve the route responds 404, which resolves to
+/// the TERMINAL [OverviewUnsupported] value (the route is top-level, so a 404
+/// can only mean the endpoint doesn't exist); transport errors throw.
+final overviewProvider = FutureProvider.autoDispose
+    .family<OverviewResult, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      try {
+        return OverviewData(
+          await client.fetchOverview().timeout(_hostFanoutTimeout),
+        );
+      } on AppError catch (e) {
+        if (e.statusCode == 404) return const OverviewUnsupported();
+        rethrow;
+      }
+    });
 
 /// One (shed, rc session) pair on a host — the cross-host Sessions view's unit.
 typedef ShedSession = ({String shedName, RcSession session});
 
-/// Every rc session on one host, by fanning `shed-ext-rc list` over SSH across the
-/// host's running sheds (one connection per running shed, bounded + tolerant; a
-/// shed that fails contributes no sessions). The HTTP `GET /api/sessions` is
-/// deliberately *not* used here: it returns tmux rows without the `rc`
-/// classification (kind/state) — the CLI fills that in client-side over SSH — so
-/// the rich cross-host view needs the SSH path too. (Ticket for the shed project:
-/// populate `rc` in /api/sessions so a future HTTP path can replace this fan-out.)
-final hostSessionsProvider = FutureProvider.autoDispose
-    .family<List<ShedSession>, String>((ref, serverName) async {
-      final rec = await ref.read(serverStoreProvider).get(serverName);
-      if (rec == null) throw StateError('unknown server: $serverName');
-      final identities = await ref.read(identitiesProvider.future);
-      final sheds = await ref.watch(shedsProvider(serverName).future);
-      final running = sheds.where((s) => s.isRunning).toList();
-      final lists = await Future.wait(
-        running.map((shed) async {
-          try {
-            final svc = rcServiceFor(rec, identities, shed.name);
-            final sessions = await svc.list().timeout(_hostFanoutTimeout);
-            return [
-              for (final s in sessions) (shedName: shed.name, session: s),
-            ];
-          } catch (_) {
-            // A shed whose SSH/list fails contributes no sessions (tolerant) —
-            // host-level reachability is surfaced by shedsProvider above.
-            return const <ShedSession>[];
-          }
-        }),
-      );
-      return [for (final l in lists) ...l];
-    });
+/// Flatten an overview into the Sessions view's (shed, session) pairs — the
+/// server rc-enriches the sessions, and a stopped shed contributes none. The
+/// pure core of what replaced the per-shed SSH fan-out (SSH now stays only for
+/// terminal attach, RcService create/kill/prompt, and token mint).
+List<ShedSession> shedSessionPairs(Overview overview) => [
+  for (final s in overview.sheds)
+    for (final sess in s.sessions) (shedName: s.shed.name, session: sess),
+];
 
-/// One host's disk usage (`GET /api/system/df`), shown inline on each Hosts-tab
-/// card (images/sheds/snapshots/orphans). Best-effort: an old agent throws here
-/// and the card renders "unavailable" without marking the host unreachable.
-final hostSystemDfProvider = FutureProvider.autoDispose
-    .family<SystemDiskUsage, String>((ref, serverName) async {
-      final client = await ref.watch(shedClientProvider(serverName).future);
-      return client.getSystemDf().timeout(_hostFanoutTimeout);
+/// The rc capabilities of one shed, read from the host overview (a single call
+/// shared with the Hosts/Sessions views). Null when the shed is absent/stopped,
+/// the server reported no caps, or the server predates /api/overview
+/// ([OverviewUnsupported]) — the create form treats all of those as "absent" and
+/// falls back to its safe base (claude + shell). A real transport error bubbles
+/// so the form can degrade to the base too.
+final shedCapabilitiesProvider = FutureProvider.autoDispose
+    .family<RcCapabilities?, ShedRef>((ref, key) async {
+      final result = await ref.watch(overviewProvider(key.serverName).future);
+      if (result is! OverviewData) return null; // old server → absent caps
+      for (final s in result.overview.sheds) {
+        if (s.shed.name == key.shedName) return s.capabilities;
+      }
+      return null;
     });
 
 /// Refresh everything the Hosts section renders: the saved-host list plus each
-/// host's sheds (reachability + summary) and disk usage. Shared by the mobile
-/// Hosts screen and the desktop Hosts pane so "what a Hosts refresh means" lives
-/// in one place.
+/// host's overview (reachability + shed summary + disk usage + sessions). Shared
+/// by the mobile Hosts screen and the desktop Hosts pane so "what a Hosts refresh
+/// means" lives in one place.
 void invalidateHosts(WidgetRef ref) {
   ref.invalidate(serversProvider);
-  ref.invalidate(shedsProvider);
-  ref.invalidate(hostSystemDfProvider);
+  ref.invalidate(overviewProvider);
+}
+
+/// Refetch everything that renders one host's sheds after a shed mutation
+/// (create/start/stop/restart/delete) or an explicit refresh: the per-host shed
+/// list AND the host overview (the Hosts and Sessions views render from
+/// [overviewProvider] now, so invalidating only [shedsProvider] would leave them
+/// stale). The single home for "a shed changed on this server" — use it
+/// everywhere [shedsProvider] used to be invalidated alone.
+void invalidateShedViews(WidgetRef ref, String serverName) {
+  ref.invalidate(shedsProvider(serverName));
+  ref.invalidate(overviewProvider(serverName));
 }
 
 /// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned

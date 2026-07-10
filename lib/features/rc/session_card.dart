@@ -65,11 +65,10 @@ class _SessionCardState extends ConsumerState<SessionCard> {
         ref,
         context,
         action: 'session-delete',
-        // Build the RcService from the stable serverStore/identities (like
-        // hostSessionsProvider), not the autoDispose rcServiceProvider: nothing
-        // keeps the latter alive in the cross-host view, so reading it here would
-        // dispose mid-load ("Cannot use Ref after disposed") and the kill would
-        // never run.
+        // Build the RcService from the stable serverStore/identities, not the
+        // autoDispose rcServiceProvider: nothing keeps the latter alive in the
+        // cross-host view, so reading it here would dispose mid-load ("Cannot use
+        // Ref after disposed") and the kill would never run.
         op: () async {
           final rec = await ref
               .read(serverStoreProvider)
@@ -85,7 +84,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
           ).kill(widget.session.slug);
         },
         invalidate: () {
-          ref.invalidate(hostSessionsProvider(widget.serverName));
+          ref.invalidate(overviewProvider(widget.serverName));
           ref.invalidate(rcSessionsProvider(_key));
         },
       );

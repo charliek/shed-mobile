@@ -36,9 +36,11 @@ Future<void> runAction(
   }
 }
 
-/// A shed lifecycle action (start/stop/restart): resolves the server's client,
-/// runs [op] against it, and refetches `shedsProvider(serverName)`. Shared by the
-/// per-host shed list and the cross-host shed cards (the card layers busy state).
+/// A shed lifecycle action (start/stop/restart/delete): resolves the server's
+/// client, runs [op] against it, and refetches the host's shed views (the shed
+/// list AND the overview — the Hosts/Sessions views render from
+/// [overviewProvider], so both must refresh). Shared by the per-host shed list
+/// and the cross-host shed cards (the card layers busy state).
 Future<void> runShedAction(
   WidgetRef ref,
   BuildContext context, {
@@ -53,5 +55,5 @@ Future<void> runShedAction(
     final client = await ref.read(shedClientProvider(serverName).future);
     await op(client);
   },
-  invalidate: () => ref.invalidate(shedsProvider(serverName)),
+  invalidate: () => invalidateShedViews(ref, serverName),
 );

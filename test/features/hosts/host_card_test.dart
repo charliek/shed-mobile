@@ -33,25 +33,40 @@ const _usage = SystemDiskUsage(
 );
 
 const _twoSheds = [
-  Shed(name: 'a', status: 'running', backend: 'vz'),
-  Shed(name: 'b', status: 'stopped'),
+  OverviewShed(
+    shed: Shed(name: 'a', status: 'running', backend: 'vz'),
+    sessions: [],
+  ),
+  OverviewShed(
+    shed: Shed(name: 'b', status: 'stopped'),
+    sessions: [],
+  ),
 ];
+
+/// A whole-host overview with a df block + two sheds, as the served result.
+OverviewResult _overview({SystemDiskUsage? df = _usage}) => OverviewData(
+  Overview(
+    server: const OverviewServer(version: '1', features: []),
+    df: df,
+    sheds: _twoSheds,
+    warnings: const [],
+  ),
+);
 
 Future<void> _pump(
   WidgetTester tester, {
   required bool mobile,
-  required Future<List<Shed>> Function(Ref, String) sheds,
-  required Future<SystemDiskUsage> Function(Ref, String) df,
+  required Future<OverviewResult> Function(Ref, String) overview,
   VoidCallback? onOpen,
 }) async {
   await tester.binding.setSurfaceSize(const Size(900, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        shedsProvider.overrideWith(sheds),
-        hostSystemDfProvider.overrideWith(df),
-      ],
+      // Disable Riverpod 3 auto-retry so an errored overview settles to a stable
+      // error the card renders (rather than being retried into perpetual loading).
+      retry: (_, _) => null,
+      overrides: [overviewProvider.overrideWith(overview)],
       child: MaterialApp(
         theme: shedLightTheme,
         home: Scaffold(
@@ -64,15 +79,10 @@ Future<void> _pump(
 }
 
 void main() {
-  testWidgets('df + sheds data: total, badge, breakdown, running summary', (
+  testWidgets('overview data: total, badge, breakdown, running summary', (
     tester,
   ) async {
-    await _pump(
-      tester,
-      mobile: true,
-      sheds: (_, _) async => _twoSheds,
-      df: (_, _) async => _usage,
-    );
+    await _pump(tester, mobile: true, overview: (_, _) async => _overview());
     expect(find.byKey(const ValueKey('host-card-h')), findsOneWidget);
     expect(find.text('h'), findsOneWidget);
     expect(find.text('vz'), findsOneWidget); // runtime badge
@@ -83,29 +93,27 @@ void main() {
     expect(find.byKey(const ValueKey('server-remove-h')), findsOneWidget);
   });
 
-  testWidgets('df error but sheds ok: reachable, disk unavailable, badge '
-      'falls back to a shed backend', (tester) async {
+  testWidgets('df block degraded but sheds ok: reachable, disk unavailable, '
+      'badge falls back to a shed backend', (tester) async {
     await _pump(
       tester,
       mobile: true,
-      sheds: (_, _) async => _twoSheds,
-      df: (_, _) async => throw StateError('no df'),
+      overview: (_, _) async => _overview(df: null),
     );
-    // Reachable (not the error key) — df failing alone doesn't mark unreachable.
+    // Reachable (not the error key) — a missing df block alone isn't unreachable.
     expect(find.byKey(const ValueKey('host-card-h')), findsOneWidget);
     expect(find.text('unavailable'), findsOneWidget);
     expect(find.text('vz'), findsOneWidget); // fell back to shed 'a' backend
     expect(find.text('2 sheds · 1 running'), findsOneWidget);
   });
 
-  testWidgets('sheds error: unreachable, and delete is still available', (
+  testWidgets('overview error: unreachable, and delete is still available', (
     tester,
   ) async {
     await _pump(
       tester,
       mobile: true,
-      sheds: (_, _) async => throw StateError('offline'),
-      df: (_, _) async => throw StateError('offline'),
+      overview: (_, _) async => throw StateError('offline'),
     );
     expect(find.byKey(const ValueKey('host-card-error-h')), findsOneWidget);
     expect(find.text('Unreachable'), findsOneWidget);
@@ -113,12 +121,23 @@ void main() {
     expect(find.byKey(const ValueKey('server-remove-h')), findsOneWidget);
   });
 
-  testWidgets('sheds loading: shows Loading…', (tester) async {
+  testWidgets('an old server (the terminal OverviewUnsupported value) shows '
+      '"Needs upgrade"', (tester) async {
     await _pump(
       tester,
       mobile: true,
-      sheds: (_, _) => Completer<List<Shed>>().future, // never resolves
-      df: (_, _) async => _usage,
+      overview: (_, _) async => const OverviewUnsupported(),
+    );
+    expect(find.byKey(const ValueKey('host-card-error-h')), findsOneWidget);
+    expect(find.text('Needs upgrade'), findsOneWidget);
+    expect(find.byKey(const ValueKey('server-remove-h')), findsOneWidget);
+  });
+
+  testWidgets('overview loading: shows Loading…', (tester) async {
+    await _pump(
+      tester,
+      mobile: true,
+      overview: (_, _) => Completer<OverviewResult>().future, // never resolves
     );
     expect(find.text('Loading…'), findsOneWidget);
   });
@@ -128,8 +147,7 @@ void main() {
     await _pump(
       tester,
       mobile: true,
-      sheds: (_, _) async => _twoSheds,
-      df: (_, _) async => _usage,
+      overview: (_, _) async => _overview(),
       onOpen: () => opened = true,
     );
     await tester.tap(find.text('h'));
@@ -137,12 +155,7 @@ void main() {
   });
 
   testWidgets('desktop variant: own delete key, no drill-in', (tester) async {
-    await _pump(
-      tester,
-      mobile: false,
-      sheds: (_, _) async => _twoSheds,
-      df: (_, _) async => _usage,
-    );
+    await _pump(tester, mobile: false, overview: (_, _) async => _overview());
     expect(
       find.byKey(const ValueKey('desktop-server-remove-h')),
       findsOneWidget,
@@ -159,10 +172,10 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       ProviderScope(
+        retry: (_, _) => null,
         overrides: [
           serverStoreProvider.overrideWithValue(store),
-          shedsProvider.overrideWith((_, _) async => _twoSheds),
-          hostSystemDfProvider.overrideWith((_, _) async => _usage),
+          overviewProvider.overrideWith((_, _) async => _overview()),
         ],
         child: MaterialApp(
           theme: shedLightTheme,

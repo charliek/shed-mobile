@@ -15,11 +15,11 @@ import '../../widgets/status_badge.dart';
 
 /// The merged Hosts-section card: one host's status **and** disk usage (the former
 /// Hosts tile + System card, combined). Identity (name/URL) renders synchronously
-/// from the [ServerRecord]; the status dot + shed summary come from
-/// [shedsProvider] (the reachability gate) and the disk breakdown from
-/// [hostSystemDfProvider] (best-effort) — both per-host `autoDispose.family`
-/// providers, so each card loads and degrades independently (an unreachable host
-/// never stalls the others).
+/// from the [ServerRecord]; the status dot + shed summary + disk breakdown all
+/// come from a single [overviewProvider] call (`GET /api/overview`) — a per-host
+/// `autoDispose.family`, so each card loads and degrades independently (an
+/// unreachable host never stalls the others). A server too old for the overview
+/// route degrades to a "Needs upgrade" summary rather than a hard failure.
 ///
 /// Mobile is tappable ([onOpen] → the host's sheds) with a chevron; desktop is not.
 /// Removing the saved host (delete) is available in **every** async state — parity
@@ -56,51 +56,61 @@ class HostCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.shed;
     final serverName = record.name;
-    final sheds = ref.watch(shedsProvider(serverName));
-    final df = ref.watch(hostSystemDfProvider(serverName));
+    final overview = ref.watch(overviewProvider(serverName));
+    // The served snapshot, or null while loading / on a transport error / on an
+    // old server (the terminal OverviewUnsupported value).
+    final Overview? data = switch (overview.asData?.value) {
+      OverviewData(:final overview) => overview,
+      _ => null,
+    };
+    final unsupported = overview.asData?.value is OverviewUnsupported;
 
-    // Reachability gate: sheds is the primary HTTP call. Data → ok/summary;
-    // error → unreachable (warn); loading → neutral.
-    final (ShedStatusTone dotTone, String summary) = sheds.when(
-      data: (list) {
-        final running = list.where((s) => s.isRunning).length;
-        final n = list.length;
-        final label = n == 0
-            ? 'No sheds'
-            : '$n ${n == 1 ? 'shed' : 'sheds'}'
-                  '${running > 0 ? ' · $running running' : ''}';
-        return (ShedStatusTone.ok, label);
+    // Reachability gate: the overview is the primary (single) HTTP call. Data →
+    // ok/summary; an old server (terminal value, never retried) → "Needs
+    // upgrade" (warn); a transport error → unreachable (warn); loading → neutral.
+    final (ShedStatusTone dotTone, String summary) = overview.when(
+      data: (r) => switch (r) {
+        OverviewUnsupported() => (ShedStatusTone.warn, 'Needs upgrade'),
+        OverviewData(:final overview) => (
+          ShedStatusTone.ok,
+          _shedSummary(overview),
+        ),
       },
       error: (_, _) => (ShedStatusTone.warn, 'Unreachable'),
       loading: () => (ShedStatusTone.idle, 'Loading…'),
     );
 
-    // Runtime badge: prefer df's backend; fall back to a shed's backend (so an
-    // old agent without df still shows vz/firecracker); else no badge.
-    final dfBackend = df.asData?.value.backend;
+    final SystemDiskUsage? df = data?.df;
+
+    // Runtime badge: prefer df's backend; fall back to a shed's backend (so a
+    // host whose df block degraded still shows vz/firecracker); else no badge.
+    final dfBackend = df?.backend;
     final backend = (dfBackend != null && dfBackend != 'none')
         ? dfBackend
-        : sheds.asData?.value
-              .map((s) => s.backend)
+        : data?.sheds
+              .map((s) => s.shed.backend)
               .firstWhere((b) => b != null, orElse: () => null);
 
-    final reachable = sheds.hasError
+    final reachable = overview.hasError || unsupported
         ? 'f'
-        : sheds.hasValue
+        : overview.hasValue
         ? 't'
         : '-';
-    final dfState = df.hasError
-        ? 'error'
-        : df.hasValue
-        ? 'ok'
+    // df is a sub-block of the overview: present → ok; resolved without one
+    // (degraded block / transport error / old server) → error; still loading →
+    // loading.
+    final dfState = overview.hasError || overview.hasValue
+        ? (df != null ? 'ok' : 'error')
         : 'loading';
     logDriveState(
       'host-card host=$serverName reachable=$reachable df=$dfState '
-      'sheds=${sheds.asData?.value.length ?? '-'}',
+      'sheds=${data?.sheds.length ?? '-'}',
     );
 
     final key = ValueKey(
-      sheds.hasError ? 'host-card-error-$serverName' : 'host-card-$serverName',
+      overview.hasError || unsupported
+          ? 'host-card-error-$serverName'
+          : 'host-card-$serverName',
     );
     final total = _total(df);
     final delete = _delete(c, () => _remove(ref, context));
@@ -112,7 +122,7 @@ class HostCard extends ConsumerWidget {
             dotTone: dotTone,
             summary: summary,
             backend: backend,
-            df: df,
+            overview: overview,
             total: total,
             delete: delete,
           )
@@ -122,7 +132,7 @@ class HostCard extends ConsumerWidget {
             dotTone: dotTone,
             summary: summary,
             backend: backend,
-            df: df,
+            overview: overview,
             total: total,
             delete: delete,
           );
@@ -163,30 +173,48 @@ class HostCard extends ConsumerWidget {
     ],
   );
 
-  /// The bold total for the header trailing slot (df physical bytes), or null.
-  String? _total(AsyncValue<SystemDiskUsage> df) {
-    final usage = df.asData?.value;
-    return usage == null ? null : formatBytes(usage.totals.all.physicalBytes);
+  /// The "N sheds · M running" (or "No sheds") summary line for a served
+  /// overview.
+  static String _shedSummary(Overview overview) {
+    final running = overview.sheds.where((s) => s.shed.isRunning).length;
+    final n = overview.sheds.length;
+    return n == 0
+        ? 'No sheds'
+        : '$n ${n == 1 ? 'shed' : 'sheds'}'
+              '${running > 0 ? ' · $running running' : ''}';
   }
 
-  /// The disk area under the header: the four-column breakdown when df has data,
-  /// "unavailable" when it errors, a spinner while loading.
-  Widget _disk(ShedColors c, AsyncValue<SystemDiskUsage> df) => df.when(
-    loading: () => const SizedBox(
-      height: 16,
-      width: 16,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    ),
-    error: (_, _) => Text(
+  /// The bold total for the header trailing slot (df physical bytes), or null
+  /// when the overview hasn't resolved a df block yet.
+  String? _total(SystemDiskUsage? df) =>
+      df == null ? null : formatBytes(df.totals.all.physicalBytes);
+
+  /// The disk area under the header: the four-column breakdown when the overview
+  /// carries a df block, "unavailable" when the overview errored / the df block
+  /// degraded / the server is too old, a spinner while the overview loads.
+  Widget _disk(ShedColors c, AsyncValue<OverviewResult> overview) {
+    Widget unavailable() => Text(
       'unavailable',
       style: monoStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
         color: c.errFg,
       ),
-    ),
-    data: (usage) => DiskUsageBlock(usage.totals),
-  );
+    );
+    return overview.when(
+      loading: () => const SizedBox(
+        height: 16,
+        width: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (_, _) => unavailable(),
+      data: (r) => switch (r) {
+        OverviewData(:final overview) when overview.df != null =>
+          DiskUsageBlock(overview.df!.totals),
+        _ => unavailable(),
+      },
+    );
+  }
 
   /// The bold df total, sized per layout (13 mobile, 16 desktop).
   Widget _totalText(ShedColors c, String total, double size) => Text(
@@ -200,7 +228,7 @@ class HostCard extends ConsumerWidget {
     required ShedStatusTone dotTone,
     required String summary,
     required String? backend,
-    required AsyncValue<SystemDiskUsage> df,
+    required AsyncValue<OverviewResult> overview,
     required String? total,
     required Widget delete,
   }) {
@@ -241,7 +269,7 @@ class HostCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
-            _disk(c, df),
+            _disk(c, overview),
           ],
         ),
       ),
@@ -254,7 +282,7 @@ class HostCard extends ConsumerWidget {
     required ShedStatusTone dotTone,
     required String summary,
     required String? backend,
-    required AsyncValue<SystemDiskUsage> df,
+    required AsyncValue<OverviewResult> overview,
     required String? total,
     required Widget delete,
   }) {
@@ -276,7 +304,7 @@ class HostCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 14),
-          _disk(c, df),
+          _disk(c, overview),
         ],
       ),
     );

@@ -16,20 +16,52 @@ const String rcCreatedBy = '$rcToolName/$kAppVersion';
 /// The guest binary name (on PATH in the shed `full` image).
 const String _rcBin = 'shed-ext-rc';
 
-/// claude's `--permission-mode` value set. A null/absent mode means "don't pass
-/// the flag" (claude's own default). Mirrors shed-extensions `validPermissionModes`.
-const Set<String> rcPermissionModes = {
-  'default',
+/// The generic permission tri-state accepted by EVERY kind and mapped per agent
+/// to that tool's real flags by shed-ext-rc (the VM is already the sandbox).
+/// Mirrors the guest's `genericPermModes` (`internal/ext/rc/rc.go`).
+const Set<String> rcGenericPermissionModes = {'default', 'auto', 'skip'};
+
+/// claude's historical `--permission-mode` values, accepted on top of the
+/// generic tri-state by the claude kinds ONLY. Mirrors the claude spec's
+/// `ExtraModes`.
+const Set<String> rcClaudeExtraModes = {
   'acceptEdits',
   'plan',
-  'auto',
   'dontAsk',
   'bypassPermissions',
 };
 
-/// The create-time default permission mode for claude kinds. `auto` keeps a
-/// session running autonomously rather than blocking on permission prompts (the
-/// new-session form pre-selects it). Must be a member of [rcPermissionModes].
+/// Every mode a claude kind accepts (generic tri-state + historical set) — also
+/// the set the claude-only create-form dropdown offers when the target shed's
+/// capabilities are PRESENT, in display order. The union of the two component
+/// sets, so it can't drift from them. A null mode means "pass no flag" (each
+/// tool's own default).
+const Set<String> rcPermissionModes = {
+  ...rcGenericPermissionModes,
+  ...rcClaudeExtraModes,
+};
+
+/// The claude modes every SHIPPED binary accepts — the pre-generic-perm
+/// historical set. The generic `skip` is NEW: an old shed-ext-rc rejects it, so
+/// the create form offers only this set when the target shed's capabilities are
+/// ABSENT (an old image that can't advertise generic-perm); the full
+/// [rcPermissionModes] is offered when capabilities are present.
+const Set<String> rcClaudeHistoricalModes = {
+  'default',
+  'auto',
+  ...rcClaudeExtraModes,
+};
+
+/// The permission modes valid for [kind]: the full claude set for the claude
+/// kinds, else the generic tri-state (codex/cursor/opencode/shell). Mirrors the
+/// guest's `PermModeAcceptedBy`.
+Set<String> permissionModesFor(RcKind kind) =>
+    kind.runsClaude ? rcPermissionModes : rcGenericPermissionModes;
+
+/// The create-time default permission mode. `auto` keeps a session running
+/// autonomously rather than blocking on permission prompts; it is a member of
+/// both the generic tri-state and the claude set, so it is valid for every agent
+/// kind. Must be a member of [rcPermissionModes].
 const String defaultRcPermissionMode = 'auto';
 
 /// Slug alphabet without visually-confusable characters (no l/i/o/0/1), so a
@@ -102,11 +134,13 @@ class RcService {
     String? prompt,
     String? permissionMode,
   }) async {
-    // Permission mode only applies to claude kinds; a shell has none, so drop it
-    // here (the same way a claude-broker's prompt is dropped below) rather than
-    // relying on every caller to gate it.
-    final mode = kind.runsClaude ? permissionMode : null;
-    if (mode != null && !rcPermissionModes.contains(mode)) {
+    // A permission posture applies to every agent kind; only `shell` (and an
+    // unknown kind) has none, so drop it there (the same way a claude-broker's
+    // prompt is dropped below) rather than relying on every caller to gate it.
+    // The accepted set is kind-aware: claude takes its full historical set, the
+    // other agents take the generic default|auto|skip tri-state.
+    final mode = kind.hasPermissionMode ? permissionMode : null;
+    if (mode != null && !permissionModesFor(kind).contains(mode)) {
       throw AppError('RC_BAD_REQUEST', 'invalid permission mode', 400);
     }
     final theSlug = slug ?? _slug();

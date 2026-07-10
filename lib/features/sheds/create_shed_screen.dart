@@ -110,7 +110,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
       }
       logDriveResult('shed-create', ok: _error == null && _done, error: _error);
       if (_done && _error == null && mounted) {
-        ref.invalidate(shedsProvider(widget.serverName));
+        invalidateShedViews(ref, widget.serverName);
         Navigator.of(context).pop();
       }
     } catch (e) {

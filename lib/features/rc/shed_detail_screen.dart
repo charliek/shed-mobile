@@ -57,7 +57,7 @@ class ShedDetailScreen extends ConsumerWidget {
       // Refresh only on success: a failed kill is a transport/server error, so
       // re-listing would just pay another doomed SSH round-trip.
       ref.invalidate(rcSessionsProvider(_key));
-      ref.invalidate(hostSessionsProvider(serverName));
+      ref.invalidate(overviewProvider(serverName));
     } catch (e) {
       logDriveResult('rc-kill', ok: false, error: e);
       if (context.mounted) {
@@ -136,7 +136,7 @@ class ShedDetailScreen extends ConsumerWidget {
           // Skip a wasted SSH re-list when the user cancelled (popped null).
           if (created != null) {
             ref.invalidate(rcSessionsProvider(_key));
-            ref.invalidate(hostSessionsProvider(serverName));
+            ref.invalidate(overviewProvider(serverName));
           }
         },
         icon: const Icon(Icons.add, size: 20),

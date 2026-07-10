@@ -78,3 +78,31 @@ pushes the existing CreateShedScreen / CreateRcScreen.
 | `pick-empty` | "start a shed first" hint (no running sheds) |
 
 MRESULT: `pick-host ok`, `pick-shed ok`.
+
+### CreateRcScreen — `create-rc-screen`
+Kind chips are **capability-gated** from the target shed's `rc_capabilities`
+(read via the host's single `GET /api/overview`): absent caps → `claude-rc` +
+`shell` only; present caps → the shed's installed/advertised creatable kinds
+(claude-broker is never offered — it's URL-driven); present-but-empty → no chips.
+
+| Key | What |
+|---|---|
+| `createrc-kind-<wire>` | a kind chip — `claude-rc` / `codex` / `opencode` / `cursor` / `shell` (only the gated ones render) |
+| `createrc-no-kinds` | note shown when the shed offers no creatable kinds |
+| `createrc-name` / `createrc-workdir` / `createrc-prompt` | optional fields (prompt only for prompt-accepting kinds) |
+| `createrc-permission-mode` | permission dropdown — **claude kinds only** (codex/cursor/opencode default to `auto`, no dropdown). The generic `skip` mode is offered only when the shed's capabilities are present (an old binary rejects it); absent caps → the historical claude set |
+| `createrc-submit` | create (disabled while busy or when no kind is offered) |
+| `createrc-error` | error text |
+
+MSTATE: `screen=create-rc kind=<wire|-> offered=<csv>`. MRESULT: `rc-create ok|error`.
+
+### Cross-host Sessions view
+Reads one `GET /api/overview` per host (server-rc-enriched; no SSH fan-out). A
+server too old for `/api/overview` (404) is a hard-require:
+
+| Key | What |
+|---|---|
+| `all-sessions-unreachable-<server>` | host unreachable banner (warn) |
+| `all-sessions-needs-upgrade-<server>` | old server — "needs upgrade for the sessions view" (err) |
+
+MSTATE: `all-sessions host=<name> reachable=true|false|needs-upgrade count=N`.
