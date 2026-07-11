@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
@@ -11,6 +12,7 @@ import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
 import 'net/pinned_http_client.dart';
 import 'rc/rc_capabilities.dart';
+import 'rc/rc_events.dart';
 import 'rc/rc_models.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
@@ -228,6 +230,107 @@ final overviewProvider = FutureProvider.autoDispose
         if (e.statusCode == 404) return const OverviewUnsupported();
         rethrow;
       }
+    });
+
+/// SSE reconnect backoff bounds for [liveActivityProvider]. The initial delay is
+/// small so a transient blip resyncs quickly; it doubles to a 30s ceiling so a
+/// hub that stays down (or an old server without rc-events) can't retry-storm.
+const Duration _rcReconnectInitial = Duration(milliseconds: 500);
+const Duration _rcReconnectMax = Duration(seconds: 30);
+
+/// The live rc-activity overlay for one host, folded from its `GET /api/rc/events`
+/// SSE stream. A StreamProvider so the sessions view (and per-card `.select`s)
+/// react to each folded snapshot without re-fetching the overview per event.
+///
+/// Lifecycle: autoDispose — the subscription runs only while something watches
+/// it (i.e. while the Sessions view / a watch screen for this host is visible),
+/// and tears the SSE down when the last watcher leaves. The caller is
+/// responsible for only watching this when the server advertises `rc-events`
+/// (see the Sessions view); absent that feature there is no subscription and
+/// behavior stays today's manual refresh.
+///
+/// Reconnect contract: an upstream drop backs off (exponential, capped) and
+/// reconnects; on every reconnect that delivers data (not the first-ever
+/// connection — the view just loaded the overview) it clears the stale overlay
+/// FIRST (so old patches can't override the fresh snapshot) and then triggers
+/// exactly one overview refetch, per the best-effort SSE posture. Degrading
+/// events (hub.unavailable / shed.stopped) drop that shed's live patches
+/// inside [ActivityOverlay.apply].
+///
+/// Deliberately NOT an `async*` body: awaits inside an async* generator are not
+/// yield points, so a disposed provider could neither cancel a quiet SSE read
+/// (the subscription would stay open forever) nor stop the backoff/retry loop
+/// (a zombie reconnector). Instead the SSE is driven by an explicit
+/// [StreamSubscription] and the backoff by a [Timer], both torn down in
+/// `ref.onDispose` — dispose cancels the in-flight read AND any pending retry.
+final liveActivityProvider = StreamProvider.autoDispose
+    .family<ActivityOverlay, String>((ref, serverName) {
+      final controller = StreamController<ActivityOverlay>();
+      var disposed = false;
+      StreamSubscription<RcEvent>? sub;
+      Timer? retryTimer;
+      ref.onDispose(() {
+        disposed = true;
+        retryTimer?.cancel();
+        unawaited(sub?.cancel());
+        unawaited(controller.close());
+      });
+
+      var overlay = ActivityOverlay.empty;
+      var connectedBefore = false;
+      var backoff = _rcReconnectInitial;
+      controller.add(overlay);
+
+      void connect(ShedClient client) {
+        if (disposed) return;
+        var gotData = false;
+
+        void scheduleReconnect() {
+          if (disposed) return;
+          retryTimer = Timer(backoff, () {
+            final doubled = backoff * 2;
+            backoff = doubled > _rcReconnectMax ? _rcReconnectMax : doubled;
+            connect(client);
+          });
+        }
+
+        sub = client.rcEvents().listen(
+          (ev) {
+            if (disposed) return;
+            if (!gotData) {
+              gotData = true;
+              backoff = _rcReconnectInitial;
+              if (connectedBefore) {
+                // Reconnect resync, in this order: clear the overlay first so
+                // stale pre-drop patches can't override the fresh snapshot,
+                // THEN refetch the base overview. The first-ever connection
+                // skips the refetch (the view just loaded a fresh overview).
+                overlay = ActivityOverlay.empty;
+                controller.add(overlay);
+                ref.invalidate(overviewProvider(serverName));
+              }
+              connectedBefore = true;
+            }
+            overlay = overlay.apply(ev);
+            controller.add(overlay);
+          },
+          // Transport / hub-down / 503 — back off and reconnect.
+          onError: (Object _) => scheduleReconnect(),
+          onDone: scheduleReconnect,
+          cancelOnError: true,
+        );
+      }
+
+      ref
+          .watch(shedClientProvider(serverName).future)
+          .then((client) => connect(client))
+          .catchError((Object e, StackTrace st) {
+            // Client build failed (unknown server / keychain error): surface it
+            // as the provider's error state rather than silently idling.
+            if (!disposed) controller.addError(e, st);
+          });
+
+      return controller.stream;
     });
 
 /// One (shed, rc session) pair on a host — the cross-host Sessions view's unit.

@@ -1,3 +1,5 @@
+import '../core/text_sanitize.dart';
+
 /// RC Session Convention kind. Mirrors the guest's `rc.Kind`
 /// (`internal/ext/rc/rc.go`) and the shared Rust client core `RcKind`
 /// (`crates/shed-core/src/rc.rs`) — the same value set and the same
@@ -113,6 +115,47 @@ class RcKind {
 /// The create-time default kind (matches the guest's `DefaultKind`).
 const RcKind defaultRcKind = RcKind.claudeRc;
 
+/// A session's live *work* dimension, orthogonal to the lifecycle [RcState].
+/// Derived live by the rc hub (Phase C) and reported additively inside the `rc`
+/// block. Mirrors the guest's `rc.Activity` (`internal/ext/rc/activity.go`):
+/// `working` (producing output), `needs_input` (idle at a prompt anchor),
+/// `idle` (quiescent), `unknown` (live but indeterminate). The reserved
+/// `needs_approval` wire value is not derived in this phase; it decodes to
+/// [RcActivity.unknown] (renders as no badge) so a future emitter can't break us.
+enum RcActivity {
+  working('working'),
+  needsInput('needs_input'),
+  idle('idle'),
+  unknown('unknown');
+
+  const RcActivity(this.wire);
+
+  final String wire;
+
+  /// Decode a wire value. Absent/empty → null ("no activity dimension at all":
+  /// the hub is not running, the kind is unsupported, or lifecycle trumped it
+  /// server-side and the omitempty field dropped out). An unrecognized token
+  /// (a future value, or the reserved `needs_approval`) → [RcActivity.unknown]
+  /// so it renders neutrally (no badge) rather than throwing.
+  static RcActivity? fromWire(String? s) {
+    if (s == null || s.isEmpty) return null;
+    for (final a in RcActivity.values) {
+      if (a.wire == s) return a;
+    }
+    return RcActivity.unknown;
+  }
+}
+
+/// Whether a lifecycle [state] permits showing the live activity dimension. The
+/// server already drops activity for needs-trust/needs-auth/dead (lifecycle
+/// trumps activity); the client mirrors that gate so it never invents an
+/// activity — or leaves a stale live one on screen — that a blocking state
+/// should hide.
+bool rcStatePermitsActivity(RcState state) => switch (state) {
+  RcState.needsTrust || RcState.needsAuth || RcState.dead => false,
+  _ => true,
+};
+
 /// Pane-derived liveness of a session. Never stored — shed-ext-rc classifies it
 /// from a `capture-pane` on demand and reports it in the DTO.
 enum RcState {
@@ -157,6 +200,9 @@ class RcSession {
     this.createdBy,
     this.createdAt,
     this.targetLabel,
+    this.activity,
+    this.activityAt,
+    this.lastMessage,
   });
 
   final String slug;
@@ -174,8 +220,25 @@ class RcSession {
   final String? createdAt;
   final String? targetLabel;
 
+  /// Live-activity dimension (Phase C), additive inside the `rc` block. Absent
+  /// (null) when no hub is running, the kind is unsupported, or the server
+  /// suppressed it because a blocking lifecycle state trumps activity.
+  final RcActivity? activity;
+
+  /// RFC3339 timestamp the activity was last derived/changed. Absent with
+  /// [activity].
+  final String? activityAt;
+
+  /// A short, sanitized (ANSI/control-stripped, ≤200 runes) preview of the
+  /// session's most recent message. Absent when the hub has none.
+  final String? lastMessage;
+
   bool get isReady => state == RcState.ready;
   bool get hasUrl => url != null && url!.isNotEmpty;
+
+  /// Whether this session's lifecycle permits showing the live activity
+  /// dimension (see [rcStatePermitsActivity]).
+  bool get lifecyclePermitsActivity => rcStatePermitsActivity(state);
 
   /// Decode a DTO object. [displayNameFallback] supplies a name when the session
   /// stored none (legacy/unmanaged); it receives the slug.
@@ -201,6 +264,11 @@ class RcSession {
       createdBy: _str(j['created_by']),
       createdAt: _str(j['created_at']),
       targetLabel: _str(j['target_label']),
+      activity: RcActivity.fromWire(_str(j['activity'])),
+      activityAt: _str(j['activity_at']),
+      // Guest-controlled preview text: strip Unicode format characters (bidi
+      // overrides like U+202E) the hub's ANSI/C0C1 sanitizer does not cover.
+      lastMessage: _cleanDisplay(j['last_message']),
     );
   }
 }
@@ -210,5 +278,14 @@ class RcSession {
 String? _str(Object? v) {
   if (v is! String) return null;
   final t = v.trim();
+  return t.isEmpty ? null : t;
+}
+
+/// [_str] plus a strip of Unicode format characters (category Cf) — for
+/// guest-controlled display text that could carry bidi-override spoofers.
+String? _cleanDisplay(Object? v) {
+  final s = _str(v);
+  if (s == null) return null;
+  final t = stripFormatChars(s).trim();
   return t.isEmpty ? null : t;
 }

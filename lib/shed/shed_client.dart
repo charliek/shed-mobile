@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../control/control_token_provider.dart';
 import '../core/app_error.dart';
 import '../net/pinned_http_client.dart';
+import '../rc/rc_events.dart';
+import '../rc/rc_feed.dart';
 import 'shed_dtos.dart';
 
 /// Typed client for the shed-server control API over pinned TLS. Mirrors the
@@ -117,6 +120,110 @@ class ShedClient {
           break; // unknown event: ignore
       }
     }
+  }
+
+  /// Subscribe to the host's aggregate rc activity stream
+  /// (`GET /api/rc/events`, SSE), decoding each frame into a typed [RcEvent].
+  /// Unknown/malformed frames are dropped. A 401 on stream-open invalidates the
+  /// token and retries once with a fresh, different token — but only before any
+  /// event has been yielded (once frames flow, re-subscription is the caller's
+  /// reconnect loop's job).
+  ///
+  /// A [StreamIterator] drives the read so an open error (the getSse non-200
+  /// throw) surfaces at `moveNext` inside this try/catch — a plain `yield*`
+  /// would forward the stream error PAST the catch (a Dart async* gotcha).
+  Stream<RcEvent> rcEvents() async* {
+    var token = await tokens.get();
+    var retried = false;
+    var yielded = false;
+    while (true) {
+      final it = StreamIterator(http.getSse('/api/rc/events', token: token));
+      try {
+        while (await it.moveNext()) {
+          final ev = parseRcEvent(it.current);
+          if (ev != null) {
+            yielded = true;
+            yield ev;
+          }
+        }
+        return; // stream ended cleanly
+      } on AppError catch (e) {
+        if (!yielded && !retried && e.statusCode == 401 && token != null) {
+          tokens.invalidate(token);
+          final next = await tokens.get();
+          if (next != null && next != token) {
+            token = next;
+            retried = true;
+            continue;
+          }
+          throw AppError.authExpired();
+        }
+        rethrow;
+      } finally {
+        await it.cancel();
+      }
+    }
+  }
+
+  /// Fetch a page of a codex session's message feed through the hub proxy
+  /// (`GET /api/sheds/{shed}/rc/v1/sessions/{slug}/messages`). `since` is
+  /// exclusive; the page is bounded by `limit` (server caps at 200).
+  Future<RcMessagesPage> fetchRcMessages(
+    String shed,
+    String slug, {
+    int? since,
+    int? limit,
+  }) async {
+    final q = <String>[
+      if (since != null) 'since=$since',
+      if (limit != null) 'limit=$limit',
+    ];
+    final qs = q.isEmpty ? '' : '?${q.join('&')}';
+    final path =
+        '/api/sheds/${_e(shed)}/rc/v1/sessions/${_e(slug)}/messages$qs';
+    return RcMessagesPage.fromJson(_obj(await _send('GET', path)));
+  }
+
+  /// Post a typed line into a gated codex session
+  /// (`POST /api/sheds/{shed}/rc/v1/sessions/{slug}/input`). Maps the hub /
+  /// proxy status codes to a typed [AppError]: 409 → the session is no longer
+  /// accepting input (a race — the caller refreshes state), 503 → the hub is
+  /// unavailable, 404 → the session is gone. The hub's own error body is a flat
+  /// `{error, message}`, so classification keys off the status, not the body.
+  Future<void> postRcInput(String shed, String slug, String text) async {
+    final path = '/api/sheds/${_e(shed)}/rc/v1/sessions/${_e(slug)}/input';
+    final res = await _send('POST', path, body: {'text': text});
+    if (res.status >= 200 && res.status < 300) return;
+    throw _rcInputError(res);
+  }
+
+  AppError _rcInputError(HttpResult res) {
+    // Tolerate both the server's nested {error:{code,message}} and the hub's
+    // flat {error, message} shapes when pulling a human message.
+    final j = _tryJson(res.body);
+    final nested = j?['error'];
+    final message = nested is Map<String, Object?>
+        ? (nested['message'] as String?)
+        : (j?['message'] as String?);
+    return switch (res.status) {
+      409 => AppError(
+        'RC_NOT_ACCEPTING',
+        message ?? 'the session is not accepting input right now',
+        409,
+      ),
+      404 => AppError('RC_SESSION_GONE', message ?? 'rc session is gone', 404),
+      503 => AppError(
+        (nested is Map<String, Object?> ? nested['code'] as String? : null) ??
+            'RC_HUB_UNAVAILABLE',
+        message ?? 'rc hub is not available for this shed',
+        503,
+      ),
+      _ => AppError(
+        'RC_INPUT_FAILED',
+        message ?? 'input delivery failed (HTTP ${res.status})',
+        res.status,
+      ),
+    };
   }
 
   // ---- internals ----------------------------------------------------------

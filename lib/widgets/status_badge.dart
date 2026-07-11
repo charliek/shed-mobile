@@ -77,10 +77,18 @@ class _StatusDotState extends State<StatusDot>
 /// A status pill: a tone-tinted background with a dot + mono label (the design's
 /// session-status badge).
 class StatusBadge extends StatelessWidget {
-  const StatusBadge({super.key, required this.tone, required this.label});
+  const StatusBadge({
+    super.key,
+    required this.tone,
+    required this.label,
+    this.pulse = false,
+  });
 
   final ShedStatusTone tone;
   final String label;
+
+  /// Whether the dot pulses (e.g. an actively-`working` activity badge).
+  final bool pulse;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +102,7 @@ class StatusBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          StatusDot(tone: tone, size: 6),
+          StatusDot(tone: tone, size: 6, animate: pulse),
           const SizedBox(width: 5),
           Text(
             label,

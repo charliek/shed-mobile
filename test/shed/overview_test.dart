@@ -50,6 +50,24 @@ void main() {
       expect(overview.server.version, '0.8.0');
       expect(overview.server.hasFeature('overview'), isTrue);
       expect(overview.server.hasFeature('rc-enrich'), isTrue);
+      // Phase C endpoint-discovery tokens (drive the live-events subscription).
+      expect(overview.server.hasFeature('rc-events'), isTrue);
+      expect(overview.server.hasFeature('rc-proxy'), isTrue);
+    });
+
+    test('activity dimension flows through the rc block into the session', () {
+      final proj = overview.sheds.firstWhere((s) => s.shed.name == 'proj');
+      final claude = proj.sessions.firstWhere((s) => s.slug == 'abc234');
+      expect(claude.activity, RcActivity.working);
+      expect(claude.activityAt, '2026-06-19T18:54:12Z');
+      expect(claude.lastMessage, 'Running the test suite now.');
+    });
+
+    test('kind_features carries the codex watch/gated-input hints', () {
+      final proj = overview.sheds.firstWhere((s) => s.shed.name == 'proj');
+      final codex = proj.capabilities!.kindFeatures['codex']!;
+      expect(codex.watch, isTrue);
+      expect(codex.inputGated, isTrue);
     });
 
     test('df block parses (physical bytes is the rendered field)', () {
