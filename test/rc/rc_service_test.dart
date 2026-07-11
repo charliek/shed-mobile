@@ -180,6 +180,42 @@ void main() {
       expect(fake.argv, isNull); // never reached the runner
     });
 
+    test(
+      'a non-claude agent kind (codex) passes a generic --permission-mode',
+      () async {
+        final fake = _FakeRunner()
+          ..result = SshResult(0, _dto(kind: 'codex'), '');
+        final svc = _service(fake, slugGen: () => 'fixed1');
+        await svc.create(kind: RcKind.codex, permissionMode: 'auto');
+        expect(fake.argv, containsAllInOrder(['--kind', 'codex']));
+        expect(fake.argv, containsAllInOrder(['--permission-mode', 'auto']));
+      },
+    );
+
+    test('codex accepts the generic "skip"', () async {
+      final fake = _FakeRunner()
+        ..result = SshResult(0, _dto(kind: 'codex'), '');
+      final svc = _service(fake, slugGen: () => 'fixed1');
+      await svc.create(kind: RcKind.codex, permissionMode: 'skip');
+      expect(fake.argv, containsAllInOrder(['--permission-mode', 'skip']));
+    });
+
+    test(
+      'a claude-only mode is rejected for a non-claude kind (codex)',
+      () async {
+        final fake = _FakeRunner();
+        final svc = _service(fake, slugGen: () => 'fixed1');
+        await expectLater(
+          // "plan" is a claude-only historical mode — not in the generic tri-state.
+          svc.create(kind: RcKind.codex, permissionMode: 'plan'),
+          throwsA(
+            isA<AppError>().having((e) => e.code, 'code', 'RC_BAD_REQUEST'),
+          ),
+        );
+        expect(fake.argv, isNull);
+      },
+    );
+
     test('honors a caller-supplied slug and display name', () async {
       final fake = _FakeRunner()..result = SshResult(0, _dto(), '');
       final svc = _service(fake);

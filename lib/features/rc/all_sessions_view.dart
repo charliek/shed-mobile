@@ -7,8 +7,8 @@ import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
 import 'session_card.dart';
 
-/// Cross-host Sessions — every host's rc sessions grouped by host, gathered by
-/// fanning `shed-ext-rc list` over SSH across each host's running sheds. Cards:
+/// Cross-host Sessions — every host's rc sessions grouped by host, read from one
+/// `GET /api/overview` call per host (the server rc-enriches the sessions). Cards:
 /// status badge, kind chip, meta, "›_ open" (→ terminal), delete.
 class AllSessionsView extends StatelessWidget {
   const AllSessionsView({super.key});
@@ -21,8 +21,7 @@ class AllSessionsView extends StatelessWidget {
     bottomInset: 96,
     onRefresh: (ref) {
       ref.invalidate(serversProvider);
-      ref.invalidate(shedsProvider);
-      ref.invalidate(hostSessionsProvider);
+      ref.invalidate(overviewProvider);
     },
     hostBuilder: (s) => _HostSessions(serverName: s.name),
   );
@@ -35,8 +34,8 @@ class _HostSessions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sessions = ref.watch(hostSessionsProvider(serverName));
-    return sessions.when(
+    final overview = ref.watch(overviewProvider(serverName));
+    return overview.when(
       loading: () => const HostNote('Loading…'),
       error: (e, _) {
         logDriveState('all-sessions host=$serverName reachable=false');
@@ -46,25 +45,42 @@ class _HostSessions extends ConsumerWidget {
           tone: ShedStatusTone.warn,
         );
       },
-      data: (list) {
-        logDriveState(
-          'all-sessions host=$serverName reachable=true count=${list.length}',
-        );
-        if (list.isEmpty) return const HostNote('No sessions');
-        return Column(
-          children: [
-            for (final e in list)
-              SessionCard(
-                key: ValueKey(
-                  'all-session-$serverName-${e.shedName}-${e.session.slug}',
-                ),
-                serverName: serverName,
-                shedName: e.shedName,
-                session: e.session,
-              ),
-          ],
-        );
+      data: (r) => switch (r) {
+        // A server too old for /api/overview is a hard-require: a TERMINAL
+        // value rendered as a clear upgrade banner (not a retryable error, not
+        // silent emptiness, not a generic "unreachable" that reads as a blip).
+        OverviewUnsupported() => () {
+          logDriveState(
+            'all-sessions host=$serverName reachable=needs-upgrade',
+          );
+          return HostBanner(
+            key: ValueKey('all-sessions-needs-upgrade-$serverName'),
+            text: 'Server needs upgrade for the sessions view',
+            tone: ShedStatusTone.err,
+          );
+        }(),
+        OverviewData(:final overview) => _sessions(shedSessionPairs(overview)),
       },
+    );
+  }
+
+  Widget _sessions(List<ShedSession> list) {
+    logDriveState(
+      'all-sessions host=$serverName reachable=true count=${list.length}',
+    );
+    if (list.isEmpty) return const HostNote('No sessions');
+    return Column(
+      children: [
+        for (final e in list)
+          SessionCard(
+            key: ValueKey(
+              'all-session-$serverName-${e.shedName}-${e.session.slug}',
+            ),
+            serverName: serverName,
+            shedName: e.shedName,
+            session: e.session,
+          ),
+      ],
     );
   }
 }

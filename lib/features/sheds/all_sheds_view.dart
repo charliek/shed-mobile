@@ -21,7 +21,10 @@ class AllShedsView extends StatelessWidget {
     bottomInset: 96,
     onRefresh: (ref) {
       ref.invalidate(serversProvider);
+      // Both shed views: the per-host list here and the overview the
+      // Hosts/Sessions views render from, so a refresh keeps them coherent.
       ref.invalidate(shedsProvider);
+      ref.invalidate(overviewProvider);
     },
     hostBuilder: (s) => _HostSheds(serverName: s.name),
   );

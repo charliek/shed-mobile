@@ -6,30 +6,94 @@ import 'package:shed_mobile/rc/rc_models.dart';
 
 void main() {
   group('RcKind.fromWire', () {
-    test('decodes known kinds', () {
+    test('decodes every known kind', () {
       expect(RcKind.fromWire('claude-rc'), RcKind.claudeRc);
       expect(RcKind.fromWire('claude-broker'), RcKind.claudeBroker);
+      expect(RcKind.fromWire('codex'), RcKind.codex);
+      expect(RcKind.fromWire('opencode'), RcKind.opencode);
+      expect(RcKind.fromWire('cursor'), RcKind.cursor);
       expect(RcKind.fromWire('shell'), RcKind.shell);
     });
 
-    test('unknown/foreign/null reads as claude-broker (legacy fallback)', () {
-      expect(RcKind.fromWire('agent'), RcKind.claudeBroker);
-      expect(RcKind.fromWire('repl'), RcKind.claudeBroker);
-      expect(RcKind.fromWire(''), RcKind.claudeBroker);
-      expect(RcKind.fromWire(null), RcKind.claudeBroker);
+    test('an unknown/foreign kind is PRESERVED verbatim, not collapsed', () {
+      // Unknown-kind policy: the raw wire string is kept and marked not-known so
+      // it renders neutrally — it must NOT become claude-broker (that would grant
+      // it claude affordances it should never get).
+      final foreign = RcKind.fromWire('some-future-agent');
+      expect(foreign.wire, 'some-future-agent');
+      expect(foreign.known, isFalse);
+      expect(foreign, isNot(RcKind.claudeBroker));
+      // Neutral: not promptable, no claude posture.
+      expect(foreign.acceptsPrompt, isFalse);
+      expect(foreign.runsClaude, isFalse);
+      expect(foreign.hasPermissionMode, isFalse);
+      expect(foreign.tool, isNull);
     });
 
-    test('create-time default differs from the parse fallback', () {
+    test('null/empty preserve as an (empty) unknown kind', () {
+      expect(RcKind.fromWire('').known, isFalse);
+      expect(RcKind.fromWire(null).known, isFalse);
+      expect(RcKind.fromWire(null).wire, '');
+    });
+
+    test('create-time default is claude-rc', () {
       expect(defaultRcKind, RcKind.claudeRc);
     });
 
-    test('acceptsPrompt / runsClaude', () {
+    test('creatable excludes claude-broker and unknown kinds', () {
+      expect(RcKind.creatable, [
+        RcKind.claudeRc,
+        RcKind.codex,
+        RcKind.opencode,
+        RcKind.cursor,
+        RcKind.shell,
+      ]);
+      expect(RcKind.creatable, isNot(contains(RcKind.claudeBroker)));
+    });
+
+    test('acceptsPrompt: agents + shell yes; broker + unknown no', () {
       expect(RcKind.claudeRc.acceptsPrompt, isTrue);
+      expect(RcKind.codex.acceptsPrompt, isTrue);
+      expect(RcKind.cursor.acceptsPrompt, isTrue);
+      expect(RcKind.opencode.acceptsPrompt, isTrue);
       expect(RcKind.shell.acceptsPrompt, isTrue);
       expect(RcKind.claudeBroker.acceptsPrompt, isFalse);
+    });
+
+    test('runsClaude: only the two claude kinds', () {
       expect(RcKind.claudeRc.runsClaude, isTrue);
       expect(RcKind.claudeBroker.runsClaude, isTrue);
+      expect(RcKind.codex.runsClaude, isFalse);
+      expect(RcKind.cursor.runsClaude, isFalse);
+      expect(RcKind.opencode.runsClaude, isFalse);
       expect(RcKind.shell.runsClaude, isFalse);
+    });
+
+    test('hasPermissionMode: every known agent kind except shell', () {
+      expect(RcKind.claudeRc.hasPermissionMode, isTrue);
+      expect(RcKind.claudeBroker.hasPermissionMode, isTrue);
+      expect(RcKind.codex.hasPermissionMode, isTrue);
+      expect(RcKind.cursor.hasPermissionMode, isTrue);
+      expect(RcKind.opencode.hasPermissionMode, isTrue);
+      expect(RcKind.shell.hasPermissionMode, isFalse);
+    });
+
+    test('tool maps agent kinds to their token; shell/unknown null', () {
+      expect(RcKind.claudeRc.tool, 'claude');
+      expect(RcKind.claudeBroker.tool, 'claude');
+      expect(RcKind.codex.tool, 'codex');
+      expect(RcKind.opencode.tool, 'opencode');
+      expect(RcKind.cursor.tool, 'cursor');
+      expect(RcKind.shell.tool, isNull);
+    });
+
+    test('authHint carries per-agent login remediation', () {
+      expect(RcKind.claudeRc.authHint, contains('/login'));
+      expect(RcKind.codex.authHint, contains('codex login'));
+      expect(RcKind.opencode.authHint, contains('opencode auth login'));
+      expect(RcKind.cursor.authHint, contains('cursor-agent login'));
+      expect(RcKind.shell.authHint, isNotEmpty);
+      expect(RcKind.fromWire('x').authHint, isNotEmpty); // neutral fallback
     });
   });
 

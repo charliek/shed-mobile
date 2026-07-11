@@ -87,7 +87,7 @@ class ShedListScreen extends ConsumerWidget {
           IconButton(
             key: const ValueKey('sheds-refresh'),
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(shedsProvider(serverName)),
+            onPressed: () => invalidateShedViews(ref, serverName),
           ),
         ],
       ),
@@ -99,7 +99,7 @@ class ShedListScreen extends ConsumerWidget {
               builder: (_) => CreateShedScreen(serverName: serverName),
             ),
           );
-          ref.invalidate(shedsProvider(serverName));
+          invalidateShedViews(ref, serverName);
         },
         icon: const Icon(Icons.add, size: 20),
         label: const Text('Create shed'),
@@ -109,7 +109,7 @@ class ShedListScreen extends ConsumerWidget {
         error: (e, _) => ErrorRetry(
           error: e,
           messageKey: const ValueKey('sheds-error'),
-          onRetry: () => ref.invalidate(shedsProvider(serverName)),
+          onRetry: () => invalidateShedViews(ref, serverName),
         ),
         data: (list) {
           logDriveState('screen=sheds server=$serverName count=${list.length}');
@@ -121,7 +121,7 @@ class ShedListScreen extends ConsumerWidget {
             );
           }
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(shedsProvider(serverName)),
+            onRefresh: () async => invalidateShedViews(ref, serverName),
             child: ListView.separated(
               padding: const EdgeInsets.only(bottom: 96),
               itemCount: list.length,

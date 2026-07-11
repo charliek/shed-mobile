@@ -1,3 +1,6 @@
+import '../rc/rc_capabilities.dart';
+import '../rc/rc_models.dart';
+
 /// A shed as returned by the shed-server HTTP API. Tolerant: name + status +
 /// the raw map, with a few common typed fields surfaced for the UI.
 class Shed {
@@ -208,6 +211,125 @@ class ShedCreateError extends ShedCreateEvent {
   const ShedCreateError(this.code, this.message);
   final String code;
   final String message;
+}
+
+// ---- GET /api/overview single-call host snapshot --------------------------
+
+/// The `server` block of GET /api/overview: the server's version and the
+/// feature-token set (mirrored from GET /api/info). A client learns which
+/// endpoints/behaviors a server supports from [features] without probing each.
+class OverviewServer {
+  const OverviewServer({required this.version, required this.features});
+  final String version;
+  final List<String> features;
+
+  bool hasFeature(String feature) => features.contains(feature);
+
+  factory OverviewServer.fromJson(Map<String, Object?>? j) {
+    final raw = j?['features'];
+    return OverviewServer(
+      version: _nonEmpty(j?['version']) ?? '',
+      features: <String>[
+        if (raw is List)
+          for (final f in raw)
+            if (f is String) f,
+      ],
+    );
+  }
+}
+
+/// One shed in GET /api/overview: the full shed record plus the shed's RC
+/// sessions (only the rc-enriched tmux rows are surfaced) and, for a running
+/// shed, its rc capabilities. A stopped shed carries no sessions and omits
+/// capabilities ([capabilities] == null), which the create form treats as
+/// "absent" (fall back to claude + shell).
+class OverviewShed {
+  const OverviewShed({
+    required this.shed,
+    required this.sessions,
+    this.capabilities,
+  });
+
+  final Shed shed;
+  final List<RcSession> sessions;
+  final RcCapabilities? capabilities;
+
+  factory OverviewShed.fromJson(Map<String, Object?> j) {
+    final shed = Shed.fromJson(j);
+    final rawSessions = j['sessions'];
+    final sessions = <RcSession>[];
+    if (rawSessions is List) {
+      for (final e in rawSessions) {
+        if (e is! Map<String, Object?>) continue;
+        final rc = e['rc'];
+        // Only rc-enriched tmux rows carry an `rc` block; a plain tmux session
+        // (or an un-enriched rc-* row on a degraded shed) has none — skip it, so
+        // the Sessions view lists exactly the RC sessions (parity with the old
+        // `shed-ext-rc list` fan-out).
+        if (rc is! Map<String, Object?>) continue;
+        final name = _nonEmpty(e['name']) ?? '';
+        final slug = name.startsWith('rc-') ? name.substring(3) : name;
+        // The server's SessionRC is a display subset (no slug/tmux/id); derive
+        // slug + tmux from the session name and pull created_at from the outer
+        // row, then reuse the neutral-DTO decoder.
+        sessions.add(
+          RcSession.fromJson(<String, Object?>{
+            'slug': slug,
+            'tmux_session': name,
+            'created_at': e['created_at'],
+            ...rc,
+          }, displayNameFallback: (s) => '${shed.name}/$s'),
+        );
+      }
+    }
+    final caps = j['rc_capabilities'];
+    return OverviewShed(
+      shed: shed,
+      sessions: sessions,
+      capabilities: caps is Map<String, Object?>
+          ? RcCapabilities.fromJson(caps)
+          : null,
+    );
+  }
+}
+
+/// GET /api/overview — a single call a client renders a whole host from: server
+/// identity + feature set, disk usage, and every shed with its (rc-enriched)
+/// sessions and capabilities. Each sub-block degrades independently into
+/// [warnings] server-side, so a null [df] or an empty session list is a
+/// tolerated partial, not a failure.
+class Overview {
+  const Overview({
+    required this.server,
+    this.df,
+    required this.sheds,
+    required this.warnings,
+  });
+
+  final OverviewServer server;
+  final SystemDiskUsage? df;
+  final List<OverviewShed> sheds;
+  final List<String> warnings;
+
+  factory Overview.fromJson(Map<String, Object?> j) {
+    final rawSheds = j['sheds'];
+    final df = j['df'];
+    final warns = j['warnings'];
+    return Overview(
+      server: OverviewServer.fromJson(_map(j['server'])),
+      df: df is Map<String, Object?> ? SystemDiskUsage.fromJson(df) : null,
+      sheds: <OverviewShed>[
+        if (rawSheds is List)
+          for (final s in rawSheds)
+            if (s is Map<String, Object?>) OverviewShed.fromJson(s),
+      ],
+      warnings: <String>[
+        if (warns is List)
+          for (final w in warns)
+            if (w is String) w,
+      ],
+    );
+  }
 }
 
 // ---- System / disk usage (`GET /api/system/df`) ---------------------------

@@ -1,38 +1,116 @@
-/// RC Session Convention v2 kind. `<tool>-<mode>` so the model can grow to other
-/// agents later; `shell` is tool-agnostic. Mirrors shed-extensions internal/rc
-/// `Kind` and the shared `rcKindSchema`.
-///   claudeRc      – interactive `claude` REPL with `/rc`
-///   claudeBroker  – the `claude remote-control` multiplexer/broker
-///   shell         – plain login bash
-enum RcKind {
-  claudeBroker('claude-broker'),
-  claudeRc('claude-rc'),
-  shell('shell');
-
-  const RcKind(this.wire);
+/// RC Session Convention kind. Mirrors the guest's `rc.Kind`
+/// (`internal/ext/rc/rc.go`) and the shared Rust client core `RcKind`
+/// (`crates/shed-core/src/rc.rs`) — the same value set and the same
+/// unknown-kind policy.
+///
+/// A recognized kind is one of the fixed set (claude-broker / claude-rc / codex /
+/// opencode / cursor / shell). An UNRECOGNIZED wire value — e.g. a session
+/// created by a newer client — is PRESERVED verbatim via [RcKind.other]
+/// ([known] == false) under the unknown-kind policy: it renders neutrally
+/// (name + state only, no claude URL/broker affordances) rather than collapsing
+/// to `claude-broker`.
+///
+/// Not an `enum` precisely so the unknown case can carry its raw string.
+class RcKind {
+  const RcKind._(this.wire, {this.known = true});
 
   /// The on-wire string (the value stored in SHED_RC_KIND and passed to --kind).
   final String wire;
 
-  /// Decode a wire value. An unrecognized/foreign kind reads as the
-  /// legacy/unmanaged fallback (`claude-broker`), never dropping the session —
-  /// deliberately different from [defaultRcKind] (the create-time default).
+  /// False for a preserved-raw unknown/foreign kind — the neutral-render signal.
+  final bool known;
+
+  static const claudeBroker = RcKind._('claude-broker');
+  static const claudeRc = RcKind._('claude-rc');
+  static const codex = RcKind._('codex');
+  static const opencode = RcKind._('opencode');
+  static const cursor = RcKind._('cursor');
+  static const shell = RcKind._('shell');
+
+  /// Every recognized kind, in the pinned capabilities wire order.
+  static const List<RcKind> values = [
+    claudeBroker,
+    claudeRc,
+    codex,
+    opencode,
+    cursor,
+    shell,
+  ];
+
+  /// The kinds a create form can offer for creation, in canonical order.
+  /// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind
+  /// is never creatable, so both are excluded. Capability gating narrows this
+  /// further per shed. Mirrors the Rust core `RcKind::creatable()`.
+  static const List<RcKind> creatable = [
+    claudeRc,
+    codex,
+    opencode,
+    cursor,
+    shell,
+  ];
+
+  /// Decode a wire value, PRESERVING an unrecognized string as an unknown kind
+  /// ([RcKind.other]) rather than collapsing to a default. Mirrors the Go
+  /// `parseKind` / Rust `RcKind::from_wire`.
   static RcKind fromWire(String? s) {
-    for (final k in RcKind.values) {
+    for (final k in values) {
       if (k.wire == s) return k;
     }
-    return RcKind.claudeBroker;
+    return RcKind.other(s ?? '');
   }
 
-  /// Whether this kind accepts a typed kickoff line (claude-rc → a prompt,
-  /// shell → a command). claude-broker's input is the remote URL, not the pane.
-  bool get acceptsPrompt => this != RcKind.claudeBroker;
+  /// An unknown/foreign kind, its raw wire string preserved verbatim.
+  factory RcKind.other(String raw) => RcKind._(raw, known: false);
 
-  /// Whether this kind runs claude (and so can surface trust/auth states).
-  bool get runsClaude => this != RcKind.shell;
+  /// Whether this kind accepts a typed kickoff line (claude-rc/codex/opencode/
+  /// cursor → a prompt, shell → a command). claude-broker's input is its remote
+  /// URL, not the pane; an unknown kind is not promptable (no affordances).
+  /// Mirrors `AcceptsTypedInput` / `accepts_typed_input`.
+  bool get acceptsPrompt => known && this != claudeBroker;
+
+  /// Whether this kind runs claude — i.e. one of the two claude kinds (and so
+  /// gets claude's full `--permission-mode` set and URL affordances). NOT true
+  /// for codex/cursor/opencode. Mirrors the guest's `IsClaudeKind`.
+  bool get runsClaude => this == claudeBroker || this == claudeRc;
+
+  /// Whether this kind carries an autonomy/permission posture: every known agent
+  /// kind does; `shell` has none, and an unknown kind renders neutrally with
+  /// none.
+  bool get hasPermissionMode => known && this != shell;
+
+  /// The tool token this kind's agent maps to under `capabilities.agents`, or
+  /// null for a kind with no installable agent (`shell`) or an unknown kind.
+  /// Mirrors the Rust core `RcKind::tool`.
+  String? get tool => switch (wire) {
+    'claude-rc' || 'claude-broker' => 'claude',
+    'codex' => 'codex',
+    'opencode' => 'opencode',
+    'cursor' => 'cursor',
+    _ => null, // shell / unknown — no agent to require
+  };
+
+  /// The per-agent login remediation surfaced for this kind's `needs-auth` state
+  /// (what to run in a terminal to log in). Mirrors the guest's `AuthHintFor`
+  /// and the Rust core `auth_hint`.
+  String get authHint => switch (wire) {
+    'claude-rc' || 'claude-broker' => 'run `claude` → /login',
+    'codex' => 'run `codex` and complete login (`codex login`)',
+    'opencode' => 'run `opencode auth login`',
+    'cursor' => 'run `cursor-agent login`',
+    _ => 'log in to the agent in a terminal',
+  };
+
+  @override
+  bool operator ==(Object other) => other is RcKind && other.wire == wire;
+
+  @override
+  int get hashCode => wire.hashCode;
+
+  @override
+  String toString() => 'RcKind($wire)';
 }
 
-/// The create-time default kind (matches shared `DEFAULT_RC_KIND`).
+/// The create-time default kind (matches the guest's `DefaultKind`).
 const RcKind defaultRcKind = RcKind.claudeRc;
 
 /// Pane-derived liveness of a session. Never stored — shed-ext-rc classifies it

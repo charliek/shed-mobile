@@ -53,6 +53,13 @@ class ShedClient {
   Future<List<ImageInfo>> listImages() async =>
       _list(await _send('GET', '/api/images'), 'images', ImageInfo.fromJson);
 
+  /// One-call host snapshot (`GET /api/overview`): server identity + features,
+  /// disk usage, and every shed with its rc-enriched sessions and capabilities.
+  /// A server too old to expose the route responds 404, which `_obj` surfaces as
+  /// an AppError the overview provider maps to an upgrade-required state.
+  Future<Overview> fetchOverview() async =>
+      Overview.fromJson(_obj(await _send('GET', '/api/overview')));
+
   /// This host's disk usage broken down by images/sheds/snapshots/orphans
   /// (`GET /api/system/df`). Throws (→ a per-host "unavailable" card) if the agent
   /// is too old to serve it.
