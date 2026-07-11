@@ -238,6 +238,14 @@ final overviewProvider = FutureProvider.autoDispose
 const Duration _rcReconnectInitial = Duration(milliseconds: 500);
 const Duration _rcReconnectMax = Duration(seconds: 30);
 
+/// Debounce for the unknown-slug overview refetch: a session created outside
+/// the app (e.g. via the CLI) announces itself on the SSE stream, but the
+/// overlay can only patch EXISTING cards — the overview must be refetched once
+/// for the new card to appear at all. At most one such refetch per window, so
+/// a burst of events for a new session (or several new sessions at once) costs
+/// a single fetch.
+const Duration _rcUnknownSlugDebounce = Duration(seconds: 5);
+
 /// The live rc-activity overlay for one host, folded from its `GET /api/rc/events`
 /// SSE stream. A StreamProvider so the sessions view (and per-card `.select`s)
 /// react to each folded snapshot without re-fetching the overview per event.
@@ -281,6 +289,35 @@ final liveActivityProvider = StreamProvider.autoDispose
       var backoff = _rcReconnectInitial;
       controller.add(overlay);
 
+      // Unknown-slug refetch (debounced): an event for a session the current
+      // overview snapshot doesn't hold (a CLI-created session) means there is
+      // no card for the patch to land on — refetch the overview once so the
+      // new card appears without an app relaunch. ref.read (not watch): the
+      // overview must never be a dependency, or its own invalidation would
+      // rebuild this provider and tear down the SSE.
+      var lastUnknownRefetch = DateTime.fromMillisecondsSinceEpoch(0);
+      bool overviewHasSession(String shed, String slug) {
+        final r = ref.read(overviewProvider(serverName)).value;
+        // No snapshot to compare against — don't churn.
+        if (r is! OverviewData) {
+          return true;
+        }
+        for (final s in r.overview.sheds) {
+          if (s.shed.name == shed) {
+            return s.sessions.any((sess) => sess.slug == slug);
+          }
+        }
+        return false; // whole shed unknown → the snapshot is stale too
+      }
+
+      void maybeRefetchUnknown(String shed, String slug) {
+        if (overviewHasSession(shed, slug)) return;
+        final now = DateTime.now();
+        if (now.difference(lastUnknownRefetch) < _rcUnknownSlugDebounce) return;
+        lastUnknownRefetch = now;
+        ref.invalidate(overviewProvider(serverName));
+      }
+
       void connect(ShedClient client) {
         if (disposed) return;
         var gotData = false;
@@ -310,6 +347,13 @@ final liveActivityProvider = StreamProvider.autoDispose
                 ref.invalidate(overviewProvider(serverName));
               }
               connectedBefore = true;
+            }
+            // A live event for a session the overview doesn't know about →
+            // one debounced overview refetch so the new card materializes.
+            if (ev is RcSessionUpdated && !ev.removed) {
+              maybeRefetchUnknown(ev.shed, ev.slug);
+            } else if (ev is RcActivityChanged) {
+              maybeRefetchUnknown(ev.shed, ev.slug);
             }
             overlay = overlay.apply(ev);
             controller.add(overlay);

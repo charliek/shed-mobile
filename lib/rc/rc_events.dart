@@ -23,7 +23,11 @@ sealed class RcEvent {
 }
 
 /// `event: activity.changed` — a session's live activity (and lifecycle state)
-/// moved. `data: {shed, slug, activity, activity_at, state}`.
+/// moved. `data: {shed, slug, activity, activity_at, state}`, plus an optional
+/// `last_message` (the sanitized preview that rides with the activity
+/// dimension) when the hub includes it — decoded tolerantly so a card's
+/// subtitle can patch live alongside the badge instead of waiting for an
+/// overview refetch.
 class RcActivityChanged extends RcEvent {
   const RcActivityChanged({
     required this.shed,
@@ -31,6 +35,7 @@ class RcActivityChanged extends RcEvent {
     this.activity,
     this.activityAt,
     this.state,
+    this.lastMessage,
   });
   @override
   final String shed;
@@ -38,6 +43,7 @@ class RcActivityChanged extends RcEvent {
   final RcActivity? activity;
   final String? activityAt;
   final RcState? state;
+  final String? lastMessage;
 }
 
 /// `event: session.updated` — a session was created/killed or its lifecycle
@@ -118,6 +124,7 @@ RcEvent? parseRcEvent(SseRawEvent e) {
         activity: RcActivity.fromWire(_str(data['activity'])),
         activityAt: _str(data['activity_at']),
         state: _state(data['state']),
+        lastMessage: _cleanMsg(data['last_message']),
       );
     case 'session.updated':
       if (shed == null || slug == null) return null;
@@ -197,7 +204,9 @@ class ActivityOverlay {
             LiveActivity(
               activity: ev.activity,
               state: ev.state ?? prev?.state,
-              lastMessage: prev?.lastMessage,
+              // A payload-carried preview supersedes the held one — this is
+              // what lets the card's subtitle update live with the badge.
+              lastMessage: ev.lastMessage ?? prev?.lastMessage,
               lastSeq: prev?.lastSeq,
             ),
           ),

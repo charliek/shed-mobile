@@ -8,6 +8,7 @@ import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/rc/rc_events.dart';
 import 'package:shed_mobile/rc/rc_models.dart';
 import 'package:shed_mobile/shed/shed_client.dart';
+import 'package:shed_mobile/shed/shed_dtos.dart';
 
 class _NoHttp extends PinnedHttpClient {
   _NoHttp() : super(host: 'x', port: 1, fingerprint: 'sha256:00');
@@ -140,6 +141,95 @@ void main() {
     final overlay = container.read(liveActivityProvider('h')).value!;
     expect(overlay.lookup('proj', 'a')!.activity, RcActivity.idle);
     expect(overlay.lookup('proj', 'stale'), isNull); // cleared on reconnect
+  });
+
+  test('an event for a slug UNKNOWN to the overview triggers one debounced '
+      'overview refetch; known-slug events trigger none', () async {
+    final s1 = StreamController<RcEvent>();
+    var overviewBuilds = 0;
+    // A snapshot holding exactly one session: proj/known.
+    final snapshot = Overview.fromJson({
+      'server': {
+        'version': '0.9.0',
+        'features': ['overview', 'rc-events'],
+      },
+      'sheds': [
+        {
+          'name': 'proj',
+          'status': 'running',
+          'sessions': [
+            {
+              'name': 'rc-known',
+              'rc': {'kind': 'codex', 'state': 'ready', 'managed': true},
+            },
+          ],
+        },
+      ],
+    });
+    final container = ProviderContainer(
+      retry: (_, _) => null,
+      overrides: [
+        shedClientProvider.overrideWith(
+          (ref, name) async => _FakeClient([s1.stream]),
+        ),
+        overviewProvider.overrideWith((ref, name) async {
+          overviewBuilds++;
+          return OverviewData(snapshot);
+        }),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      s1.close();
+    });
+    container.listen(liveActivityProvider('h'), (_, _) {});
+    container.listen(overviewProvider('h'), (_, _) {});
+    await container.read(overviewProvider('h').future);
+    await container.read(liveActivityProvider('h').future);
+    expect(overviewBuilds, 1);
+
+    // Events for the KNOWN slug: no refetch — the overlay patches its card.
+    s1.add(
+      const RcActivityChanged(
+        shed: 'proj',
+        slug: 'known',
+        activity: RcActivity.working,
+        state: RcState.ready,
+      ),
+    );
+    s1.add(
+      const RcSessionUpdated(shed: 'proj', slug: 'known', state: RcState.ready),
+    );
+    await _tick();
+    expect(overviewBuilds, 1);
+
+    // A CLI-created session the snapshot doesn't hold: exactly ONE refetch,
+    // even across a burst of events for it (debounce).
+    for (var i = 0; i < 3; i++) {
+      s1.add(
+        const RcSessionUpdated(
+          shed: 'proj',
+          slug: 'brandnew',
+          state: RcState.ready,
+        ),
+      );
+      s1.add(
+        const RcActivityChanged(
+          shed: 'proj',
+          slug: 'brandnew',
+          activity: RcActivity.working,
+          state: RcState.ready,
+        ),
+      );
+    }
+    await _tick();
+    expect(overviewBuilds, 2);
+
+    // A kill event (removed) for an unknown slug must NOT refetch — there is
+    // nothing to materialize.
+    s1.add(const RcSessionUpdated(shed: 'proj', slug: 'gone9', removed: true));
+    await _tick();
+    expect(overviewBuilds, 2);
   });
 
   test('dispose during a quiet stream cancels the SSE subscription', () async {

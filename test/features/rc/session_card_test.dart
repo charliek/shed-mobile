@@ -191,17 +191,17 @@ void main() {
     );
   });
 
-  testWidgets('live overlay supersedes the base snapshot activity', (
-    tester,
-  ) async {
-    // Base says idle; the SSE overlay says needs_input → the badge shows the
-    // live value.
+  testWidgets('live overlay supersedes the base snapshot activity AND the '
+      'last-message subtitle', (tester) async {
+    // Base says idle + an old preview; the SSE overlay says needs_input with a
+    // fresh preview → the badge AND the subtitle show the live values.
     final overlay = ActivityOverlay.empty.apply(
       const RcActivityChanged(
         shed: 'web',
         slug: 'abc123',
         activity: RcActivity.needsInput,
         state: RcState.ready,
+        lastMessage: 'fresh live preview',
       ),
     );
     await _pump(
@@ -217,9 +217,12 @@ void main() {
         state: RcState.ready,
         managed: true,
         activity: RcActivity.idle,
+        lastMessage: 'stale overview preview',
       ),
     );
     expect(find.text('needs input'), findsOneWidget);
     expect(find.text('idle'), findsNothing);
+    expect(find.text('fresh live preview'), findsOneWidget);
+    expect(find.text('stale overview preview'), findsNothing);
   });
 }

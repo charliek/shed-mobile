@@ -21,6 +21,42 @@ void main() {
       expect(a.activity, RcActivity.needsInput);
       expect(a.activityAt, '2026-06-19T18:54:12Z');
       expect(a.state, RcState.ready);
+      expect(a.lastMessage, isNull); // not carried on this frame
+    });
+
+    test('activity.changed decodes a payload-carried last_message '
+        '(and the reducer lets it supersede the held one)', () {
+      final ev =
+          _parse(
+                'activity.changed',
+                '{"shed":"proj","slug":"cdx777","activity":"working",'
+                    '"state":"ready","last_message":"Running tests."}',
+              )!
+              as RcActivityChanged;
+      expect(ev.lastMessage, 'Running tests.');
+
+      var o = ActivityOverlay.empty.apply(
+        const RcActivityChanged(
+          shed: 'proj',
+          slug: 'cdx777',
+          activity: RcActivity.working,
+          state: RcState.ready,
+          lastMessage: 'older preview',
+        ),
+      );
+      o = o.apply(ev);
+      expect(o.lookup('proj', 'cdx777')!.lastMessage, 'Running tests.');
+
+      // A frame WITHOUT last_message keeps the held preview (no wipe).
+      o = o.apply(
+        const RcActivityChanged(
+          shed: 'proj',
+          slug: 'cdx777',
+          activity: RcActivity.needsInput,
+          state: RcState.ready,
+        ),
+      );
+      expect(o.lookup('proj', 'cdx777')!.lastMessage, 'Running tests.');
     });
 
     test(

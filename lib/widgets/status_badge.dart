@@ -23,35 +23,43 @@ class StatusDot extends StatefulWidget {
 
 class _StatusDotState extends State<StatusDot>
     with SingleTickerProviderStateMixin {
-  AnimationController? _controller;
+  // Created exactly ONCE, eagerly in initState. SingleTickerProviderStateMixin
+  // vends a single ticker for the State's lifetime: constructing a second
+  // AnimationController (the old code did, whenever `animate` flipped back to
+  // true — e.g. a session's activity badge pulsing working → idle → working)
+  // trips createTicker's '_dependents.isEmpty' assert and red-screens the
+  // tree. Animate changes now just repeat()/stop() this one controller.
+  // (Eager, not a `late final` initializer: that would lazily create the
+  // controller on first touch — which for a never-animated dot is dispose(),
+  // where createTicker's TickerMode ancestor lookup is illegal.)
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    if (widget.animate) _startPulse();
-  }
-
-  void _startPulse() {
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
-    )..repeat(reverse: true);
+    );
+    if (widget.animate) _controller.repeat(reverse: true);
   }
 
   @override
   void didUpdateWidget(StatusDot old) {
     super.didUpdateWidget(old);
-    if (widget.animate && _controller == null) {
-      _startPulse();
-    } else if (!widget.animate && _controller != null) {
-      _controller!.dispose();
-      _controller = null;
+    if (widget.animate == old.animate) return;
+    if (widget.animate) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller
+        ..stop()
+        ..value = 0; // rest fully opaque while static
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -65,10 +73,9 @@ class _StatusDotState extends State<StatusDot>
         shape: BoxShape.circle,
       ),
     );
-    final c = _controller;
-    if (c == null) return dot;
+    if (!widget.animate) return dot;
     return FadeTransition(
-      opacity: Tween<double>(begin: 1, end: 0.35).animate(c),
+      opacity: Tween<double>(begin: 1, end: 0.35).animate(_controller),
       child: dot,
     );
   }
