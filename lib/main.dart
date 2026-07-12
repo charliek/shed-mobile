@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import 'app/app_shell.dart';
 import 'features/onboarding/onboarding_screen.dart';
-import 'marionette/marionette_init.dart';
 import 'providers.dart';
 import 'theme/shed_theme.dart';
 import 'theme/theme_mode_provider.dart';

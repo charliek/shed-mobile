@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
+import 'package:stridelabs_drive/stridelabs_drive.dart';
 
-import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
