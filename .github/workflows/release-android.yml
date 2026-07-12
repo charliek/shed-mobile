@@ -39,6 +39,13 @@ jobs:
           flutter-version: 3.44.2
           channel: stable
 
+      # Private git dependency (stridelabs_drive lives in a private repo). The
+      # ssh-agent must be loaded before `pub get` resolves the git dep.
+      - name: Load SSH key for private Flutter deps
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STRIDELABS_FLUTTER_SSH_KEY }}
+
       - name: Flutter checks
         run: |
           flutter pub get

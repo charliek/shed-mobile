@@ -15,6 +15,11 @@ jobs:
           # Pinned exactly — do not rely on `channel: stable` drifting (PLAN §13 A6).
           flutter-version: 3.44.2
           channel: stable
+      # Private git dependency (stridelabs_drive lives in a private repo). The
+      # ssh-agent must be loaded before `pub get` resolves the git dep.
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STRIDELABS_FLUTTER_SSH_KEY }}
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
