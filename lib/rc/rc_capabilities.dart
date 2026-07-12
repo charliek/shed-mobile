@@ -107,15 +107,39 @@ class AgentInfo {
 
 /// Per-kind UI hints from [RcCapabilities.kindFeatures]. Mirrors the guest's
 /// `rc.KindFeatures`: [postInput] reports whether a typed line reaches the pane,
-/// [approvals] is where approvals surface (v1 agents are TUI-only → `"tui"`).
+/// [approvals] is where approvals surface (v1 agents are TUI-only → `"tui"`),
+/// [watch] reports whether the hub produces a live message feed for the kind
+/// (GET /messages + message.appended), and [input] is the feed-input posting
+/// mode — `"gated"` means POST /input is accepted only while the session is
+/// waiting, `""` means no feed input (the TUI-only [postInput] path still
+/// applies). Both are codex-only in this phase; absent → false / `""`.
 class KindFeatures {
-  const KindFeatures({required this.postInput, required this.approvals});
+  const KindFeatures({
+    required this.postInput,
+    required this.approvals,
+    this.watch = false,
+    this.input = '',
+  });
   final bool postInput;
   final String approvals;
+
+  /// Whether the hub serves a live message feed for this kind (the watch view's
+  /// gate).
+  final bool watch;
+
+  /// Feed-input posting mode: `"gated"` (POST /input accepted while waiting) or
+  /// `""` (no feed input).
+  final String input;
+
+  /// Whether feed input is gated (`input == "gated"`) — the watch view's input
+  /// bar is only ever enabled for a gated kind waiting for input.
+  bool get inputGated => input == 'gated';
 
   factory KindFeatures.fromJson(Map<String, Object?> j) => KindFeatures(
     postInput: j['post_input'] == true,
     approvals: _str(j['approvals']) ?? '',
+    watch: j['watch'] == true,
+    input: _str(j['input']) ?? '',
   );
 }
 

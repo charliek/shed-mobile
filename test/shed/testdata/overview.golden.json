@@ -1,7 +1,7 @@
 {
   "server": {
     "version": "0.8.0",
-    "features": ["overview", "rc-enrich"]
+    "features": ["overview", "rc-enrich", "rc-events", "rc-proxy"]
   },
   "df": {
     "server_name": "test-server",
@@ -28,7 +28,10 @@
             "managed": true,
             "display_name": "proj/abc234",
             "url": "https://claude.ai/code/session_01RCkTDrdZ2Rr12sD5dfMjgr",
-            "created_by": "shed-remote-agent/0.1.0"
+            "created_by": "shed-remote-agent/0.1.0",
+            "activity": "working",
+            "activity_at": "2026-06-19T18:54:12Z",
+            "last_message": "Running the test suite now."
           }
         },
         {
@@ -54,9 +57,10 @@
           "claude": { "installed": true, "version": "2.1.206" },
           "codex": { "installed": true, "version": "0.142.4" }
         },
-        "features": ["generic-perm", "plan-stdin", "prompt-b64"],
+        "features": ["generic-perm", "plan-stdin", "prompt-b64", "serve", "activity", "messages"],
         "kind_features": {
-          "codex": { "post_input": true, "approvals": "tui" }
+          "claude-rc": { "post_input": true, "approvals": "tui" },
+          "codex": { "post_input": true, "approvals": "tui", "watch": true, "input": "gated" }
         }
       }
     },

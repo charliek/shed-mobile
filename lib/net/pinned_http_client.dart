@@ -88,9 +88,33 @@ class PinnedHttpClient {
       req.headers.contentType = ContentType.json;
       req.add(utf8.encode(jsonEncode(body)));
     }
-    final resp = await req.close();
+    yield* _sseFromResponse(await req.close(), 'POST $path');
+  }
+
+  /// GET that streams a `text/event-stream` response (the aggregate rc activity
+  /// stream). Symmetric with [postSse] but GET + no body. Cancellation: the
+  /// returned stream, when its listener cancels, tears down [parseSseStream]'s
+  /// subscription to the response, which closes the underlying connection.
+  ///
+  /// The client's `idleTimeout` (120s) is a ceiling on a *silent* connection;
+  /// the server heartbeats a `: heartbeat` comment every 25s, so a healthy
+  /// stream never idles out — a 120s gap means the connection is genuinely dead
+  /// and should drop so the caller reconnects.
+  Stream<SseRawEvent> getSse(String path, {String? token}) async* {
+    final req = await _client.getUrl(_uri(path));
+    _headers(req, token, 'text/event-stream');
+    yield* _sseFromResponse(await req.close(), 'GET $path');
+  }
+
+  /// Shared tail of [postSse]/[getSse]: on a non-200 read the body so 401/auth
+  /// and upstream `{error:{code,message}}` survive as a typed [AppError];
+  /// otherwise stream the parsed SSE frames. [what] labels the request in the
+  /// fallback error message.
+  Stream<SseRawEvent> _sseFromResponse(
+    HttpClientResponse resp,
+    String what,
+  ) async* {
     if (resp.statusCode != 200) {
-      // Read the body so 401/auth and upstream {error:{code,message}} survive.
       final body = await resp.transform(utf8.decoder).join();
       Map<String, Object?>? err;
       try {
@@ -103,7 +127,7 @@ class PinnedHttpClient {
       }
       throw AppError(
         (err?['code'] as String?) ?? 'SHED_SERVER_ERROR',
-        (err?['message'] as String?) ?? 'POST $path -> HTTP ${resp.statusCode}',
+        (err?['message'] as String?) ?? '$what -> HTTP ${resp.statusCode}',
         resp.statusCode,
       );
     }

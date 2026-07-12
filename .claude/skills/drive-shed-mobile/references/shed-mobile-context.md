@@ -98,11 +98,59 @@ MSTATE: `screen=create-rc kind=<wire|-> offered=<csv>`. MRESULT: `rc-create ok|e
 
 ### Cross-host Sessions view
 Reads one `GET /api/overview` per host (server-rc-enriched; no SSH fan-out). A
-server too old for `/api/overview` (404) is a hard-require:
+server too old for `/api/overview` (404) is a hard-require. When the host's
+overview `server.features` includes `rc-events`, the view subscribes to
+`GET /api/rc/events` (SSE, via `liveActivityProvider`) and patches each card's
+activity badge / last-message live — no per-event overview invalidation, one
+overview refetch per SSE reconnect. Without `rc-events` it's today's manual
+refresh (no polling).
 
 | Key | What |
 |---|---|
 | `all-sessions-unreachable-<server>` | host unreachable banner (warn) |
 | `all-sessions-needs-upgrade-<server>` | old server — "needs upgrade for the sessions view" (err) |
 
-MSTATE: `all-sessions host=<name> reachable=true|false|needs-upgrade count=N`.
+MSTATE: `all-sessions host=<name> reachable=true|false|needs-upgrade count=N live=t|f`
+(`live=t` when the `rc-events` SSE subscription is active for that host).
+
+### Session card (cross-host Sessions view) — `SessionCard`
+Base is `<server>-<shed>-<slug>` (e.g. `h-web-abc123`).
+
+| Key | What |
+|---|---|
+| `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI) |
+| `all-session-watch-<base>` | "watch" (eye) → CodexWatchScreen; **only** when caps `kind_features[kind].watch` |
+| `all-session-delete-<base>` | delete/kill the session |
+| `all-session-activity-<base>` | live activity badge — present only when lifecycle permits (ready-ish) AND activity is `working` (pulsing) / `needs_input` (steady) / `idle` (quiet); absent for `unknown`, and suppressed for needs-*/dead |
+| `all-session-lastmsg-<base>` | one-line last-message preview (when the hub reports one; suppressed with the activity badge for needs-*/dead — whole-dimension suppression) |
+
+### Codex watch view — `CodexWatchScreen` (Scaffold `codex-watch-screen`)
+The codex-first non-TUI message feed + gated input. Reached from
+`all-session-watch-<base>`. Renders `GET …/rc/v1/sessions/{slug}/messages`
+(plain Text, no markdown), live-appends on `message.appended`, and posts
+`.../input` when gated + waiting. Lifecycle needs-auth/dead or a 503 hands off
+to the TUI terminal.
+
+| Key | What |
+|---|---|
+| `codex-watch-refresh` | app-bar refresh (re-drain the feed) |
+| `codex-watch-activity` | app-bar live activity badge (same rules as the card badge) |
+| `codex-watch-loading` | initial-load spinner |
+| `codex-watch-list` | the message feed ListView |
+| `codex-watch-msg-<seq>` | one feed message (per `seq`) |
+| `codex-watch-truncated` | "earlier history truncated" divider (first page `truncated:true`) |
+| `codex-watch-empty` | "No messages yet" |
+| `codex-watch-input` | reply TextField — enabled only when `kind_features.input=="gated"` AND activity `needs_input` AND lifecycle permits |
+| `codex-watch-send` | send button (`onPressed: null` when input disabled) |
+| `codex-watch-banner` | needs-auth/dead TUI-handoff banner (warn) |
+| `codex-watch-open-tui-banner` | one-tap → in-app terminal (the banner's button) |
+| `codex-watch-open-tui` | one-tap → in-app terminal (the error/unavailable body's button; distinct from the banner key — both can be on screen together) |
+| `codex-watch-unavailable` | "Live view unavailable on this shed" (hub 503 / RC_HUB_UNAVAILABLE) |
+| `codex-watch-error` | generic feed-load error text |
+| `codex-watch-retry` | retry the feed load |
+
+MSTATE: `screen=codex-watch server=<name> shed=<shed> slug=<slug> state=<wire>
+activity=<wire|none> msgs=N truncated=t|f input=enabled|disabled|blocked`.
+MRESULT: `codex-watch-input ok|error=…` (a 409 send → snackbar "Session is no
+longer waiting for input" + a state refresh); `codex-watch-handoff ok` (opened
+the TUI).

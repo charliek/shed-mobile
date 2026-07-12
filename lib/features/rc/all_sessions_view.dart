@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../providers.dart';
+import '../../shed/shed_dtos.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
 import 'session_card.dart';
@@ -59,14 +60,22 @@ class _HostSessions extends ConsumerWidget {
             tone: ShedStatusTone.err,
           );
         }(),
-        OverviewData(:final overview) => _sessions(shedSessionPairs(overview)),
+        OverviewData(:final overview) => _sessions(ref, overview),
       },
     );
   }
 
-  Widget _sessions(List<ShedSession> list) {
+  Widget _sessions(WidgetRef ref, Overview overview) {
+    final list = shedSessionPairs(overview);
+    // Live activity badges require the server's aggregate SSE stream. When it's
+    // advertised, keep the per-host subscription alive at the group level (so a
+    // scrolled-off card can't drop it) and mark cards live; otherwise cards stay
+    // on the static overview snapshot (today's manual-refresh behavior).
+    final live = overview.server.hasFeature('rc-events');
+    if (live) ref.watch(liveActivityProvider(serverName));
     logDriveState(
-      'all-sessions host=$serverName reachable=true count=${list.length}',
+      'all-sessions host=$serverName reachable=true count=${list.length} '
+      'live=$live',
     );
     if (list.isEmpty) return const HostNote('No sessions');
     return Column(
@@ -79,6 +88,7 @@ class _HostSessions extends ConsumerWidget {
             serverName: serverName,
             shedName: e.shedName,
             session: e.session,
+            live: live,
           ),
       ],
     );

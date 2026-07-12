@@ -15,23 +15,31 @@ import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
 import '../sheds/shed_actions.dart';
 import '../terminal/terminal_screen.dart';
+import 'codex_watch_screen.dart';
 
-/// A cross-host rc-session card: status badge, kind chip, a meta line
-/// (shed · tmux · age), a dark "›_ open" pill (→ the in-app terminal), and delete.
-/// Fed by the SSH `shed-ext-rc list` ([RcSession]), so the slug/kind/state are
-/// authoritative (no derivation). Delete kills the session over SSH (managed
-/// teardown), consistent with how the list is gathered.
+/// A cross-host rc-session card: lifecycle badge, a live activity badge (when the
+/// hub reports one and lifecycle permits it), kind chip, a meta line
+/// (shed · tmux · age), an optional one-line last-message preview, a "watch"
+/// affordance (→ the codex message-feed view) for watch-capable kinds, a dark
+/// "›_ open" pill (→ the in-app terminal), and delete.
+///
+/// When [live] is true the card overlays the host's `GET /api/rc/events` stream
+/// (via [liveActivityProvider]) onto the base overview snapshot, so its activity
+/// badge and last-message line update without a refetch. [live] should be set
+/// only when the server advertises `rc-events`.
 class SessionCard extends ConsumerStatefulWidget {
   const SessionCard({
     required this.serverName,
     required this.shedName,
     required this.session,
+    this.live = false,
     super.key,
   });
 
   final String serverName;
   final String shedName;
   final RcSession session;
+  final bool live;
 
   @override
   ConsumerState<SessionCard> createState() => _SessionCardState();
@@ -53,6 +61,16 @@ class _SessionCardState extends ConsumerState<SessionCard> {
         shedName: widget.shedName,
         slug: widget.session.slug,
         title: '${widget.shedName}/${widget.session.slug}',
+      ),
+    ),
+  );
+
+  void _watch() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => CodexWatchScreen(
+        serverName: widget.serverName,
+        shedName: widget.shedName,
+        session: widget.session,
       ),
     ),
   );
@@ -98,12 +116,46 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     final c = context.shed;
     final s = widget.session;
     final desktop = isDesktopWidth(MediaQuery.sizeOf(context).width);
-    final tone = shedStatusTone(s.state.wire).tone;
+
+    // Overlay the live SSE patch (if watching) onto the base snapshot.
+    final patch = widget.live
+        ? ref.watch(
+            liveActivityProvider(
+              widget.serverName,
+            ).select((a) => a.value?.lookup(widget.shedName, s.slug)),
+          )
+        : null;
+    final state = patch?.state ?? s.state;
+    final activity = patch?.activity ?? s.activity;
+    // Lifecycle-trumps covers the WHOLE activity dimension: a blocking state
+    // (needs-*/dead) suppresses the last-message line too — a stale preview on
+    // a dead/gated row would present pre-death context as current (mirrors the
+    // Go server's DisplayActivity + toSessionRC suppression).
+    final lastMessage = rcStatePermitsActivity(state)
+        ? (patch?.lastMessage ?? s.lastMessage)
+        : null;
+
+    // Watch affordance: only for a kind whose capabilities advertise the feed.
+    final caps = ref.watch(shedCapabilitiesProvider(_key)).value;
+    final canWatch = caps?.kindFeatures[s.kind.wire]?.watch ?? false;
 
     final badge = StatusBadge(
-      tone: tone,
-      label: s.state.wire.replaceAll('-', ' '),
+      tone: shedStatusTone(state.wire).tone,
+      label: state.wire.replaceAll('-', ' '),
     );
+
+    // Lifecycle trumps activity: show the activity badge only when the lifecycle
+    // permits it (needs-*/dead hide it) AND the hub reported a renderable one.
+    final actDisplay = rcActivityBadge(state, activity);
+    final activityBadge = actDisplay == null
+        ? null
+        : StatusBadge(
+            key: ValueKey('all-session-activity-$_base'),
+            tone: actDisplay.tone,
+            label: actDisplay.label,
+            pulse: actDisplay.pulse,
+          );
+
     final kindChip = KindChip(s.kind.wire);
     final nameText = Text(
       s.displayName,
@@ -121,6 +173,15 @@ class _SessionCardState extends ConsumerState<SessionCard> {
       overflow: TextOverflow.ellipsis,
       style: monoStyle(fontSize: 11.5, color: c.fg3),
     );
+    final lastMessageText = (lastMessage == null)
+        ? null
+        : Text(
+            lastMessage,
+            key: ValueKey('all-session-lastmsg-$_base'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: sansStyle(fontSize: 12.5, color: c.fg2),
+          );
 
     final body = desktop
         ? Row(
@@ -137,14 +198,23 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                         Flexible(child: nameText),
                         const SizedBox(width: 10),
                         kindChip,
+                        if (activityBadge != null) ...[
+                          const SizedBox(width: 8),
+                          activityBadge,
+                        ],
                       ],
                     ),
                     const SizedBox(height: 5),
                     metaText,
+                    if (lastMessageText != null) ...[
+                      const SizedBox(height: 4),
+                      lastMessageText,
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 12),
+              if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
               OpenPill(
                 key: ValueKey('all-session-open-$_base'),
                 onTap: _open,
@@ -171,11 +241,20 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                   kindChip,
                   const SizedBox(width: 9),
                   Flexible(child: metaText),
+                  if (activityBadge != null) ...[
+                    const SizedBox(width: 9),
+                    activityBadge,
+                  ],
                 ],
               ),
+              if (lastMessageText != null) ...[
+                const SizedBox(height: 8),
+                lastMessageText,
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
+                  if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
                   Expanded(
                     child: OpenPill(
                       key: ValueKey('all-session-open-$_base'),
@@ -192,6 +271,14 @@ class _SessionCardState extends ConsumerState<SessionCard> {
 
     return CardShell(child: body);
   }
+
+  Widget _watchButton(ShedColors c) => SquareIconButton(
+    key: ValueKey('all-session-watch-$_base'),
+    icon: Icons.visibility_outlined,
+    size: 40,
+    tooltip: 'Watch',
+    onPressed: _watch,
+  );
 
   Widget _deleteButton(ShedColors c) {
     if (_busy) {

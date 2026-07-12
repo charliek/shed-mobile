@@ -51,6 +51,29 @@ void main() {
       expect(foreign.wire, 'some-future-agent');
     });
 
+    test('kind_features watch/input decode (codex gated feed)', () {
+      final c = _caps('''
+      {
+        "rc_version": 3,
+        "features": ["serve", "activity", "messages"],
+        "kind_features": {
+          "codex":  { "post_input": true, "approvals": "tui", "watch": true, "input": "gated" },
+          "claude-rc": { "post_input": true, "approvals": "tui" }
+        }
+      }
+      ''');
+      final codex = c.kindFeatures['codex']!;
+      expect(codex.watch, isTrue);
+      expect(codex.input, 'gated');
+      expect(codex.inputGated, isTrue);
+      // A kind without the additive fields decodes to the safe defaults.
+      final claude = c.kindFeatures['claude-rc']!;
+      expect(claude.watch, isFalse);
+      expect(claude.input, '');
+      expect(claude.inputGated, isFalse);
+      expect(c.hasFeature('messages'), isTrue);
+    });
+
     test('tolerates a partial payload (missing lists/maps → empty)', () {
       final c = _caps('{"rc_version":3}');
       expect(c.kinds, isEmpty);

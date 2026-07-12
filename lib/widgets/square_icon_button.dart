@@ -28,20 +28,22 @@ class SquareIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final shed = context.shed;
     final radius = BorderRadius.circular(9);
-    final button = InkWell(
-      onTap: onPressed,
-      borderRadius: radius,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: background ?? shed.surface,
-          border: background == null ? Border.all(color: shed.line) : null,
-          borderRadius: radius,
-        ),
-        child: Icon(icon, size: 16, color: iconColor ?? shed.fg2),
+    Widget body = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: background ?? shed.surface,
+        border: background == null ? Border.all(color: shed.line) : null,
+        borderRadius: radius,
       ),
+      child: Icon(icon, size: 16, color: iconColor ?? shed.fg2),
     );
-    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
+    // The Tooltip sits INSIDE the InkWell (not around it) so this widget's
+    // root — the element a drive-harness ValueKey tap resolves to — IS the
+    // gesture target, matching OpenPill (whose key-taps work). With the
+    // Tooltip outermost, a key-tap landed on the Tooltip's own recognizer and
+    // never reached the InkWell.
+    if (tooltip != null) body = Tooltip(message: tooltip!, child: body);
+    return InkWell(onTap: onPressed, borderRadius: radius, child: body);
   }
 }

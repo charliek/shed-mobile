@@ -97,6 +97,92 @@ void main() {
     });
   });
 
+  group('RcActivity.fromWire', () {
+    test('decodes known activity tokens', () {
+      expect(RcActivity.fromWire('working'), RcActivity.working);
+      expect(RcActivity.fromWire('needs_input'), RcActivity.needsInput);
+      expect(RcActivity.fromWire('idle'), RcActivity.idle);
+      expect(RcActivity.fromWire('unknown'), RcActivity.unknown);
+    });
+
+    test('absent/empty → null (no activity dimension at all)', () {
+      expect(RcActivity.fromWire(null), isNull);
+      expect(RcActivity.fromWire(''), isNull);
+    });
+
+    test('an unrecognized / reserved token → unknown (renders as no badge)', () {
+      // needs_approval is reserved in the wire contract but not derived yet; a
+      // future token likewise. Both degrade to unknown rather than throwing.
+      expect(RcActivity.fromWire('needs_approval'), RcActivity.unknown);
+      expect(RcActivity.fromWire('some_future_state'), RcActivity.unknown);
+    });
+  });
+
+  group('rcStatePermitsActivity (lifecycle trumps activity)', () {
+    test('ready-ish states permit activity', () {
+      for (final st in [
+        RcState.ready,
+        RcState.starting,
+        RcState.reconnecting,
+      ]) {
+        expect(rcStatePermitsActivity(st), isTrue, reason: st.wire);
+      }
+    });
+
+    test('blocking lifecycle states suppress activity', () {
+      for (final st in [RcState.needsTrust, RcState.needsAuth, RcState.dead]) {
+        expect(rcStatePermitsActivity(st), isFalse, reason: st.wire);
+      }
+    });
+  });
+
+  group('RcSession activity fields', () {
+    test('present activity/activity_at/last_message decode', () {
+      final s = RcSession.fromJson({
+        'slug': 'cdx777',
+        'tmux_session': 'rc-cdx777',
+        'kind': 'codex',
+        'state': 'ready',
+        'managed': true,
+        'activity': 'working',
+        'activity_at': '2026-06-19T18:54:12Z',
+        'last_message': 'Running the test suite now.',
+      });
+      expect(s.activity, RcActivity.working);
+      expect(s.activityAt, '2026-06-19T18:54:12Z');
+      expect(s.lastMessage, 'Running the test suite now.');
+      expect(s.lifecyclePermitsActivity, isTrue);
+    });
+
+    test('absent activity fields decode to null (absent-tolerant)', () {
+      final s = RcSession.fromJson({
+        'slug': 'x',
+        'tmux_session': 'rc-x',
+        'kind': 'shell',
+        'state': 'ready',
+        'managed': true,
+      });
+      expect(s.activity, isNull);
+      expect(s.activityAt, isNull);
+      expect(s.lastMessage, isNull);
+    });
+
+    test('last_message strips Unicode format chars (bidi/zero-width) and '
+        'a non-string activity is tolerated', () {
+      final s = RcSession.fromJson({
+        'slug': 'x',
+        'tmux_session': 'rc-x',
+        'kind': 'codex',
+        'state': 'ready',
+        'managed': true,
+        'activity': 42, // wrong-typed guest value → nulled, not thrown
+        'last_message': 'ok\u202e LIVE\u200b!',
+      });
+      expect(s.activity, isNull);
+      expect(s.lastMessage, 'ok LIVE!');
+    });
+  });
+
   group('RcState.fromWire', () {
     test('decodes known states', () {
       for (final st in RcState.values) {
@@ -212,6 +298,10 @@ void main() {
     expect(full.id, isNotNull);
     expect(full.url, contains('session_'));
     expect(full.targetLabel, isNotEmpty);
+    // Additive activity dimension (Phase C) rides inside the same DTO.
+    expect(full.activity, RcActivity.working);
+    expect(full.activityAt, '2026-06-19T18:54:12Z');
+    expect(full.lastMessage, isNotEmpty);
 
     final minimal = sessions[1];
     expect(minimal.kind, RcKind.claudeBroker);
