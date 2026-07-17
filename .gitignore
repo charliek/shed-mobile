@@ -49,6 +49,9 @@ site-build/
 .venv/
 __pycache__/
 
+# Claude Code worktrees — transient per-agent checkouts, never committed.
+.claude/worktrees/
+
 # Secret files tracked by the envsecrets CLI (push/pull to GCS) — never committed.
 # The "# envsecrets" line below starts the marker section the CLI reads; keep the
 # paths directly under it with no blank line or other comment in between. See
