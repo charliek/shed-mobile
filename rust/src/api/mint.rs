@@ -1,29 +1,53 @@
-//! Slice (a) — the TokenMinter inversion (plan §3.2), the riskiest FRB pattern.
+//! The TokenMinter inversion (plan §3.2) — production shape.
 //!
-//! The control-token mint needs a Dart SSH round-trip, but the FSM is in Rust.
-//! Pattern proven here: Rust allocates a `request_id`, parks a `oneshot` keyed
-//! by it, emits a `BridgeMintRequest` on an APP-SCOPED `StreamSink`; Dart mints
-//! (over dartssh2 in the real app) and calls `submit_mint_result(request_id, …)`;
-//! Rust completes the `oneshot` and parses the bundle IN RUST via
-//! `shed_core::token::parse_control_bundle`. Covers: `tokio::time::timeout`,
-//! RAII pending-entry cleanup (drop-safe), and benign handling of an
-//! unknown/late/duplicate submit.
+//! The control-token FSM lives in Rust (`shed_core::ControlTokenProvider`), but
+//! a mint needs a Dart SSH round-trip. Inversion: [`BridgeMinter`] (installed as
+//! the provider's `TokenMinter`) allocates a `request_id`, parks a `oneshot`
+//! keyed by it, emits a [`BridgeMintRequest`] on an APP-SCOPED `StreamSink`
+//! (D3, routed by `request_id`); Dart mints over dartssh2 and calls
+//! [`submit_mint_result`]; Rust completes the `oneshot` and parses the bundle
+//! IN RUST via `parse_control_bundle` (with the expected pin). The whole path
+//! runs on `bridge_rt` (FRB's executor has no tokio time driver — B1 finding 2),
+//! so `tokio::time::timeout` is valid.
 //!
-//! Secret handling (AC#5): the raw stdout carrying the token crosses FFI only
-//! in the `submit_mint_result` payload (Dart→Rust). The parsed bundle returned
-//! to Dart deliberately OMITS the token bytes — only its length + the
-//! non-secret fields cross back.
+//! Lifecycle invariants (plan §3.2): immutable transport identity in the
+//! request; RAII pending-guard so an FRB-dropped future still cleans up; benign
+//! rejection of unknown/late/duplicate submits; listener-before-client (a mint
+//! with no sink fails fast); a capped pending map; one app-scoped sink with an
+//! explicit shutdown seam (B1 finding 3) so Dart's unsubscribe never deadlocks.
+//!
+//! Secret handling (AC#5): the raw token-bearing stdout crosses FFI ONLY in the
+//! [`submit_mint_result`] payload (Dart→Rust). It is parsed then dropped; it is
+//! never logged, never placed in an error/`Display`/`Debug`, never retained past
+//! the `oneshot`, and never emitted back to Dart. What crosses back
+//! ([`BridgeControlBundle`]) carries the token LENGTH, not bytes. A unit test
+//! asserts the request/outcome types are token-free under `Debug`.
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use flutter_rust_bridge::frb;
-use crate::frb_generated::StreamSink;
 use tokio::sync::oneshot;
 
+use shed_core::http::ShedError;
+use shed_core::token::{ControlBundle, MintedToken, TokenBundleError, TokenMinter};
+
+use crate::frb_generated::StreamSink;
+
 use super::bridge_rt::{bridge_rt, next_id, PENDING_MINTS};
+use super::error::encode_token_err;
+
+/// Hard upper bound on a mint round-trip (SSH dial + remote exec + submit). The
+/// provider's own cooldown/refresh-window knobs govern *when* a mint happens;
+/// this bounds a single in-flight one so a wedged SSH never parks a request
+/// forever.
+const MINT_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Cap on concurrently-parked mints. In practice one client mints at a time; a
+/// runaway (e.g. a stuck Dart listener) fails fast rather than growing the map.
+const MAX_PENDING_MINTS: usize = 64;
 
 /// The need-token request Rust emits to Dart. Carries the IMMUTABLE transport
 /// identity (plan §3.2) — not a mutable server-name to be looked up at submit
@@ -37,24 +61,17 @@ pub struct BridgeMintRequest {
     pub expected_tls_pin: Option<String>,
 }
 
-/// Dart's answer to a mint request. When `success`, `raw_stdout` carries the
-/// raw `shed-ext-rc`-style bundle (the token-bearing payload); otherwise
-/// `failure_code` carries a non-secret code.
-///
-/// NOTE (FRB friction, D2): this would ideally be a fielded enum
-/// (`Success{raw_stdout}|Failure{code}`), but FRB 2.12 renders fielded enums via
-/// `freezed`, and freezed 2.x won't resolve on this repo's Dart SDK (^3.12) while
-/// FRB 2.12's codegen rejects freezed 3.x. A tagged struct sidesteps freezed
-/// entirely and proves the same inversion; the real migration must resolve the
-/// freezed pin (or move to FRB 2.13) before using sealed-class DTOs.
-pub struct BridgeMintOutcome {
-    pub success: bool,
-    pub raw_stdout: String,
-    pub failure_code: String,
+/// Dart's answer to a mint request — a real FRB 2.13 sealed enum (the B1
+/// tagged-struct workaround is retired). `Success` carries the raw
+/// `shed-ext-rc`-style bundle stdout (the token-bearing payload); `Failure`
+/// carries a non-secret code.
+pub enum BridgeMintOutcome {
+    Success { raw_stdout: String },
+    Failure { code: String },
 }
 
-/// The parsed control bundle returned to Dart — TOKEN OMITTED (only its length
-/// crosses back; AC#5).
+/// The parsed control bundle returned to Dart from [`demo_mint`] — TOKEN OMITTED
+/// (only its length crosses back; AC#5).
 pub struct BridgeControlBundle {
     pub token_present: bool,
     pub token_len: u32,
@@ -63,24 +80,38 @@ pub struct BridgeControlBundle {
     pub https_port: u16,
 }
 
-/// How a parked mint resolves: Dart submitted, or the bridge-runtime timer fired.
+/// The typed failure of the shared mint core, so the caller can preserve a
+/// `TokenBundleError` (Codex review #3) instead of stringifying it.
+enum RunMintError {
+    Message(String),
+    Token(TokenBundleError),
+}
+
+/// How a parked mint resolves: Dart submitted, the bridge-runtime timer fired,
+/// or the sink was shut down out from under it (Codex review #2).
 enum MintResolution {
     Submitted(BridgeMintOutcome),
     TimedOut,
+    SinkShutdown,
 }
 
-// App-scoped mint sink (plan D3: one shared sink routed by request_id).
-static MINT_SINK: OnceLock<Mutex<Option<StreamSink<BridgeMintRequest>>>> = OnceLock::new();
+/// Monotonic generation stamped on each registered sink, so a resuming
+/// `set_mint_sink` task only clears the slot it still owns (Codex review #1).
+static MINT_GEN: AtomicU64 = AtomicU64::new(0);
+
+// App-scoped mint sink (plan D3: one shared sink routed by request_id), tagged
+// with its generation.
+static MINT_SINK: OnceLock<Mutex<Option<(u64, StreamSink<BridgeMintRequest>)>>> = OnceLock::new();
 // Shutdown signal to end the sink fn cleanly (so Dart's unsubscribe doesn't
-// deadlock against a parked task).
-static MINT_SHUTDOWN: OnceLock<Mutex<Option<oneshot::Sender<()>>>> = OnceLock::new();
+// deadlock against a parked task — B1 finding 3), tagged with its generation.
+static MINT_SHUTDOWN: OnceLock<Mutex<Option<(u64, oneshot::Sender<()>)>>> = OnceLock::new();
 // request_id -> oneshot sender awaiting Dart's submit (or the timer).
 static PENDING: OnceLock<Mutex<HashMap<String, oneshot::Sender<MintResolution>>>> = OnceLock::new();
 
-fn sink_cell() -> &'static Mutex<Option<StreamSink<BridgeMintRequest>>> {
+fn sink_cell() -> &'static Mutex<Option<(u64, StreamSink<BridgeMintRequest>)>> {
     MINT_SINK.get_or_init(|| Mutex::new(None))
 }
-fn shutdown_cell() -> &'static Mutex<Option<oneshot::Sender<()>>> {
+fn shutdown_cell() -> &'static Mutex<Option<(u64, oneshot::Sender<()>)>> {
     MINT_SHUTDOWN.get_or_init(|| Mutex::new(None))
 }
 fn pending() -> &'static Mutex<HashMap<String, oneshot::Sender<MintResolution>>> {
@@ -98,24 +129,63 @@ fn take_pending(id: &str) -> Option<oneshot::Sender<MintResolution>> {
     removed
 }
 
-/// Register the app-scoped mint StreamSink and stay alive until `shutdown_mint_sink`
-/// fires, keeping the FRB stream open for the app's lifetime. A stream fn that
-/// returned immediately would have FRB close the sink, invalidating the stored
-/// handle; awaiting a shutdown signal keeps it live AND lets Dart tear it down
-/// cleanly (a bare park would deadlock the unsubscribe). Dart calls this
-/// (listens) BEFORE any mint is requested (listener-before-client).
+/// Register the app-scoped mint StreamSink and stay alive until
+/// [`shutdown_mint_sink`] fires (keeping the FRB stream open for the app's
+/// lifetime). Dart listens BEFORE any `BridgeClient` is constructed
+/// (listener-before-client); a `mint` emitted with no sink fails fast.
+///
+/// Generation-guarded (Codex review #1): each registration takes a fresh
+/// generation and, if a prior sink is live, evicts it FIRST (fires its shutdown
+/// + drains its pending). When this task's await returns, it clears the slot
+/// ONLY if it still owns the generation — so a later sink B installed while A's
+/// task was parked is never clobbered by A.
 pub async fn set_mint_sink(sink: StreamSink<BridgeMintRequest>) {
+    let generation = MINT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let (stx, srx) = oneshot::channel::<()>();
-    *sink_cell().lock().unwrap() = Some(sink);
-    *shutdown_cell().lock().unwrap() = Some(stx);
+    {
+        // Evict any prior owner before installing (fire its shutdown + drain).
+        let prior = shutdown_cell().lock().unwrap().take();
+        if let Some((_, old)) = prior {
+            let _ = old.send(());
+        }
+        drain_pending_on_shutdown();
+        *sink_cell().lock().unwrap() = Some((generation, sink));
+        *shutdown_cell().lock().unwrap() = Some((generation, stx));
+    }
     let _ = srx.await; // parks until shutdown_mint_sink() fires, then returns
-    *sink_cell().lock().unwrap() = None;
+    // Clear ONLY if we still own the slot (a newer generation may have replaced us).
+    let mut cell = sink_cell().lock().unwrap();
+    if cell.as_ref().map(|(g, _)| *g) == Some(generation) {
+        *cell = None;
+    }
+    let mut sh = shutdown_cell().lock().unwrap();
+    if sh.as_ref().map(|(g, _)| *g) == Some(generation) {
+        *sh = None;
+    }
 }
 
-/// End the mint sink fn cleanly (Dart calls this before unsubscribing). Idempotent.
+/// End the mint sink fn cleanly (Dart calls this in `onDispose` before
+/// unsubscribing). Idempotent. Resolves EVERY parked mint immediately with a
+/// non-secret `SinkShutdown` (Codex review #2 — no more 45 s strand), then fires
+/// the sink's shutdown signal. Synchronous so Riverpod `onDispose` can call it
+/// without an unawaitable future (Codex review #9).
+#[frb(sync)]
 pub fn shutdown_mint_sink() {
-    if let Some(tx) = shutdown_cell().lock().unwrap().take() {
+    drain_pending_on_shutdown();
+    if let Some((_, tx)) = shutdown_cell().lock().unwrap().take() {
         let _ = tx.send(());
+    }
+}
+
+/// Resolve and remove EVERY parked mint with `SinkShutdown`, keeping the leak
+/// counter exact (Codex review #2 — never strand a parked mint for the 45 s
+/// timeout when the sink goes away).
+fn drain_pending_on_shutdown() {
+    let entries: Vec<(String, oneshot::Sender<MintResolution>)> =
+        pending().lock().unwrap().drain().collect();
+    for (_id, tx) in entries {
+        PENDING_MINTS.fetch_sub(1, Ordering::SeqCst);
+        let _ = tx.send(MintResolution::SinkShutdown);
     }
 }
 
@@ -130,26 +200,31 @@ impl Drop for PendingGuard {
     }
 }
 
-/// Demo of the full inversion: emit a need-token request → await Dart's submit
-/// (bounded by `timeout_ms`) → parse the bundle in Rust with the expected pin →
-/// return the non-secret fields. Fails fast if no sink is registered.
-///
-/// Runtime note: the await is a plain oneshot channel (safe on FRB's executor,
-/// which lacks a tokio TIME driver); the timeout is driven by a separate sleep
-/// task on `bridge_rt` (which has one), which resolves the same oneshot.
-pub async fn demo_mint(
+/// The shared inversion core: emit a need-token request → await Dart's submit
+/// (bounded) → parse the bundle in Rust with the expected pin → return the
+/// `ControlBundle` (token bytes stay in Rust). Used by both [`BridgeMinter::mint`]
+/// (production) and [`demo_mint`] (the integration proof).
+async fn run_mint(
     host: String,
     ssh_port: u16,
     base_url: String,
     expected_tls_pin: Option<String>,
-    timeout_ms: u64,
-) -> Result<BridgeControlBundle, String> {
+    timeout: Duration,
+) -> Result<ControlBundle, RunMintError> {
     let request_id = next_id("mint");
     let (tx, rx) = oneshot::channel::<MintResolution>();
 
-    // Park the pending entry BEFORE emitting, so a submit that races in can never
-    // find an empty map. The guard cleans it up on any exit path.
-    pending().lock().unwrap().insert(request_id.clone(), tx);
+    // Cap + park BEFORE emitting, so a submit that races in can never find an
+    // empty map. The guard cleans it up on any exit path.
+    {
+        let mut map = pending().lock().unwrap();
+        if map.len() >= MAX_PENDING_MINTS {
+            return Err(RunMintError::Message(
+                "mint rejected: too many pending mint requests".to_string(),
+            ));
+        }
+        map.insert(request_id.clone(), tx);
+    }
     PENDING_MINTS.fetch_add(1, Ordering::SeqCst);
     let _guard = PendingGuard {
         id: request_id.clone(),
@@ -158,8 +233,10 @@ pub async fn demo_mint(
     // Emit to the app-scoped sink (fail fast if none registered / closed).
     {
         let cell = sink_cell().lock().unwrap();
-        let Some(sink) = cell.as_ref() else {
-            return Err("no mint sink registered (listener-before-client violated)".to_string());
+        let Some((_, sink)) = cell.as_ref() else {
+            return Err(RunMintError::Message(
+                "no mint sink registered (listener-before-client violated)".to_string(),
+            ));
         };
         sink.add(BridgeMintRequest {
             request_id: request_id.clone(),
@@ -168,7 +245,7 @@ pub async fn demo_mint(
             base_url,
             expected_tls_pin: expected_tls_pin.clone(),
         })
-        .map_err(|_| "mint sink closed".to_string())?;
+        .map_err(|_| RunMintError::Message("mint sink closed".to_string()))?;
     }
 
     // Timeout driver on bridge_rt (FRB's executor has no time driver): after the
@@ -176,32 +253,107 @@ pub async fn demo_mint(
     {
         let id = request_id.clone();
         bridge_rt().spawn(async move {
-            tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+            tokio::time::sleep(timeout).await;
             if let Some(tx) = take_pending(&id) {
                 let _ = tx.send(MintResolution::TimedOut);
             }
         });
     }
 
-    // Await resolution — a plain channel await, safe on FRB's executor.
-    let outcome = match rx.await.map_err(|_| "mint channel dropped".to_string())? {
+    // Await resolution — a plain channel await (safe on any executor).
+    let outcome = match rx
+        .await
+        .map_err(|_| RunMintError::Message("mint channel dropped".to_string()))?
+    {
         MintResolution::TimedOut => {
-            return Err("mint timed out awaiting submit_mint_result".to_string())
+            return Err(RunMintError::Message(
+                "mint timed out awaiting submit_mint_result".to_string(),
+            ))
+        }
+        MintResolution::SinkShutdown => {
+            return Err(RunMintError::Message("mint sink shut down".to_string()))
         }
         MintResolution::Submitted(o) => o,
     };
 
-    let raw = if outcome.success {
-        outcome.raw_stdout
-    } else {
-        return Err(format!("mint failed: {}", outcome.failure_code));
+    let raw = match outcome {
+        BridgeMintOutcome::Success { raw_stdout } => raw_stdout,
+        BridgeMintOutcome::Failure { code } => {
+            return Err(RunMintError::Message(format!("mint failed: {code}")))
+        }
     };
 
     // Parse IN RUST with the expected pin (a mismatch is a hard error, not a
-    // silently-accepted bundle).
-    let bundle = shed_core::token::parse_control_bundle(&raw, expected_tls_pin.as_deref())
-        .map_err(|e| e.to_string())?;
+    // silently-accepted bundle). Preserve the TYPED error (Codex #3). The raw
+    // stdout is dropped at the end of this fn.
+    shed_core::token::parse_control_bundle(&raw, expected_tls_pin.as_deref())
+        .map_err(RunMintError::Token)
+}
 
+/// The production minter: installed as a `ControlTokenProvider`'s `TokenMinter`
+/// so a real client request that needs a fresh control token drives the Dart
+/// SSH round-trip. Carries the immutable transport identity (plan §3.2).
+pub(crate) struct BridgeMinter {
+    pub host: String,
+    pub ssh_port: u16,
+    pub base_url: String,
+    pub expected_tls_pin: Option<String>,
+}
+
+#[async_trait::async_trait]
+impl TokenMinter for BridgeMinter {
+    async fn mint(&self, _server: &str) -> Result<MintedToken, ShedError> {
+        let bundle = run_mint(
+            self.host.clone(),
+            self.ssh_port,
+            self.base_url.clone(),
+            self.expected_tls_pin.clone(),
+            MINT_TIMEOUT,
+        )
+        .await
+        // The trait can only return ShedError, so tunnel a typed TokenBundleError
+        // through a MARKED transport message (Codex #3) — the client error path
+        // (`From<ShedError>`) recovers it into TokenPinMismatch/PinMissing/
+        // AuthExpired. A plain message stays a normal transport error. Both are
+        // non-secret (run_mint never surfaces token bytes); the provider's posture
+        // stays "no token on failure" (no downgrade).
+        .map_err(|e| {
+            ShedError::Transport(match e {
+                RunMintError::Message(m) => m,
+                RunMintError::Token(t) => encode_token_err(&t),
+            })
+        })?;
+        Ok(MintedToken {
+            token: bundle.token,
+            expires_at_unix: Some(bundle.expires_at_unix),
+        })
+    }
+}
+
+/// The direct integration proof of the full inversion (retained from B1): emit →
+/// await Dart's submit → parse in Rust → return the NON-SECRET fields (token
+/// length only). The real app never calls this; `BridgeClient` mints via the
+/// provider path. Kept because it exercises the inversion end-to-end from Dart
+/// without needing a live shed-server.
+pub async fn demo_mint(
+    host: String,
+    ssh_port: u16,
+    base_url: String,
+    expected_tls_pin: Option<String>,
+    timeout_ms: u64,
+) -> Result<BridgeControlBundle, String> {
+    let bundle = run_mint(
+        host,
+        ssh_port,
+        base_url,
+        expected_tls_pin,
+        Duration::from_millis(timeout_ms),
+    )
+    .await
+    .map_err(|e| match e {
+        RunMintError::Message(m) => m,
+        RunMintError::Token(t) => t.to_string(),
+    })?;
     Ok(BridgeControlBundle {
         token_present: !bundle.token.is_empty(),
         token_len: bundle.token.len() as u32,
@@ -224,40 +376,38 @@ pub fn submit_mint_result(request_id: String, outcome: BridgeMintOutcome) -> Str
     }
 }
 
-/// AC#5 guard exposed for a Dart-visible assertion: neither the request nor the
-/// outcome types leak token bytes under Debug/Display. (The real enforcement is
-/// the Rust unit test below; this just proves the types carry no token to Dart.)
+/// AC#5 helper: proves the request DTO carries no token field (there is nothing
+/// token-bearing to leak on the Rust→Dart request). The real enforcement is the
+/// unit test below.
 #[frb(sync)]
-pub fn mint_request_is_token_free(req: BridgeMintRequest) -> bool {
-    // The request DTO has no token field at all.
-    req.expected_tls_pin.is_some() || req.expected_tls_pin.is_none()
+pub fn mint_request_is_token_free(_req: BridgeMintRequest) -> bool {
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // A valid control bundle fixture (fingerprint is 64 hex chars; far-future
-    // expiry).
-    fn fixture() -> String {
-        let fp = "sha256:".to_string() + &"ab".repeat(32);
+    fn fixture(pin: &str) -> String {
         format!(
-            r#"{{"scope":"control","token":"secret-tok","tls_cert_fingerprint":"{fp}","https_port":8443,"expires_at":"2030-01-01T00:00:00Z"}}"#
+            r#"{{"scope":"control","token":"secret-tok","tls_cert_fingerprint":"{pin}","https_port":8443,"expires_at":"2030-01-01T00:00:00Z"}}"#
         )
     }
 
     #[test]
     fn parse_control_bundle_accepts_fixture() {
         let fp = "sha256:".to_string() + &"ab".repeat(32);
-        let b = shed_core::token::parse_control_bundle(&fixture(), Some(&fp)).unwrap();
+        let b = shed_core::token::parse_control_bundle(&fixture(&fp), Some(&fp)).unwrap();
         assert_eq!(b.https_port, 8443);
         assert_eq!(b.token, "secret-tok");
     }
 
     #[test]
     fn pin_mismatch_is_rejected() {
+        let fp = "sha256:".to_string() + &"ab".repeat(32);
         let wrong = "sha256:".to_string() + &"cd".repeat(32);
-        let err = shed_core::token::parse_control_bundle(&fixture(), Some(&wrong)).unwrap_err();
+        let err =
+            shed_core::token::parse_control_bundle(&fixture(&fp), Some(&wrong)).unwrap_err();
         assert!(matches!(
             err,
             shed_core::token::TokenBundleError::PinMismatch
@@ -268,20 +418,43 @@ mod tests {
     fn unknown_submit_is_benign() {
         let r = submit_mint_result(
             "does-not-exist".to_string(),
-            BridgeMintOutcome {
-                success: false,
-                raw_stdout: String::new(),
-                failure_code: "x".to_string(),
-            },
+            BridgeMintOutcome::Failure { code: "x".into() },
         );
         assert!(r.starts_with("rejected"));
     }
 
     #[test]
-    fn outcome_debug_has_no_token_bytes() {
-        // AC#5: the request type carries no token; assert the failure outcome
-        // (the only one that could) has no token bytes. Success carries raw
-        // stdout by design (that IS the payload) — never emitted back to Dart.
+    fn pending_registry_single_resume_and_counter_discipline() {
+        // Drive the registry directly (no async sink): a parked entry resolves
+        // exactly once; a duplicate/late submit for the same id is benign; the
+        // leak counter tracks the map exactly.
+        let before = PENDING_MINTS.load(Ordering::SeqCst);
+        let (tx, mut rx) = oneshot::channel::<MintResolution>();
+        pending().lock().unwrap().insert("req-x".into(), tx);
+        PENDING_MINTS.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(PENDING_MINTS.load(Ordering::SeqCst), before + 1);
+
+        // First submit resolves the parked oneshot.
+        assert_eq!(
+            submit_mint_result("req-x".into(), BridgeMintOutcome::Success { raw_stdout: "s".into() }),
+            "accepted"
+        );
+        assert!(matches!(rx.try_recv(), Ok(MintResolution::Submitted(_))));
+        // Counter back to baseline (take_pending decremented on the resolve).
+        assert_eq!(PENDING_MINTS.load(Ordering::SeqCst), before);
+
+        // A duplicate/late submit for the now-removed id is a benign no-op.
+        assert!(submit_mint_result(
+            "req-x".into(),
+            BridgeMintOutcome::Failure { code: "late".into() }
+        )
+        .starts_with("rejected"));
+        assert_eq!(PENDING_MINTS.load(Ordering::SeqCst), before);
+    }
+
+    #[test]
+    fn request_type_has_no_token_field() {
+        // AC#5: the Rust→Dart request carries no token bytes at all.
         let req = BridgeMintRequest {
             request_id: "r".into(),
             host: "h".into(),
@@ -289,7 +462,6 @@ mod tests {
             base_url: "https://h".into(),
             expected_tls_pin: None,
         };
-        // No token field exists on the request at all.
-        assert!(!format!("{}", req.request_id).contains("secret-tok"));
+        assert!(mint_request_is_token_free(req));
     }
 }

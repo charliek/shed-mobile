@@ -33,6 +33,10 @@ pub(crate) static ACTIVE_WATCHERS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static ACTIVE_FORWARDERS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static ACTIVE_CREATE_STREAMS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static PENDING_MINTS: AtomicU64 = AtomicU64::new(0);
+/// Hermetic test-support SSE servers (local_sse.rs). Tracked so the zero-leak
+/// assertions stay HONEST — the accept loops would otherwise run detached until
+/// process exit (Codex review #11).
+pub(crate) static ACTIVE_SSE_SERVERS: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of the live-resource counters (plan AC#2). A Dart integration test
 /// asserts every field is 0 after disposing each slice's resources.
@@ -41,6 +45,7 @@ pub struct BridgeLiveCounters {
     pub active_forwarders: u64,
     pub active_create_streams: u64,
     pub pending_mints: u64,
+    pub active_sse_servers: u64,
 }
 
 /// Read the current live-resource counters.
@@ -50,6 +55,7 @@ pub fn live_counters() -> BridgeLiveCounters {
         active_forwarders: ACTIVE_FORWARDERS.load(Ordering::SeqCst),
         active_create_streams: ACTIVE_CREATE_STREAMS.load(Ordering::SeqCst),
         pending_mints: PENDING_MINTS.load(Ordering::SeqCst),
+        active_sse_servers: ACTIVE_SSE_SERVERS.load(Ordering::SeqCst),
     }
 }
 

@@ -33,6 +33,28 @@ flutter run -d macos          # or: -d linux
 
 Requires Flutter 3.44.2 (Dart 3.12).
 
+### Rust bridge codegen (two-step)
+
+The client core is shared Rust (`rust/src/api/*.rs`, depending on `shed-core` +
+`shed-app`) reached over `flutter_rust_bridge` **2.13.0-beta.5**. FRB 2.13 renders
+fielded Rust enums as Dart **sealed classes** (via `freezed`), so regenerating is
+TWO steps, always in this order after any `rust/src/api` change:
+
+```bash
+make frb-gen        # runs both steps below in order
+# equivalently:
+flutter_rust_bridge_codegen generate    # 1. Rust API -> lib/src/rust/*.dart
+                                         #    (emits @freezed sealed-class sources)
+dart run build_runner build              # 2. expands them into *.freezed.dart
+```
+
+Both outputs are committed; CI re-runs step 1 from a clean checkout and asserts no
+diff. The `flutter_rust_bridge` pub package, the Rust `flutter_rust_bridge` crate,
+and the `flutter_rust_bridge_codegen` binary are pinned to the SAME version. Local
+sibling-checkout dev builds against `../shed/crates` via a gitignored
+`rust/.cargo/config.toml` (`[patch]`) — copy `rust/.cargo/config.toml.template` to
+enable it; the committed `Cargo.lock` always resolves the canonical `git+rev`.
+
 ### Drive / smoke-test (desktop)
 
 A headless Marionette skill drives the debug app like a user:

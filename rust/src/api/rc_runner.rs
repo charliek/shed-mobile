@@ -1,32 +1,34 @@
-//! Slice (c) — the RC-over-SSH path driven through the PURE `shed_core::rc`
-//! functions directly (plan §3.5 option a), NOT `shed-app::RcService`. Proves
-//! the argv-out → Dart-exec → decode-in round-trip: Rust builds the argv (the
-//! validating `create_invocation` gate + `list_argv`/`prompt_argv`/`kill_argv`),
-//! Dart runs it over dartssh2 (here a fake runner returns canned shed-ext-rc
-//! JSON), and Rust decodes via `decode_list` / maps exits via `error_from_exit`.
-//! No `rc`/`tokio-process` feature is pulled — these are pure builders/decoders.
+//! The RC-over-SSH path driven through the PURE `shed_core::rc` functions
+//! directly (plan §3.5 option a), NOT `shed-app::RcService`. Rust builds the
+//! argv (the validating `create_invocation` gate + `list`/`prompt`/`kill`), Dart
+//! runs it over dartssh2, and Rust decodes the captured stdout (`decode_list`) /
+//! maps the exit code (`error_from_exit`). No `rc`/`tokio-process` feature is
+//! pulled — these are pure builders/decoders.
+//!
+//! Trap (B1): `RcKind::Other("claude")` does NOT accept typed input — a create
+//! that delivers a prompt must use `claude-rc`. `from_wire` preserves an unknown
+//! kind as `Other`, whose `accepts_typed_input()` is false, so a prompt for such
+//! a kind is dropped by `create_invocation` (not an error).
 
 use shed_core::rc::{
     create_invocation, decode_list, error_from_exit, kill_argv, list_argv, prompt_argv, RcKind,
 };
 
-const RC_BIN: &str = "shed-ext-rc";
-const CREATED_BY: &str = "shed-mobile/frb-spike";
+use super::dto_rc::BridgeRcSessionDto;
+use super::error::BridgeError;
 
-/// argv + optional stdin, marshalled to Dart.
+/// The rc binary name on the shed. Mobile owns this (not `RcService`'s hard-coded
+/// `"shed-desktop"`).
+const RC_BIN: &str = "shed-ext-rc";
+/// Mobile's provenance tag stamped on created sessions.
+const CREATED_BY: &str = "shed-mobile";
+
+/// argv + optional stdin, marshalled to Dart. The Dart runner executes `argv`
+/// over dartssh2, writing `stdin` (the initial prompt) to the process stdin.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcInvocation {
     pub argv: Vec<String>,
-    /// The stdin payload (e.g. the initial prompt), if any.
     pub stdin: Option<String>,
-}
-
-/// A decoded session row (the small DTO the app renders).
-pub struct BridgeRcSession {
-    pub slug: String,
-    pub kind: String,
-    pub state: String,
-    pub managed: bool,
-    pub display_name: Option<String>,
 }
 
 /// `shed-ext-rc list` argv (pure builder).
@@ -39,16 +41,16 @@ pub fn rc_kill_argv(slug: String) -> Vec<String> {
     kill_argv(RC_BIN, &slug)
 }
 
-/// `shed-ext-rc prompt --slug <slug> [--session-id <id>]` argv (added in the
-/// merged shed rev — the B0 `prompt_argv` gap is already closed here).
+/// `shed-ext-rc prompt --slug <slug> [--session-id <id>]` argv (the B0 builder).
 pub fn rc_prompt_argv(slug: String, session_id: Option<String>) -> Vec<String> {
     prompt_argv(RC_BIN, &slug, session_id.as_deref())
 }
 
 /// The validating create gate: builds the `create --wait` argv + stdin, running
 /// `permission_mode` through `validate_permission_mode`. An invalid mode for the
-/// kind returns an error (no argv built). `kind` is the wire string
-/// (`claude`/`shell`/…); mobile owns `created_by`.
+/// kind is an [`BridgeError::RcBadRequest`] (no argv built). `kind` is the wire
+/// string (`claude-rc`/`shell`/…); mobile owns `created_by`.
+#[allow(clippy::too_many_arguments)]
 pub fn rc_create_invocation(
     kind: String,
     name: String,
@@ -57,7 +59,7 @@ pub fn rc_create_invocation(
     workdir: Option<String>,
     permission_mode: Option<String>,
     prompt: Option<String>,
-) -> Result<BridgeRcInvocation, String> {
+) -> Result<BridgeRcInvocation, BridgeError> {
     let rc_kind = RcKind::from_wire(&kind);
     let (argv, stdin) = create_invocation(
         RC_BIN,
@@ -69,37 +71,98 @@ pub fn rc_create_invocation(
         &target,
         permission_mode.as_deref(),
         prompt.as_deref(),
-    )
-    .map_err(|e| format!("{e:?}"))?;
+    )?;
     Ok(BridgeRcInvocation { argv, stdin })
 }
 
-/// Serialize a serde enum (e.g. `RcState`) to its canonical wire string.
-fn wire_of<T: serde::Serialize>(v: &T) -> String {
-    serde_json::to_value(v)
-        .ok()
-        .and_then(|j| j.as_str().map(str::to_string))
-        .unwrap_or_default()
-}
-
 /// Decode a `shed-ext-rc list` stdout (what the Dart runner captured) into the
-/// session DTOs. This is the "decode-in" half of the round-trip.
-pub fn rc_decode_list(stdout: String) -> Result<Vec<BridgeRcSession>, String> {
-    let dtos = decode_list(&stdout).map_err(|e| format!("{e:?}"))?;
-    Ok(dtos
-        .into_iter()
-        .map(|d| BridgeRcSession {
-            slug: d.slug,
-            kind: d.kind.as_str().to_string(),
-            state: wire_of(&d.state),
-            managed: d.managed,
-            display_name: d.display_name,
-        })
-        .collect())
+/// neutral session DTOs — the "decode-in" half of the round-trip.
+pub fn rc_decode_list(stdout: String) -> Result<Vec<BridgeRcSessionDto>, BridgeError> {
+    let dtos = decode_list(&stdout)?;
+    Ok(dtos.into_iter().map(Into::into).collect())
 }
 
-/// Map a non-zero exit from the Dart runner to a stable error string (proves the
-/// typed-error path: exit 3 → SlugTaken, 4 → NotFound, 127 → MissingBinary, …).
-pub fn rc_error_from_exit(exit_code: i32, stderr: String, stdout: String) -> String {
-    format!("{:?}", error_from_exit(exit_code, &stderr, &stdout))
+/// Map a non-zero exit from the Dart runner to a typed [`BridgeError`] (exit 3 →
+/// `RcSlugTaken`, 4 → `RcNotFound`, 2 → `RcBadRequest`, 127 → `RcMissingBinary`,
+/// … ). Returns the error value (not a `Result`) — the caller already knows the
+/// run failed.
+pub fn rc_error_from_exit(exit_code: i32, stderr: String, stdout: String) -> BridgeError {
+    error_from_exit(exit_code, &stderr, &stdout).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_and_kill_and_prompt_argv() {
+        assert_eq!(rc_list_argv(), vec!["shed-ext-rc", "list"]);
+        assert_eq!(
+            rc_kill_argv("cdx".into()),
+            vec!["shed-ext-rc", "kill", "--slug", "cdx"]
+        );
+        let p = rc_prompt_argv("cdx".into(), Some("sess".into()));
+        assert!(p.contains(&"prompt".to_string()));
+        assert!(p.contains(&"--session-id".to_string()));
+        // No session id → no --session-id flag.
+        let p2 = rc_prompt_argv("cdx".into(), None);
+        assert!(!p2.contains(&"--session-id".to_string()));
+    }
+
+    #[test]
+    fn create_invocation_gate_validates_mode() {
+        // claude-rc accepts a prompt + a claude-only mode.
+        let inv = rc_create_invocation(
+            "claude-rc".into(),
+            "My Session".into(),
+            "cdx".into(),
+            "proj".into(),
+            None,
+            Some("plan".into()),
+            Some("hello".into()),
+        )
+        .unwrap();
+        assert!(inv.argv.contains(&"--wait".to_string()));
+        assert!(inv.argv.contains(&"--permission-mode".to_string()));
+        assert_eq!(inv.stdin.as_deref(), Some("hello"));
+
+        // An invalid mode for the kind → RcBadRequest, no argv.
+        let err = rc_create_invocation(
+            "codex".into(),
+            "S".into(),
+            "c".into(),
+            "proj".into(),
+            None,
+            Some("plan".into()), // claude-only mode, invalid for codex
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, BridgeError::RcBadRequest { .. }));
+    }
+
+    #[test]
+    fn decode_list_and_exit_mapping() {
+        let canned = r#"{"rc_sessions":[{"slug":"cdx","tmux_session":"t",
+            "kind":"claude-rc","state":"ready","managed":true,"display_name":"My"}]}"#;
+        let sessions = rc_decode_list(canned.into()).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].slug, "cdx");
+        assert_eq!(
+            sessions[0].kind,
+            super::super::dto_rc::BridgeRcKind::ClaudeRc
+        );
+        assert_eq!(
+            sessions[0].state,
+            super::super::dto_rc::BridgeRcState::Ready
+        );
+
+        assert!(matches!(
+            rc_error_from_exit(3, "in use".into(), String::new()),
+            BridgeError::RcSlugTaken { .. }
+        ));
+        assert!(matches!(
+            rc_error_from_exit(127, String::new(), String::new()),
+            BridgeError::RcMissingBinary
+        ));
+    }
 }
