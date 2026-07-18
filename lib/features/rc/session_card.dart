@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_section.dart';
 import '../../providers.dart';
-import '../../rc/rc_models.dart';
+import '../../rc/rc_ui.dart';
 import '../../shed/format.dart';
+import '../../src/rust/api/dto_rc.dart';
 import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
@@ -38,7 +39,7 @@ class SessionCard extends ConsumerStatefulWidget {
 
   final String serverName;
   final String shedName;
-  final RcSession session;
+  final BridgeRcSession session;
   final bool live;
 
   @override
@@ -83,23 +84,13 @@ class _SessionCardState extends ConsumerState<SessionCard> {
         ref,
         context,
         action: 'session-delete',
-        // Build the RcService from the stable serverStore/identities, not the
+        // rcServiceOneShot builds from the stable serverStore/identities, not the
         // autoDispose rcServiceProvider: nothing keeps the latter alive in the
         // cross-host view, so reading it here would dispose mid-load ("Cannot use
         // Ref after disposed") and the kill would never run.
         op: () async {
-          final rec = await ref
-              .read(serverStoreProvider)
-              .get(widget.serverName);
-          if (rec == null) {
-            throw StateError('unknown server: ${widget.serverName}');
-          }
-          final identities = await ref.read(identitiesProvider.future);
-          await rcServiceFor(
-            rec,
-            identities,
-            widget.shedName,
-          ).kill(widget.session.slug);
+          final svc = await rcServiceOneShot(ref, _key);
+          await svc.kill(widget.session.slug);
         },
         invalidate: () {
           ref.invalidate(overviewProvider(widget.serverName));

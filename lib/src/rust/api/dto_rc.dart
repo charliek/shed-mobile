@@ -8,6 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_rc.freezed.dart';
 
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeRcSessionDto`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// A session's live work dimension (mirrors `rc::RcActivity`). Plain enum;
@@ -305,84 +306,6 @@ class BridgeRcSession {
           activityAt == other.activityAt &&
           lastMessage == other.lastMessage &&
           managed == other.managed;
-}
-
-/// The neutral `shed-ext-rc list` row (mirrors `rc::RcSessionDto`). Distinct
-/// from [`BridgeRcSession`] — this is the pre-enrichment binary output the Dart
-/// runner captures then hands back to the bridge decoder.
-class BridgeRcSessionDto {
-  final String slug;
-  final String tmuxSession;
-  final BridgeRcKind kind;
-  final BridgeRcState state;
-  final bool managed;
-  final String? displayName;
-  final String? workdir;
-  final String? url;
-  final String? id;
-  final String? createdBy;
-  final String? createdAt;
-  final String? targetLabel;
-  final BridgeRcActivity? activity;
-  final String? activityAt;
-  final String? lastMessage;
-
-  const BridgeRcSessionDto({
-    required this.slug,
-    required this.tmuxSession,
-    required this.kind,
-    required this.state,
-    required this.managed,
-    this.displayName,
-    this.workdir,
-    this.url,
-    this.id,
-    this.createdBy,
-    this.createdAt,
-    this.targetLabel,
-    this.activity,
-    this.activityAt,
-    this.lastMessage,
-  });
-
-  @override
-  int get hashCode =>
-      slug.hashCode ^
-      tmuxSession.hashCode ^
-      kind.hashCode ^
-      state.hashCode ^
-      managed.hashCode ^
-      displayName.hashCode ^
-      workdir.hashCode ^
-      url.hashCode ^
-      id.hashCode ^
-      createdBy.hashCode ^
-      createdAt.hashCode ^
-      targetLabel.hashCode ^
-      activity.hashCode ^
-      activityAt.hashCode ^
-      lastMessage.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is BridgeRcSessionDto &&
-          runtimeType == other.runtimeType &&
-          slug == other.slug &&
-          tmuxSession == other.tmuxSession &&
-          kind == other.kind &&
-          state == other.state &&
-          managed == other.managed &&
-          displayName == other.displayName &&
-          workdir == other.workdir &&
-          url == other.url &&
-          id == other.id &&
-          createdBy == other.createdBy &&
-          createdAt == other.createdAt &&
-          targetLabel == other.targetLabel &&
-          activity == other.activity &&
-          activityAt == other.activityAt &&
-          lastMessage == other.lastMessage;
 }
 
 /// A pane-derived lifecycle state (mirrors `rc::RcState`). Plain enum.

@@ -1,19 +1,14 @@
 import '../core/app_error.dart';
-import '../rc/rc_capabilities.dart';
-import '../rc/rc_feed.dart';
-import '../rc/rc_models.dart';
 import '../src/rust/api/dto.dart';
-import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/error.dart';
 
-/// Adapters between the FRB bridge DTOs and the app's Dart domain types.
+/// Adapters between the FRB bridge and the app's Dart error/status types.
 ///
-/// B3 swaps the HTTP/DTO/token plane onto the bridge, but leaves the RC domain
-/// (`rc_models`/`rc_capabilities`/`rc_feed` + `ActivityOverlay`) in Dart for B4.
-/// The overview call now returns bridge DTOs, so the RC sub-objects it embeds
-/// (`BridgeRcSession`/`BridgeRcCapabilities`) are converted back to the Dart RC
-/// types here — that keeps every RC-rendering widget (session_card, codex watch,
-/// shed detail) on the untouched Dart domain until B4 swaps it wholesale.
+/// B4 finished the RC-domain swap: consumers now render the bridge RC types
+/// (`BridgeRcSession`/`BridgeRcCapabilities`/`BridgeRcMessagesPage`) directly, so
+/// the transitional RC converters are gone. What remains here is the
+/// bridge→[AppError] mapping (status codes preserved) and the shed-status
+/// helpers — both genuinely at the bridge boundary.
 
 // ---- shed status ----------------------------------------------------------
 
@@ -29,103 +24,24 @@ String bridgeShedStatusWire(BridgeShedStatus s) => switch (s) {
 
 bool bridgeShedIsRunning(BridgeShed s) => s.status == BridgeShedStatus.running;
 
-// ---- RC enums -------------------------------------------------------------
-
-RcKind rcKindFromBridge(BridgeRcKind k) => switch (k) {
-  BridgeRcKind_ClaudeRc() => RcKind.claudeRc,
-  BridgeRcKind_ClaudeBroker() => RcKind.claudeBroker,
-  BridgeRcKind_Codex() => RcKind.codex,
-  BridgeRcKind_Opencode() => RcKind.opencode,
-  BridgeRcKind_Cursor() => RcKind.cursor,
-  BridgeRcKind_Shell() => RcKind.shell,
-  BridgeRcKind_Other(:final raw) => RcKind.other(raw),
-};
-
-RcState rcStateFromBridge(BridgeRcState s) => switch (s) {
-  BridgeRcState.starting => RcState.starting,
-  BridgeRcState.ready => RcState.ready,
-  BridgeRcState.reconnecting => RcState.reconnecting,
-  BridgeRcState.needsTrust => RcState.needsTrust,
-  BridgeRcState.needsAuth => RcState.needsAuth,
-  BridgeRcState.dead => RcState.dead,
-};
-
-RcActivity? rcActivityFromBridge(BridgeRcActivity? a) => switch (a) {
-  null => null,
-  BridgeRcActivity.working => RcActivity.working,
-  BridgeRcActivity.needsInput => RcActivity.needsInput,
-  BridgeRcActivity.idle => RcActivity.idle,
-  BridgeRcActivity.unknown => RcActivity.unknown,
-};
-
-// ---- RC sessions / capabilities (embedded in the overview) ----------------
-
-RcSession rcSessionFromBridge(BridgeRcSession b) => RcSession(
-  slug: b.slug,
-  tmuxSession: b.tmuxSession,
-  displayName: b.displayName,
-  kind: rcKindFromBridge(b.kind),
-  state: rcStateFromBridge(b.state),
-  managed: b.managed,
-  workdir: b.workdir,
-  url: b.url,
-  id: b.rcId,
-  createdBy: b.createdBy,
-  createdAt: b.createdAt,
-  targetLabel: b.targetLabel,
-  activity: rcActivityFromBridge(b.activity),
-  activityAt: b.activityAt,
-  lastMessage: b.lastMessage,
-);
-
-RcCapabilities rcCapabilitiesFromBridge(BridgeRcCapabilities c) =>
-    RcCapabilities(
-      rcVersion: c.rcVersion,
-      kinds: c.kinds.map(rcKindFromBridge).toList(),
-      agents: c.agents.map(
-        (k, v) =>
-            MapEntry(k, AgentInfo(installed: v.installed, version: v.version)),
-      ),
-      features: c.features,
-      kindFeatures: c.kindFeatures.map(
-        (k, v) => MapEntry(
-          k,
-          KindFeatures(
-            postInput: v.postInput,
-            approvals: v.approvals,
-            watch: v.watch,
-            input: v.input,
-          ),
-        ),
-      ),
-    );
-
-// ---- RC message feed (codex watch) ----------------------------------------
-
-RcMessagesPage rcMessagesPageFromBridge(BridgeRcMessagesPage p) =>
-    RcMessagesPage(
-      messages: p.messages
-          .map(
-            (m) => RcFeedMessage(
-              seq: m.seq.toInt(),
-              ts: m.ts,
-              role: m.role,
-              type: m.msgType,
-              text: m.text,
-              tool: m.tool == null
-                  ? null
-                  : RcFeedTool(name: m.tool!.name, detail: m.tool!.detail),
-            ),
-          )
-          .toList(),
-      truncated: p.truncated,
-    );
-
 // ---- errors ---------------------------------------------------------------
 
 /// Map a [BridgeError] into the app's [AppError], preserving the status code /
 /// stable code the UI branches on (401 auth, 404 gone, 409 not-accepting, 503
 /// hub-unavailable, and the rc-binary exit classes).
+///
+/// The `Rc*` variants ONLY arise from the RC-over-SSH path (`shed_core::rc`'s
+/// `error_from_exit` / `decode_*`) — the HTTP plane surfaces every rc failure as
+/// [BridgeError_BadStatus] (routed through [_fromStatus]), where the 404 arm keeps
+/// producing `RC_SESSION_GONE`. So these arms restore the historical SSH-path
+/// contract the old Dart `_rcError` mapper produced (exit 4 → `RC_NOT_FOUND`/404,
+/// exit 127 / "command not found" → `SHED_EXT_RC_MISSING`/502, other non-zero →
+/// `RC_FAILED`/500). The empty-detail fallback messages ("shed-ext-rc exited N",
+/// the missing-binary text) are already applied Rust-side (`error_from_exit` +
+/// `RcError::MissingBinary`'s Display), so the detail carries through verbatim.
+/// The decode-failure case (also an `RcFailed`) is re-mapped to `RC_FAILED`/502 at
+/// the decode call sites in `rc_service.dart` (a stale/broken binary contract is a
+/// 502, not the exit-path 500).
 AppError appErrorFromBridge(BridgeError e) => switch (e) {
   BridgeError_BadStatus(:final code) => _fromStatus(code),
   BridgeError_Transport(:final msg) => AppError('SHED_TRANSPORT', msg),
@@ -138,7 +54,7 @@ AppError appErrorFromBridge(BridgeError e) => switch (e) {
     409,
   ),
   BridgeError_RcNotFound(:final detail) => AppError(
-    'RC_SESSION_GONE',
+    'RC_NOT_FOUND',
     detail,
     404,
   ),
@@ -148,11 +64,11 @@ AppError appErrorFromBridge(BridgeError e) => switch (e) {
     400,
   ),
   BridgeError_RcMissingBinary() => AppError(
-    'RC_MISSING_BINARY',
-    'shed-ext-rc is not installed',
-    127,
+    'SHED_EXT_RC_MISSING',
+    'shed-ext-rc is not installed on this shed — update the shed image',
+    502,
   ),
-  BridgeError_RcFailed(:final detail) => AppError('RC_INPUT_FAILED', detail),
+  BridgeError_RcFailed(:final detail) => AppError('RC_FAILED', detail, 500),
   BridgeError_TokenAuthExpired() => AppError.authExpired(),
   BridgeError_TokenPinMismatch() => AppError.tlsPinMismatch(),
   BridgeError_TokenPinMissing() => AppError.tlsPinMissing(),

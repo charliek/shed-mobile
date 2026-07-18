@@ -176,25 +176,34 @@ void main() {
     expect(prompt, containsAll(['prompt', '--slug', 'cdx777', '--session-id']));
 
     // The validating create gate: argv + stdin (claude-rc accepts typed input).
+    // `createdBy` is Dart-supplied so the wire provenance carries the version.
     final inv = await rcCreateInvocation(
       kind: 'claude-rc',
       name: 'My Session',
       slug: 'cdx777',
       target: 'proj',
+      createdBy: 'shed-mobile/test',
       prompt: 'hello world',
     );
     expect(inv.argv, containsAll(['create', '--wait', '--kind', 'claude-rc']));
+    expect(inv.argv, contains('shed-mobile/test'));
     expect(inv.stdin, 'hello world');
 
-    // Dart "runs" the list argv (fake runner) → Rust decodes the stdout into
-    // the sealed-DTO rows.
+    // Dart "runs" the list argv (fake runner) → Rust decodes AND enriches the
+    // stdout into the single BridgeRcSession type (host/shed injected).
     const canned =
         '{"rc_sessions":[{"slug":"cdx777","tmux_session":"tmux-cdx777",'
         '"kind":"claude-rc","state":"ready","managed":true,'
         '"display_name":"My Session"}]}';
-    final sessions = await rcDecodeList(stdout: canned);
+    final sessions = await rcDecodeSessions(
+      stdout: canned,
+      host: 'mini3',
+      shed: 'proj',
+    );
     expect(sessions.length, 1);
     expect(sessions.first.slug, 'cdx777');
+    expect(sessions.first.host, 'mini3');
+    expect(sessions.first.shed, 'proj');
     expect(sessions.first.kind, const BridgeRcKind.claudeRc());
     expect(sessions.first.state, BridgeRcState.ready);
     expect(sessions.first.managed, true);

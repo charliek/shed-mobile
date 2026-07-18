@@ -2,22 +2,22 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app_section.dart';
-import 'bridge/bridge_adapters.dart';
 import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
-import 'rc/rc_capabilities.dart';
-import 'rc/rc_events.dart';
-import 'rc/rc_models.dart';
+import 'rc/activity_overlay.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
+import 'src/rust/api/dto_rc.dart';
 import 'src/rust/api/error.dart';
+import 'src/rust/api/watcher.dart';
 import 'ssh/bootstrap_service.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
@@ -235,35 +235,231 @@ final overviewProvider = FutureProvider.autoDispose
       }
     });
 
-/// The live rc-activity overlay for one host. **B3 stub.** The real bridge
-/// watcher (`createRcWatcher` + `rcWatcherEvents`, plus the resync-flag → overview
-/// invalidation and the consumer-side unknown-slug debounce) is wired in B4; the
-/// old Dart SSE loop was deleted with `ShedClient`. Until then this emits a single
-/// empty overlay and completes, so every consumer (session cards, the codex watch
-/// view) falls through to the base overview snapshot — exactly the behavior a
-/// server that doesn't advertise `rc-events` already produces. No live badge
-/// updates in this interim, but the LIST/overview render identically (B3's gate).
+/// The injectable seam over the two-call FRB watcher (`createRcWatcher` +
+/// `rcWatcherEvents` + the sync `stopRcEvents` + the opaque `dispose`). The
+/// default impl calls the generated FRB functions; [liveActivityProvider] drives
+/// it, and a test overrides [rcWatcherBridgeProvider] with a fake so the
+/// Riverpod wiring is unit-testable without the native library.
+abstract class RcWatcherBridge {
+  const RcWatcherBridge();
+
+  /// Spawn a watcher for [serverName] against [client], returning its opaque
+  /// handle (step 1 of the two-call shape).
+  Future<BridgeWatcherHandle> create({
+    required BridgeClient client,
+    required String serverName,
+  });
+
+  /// Drain the handle's watcher into a Dart `Stream` (step 2).
+  Stream<BridgeWatcherUpdate> events(BridgeWatcherHandle handle);
+
+  /// Synchronous, idempotent stop (the co-primary teardown Riverpod `onDispose`
+  /// calls); aborts a parked forwarder immediately.
+  void stop(BridgeWatcherHandle handle);
+
+  /// Drop the Rust-owned opaque (guarded against double-dispose).
+  void dispose(BridgeWatcherHandle handle);
+}
+
+class _FrbRcWatcherBridge extends RcWatcherBridge {
+  const _FrbRcWatcherBridge();
+
+  @override
+  Future<BridgeWatcherHandle> create({
+    required BridgeClient client,
+    required String serverName,
+  }) => createRcWatcher(client: client, serverName: serverName);
+
+  @override
+  Stream<BridgeWatcherUpdate> events(BridgeWatcherHandle handle) =>
+      rcWatcherEvents(handle: handle);
+
+  @override
+  void stop(BridgeWatcherHandle handle) => stopRcEvents(handle: handle);
+
+  @override
+  void dispose(BridgeWatcherHandle handle) {
+    if (!handle.isDisposed) handle.dispose();
+  }
+}
+
+final rcWatcherBridgeProvider = Provider<RcWatcherBridge>(
+  (ref) => const _FrbRcWatcherBridge(),
+);
+
+/// Debounce for the unknown-slug overview refetch: a session created outside the
+/// app (e.g. via the CLI) announces itself on the rc-events stream, but the
+/// overlay can only patch EXISTING cards — the overview must be refetched once
+/// for the new card to appear at all. At most one such refetch per window, so a
+/// burst of events for a new session costs a single fetch. This stays
+/// consumer-side because it needs overview knowledge the watcher lacks.
+///
+/// A top-level `var` (not `const`) purely so tests can shrink the window via
+/// [setRcUnknownSlugDebounceForTest] and assert the debounce re-enables without a
+/// real 5s wait; production never mutates it.
+Duration _rcUnknownSlugDebounce = const Duration(seconds: 5);
+
+/// Test seam: override (or reset, with `null`) the unknown-slug debounce window so
+/// the "debounce re-enables after the window" behavior is assertable in a unit
+/// test. Restore to the 5s default in `tearDown`.
+@visibleForTesting
+void setRcUnknownSlugDebounceForTest(Duration? window) =>
+    _rcUnknownSlugDebounce = window ?? const Duration(seconds: 5);
+
+/// The live rc-activity overlay for one host, folded by the Rust
+/// `RcEventsWatcher` and streamed over the bridge (`createRcWatcher` +
+/// `rcWatcherEvents`). A StreamProvider so the sessions view (and per-card
+/// `.select`s) react to each folded snapshot without re-fetching the overview.
+///
+/// Lifecycle: autoDispose — the watcher runs only while something watches this
+/// (the Sessions view / a watch screen for the host is visible). `onDispose`
+/// cancels the Dart subscription, calls the SYNCHRONOUS `stopRcEvents` (which
+/// aborts the Rust forwarder even while parked), then drops the opaque handle.
+///
+/// Reconnect is Rust-owned: the `RcEventsWatcher` backs off + reconnects, clears
+/// its held overlay on resync, and re-mints on a 401. A `Down` update is NOT
+/// destructive here — the subscription and the last overlay are kept. A resync
+/// arrives folded onto the next `Event` as `resync: true`, which triggers exactly
+/// one `overviewProvider` invalidation (so a coalesced/dropped intermediate can't
+/// lose the signal). The consumer-side unknown-slug debounce (below) is retained
+/// because it surfaces an out-of-band session on a HEALTHY connection, which the
+/// resync-on-reconnect path alone does not.
 final liveActivityProvider = StreamProvider.autoDispose
     .family<ActivityOverlay, String>((ref, serverName) {
+      final bridge = ref.watch(rcWatcherBridgeProvider);
       final controller = StreamController<ActivityOverlay>();
-      controller.add(ActivityOverlay.empty);
-      unawaited(controller.close());
-      ref.onDispose(() {});
+      var disposed = false;
+      BridgeWatcherHandle? handle;
+      StreamSubscription<BridgeWatcherUpdate>? sub;
+
+      void teardown() {
+        final h = handle;
+        if (h != null) {
+          bridge.stop(h);
+          bridge.dispose(h);
+        }
+      }
+
+      ref.onDispose(() {
+        disposed = true;
+        unawaited(sub?.cancel());
+        teardown();
+        unawaited(controller.close());
+      });
+
+      // Emit an initial empty overlay immediately so consumers render before the
+      // first event (pre-B3 behavior).
+      var overlay = ActivityOverlay.empty;
+      controller.add(overlay);
+
+      // Unknown-slug refetch (debounced): an event for a session the current
+      // overview snapshot doesn't hold means there's no card for the patch to
+      // land on — refetch the overview once so the new card appears. ref.read
+      // (not watch): the overview must never be a dependency, or its own
+      // invalidation would rebuild this provider and tear down the watcher.
+      var lastUnknownRefetch = DateTime.fromMillisecondsSinceEpoch(0);
+      bool overviewHasSession(String shed, String slug) {
+        final r = ref.read(overviewProvider(serverName)).value;
+        // No snapshot to compare against — don't churn (treat as known).
+        if (r is! OverviewData) return true;
+        for (final s in r.overview.sheds) {
+          if (s.shed.name == shed) {
+            return s.sessions.any((sess) => sess.slug == slug);
+          }
+        }
+        return false; // whole shed unknown → the snapshot is stale too
+      }
+
+      void maybeRefetchUnknown(String shed, String slug) {
+        if (overviewHasSession(shed, slug)) return;
+        final now = DateTime.now();
+        if (now.difference(lastUnknownRefetch) < _rcUnknownSlugDebounce) return;
+        lastUnknownRefetch = now;
+        ref.invalidate(overviewProvider(serverName));
+      }
+
+      void onUpdate(BridgeWatcherUpdate update) {
+        if (disposed) return;
+        switch (update) {
+          case BridgeWatcherUpdate_Event(
+            :final event,
+            overlay: final entries,
+            :final resync,
+          ):
+            // A resync (reconnect cleared the held overlay) → refetch the base
+            // overview once (Rust already cleared its snapshot; this restores
+            // the Event.resync → invalidate ordering). A resync already
+            // invalidates the overview, so skip the unknown-slug check for this
+            // same update — it would only ever cost a redundant second refetch
+            // (and burn the debounce window). The next non-resync event picks up
+            // any still-unknown slug.
+            if (resync) {
+              ref.invalidate(overviewProvider(serverName));
+            } else {
+              // A live event for a session the overview doesn't know about → one
+              // debounced overview refetch so the new card materializes. Match
+              // the pre-B3 set: session.updated (not removed) + activity.changed.
+              switch (event) {
+                case BridgeRcEvent_SessionUpdated(
+                  :final shed,
+                  :final slug,
+                  :final removed,
+                ):
+                  if (!removed) maybeRefetchUnknown(shed, slug);
+                case BridgeRcEvent_ActivityChanged(:final shed, :final slug):
+                  maybeRefetchUnknown(shed, slug);
+                case _:
+                  break;
+              }
+            }
+            overlay = ActivityOverlay(entries);
+            controller.add(overlay);
+          case BridgeWatcherUpdate_Down():
+            // Do NOTHING destructive — the Rust watcher owns reconnect/backoff.
+            // Keep the subscription and the last overlay (Rust clears it via a
+            // resync on reconnect).
+            break;
+        }
+      }
+
+      ref
+          .watch(shedClientProvider(serverName).future)
+          .then((client) async {
+            // Disposed before the client resolved → never create the watcher.
+            if (disposed) return;
+            final h = await bridge.create(
+              client: client,
+              serverName: serverName,
+            );
+            // Disposed between create and listen → stop + drop immediately.
+            if (disposed) {
+              bridge.stop(h);
+              bridge.dispose(h);
+              return;
+            }
+            handle = h;
+            sub = bridge.events(h).listen(onUpdate);
+          })
+          .catchError((Object e, StackTrace st) {
+            // Client build failed (unknown server / keychain error): surface it
+            // as the provider's error state rather than silently idling.
+            if (!disposed) controller.addError(e, st);
+          });
+
       return controller.stream;
     });
 
 /// One (shed, rc session) pair on a host — the cross-host Sessions view's unit.
-typedef ShedSession = ({String shedName, RcSession session});
+typedef ShedSession = ({String shedName, BridgeRcSession session});
 
 /// Flatten an overview into the Sessions view's (shed, session) pairs — the
 /// server rc-enriches the sessions, and a stopped shed contributes none. The
-/// embedded bridge sessions are converted to the Dart [RcSession] domain (still
-/// Dart until B4), so the shared session card renders identically whether the
+/// embedded bridge sessions are rendered directly (B4: consumers are on the
+/// bridge RC types), so the shared session card renders identically whether the
 /// data came from the overview (here) or the per-shed SSH `rc list` fan-out.
 List<ShedSession> shedSessionPairs(BridgeOverview overview) => [
   for (final s in overview.sheds)
-    for (final sess in s.sessions)
-      (shedName: s.shed.name, session: rcSessionFromBridge(sess)),
+    for (final sess in s.sessions) (shedName: s.shed.name, session: sess),
 ];
 
 /// The rc capabilities of one shed, read from the host overview (a single call
@@ -273,13 +469,12 @@ List<ShedSession> shedSessionPairs(BridgeOverview overview) => [
 /// falls back to its safe base (claude + shell). A real transport error bubbles
 /// so the form can degrade to the base too.
 final shedCapabilitiesProvider = FutureProvider.autoDispose
-    .family<RcCapabilities?, ShedRef>((ref, key) async {
+    .family<BridgeRcCapabilities?, ShedRef>((ref, key) async {
       final result = await ref.watch(overviewProvider(key.serverName).future);
       if (result is! OverviewData) return null; // old server → absent caps
       for (final s in result.overview.sheds) {
         if (s.shed.name == key.shedName) {
-          final caps = s.capabilities;
-          return caps == null ? null : rcCapabilitiesFromBridge(caps);
+          return s.capabilities;
         }
       }
       return null;
@@ -345,12 +540,34 @@ Future<RcService> buildRcService(Ref ref, ShedRef key) async {
   return rcServiceFor(rec, identities, key.shedName);
 }
 
+/// One-shot [RcService] for a widget action (create/kill fired from a screen
+/// that doesn't otherwise watch [rcServiceProvider]). Reads only the STABLE
+/// serverStore/identities providers: a one-shot
+/// `ref.read(rcServiceProvider(key).future)` races autoDispose — nothing keeps
+/// the provider alive through its own async build, so its body's later read
+/// throws "Cannot use the Ref after it has been disposed" and the action never
+/// runs. Mirrors [buildRcService] for [WidgetRef] callers (and the session
+/// card's delete action, which already assembles the service this way).
+Future<RcService> rcServiceOneShot(WidgetRef ref, ShedRef key) async {
+  // Capture both dependencies BEFORE the first await: a WidgetRef must not be
+  // read after an async gap (the widget can dispose mid-flight, and
+  // `ref.read` then throws "Cannot use a WidgetRef after dispose"). Reading the
+  // store synchronously and the identities Future up front means no `ref` usage
+  // survives an await.
+  final store = ref.read(serverStoreProvider);
+  final identitiesFuture = ref.read(identitiesProvider.future);
+  final rec = await store.get(key.serverName);
+  if (rec == null) throw StateError('unknown server: ${key.serverName}');
+  final identities = await identitiesFuture;
+  return rcServiceFor(rec, identities, key.shedName);
+}
+
 final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
   (ref, key) => buildRcService(ref, key),
 );
 
 final rcSessionsProvider = FutureProvider.autoDispose
-    .family<List<RcSession>, ShedRef>((ref, key) async {
+    .family<List<BridgeRcSession>, ShedRef>((ref, key) async {
       final svc = await ref.watch(rcServiceProvider(key).future);
       return svc.list();
     });

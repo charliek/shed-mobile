@@ -3,38 +3,43 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/rc/session_card.dart';
 import 'package:shed_mobile/providers.dart';
-import 'package:shed_mobile/rc/rc_capabilities.dart';
-import 'package:shed_mobile/rc/rc_events.dart';
-import 'package:shed_mobile/rc/rc_models.dart';
+import 'package:shed_mobile/rc/activity_overlay.dart';
+import 'package:shed_mobile/src/rust/api/dto_rc.dart';
+import 'package:shed_mobile/src/rust/api/watcher.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
-const _session = RcSession(
+const _session = BridgeRcSession(
+  host: 'h',
+  shed: 'web',
   slug: 'abc123',
   tmuxSession: 'rc-abc123',
   displayName: 'frontend',
-  kind: RcKind.claudeRc,
-  state: RcState.ready,
+  kind: BridgeRcKind.claudeRc(),
+  state: BridgeRcState.ready,
   managed: true,
 );
 
-RcCapabilities _capsWithCodexWatch() => RcCapabilities.fromJson(const {
-  'rc_version': 3,
-  'kind_features': {
-    'codex': {
-      'post_input': true,
-      'approvals': 'tui',
-      'watch': true,
-      'input': 'gated',
-    },
+BridgeRcCapabilities _capsWithCodexWatch() => const BridgeRcCapabilities(
+  rcVersion: 3,
+  kinds: [],
+  agents: {},
+  features: [],
+  kindFeatures: {
+    'codex': BridgeRcKindFeatures(
+      postInput: true,
+      approvals: 'tui',
+      watch: true,
+      input: 'gated',
+    ),
   },
-});
+);
 
 Future<void> _pump(
   WidgetTester tester,
   double width, {
-  RcSession session = _session,
+  BridgeRcSession session = _session,
   bool live = false,
-  RcCapabilities? caps,
+  BridgeRcCapabilities? caps,
   ActivityOverlay? overlay,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 800));
@@ -70,6 +75,24 @@ Future<void> _pump(
     await tester.pump(const Duration(milliseconds: 20));
   }
 }
+
+/// A one-entry overlay for `(shed, slug)` — the bridge already folded it, so the
+/// test hands the delivered [BridgeOverlayEntry] snapshot straight in.
+ActivityOverlay _overlay({
+  String shed = 'web',
+  String slug = 'abc123',
+  BridgeRcActivity? activity,
+  BridgeRcState? state,
+  String? lastMessage,
+}) => ActivityOverlay([
+  BridgeOverlayEntry(
+    shed: shed,
+    slug: slug,
+    activity: activity,
+    state: state,
+    lastMessage: lastMessage,
+  ),
+]);
 
 void main() {
   testWidgets('desktop: open/delete actions, name, kind chip, status badge', (
@@ -109,14 +132,16 @@ void main() {
     await _pump(
       tester,
       400,
-      session: const RcSession(
+      session: const BridgeRcSession(
+        host: 'h',
+        shed: 'web',
         slug: 'abc123',
         tmuxSession: 'rc-abc123',
         displayName: 'frontend',
-        kind: RcKind.codex,
-        state: RcState.ready,
+        kind: BridgeRcKind.codex(),
+        state: BridgeRcState.ready,
         managed: true,
-        activity: RcActivity.working,
+        activity: BridgeRcActivity.working,
         lastMessage: 'Running the test suite now.',
       ),
     );
@@ -139,14 +164,16 @@ void main() {
     await _pump(
       tester,
       400,
-      session: const RcSession(
+      session: const BridgeRcSession(
+        host: 'h',
+        shed: 'web',
         slug: 'abc123',
         tmuxSession: 'rc-abc123',
         displayName: 'frontend',
-        kind: RcKind.codex,
-        state: RcState.needsAuth,
+        kind: BridgeRcKind.codex(),
+        state: BridgeRcState.needsAuth,
         managed: true,
-        activity: RcActivity.working, // present but must be suppressed
+        activity: BridgeRcActivity.working, // present but must be suppressed
         lastMessage: 'stale pre-gate context', // suppressed alongside it
       ),
     );
@@ -162,12 +189,14 @@ void main() {
     expect(find.text('needs auth'), findsOneWidget);
   });
 
-  const codex = RcSession(
+  const codex = BridgeRcSession(
+    host: 'h',
+    shed: 'web',
     slug: 'abc123',
     tmuxSession: 'rc-abc123',
     displayName: 'frontend',
-    kind: RcKind.codex,
-    state: RcState.ready,
+    kind: BridgeRcKind.codex(),
+    state: BridgeRcState.ready,
     managed: true,
   );
 
@@ -193,30 +222,27 @@ void main() {
 
   testWidgets('live overlay supersedes the base snapshot activity AND the '
       'last-message subtitle', (tester) async {
-    // Base says idle + an old preview; the SSE overlay says needs_input with a
-    // fresh preview → the badge AND the subtitle show the live values.
-    final overlay = ActivityOverlay.empty.apply(
-      const RcActivityChanged(
-        shed: 'web',
-        slug: 'abc123',
-        activity: RcActivity.needsInput,
-        state: RcState.ready,
-        lastMessage: 'fresh live preview',
-      ),
-    );
+    // Base says idle + an old preview; the folded overlay says needs_input with
+    // a fresh preview → the badge AND the subtitle show the live values.
     await _pump(
       tester,
       400,
       live: true,
-      overlay: overlay,
-      session: const RcSession(
+      overlay: _overlay(
+        activity: BridgeRcActivity.needsInput,
+        state: BridgeRcState.ready,
+        lastMessage: 'fresh live preview',
+      ),
+      session: const BridgeRcSession(
+        host: 'h',
+        shed: 'web',
         slug: 'abc123',
         tmuxSession: 'rc-abc123',
         displayName: 'frontend',
-        kind: RcKind.codex,
-        state: RcState.ready,
+        kind: BridgeRcKind.codex(),
+        state: BridgeRcState.ready,
         managed: true,
-        activity: RcActivity.idle,
+        activity: BridgeRcActivity.idle,
         lastMessage: 'stale overview preview',
       ),
     );

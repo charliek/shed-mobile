@@ -1,89 +1,21 @@
-import 'dart:convert';
-import 'dart:math';
-
+import '../bridge/bridge_adapters.dart';
 import '../core/app_error.dart';
-import '../core/app_version.dart';
+import '../src/rust/api/dto_rc.dart';
+import '../src/rust/api/error.dart';
+import '../src/rust/api/rc_runner.dart';
 import '../ssh/ssh_connection.dart';
 import '../ssh/ssh_runner.dart';
-import 'rc_models.dart';
+import 'rc_ui.dart';
 
-/// Stable tool identifier for SHED_RC_CREATED_BY (must not contain '/').
-const String rcToolName = 'shed-mobile';
-
-/// `<tool>/<version>` provenance stored as SHED_RC_CREATED_BY at create time.
-const String rcCreatedBy = '$rcToolName/$kAppVersion';
-
-/// The guest binary name (on PATH in the shed `full` image).
-const String _rcBin = 'shed-ext-rc';
-
-/// The generic permission tri-state accepted by EVERY kind and mapped per agent
-/// to that tool's real flags by shed-ext-rc (the VM is already the sandbox).
-/// Mirrors the guest's `genericPermModes` (`internal/ext/rc/rc.go`).
-const Set<String> rcGenericPermissionModes = {'default', 'auto', 'skip'};
-
-/// claude's historical `--permission-mode` values, accepted on top of the
-/// generic tri-state by the claude kinds ONLY. Mirrors the claude spec's
-/// `ExtraModes`.
-const Set<String> rcClaudeExtraModes = {
-  'acceptEdits',
-  'plan',
-  'dontAsk',
-  'bypassPermissions',
-};
-
-/// Every mode a claude kind accepts (generic tri-state + historical set) — also
-/// the set the claude-only create-form dropdown offers when the target shed's
-/// capabilities are PRESENT, in display order. The union of the two component
-/// sets, so it can't drift from them. A null mode means "pass no flag" (each
-/// tool's own default).
-const Set<String> rcPermissionModes = {
-  ...rcGenericPermissionModes,
-  ...rcClaudeExtraModes,
-};
-
-/// The claude modes every SHIPPED binary accepts — the pre-generic-perm
-/// historical set. The generic `skip` is NEW: an old shed-ext-rc rejects it, so
-/// the create form offers only this set when the target shed's capabilities are
-/// ABSENT (an old image that can't advertise generic-perm); the full
-/// [rcPermissionModes] is offered when capabilities are present.
-const Set<String> rcClaudeHistoricalModes = {
-  'default',
-  'auto',
-  ...rcClaudeExtraModes,
-};
-
-/// The permission modes valid for [kind]: the full claude set for the claude
-/// kinds, else the generic tri-state (codex/cursor/opencode/shell). Mirrors the
-/// guest's `PermModeAcceptedBy`.
-Set<String> permissionModesFor(RcKind kind) =>
-    kind.runsClaude ? rcPermissionModes : rcGenericPermissionModes;
-
-/// The create-time default permission mode. `auto` keeps a session running
-/// autonomously rather than blocking on permission prompts; it is a member of
-/// both the generic tri-state and the claude set, so it is valid for every agent
-/// kind. Must be a member of [rcPermissionModes].
-const String defaultRcPermissionMode = 'auto';
-
-/// Slug alphabet without visually-confusable characters (no l/i/o/0/1), so a
-/// short slug survives being read off a screen or typed. Port of rc.ts genSlug.
-const String _slugAlphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
-
-/// A 6-char slug. [rng] is injectable for deterministic tests; production uses a
-/// secure RNG (slugs aren't a secret, but it gives a clean uniform draw).
-String genSlug([Random? rng]) {
-  final r = rng ?? Random.secure();
-  final b = StringBuffer();
-  for (var i = 0; i < 6; i += 1) {
-    b.write(_slugAlphabet[r.nextInt(_slugAlphabet.length)]);
-  }
-  return b.toString();
-}
-
-/// Drives the `shed-ext-rc` guest binary over SSH to manage a shed's RC sessions.
-/// Port of apps/api/src/lib/shedRc.ts: create / list / kill / prompt, the
-/// exit-code → AppError mapping, and the stdout-JSON contract. Classification of
-/// pane state/url is owned by the binary (it runs inside the shed), so this layer
-/// trusts the DTO's `state`/`url` rather than re-parsing panes.
+/// Drives the `shed-ext-rc` guest binary over SSH to manage a shed's RC sessions
+/// (option-a: plan §3.5). A THIN Dart transport — argv building, the create-time
+/// permission-mode gate, stdout decode, and exit-code mapping all live in Rust
+/// (`shed_core::rc`, behind `rcListArgv`/`rcCreateInvocation`/`rcKillArgv`/
+/// `rcPromptArgv`/`rcDecodeSessions`/`rcDecodeSession`/`rcErrorFromExit`). This
+/// layer keeps only what is genuinely platform-bound: the dartssh2 transport, the
+/// `classifySshException` mapping, the per-op timeouts, the slug / display-name /
+/// target-label orchestration, and the empty-prompt gate for the running-session
+/// `prompt` op.
 class RcService {
   RcService({
     required this.runner,
@@ -92,132 +24,121 @@ class RcService {
     String Function()? slugGen,
   }) : _slug = slugGen ?? genSlug;
 
-  /// The SSH command runner (injectable so command shape and error mapping are
+  /// The SSH command runner (injectable so timeouts + error mapping are
   /// unit-testable without a real shed).
   final SshRun runner;
 
   /// The shed (== the SSH username) the binary runs inside.
   final String shedName;
 
-  /// The server alias, used only for the advisory `shed:<shed>@<server>` label.
+  /// The server alias — the advisory `shed:<shed>@<server>` target label AND the
+  /// `host` field injected into the enriched session (mobile's server identity).
   final String serverLabel;
   final String Function() _slug;
 
-  String _fallback(String slug) => '$shedName/$slug';
-
   String get _targetLabel => 'shed:$shedName@$serverLabel';
 
-  /// List the shed's RC sessions via `shed-ext-rc list`.
-  Future<List<RcSession>> list() async {
-    final res = await _exec([
-      _rcBin,
-      'list',
-    ], timeout: const Duration(seconds: 15));
-    if (res.code != 0) throw _rcError(res);
-    final raw = _decodeObj(res.stdout)['rc_sessions'];
-    if (raw is! List) throw _invalidDto();
-    // Fail the whole decode if any entry is malformed (matching the TS Zod
-    // safeParse), rather than silently dropping sessions.
-    return raw.map(_toSession).toList();
+  /// List the shed's RC sessions via `shed-ext-rc list`. Rust enriches the rows
+  /// (host/shed inject + `<shed>/<slug>` display-name fallback).
+  Future<List<BridgeRcSession>> list() async {
+    final res = await _exec(
+      await rcListArgv(),
+      timeout: const Duration(seconds: 15),
+    );
+    if (res.code != 0) throw await _exitError(res);
+    return _decode(
+      () => rcDecodeSessions(
+        stdout: res.stdout,
+        host: serverLabel,
+        shed: shedName,
+      ),
+    );
   }
 
-  /// Create a session via `shed-ext-rc create --wait` (the binary resolves the
-  /// workdir, pre-seeds trust, bootstraps, polls to ready, accepts trust, and
-  /// delivers the prompt). The app generates the slug so it owns the
-  /// `<shed>/<slug>` display convention. claude-broker has no pane to type into,
-  /// so any [prompt] is dropped (the binary would reject it).
-  Future<RcSession> create({
-    required RcKind kind,
+  /// Create a session via `shed-ext-rc create --wait`. The app generates the slug
+  /// so it owns the `<shed>/<slug>` display convention; the Rust builder is the
+  /// validating gate for `permissionMode` (an invalid mode → RC_BAD_REQUEST with
+  /// no SSH call) and drops the prompt for a non-typed-input kind (claude-broker).
+  /// Provenance (`created_by`) carries the app version via [rcCreatedBy].
+  Future<BridgeRcSession> create({
+    required BridgeRcKind kind,
     String? displayName,
     String? slug,
     String? workdir,
     String? prompt,
     String? permissionMode,
   }) async {
-    // A permission posture applies to every agent kind; only `shell` (and an
-    // unknown kind) has none, so drop it there (the same way a claude-broker's
-    // prompt is dropped below) rather than relying on every caller to gate it.
-    // The accepted set is kind-aware: claude takes its full historical set, the
-    // other agents take the generic default|auto|skip tri-state.
-    final mode = kind.hasPermissionMode ? permissionMode : null;
-    if (mode != null && !permissionModesFor(kind).contains(mode)) {
-      throw AppError('RC_BAD_REQUEST', 'invalid permission mode', 400);
-    }
     final theSlug = slug ?? _slug();
-    final name = displayName ?? _fallback(theSlug);
-    // Normalize empty → null once, so the prompt flag and the stdin payload stay
-    // in lockstep. claude-broker has no pane, so its prompt is already dropped.
-    final trimmed = kind.acceptsPrompt ? prompt?.trim() : null;
+    final name = displayName ?? '$shedName/$theSlug';
+    // Normalize the kickoff line here (empty/blank → null) so an empty prompt
+    // never produces a `--prompt-stdin` with empty stdin — the Rust builder
+    // does NOT trim/empty-drop. It DOES gate the mode and drop the prompt for a
+    // non-typed-input kind, so we pass both straight through.
+    final trimmed = prompt?.trim();
     final kickoff = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
 
-    final args = [
-      _rcBin,
-      'create',
-      '--kind',
-      kind.wire,
-      '--name',
-      name,
-      '--slug',
-      theSlug,
-      '--created-by',
-      rcCreatedBy,
-      '--target',
-      _targetLabel,
-      '--wait',
-    ];
-    if (workdir != null && workdir.isNotEmpty) {
-      args.addAll(['--workdir', workdir]);
+    final BridgeRcInvocation inv;
+    try {
+      inv = await rcCreateInvocation(
+        kind: kind.wire,
+        name: name,
+        slug: theSlug,
+        target: _targetLabel,
+        createdBy: rcCreatedBy,
+        workdir: (workdir == null || workdir.isEmpty) ? null : workdir,
+        permissionMode: permissionMode,
+        prompt: kickoff,
+      );
+    } on BridgeError catch (e) {
+      // The mode gate rejects before any SSH call (RC_BAD_REQUEST).
+      throw appErrorFromBridge(e);
     }
-    if (mode != null) {
-      args.addAll(['--permission-mode', mode]);
-    }
-    if (kickoff != null) args.add('--prompt-stdin');
 
     // --wait blocks up to ~20s inside the shed; give SSH headroom over that.
     final res = await _exec(
-      args,
-      stdin: kickoff,
+      inv.argv,
+      stdin: inv.stdin,
       timeout: const Duration(seconds: 30),
     );
-    if (res.code != 0) throw _rcError(res);
-    return _toSession(_decodeObj(res.stdout));
+    if (res.code != 0) throw await _exitError(res);
+    return _decode(
+      () => rcDecodeSession(
+        stdout: res.stdout,
+        host: serverLabel,
+        shed: shedName,
+      ),
+    );
   }
 
   /// Kill a session via `shed-ext-rc kill` (idempotent — the binary exits 0 for
   /// an already-gone session).
   Future<void> kill(String slug) async {
-    final res = await _exec([
-      _rcBin,
-      'kill',
-      '--slug',
-      slug,
-    ], timeout: const Duration(seconds: 10));
-    if (res.code != 0) throw _rcError(res);
+    final res = await _exec(
+      await rcKillArgv(slug: slug),
+      timeout: const Duration(seconds: 10),
+    );
+    if (res.code != 0) throw await _exitError(res);
   }
 
   /// Deliver a kickoff line to a ready claude-rc/shell session via
   /// `shed-ext-rc prompt` (text on stdin). [sessionId] guards against a recreated
-  /// slug (it must match the session's SHED_RC_ID).
+  /// slug. The empty-text gate stays Dart-side (a client 400 before any SSH).
   Future<void> prompt(String slug, String text, {String? sessionId}) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       throw AppError('RC_BAD_REQUEST', 'prompt text is empty', 400);
     }
-    final args = [_rcBin, 'prompt', '--slug', slug];
-    if (sessionId != null && sessionId.isNotEmpty) {
-      args.addAll(['--session-id', sessionId]);
-    }
     final res = await _exec(
-      args,
+      await rcPromptArgv(slug: slug, sessionId: sessionId),
       stdin: trimmed,
       timeout: const Duration(seconds: 15),
     );
-    if (res.code != 0) throw _rcError(res);
+    if (res.code != 0) throw await _exitError(res);
   }
 
   /// Run a command and map dartssh2 transport failures to AppError via the shared
   /// [classifySshException]. A command that runs but exits non-zero is returned
-  /// (the caller maps it via [_rcError]); a non-transport error propagates as-is.
+  /// (the caller maps it via [_exitError]); a non-transport error propagates.
   Future<SshResult> _exec(
     List<String> argv, {
     String? stdin,
@@ -232,71 +153,31 @@ class RcService {
     }
   }
 
-  /// Map a non-zero `shed-ext-rc` invocation to an AppError. The binary's domain
-  /// exit codes (2/3/4) are checked FIRST, so a domain message that happens to
-  /// contain "command not found" isn't misread as a missing binary.
-  AppError _rcError(SshResult r) {
-    final detail = (r.stderr.trim().isNotEmpty ? r.stderr : r.stdout).trim();
-    switch (r.code) {
-      case 3:
-        return AppError(
-          'RC_SLUG_TAKEN',
-          detail.isEmpty ? 'rc slug already taken' : detail,
-          409,
-        );
-      case 4:
-        return AppError(
-          'RC_NOT_FOUND',
-          detail.isEmpty ? 'rc session not found' : detail,
-          404,
-        );
-      case 2:
-        return AppError(
-          'RC_BAD_REQUEST',
-          detail.isEmpty ? 'invalid rc request' : detail,
-          400,
-        );
-    }
-    if (r.code == 127 ||
-        RegExp('command not found', caseSensitive: false).hasMatch(r.stderr)) {
-      return AppError(
-        'SHED_EXT_RC_MISSING',
-        'shed-ext-rc is not installed on this shed — update the shed image',
-        502,
-      );
-    }
-    return AppError(
-      'RC_FAILED',
-      detail.isEmpty ? 'shed-ext-rc exited ${r.code}' : detail,
-      500,
-    );
-  }
+  /// Map a non-zero `shed-ext-rc` exit to an [AppError] via the Rust
+  /// classifier (`error_from_exit` → typed `BridgeError`, then the shared
+  /// bridge→AppError map). The binary's domain exit codes (2/3/4) and the
+  /// missing-binary (127) case are decided in Rust.
+  Future<AppError> _exitError(SshResult r) async => appErrorFromBridge(
+    await rcErrorFromExit(exitCode: r.code, stderr: r.stderr, stdout: r.stdout),
+  );
 
-  Map<String, Object?> _decodeObj(String stdout) {
-    Object? raw;
+  /// Decode a bridge round-trip result, re-mapping a decode failure to
+  /// `RC_FAILED`/502 via [rcDecodeError].
+  Future<T> _decode<T>(Future<T> Function() decode) async {
     try {
-      raw = jsonDecode(stdout);
-    } on FormatException {
-      throw AppError('RC_FAILED', 'shed-ext-rc returned non-JSON output', 502);
-    }
-    if (raw is! Map<String, Object?>) throw _invalidDto();
-    return raw;
-  }
-
-  /// Decode one DTO, mapping a wrong-shape entry (a stale/broken shed-ext-rc) to a
-  /// typed 502 rather than letting a raw cast TypeError escape. The guest binary's
-  /// contract violation is a 502, never a client 400.
-  RcSession _toSession(Object? raw) {
-    if (raw is! Map<String, Object?>) throw _invalidDto();
-    try {
-      return RcSession.fromJson(raw, displayNameFallback: _fallback);
-    } on AppError {
-      rethrow;
-    } catch (_) {
-      throw _invalidDto();
+      return await decode();
+    } on BridgeError catch (e) {
+      throw rcDecodeError(e);
     }
   }
-
-  AppError _invalidDto() =>
-      AppError('RC_FAILED', 'shed-ext-rc returned an invalid session DTO', 502);
 }
+
+/// Map a decode-path bridge failure to `RC_FAILED`/502.
+/// `rcDecodeSessions`/`rcDecodeSession` surface a non-JSON stdout or an invalid DTO
+/// as `shed_core::rc`'s `RcError::Failed` → [BridgeError_RcFailed], whose shared
+/// [appErrorFromBridge] mapping is the exit-path `RC_FAILED`/500. A decode-contract
+/// violation (a stale/broken shed-ext-rc) is historically a **502** (matching the
+/// old Dart `_decodeObj`/`_invalidDto`), so re-stamp the status here while
+/// preserving the Rust detail message. Pure (crosses no FFI) so it's unit-testable.
+AppError rcDecodeError(BridgeError e) =>
+    AppError('RC_FAILED', appErrorFromBridge(e).message, 502);

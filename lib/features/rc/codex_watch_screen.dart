@@ -6,9 +6,9 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 import '../../bridge/bridge_adapters.dart';
 import '../../core/app_error.dart';
 import '../../providers.dart';
-import '../../rc/rc_feed.dart';
-import '../../rc/rc_models.dart';
+import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
+import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
@@ -31,7 +31,7 @@ class CodexWatchScreen extends ConsumerStatefulWidget {
 
   final String serverName;
   final String shedName;
-  final RcSession session;
+  final BridgeRcSession session;
 
   @override
   ConsumerState<CodexWatchScreen> createState() => _CodexWatchScreenState();
@@ -40,14 +40,14 @@ class CodexWatchScreen extends ConsumerStatefulWidget {
 class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
   static const int _pageLimit = 200;
 
-  final _messages = <RcFeedMessage>[];
+  final _messages = <BridgeRcFeedMessage>[];
   final _input = TextEditingController();
   final _scroll = ScrollController();
 
   bool _loading = true;
   Object? _loadError;
   bool _historyTruncated = false;
-  int _lastSeq = 0;
+  BigInt _lastSeq = BigInt.zero;
   bool _sending = false;
   bool _appending = false;
 
@@ -80,8 +80,11 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
   /// guest-controlled data — a duplicate would produce duplicate ValueKeys
   /// (ListView crash) and a non-advancing seq would spin the pagination loop.
   /// Returns how many messages were appended.
-  static int _addMonotonic(List<RcFeedMessage> into, List<RcFeedMessage> msgs) {
-    var last = into.isEmpty ? 0 : into.last.seq;
+  static int _addMonotonic(
+    List<BridgeRcFeedMessage> into,
+    List<BridgeRcFeedMessage> msgs,
+  ) {
+    var last = into.isEmpty ? BigInt.zero : into.last.seq;
     var added = 0;
     for (final m in msgs) {
       if (m.seq <= last) continue;
@@ -102,19 +105,17 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       final client = await ref.read(
         shedClientProvider(widget.serverName).future,
       );
-      final acc = <RcFeedMessage>[];
-      var cursor = 0;
+      final acc = <BridgeRcFeedMessage>[];
+      var cursor = BigInt.zero;
       var truncated = false;
       var first = true;
       var restarted = false;
       while (true) {
-        final page = rcMessagesPageFromBridge(
-          await client.rcMessages(
-            shed: widget.shedName,
-            slug: _slug,
-            since: BigInt.from(cursor),
-            limit: _pageLimit,
-          ),
+        final page = await client.rcMessages(
+          shed: widget.shedName,
+          slug: _slug,
+          since: cursor,
+          limit: _pageLimit,
         );
         if (!mounted || gen != _generation) return; // superseded
         if (page.truncated) {
@@ -127,7 +128,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
             // a stale cursor): restart the whole backfill once from scratch.
             restarted = true;
             acc.clear();
-            cursor = 0;
+            cursor = BigInt.zero;
             first = true;
             continue;
           }
@@ -135,7 +136,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
         first = false;
         final added = _addMonotonic(acc, page.messages);
         if (page.messages.length < _pageLimit) break; // reached the tail
-        final maxSeq = acc.isEmpty ? 0 : acc.last.seq;
+        final maxSeq = acc.isEmpty ? BigInt.zero : acc.last.seq;
         // Strictly-increasing cursor guard: a full page that doesn't advance
         // the cursor (all-duplicate / non-positive seqs) must stop, not spin.
         if (added == 0 || maxSeq <= cursor) break;
@@ -146,7 +147,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
           ..clear()
           ..addAll(acc);
         _historyTruncated = truncated;
-        _lastSeq = acc.isEmpty ? 0 : acc.last.seq;
+        _lastSeq = acc.isEmpty ? BigInt.zero : acc.last.seq;
         _loading = false;
       });
       _scrollToBottom();
@@ -174,13 +175,11 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
         shedClientProvider(widget.serverName).future,
       );
       while (mounted && gen == _generation) {
-        final page = rcMessagesPageFromBridge(
-          await client.rcMessages(
-            shed: widget.shedName,
-            slug: _slug,
-            since: BigInt.from(_lastSeq),
-            limit: _pageLimit,
-          ),
+        final page = await client.rcMessages(
+          shed: widget.shedName,
+          slug: _slug,
+          since: _lastSeq,
+          limit: _pageLimit,
         );
         if (!mounted || gen != _generation) return;
         if (page.truncated) {
@@ -285,12 +284,13 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       ).select((a) => a.value?.lookup(widget.shedName, _slug)?.lastSeq),
       (prev, next) {
         if (next == null) return;
-        if (next < _lastSeq) {
+        final n = next;
+        if (n < _lastSeq) {
           // The hub restarted (seq is monotonic per hub run and resets to 1):
           // our cursor is from a previous incarnation, so a targeted drain
           // would stall on empty/truncated pages forever — full refetch.
           _reload();
-        } else if (next > _lastSeq) {
+        } else if (n > _lastSeq) {
           _appendNew();
         }
       },
@@ -313,9 +313,10 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     final inputAvailable =
         (kf?.inputGated ?? false) &&
         rcStatePermitsActivity(state) &&
-        activity == RcActivity.needsInput;
+        activity == BridgeRcActivity.needsInput;
     // needs-auth / dead → the feed can't drive the session; hand off to the TUI.
-    final blocked = state == RcState.needsAuth || state == RcState.dead;
+    final blocked =
+        state == BridgeRcState.needsAuth || state == BridgeRcState.dead;
 
     logDriveState(
       'screen=codex-watch server=${widget.serverName} shed=${widget.shedName} '
@@ -349,7 +350,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     );
   }
 
-  Widget _activityBadge(RcActivity? activity, RcState state) {
+  Widget _activityBadge(BridgeRcActivity? activity, BridgeRcState state) {
     final d = rcActivityBadge(state, activity);
     if (d == null) return const SizedBox.shrink();
     return Padding(
@@ -445,9 +446,9 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     );
   }
 
-  Widget _handoffBanner(BuildContext context, RcState state) {
+  Widget _handoffBanner(BuildContext context, BridgeRcState state) {
     final c = context.shed;
-    final label = state == RcState.dead
+    final label = state == BridgeRcState.dead
         ? 'Session ended'
         : 'Session needs sign-in';
     return Container(
@@ -572,16 +573,16 @@ class _TruncatedDivider extends StatelessWidget {
 class _MessageTile extends StatelessWidget {
   const _MessageTile({required this.msg, super.key});
 
-  final RcFeedMessage msg;
+  final BridgeRcFeedMessage msg;
 
   @override
   Widget build(BuildContext context) {
     final c = context.shed;
     final pad = const EdgeInsets.fromLTRB(16, 5, 16, 5);
 
-    if (msg.type == 'tool_use' || msg.type == 'tool_result') {
+    if (msg.msgType == 'tool_use' || msg.msgType == 'tool_result') {
       final tool = msg.tool;
-      final name = tool?.name ?? msg.type;
+      final name = tool?.name ?? msg.msgType;
       final detail = tool?.detail;
       return Padding(
         padding: pad,
@@ -594,8 +595,8 @@ class _MessageTile extends StatelessWidget {
       );
     }
 
-    if (msg.type == 'reasoning' ||
-        msg.type == 'status' ||
+    if (msg.msgType == 'reasoning' ||
+        msg.msgType == 'status' ||
         msg.role == 'system') {
       return Padding(
         padding: pad,

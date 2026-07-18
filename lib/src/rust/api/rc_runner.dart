@@ -8,6 +8,7 @@ import 'dto_rc.dart';
 import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `enrich`, `normalize_state`, `prenormalize_list_states`, `prenormalize_session_state`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`
 
 /// `shed-ext-rc list` argv (pure builder).
@@ -28,12 +29,15 @@ Future<List<String>> rcPromptArgv({required String slug, String? sessionId}) =>
 /// The validating create gate: builds the `create --wait` argv + stdin, running
 /// `permission_mode` through `validate_permission_mode`. An invalid mode for the
 /// kind is an [`BridgeError::RcBadRequest`] (no argv built). `kind` is the wire
-/// string (`claude-rc`/`shell`/…); mobile owns `created_by`.
+/// string (`claude-rc`/`shell`/…). `created_by` is supplied by Dart so the wire
+/// provenance carries the app version (`shed-mobile/<version>`) — the Rust side
+/// deliberately owns no version constant.
 Future<BridgeRcInvocation> rcCreateInvocation({
   required String kind,
   required String name,
   required String slug,
   required String target,
+  required String createdBy,
   String? workdir,
   String? permissionMode,
   String? prompt,
@@ -42,15 +46,43 @@ Future<BridgeRcInvocation> rcCreateInvocation({
   name: name,
   slug: slug,
   target: target,
+  createdBy: createdBy,
   workdir: workdir,
   permissionMode: permissionMode,
   prompt: prompt,
 );
 
 /// Decode a `shed-ext-rc list` stdout (what the Dart runner captured) into the
-/// neutral session DTOs — the "decode-in" half of the round-trip.
-Future<List<BridgeRcSessionDto>> rcDecodeList({required String stdout}) =>
-    RustLib.instance.api.crateApiRcRunnerRcDecodeList(stdout: stdout);
+/// ENRICHED sessions the app renders. `from_dto` injects `host`/`shed` and
+/// applies the `<shed>/<slug>` display-name fallback, so the SSH-`list` path and
+/// the overview path converge on ONE session type ([`BridgeRcSession`]).
+///
+/// Two shims run before/after the strict `shed_core` decode (both target
+/// contract-drift that shed-core is PINNED against here): [`prenormalize_states`]
+/// makes the strict `state` field tolerant of a future token (F3), and [`enrich`]
+/// corrects the `from_dto` display-name/workdir normalization drift (F4).
+Future<List<BridgeRcSession>> rcDecodeSessions({
+  required String stdout,
+  required String host,
+  required String shed,
+}) => RustLib.instance.api.crateApiRcRunnerRcDecodeSessions(
+  stdout: stdout,
+  host: host,
+  shed: shed,
+);
+
+/// Decode a single-session `create --wait` response into an enriched session
+/// (same `from_dto` enrichment + `<shed>/<slug>` fallback as [`rc_decode_sessions`],
+/// same F3 state-tolerance + F4 normalization shims).
+Future<BridgeRcSession> rcDecodeSession({
+  required String stdout,
+  required String host,
+  required String shed,
+}) => RustLib.instance.api.crateApiRcRunnerRcDecodeSession(
+  stdout: stdout,
+  host: host,
+  shed: shed,
+);
 
 /// Map a non-zero exit from the Dart runner to a typed [`BridgeError`] (exit 3 →
 /// `RcSlugTaken`, 4 → `RcNotFound`, 2 → `RcBadRequest`, 127 → `RcMissingBinary`,

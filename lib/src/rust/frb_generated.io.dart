@@ -273,9 +273,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRcSession dco_decode_bridge_rc_session(dynamic raw);
 
   @protected
-  BridgeRcSessionDto dco_decode_bridge_rc_session_dto(dynamic raw);
-
-  @protected
   BridgeRcState dco_decode_bridge_rc_state(dynamic raw);
 
   @protected
@@ -325,9 +322,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BridgeRcSession> dco_decode_list_bridge_rc_session(dynamic raw);
-
-  @protected
-  List<BridgeRcSessionDto> dco_decode_list_bridge_rc_session_dto(dynamic raw);
 
   @protected
   List<BridgeSession> dco_decode_list_bridge_session(dynamic raw);
@@ -687,11 +681,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRcSession sse_decode_bridge_rc_session(SseDeserializer deserializer);
 
   @protected
-  BridgeRcSessionDto sse_decode_bridge_rc_session_dto(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   BridgeRcState sse_decode_bridge_rc_state(SseDeserializer deserializer);
 
   @protected
@@ -755,11 +744,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BridgeRcSession> sse_decode_list_bridge_rc_session(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<BridgeRcSessionDto> sse_decode_list_bridge_rc_session_dto(
     SseDeserializer deserializer,
   );
 
@@ -1214,12 +1198,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_bridge_rc_session_dto(
-    BridgeRcSessionDto self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_bridge_rc_state(BridgeRcState self, SseSerializer serializer);
 
   @protected
@@ -1300,12 +1278,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_bridge_rc_session(
     List<BridgeRcSession> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_bridge_rc_session_dto(
-    List<BridgeRcSessionDto> self,
     SseSerializer serializer,
   );
 
