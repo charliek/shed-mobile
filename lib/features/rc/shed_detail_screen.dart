@@ -5,8 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../providers.dart';
-import '../../rc/rc_models.dart';
+import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
+import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
@@ -22,15 +23,15 @@ import 'create_rc_screen.dart';
 /// Tone + label for an RC session's derived state. The tone comes from the shared
 /// [shedStatusTone] table (keyed by the wire string) so it matches the cross-host
 /// Sessions view; the label stays here (a few states read nicer with a space).
-(ShedStatusTone, String) rcStateTone(RcState state) => (
+(ShedStatusTone, String) rcStateTone(BridgeRcState state) => (
   shedStatusTone(state.wire).tone,
   switch (state) {
-    RcState.ready => 'ready',
-    RcState.starting => 'starting',
-    RcState.reconnecting => 'reconnecting',
-    RcState.needsTrust => 'needs trust',
-    RcState.needsAuth => 'needs auth',
-    RcState.dead => 'dead',
+    BridgeRcState.ready => 'ready',
+    BridgeRcState.starting => 'starting',
+    BridgeRcState.reconnecting => 'reconnecting',
+    BridgeRcState.needsTrust => 'needs trust',
+    BridgeRcState.needsAuth => 'needs auth',
+    BridgeRcState.dead => 'dead',
   },
 );
 
@@ -51,7 +52,7 @@ class ShedDetailScreen extends ConsumerWidget {
 
   Future<void> _kill(BuildContext context, WidgetRef ref, String slug) async {
     try {
-      final svc = await ref.read(rcServiceProvider(_key).future);
+      final svc = await rcServiceOneShot(ref, _key);
       await svc.kill(slug);
       logDriveResult('rc-kill', ok: true);
       // Refresh only on success: a failed kill is a transport/server error, so
@@ -78,7 +79,7 @@ class ShedDetailScreen extends ConsumerWidget {
     }
   }
 
-  void _openTerminal(BuildContext context, RcSession s) {
+  void _openTerminal(BuildContext context, BridgeRcSession s) {
     logDriveResult('terminal-open', ok: true);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -127,8 +128,8 @@ class ShedDetailScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('rc-create'),
         onPressed: () async {
-          final created = await Navigator.of(context).push<RcSession>(
-            MaterialPageRoute<RcSession>(
+          final created = await Navigator.of(context).push<BridgeRcSession>(
+            MaterialPageRoute<BridgeRcSession>(
               builder: (_) =>
                   CreateRcScreen(serverName: serverName, shedName: shedName),
             ),
@@ -196,7 +197,7 @@ class _SessionCard extends StatelessWidget {
     required this.onKill,
   });
 
-  final RcSession session;
+  final BridgeRcSession session;
   final VoidCallback onTerminal;
   final VoidCallback onCopy;
   final VoidCallback onOpen;
@@ -256,7 +257,7 @@ class _SessionCard extends StatelessWidget {
                   onTap: onTerminal,
                 ),
               ),
-              if (s.hasUrl) ...[
+              if (s.url != null && s.url!.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 SquareIconButton(
                   key: ValueKey('rc-copy-${s.slug}'),

@@ -1,0 +1,27 @@
+[package]
+name = "rust_lib_shed_mobile"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.13.0-beta.5"
+# Cross-repo shed client core (FRB de-risking spike, plan §3.1).
+# Canonical source is git+rev; a LOCAL sibling-checkout override lives in
+# .cargo/config.toml (gitignored; see .cargo/config.toml.template).
+# shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
+shed-core = { git = "https://github.com/charliek/shed", rev = "daad497" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "daad497" }
+# Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
+# registry, local SSE test servers (net/io-util), and time-bounded awaits.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+serde = "1"
+serde_json = "1"
+# The shed-core `TokenMinter` trait is `#[async_trait]`; the bridge minter impl
+# must use the same macro (same version family as shed's lock).
+async-trait = "0.1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/sheds/shed_card.dart';
-import 'package:shed_mobile/shed/shed_dtos.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 Future<void> _pump(
   WidgetTester tester, {
-  required Shed shed,
+  required BridgeShed shed,
   required double width,
 }) async {
   // Real estate to avoid overflow, plus an explicit MediaQuery so the card's
@@ -34,15 +34,22 @@ Future<void> _pump(
   await tester.pump();
 }
 
-const _running = Shed(
+const _running = BridgeShed(
+  host: 'h',
   name: 'web',
-  status: 'running',
+  status: BridgeShedStatus.running,
   backend: 'vz',
   image: 'img:v1',
   cpus: 2,
   memoryMb: 4096,
+  activeNamespaces: [],
 );
-const _stopped = Shed(name: 'db', status: 'stopped');
+const _stopped = BridgeShed(
+  host: 'h',
+  name: 'db',
+  status: BridgeShedStatus.stopped,
+  activeNamespaces: [],
+);
 
 void main() {
   testWidgets('desktop: a running shed shows open/restart/stop, not start', (

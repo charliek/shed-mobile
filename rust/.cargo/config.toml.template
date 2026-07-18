@@ -1,0 +1,13 @@
+# copy to config.toml for sibling-checkout dev
+#
+# LOCAL dev override for the FRB de-risking spike (plan §3.1): patch the
+# canonical git+rev shed deps (declared in ../Cargo.toml) to the sibling
+# shed checkout so the Rust core builds against the local merged tree with
+# no network fetch. NOTE: cargo resolves config.toml [patch] paths against the
+# MANIFEST dir (rust/, where Cargo.toml lives), NOT this .cargo/ dir.
+# Assumes shed and shed-mobile are checked out side-by-side under one parent:
+#   <parent>/shed-mobile   <-- this repo
+#   <parent>/shed          <-- sibling core (crates/ workspace)
+[patch."https://github.com/charliek/shed"]
+shed-core = { path = "../../shed/crates/shed-core" }
+shed-app  = { path = "../../shed/crates/shed-app" }

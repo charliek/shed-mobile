@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../providers.dart';
-import '../../shed/shed_client.dart';
+import '../../src/rust/api/client.dart';
 
 /// The shared action kernel: run [op], log the drive result, surface a failure as
 /// a SnackBar, and (while the widget is still mounted) run [invalidate] so the UI
@@ -46,7 +46,7 @@ Future<void> runShedAction(
   BuildContext context, {
   required String serverName,
   required String action,
-  required Future<void> Function(ShedClient c) op,
+  required Future<void> Function(BridgeClient c) op,
 }) => runAction(
   ref,
   context,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../rc/rc_models.dart';
+import '../rc/rc_ui.dart';
+import '../src/rust/api/dto_rc.dart';
 import '../theme/shed_colors.dart';
 
 /// How a status string renders: the semantic tone (background/foreground), the dot
@@ -40,27 +41,34 @@ StatusDisplay shedStatusTone(String status) => switch (status) {
 /// badge at all (indeterminate — the client never invents one).
 typedef ActivityDisplay = ({ShedStatusTone tone, bool pulse, String label});
 
-ActivityDisplay? rcActivityDisplay(RcActivity? activity) => switch (activity) {
-  RcActivity.working => (
-    tone: ShedStatusTone.ok,
-    pulse: true,
-    label: 'working',
-  ),
-  RcActivity.needsInput => (
-    tone: ShedStatusTone.warn,
-    pulse: false,
-    label: 'needs input',
-  ),
-  RcActivity.idle => (tone: ShedStatusTone.idle, pulse: false, label: 'idle'),
-  RcActivity.unknown || null => null,
-};
+ActivityDisplay? rcActivityDisplay(BridgeRcActivity? activity) =>
+    switch (activity) {
+      BridgeRcActivity.working => (
+        tone: ShedStatusTone.ok,
+        pulse: true,
+        label: 'working',
+      ),
+      BridgeRcActivity.needsInput => (
+        tone: ShedStatusTone.warn,
+        pulse: false,
+        label: 'needs input',
+      ),
+      BridgeRcActivity.idle => (
+        tone: ShedStatusTone.idle,
+        pulse: false,
+        label: 'idle',
+      ),
+      BridgeRcActivity.unknown || null => null,
+    };
 
 /// The activity badge to render for a session, honoring the "lifecycle trumps
 /// activity" gate: null when [state] suppresses activity (needs-*/dead) or the
 /// [activity] isn't renderable. Centralizes the gate so every activity-badge
 /// site shares one rule.
-ActivityDisplay? rcActivityBadge(RcState state, RcActivity? activity) =>
-    rcStatePermitsActivity(state) ? rcActivityDisplay(activity) : null;
+ActivityDisplay? rcActivityBadge(
+  BridgeRcState state,
+  BridgeRcActivity? activity,
+) => rcStatePermitsActivity(state) ? rcActivityDisplay(activity) : null;
 
 /// Agent-kind wire string → accent color (the kind chip's colored left border and
 /// the terminal `[kind]` label). Mirrors the design's `agent()` map. Reads raw

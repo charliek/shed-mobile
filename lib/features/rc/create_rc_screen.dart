@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../providers.dart';
-import '../../rc/rc_capabilities.dart';
-import '../../rc/rc_models.dart';
-import '../../rc/rc_service.dart';
+import '../../rc/rc_ui.dart';
+import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/primary_button.dart';
@@ -28,7 +27,7 @@ class CreateRcScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
-  RcKind _kind = defaultRcKind;
+  BridgeRcKind _kind = defaultRcKind;
   final _name = TextEditingController();
   final _workdir = TextEditingController();
   final _prompt = TextEditingController();
@@ -55,19 +54,19 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   /// opencode), which have no dropdown and are only offered when capabilities
   /// are present; null for shell (no posture). The service re-drops it for a
   /// posture-less kind.
-  String? _modeFor(RcKind kind, String? claudeMode) {
+  String? _modeFor(BridgeRcKind kind, String? claudeMode) {
     if (kind.runsClaude) return claudeMode;
     if (kind.hasPermissionMode) return defaultRcPermissionMode;
     return null;
   }
 
-  Future<void> _create(RcKind kind, String? claudeMode) async {
+  Future<void> _create(BridgeRcKind kind, String? claudeMode) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final svc = await ref.read(rcServiceProvider(_key).future);
+      final svc = await rcServiceOneShot(ref, _key);
       final name = _name.text.trim();
       final workdir = _workdir.text.trim();
       final prompt = _prompt.text.trim();
@@ -101,14 +100,18 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   ///     (claude + shell), so an un-probed shed can still start those;
   ///   - loading/error → the same safe base, so the form is usable immediately
   ///     and degrades rather than blanking.
-  List<RcKind> _offeredKinds(AsyncValue<RcCapabilities?> caps) => caps.when(
-    data: (c) => c == null ? _baseKinds : c.creatableKinds(),
-    loading: () => _baseKinds,
-    error: (_, _) => _baseKinds,
-  );
+  List<BridgeRcKind> _offeredKinds(AsyncValue<BridgeRcCapabilities?> caps) =>
+      caps.when(
+        data: (c) => c == null ? _baseKinds : c.creatableKinds(),
+        loading: () => _baseKinds,
+        error: (_, _) => _baseKinds,
+      );
 
   /// The always-safe base when a shed's capabilities are absent: claude + shell.
-  static const List<RcKind> _baseKinds = [RcKind.claudeRc, RcKind.shell];
+  static const List<BridgeRcKind> _baseKinds = [
+    BridgeRcKind.claudeRc(),
+    BridgeRcKind.shell(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +130,7 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
         : null;
     // The effective selection: keep the user's pick when still offered, else fall
     // to the first offered kind (or null when the shed offers none).
-    final RcKind? selected = offered.contains(_kind)
+    final BridgeRcKind? selected = offered.contains(_kind)
         ? _kind
         : (offered.isEmpty ? null : offered.first);
     logDriveState(
@@ -196,7 +199,7 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                 controller: _prompt,
                 enabled: !_busy,
                 decoration: InputDecoration(
-                  labelText: selected == RcKind.shell
+                  labelText: selected == const BridgeRcKind.shell()
                       ? 'Command (optional)'
                       : 'Kickoff prompt (optional)',
                 ),

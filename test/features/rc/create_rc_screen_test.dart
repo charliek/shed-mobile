@@ -1,19 +1,39 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/providers.dart';
-import 'package:shed_mobile/rc/rc_capabilities.dart';
+import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
-RcCapabilities _caps(String json) =>
-    RcCapabilities.fromJson(jsonDecode(json) as Map<String, Object?>);
+/// Build a bridge capabilities block from wire kind strings + installed tools.
+BridgeRcCapabilities _caps({
+  required List<String> kinds,
+  Map<String, bool> installed = const {},
+}) => BridgeRcCapabilities(
+  rcVersion: 3,
+  kinds: [
+    for (final k in kinds)
+      switch (k) {
+        'claude-rc' => const BridgeRcKind.claudeRc(),
+        'codex' => const BridgeRcKind.codex(),
+        'opencode' => const BridgeRcKind.opencode(),
+        'cursor' => const BridgeRcKind.cursor(),
+        'shell' => const BridgeRcKind.shell(),
+        _ => BridgeRcKind.other(raw: k),
+      },
+  ],
+  agents: {
+    for (final e in installed.entries)
+      e.key: BridgeRcAgentInfo(installed: e.value),
+  },
+  features: const [],
+  kindFeatures: const {},
+);
 
 Future<void> _pump(
   WidgetTester tester,
-  Future<RcCapabilities?> Function() caps,
+  Future<BridgeRcCapabilities?> Function() caps,
 ) async {
   await tester.binding.setSurfaceSize(const Size(500, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -56,18 +76,15 @@ void main() {
   ) async {
     await _pump(
       tester,
-      () async => _caps('''
-        {
-          "rc_version": 3,
-          "kinds": ["claude-rc", "codex", "opencode", "cursor", "shell"],
-          "agents": {
-            "claude": { "installed": true },
-            "codex":  { "installed": true },
-            "cursor": { "installed": true },
-            "opencode": { "installed": false }
-          }
-        }
-      '''),
+      () async => _caps(
+        kinds: ['claude-rc', 'codex', 'opencode', 'cursor', 'shell'],
+        installed: {
+          'claude': true,
+          'codex': true,
+          'cursor': true,
+          'opencode': false,
+        },
+      ),
     );
     expect(
       find.byKey(const ValueKey('createrc-kind-claude-rc')),
@@ -85,13 +102,10 @@ void main() {
   ) async {
     await _pump(
       tester,
-      () async => _caps('''
-        {
-          "rc_version": 3,
-          "kinds": ["claude-rc", "codex", "shell"],
-          "agents": { "claude": {"installed": true}, "codex": {"installed": true} }
-        }
-      '''),
+      () async => _caps(
+        kinds: ['claude-rc', 'codex', 'shell'],
+        installed: {'claude': true, 'codex': true},
+      ),
     );
     // claude-rc is the default selection → the permission dropdown shows.
     expect(
@@ -128,13 +142,8 @@ void main() {
     (tester) async {
       await _pump(
         tester,
-        () async => _caps('''
-          {
-            "rc_version": 3,
-            "kinds": ["claude-rc", "shell"],
-            "agents": { "claude": { "installed": true } }
-          }
-        '''),
+        () async =>
+            _caps(kinds: ['claude-rc', 'shell'], installed: {'claude': true}),
       );
       await tester.tap(find.byKey(const ValueKey('createrc-permission-mode')));
       await tester.pumpAndSettle();
@@ -146,10 +155,7 @@ void main() {
   testWidgets('present-but-empty capabilities → no kinds, create disabled', (
     tester,
   ) async {
-    await _pump(
-      tester,
-      () async => _caps('{"rc_version":3,"kinds":[],"agents":{}}'),
-    );
+    await _pump(tester, () async => _caps(kinds: const []));
     expect(find.byKey(const ValueKey('createrc-no-kinds')), findsOneWidget);
     expect(find.byKey(const ValueKey('createrc-kind-claude-rc')), findsNothing);
     // Create is disabled when there is nothing to create.

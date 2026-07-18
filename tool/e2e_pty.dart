@@ -11,7 +11,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shed_mobile/keys/key_manager.dart';
-import 'package:shed_mobile/rc/rc_models.dart';
+import 'package:shed_mobile/rc/rc_ui.dart';
+import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/rc/rc_service.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/pty_session.dart';
@@ -37,7 +38,7 @@ Future<void> main(List<String> args) async {
   final rc = RcService(runner: runner.run, shedName: shed, serverLabel: host);
 
   print('Creating a shell session to attach ...');
-  final session = await rc.create(kind: RcKind.shell);
+  final session = await rc.create(kind: const BridgeRcKind.shell());
   print('  slug=${session.slug} state=${session.state.wire}');
 
   final pty = PtySession(

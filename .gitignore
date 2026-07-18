@@ -59,3 +59,7 @@ __pycache__/
 # envsecrets
 android/key.properties
 android/app/upload-keystore.jks
+
+# FRB spike: local sibling-checkout cargo patch override (never committed).
+# Copy rust/.cargo/config.toml.template -> rust/.cargo/config.toml for local dev.
+rust/.cargo/config.toml

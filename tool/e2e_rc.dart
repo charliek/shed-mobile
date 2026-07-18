@@ -10,7 +10,8 @@
 import 'dart:io';
 
 import 'package:shed_mobile/keys/key_manager.dart';
-import 'package:shed_mobile/rc/rc_models.dart';
+import 'package:shed_mobile/rc/rc_ui.dart';
+import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/rc/rc_service.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/ssh_runner.dart';
@@ -32,7 +33,7 @@ Future<void> main(List<String> args) async {
   );
   final rc = RcService(runner: runner.run, shedName: shed, serverLabel: host);
 
-  void show(String label, List<RcSession> list) {
+  void show(String label, List<BridgeRcSession> list) {
     print(
       '$label: ${list.length} session(s)'
       '${list.isEmpty ? '' : ' — ${list.map((s) => '${s.slug}[${s.kind.wire}/${s.state.wire}]').join(', ')}'}',
@@ -43,7 +44,7 @@ Future<void> main(List<String> args) async {
   show('  initial', await rc.list());
 
   print('Creating a shell session (--wait) ...');
-  final shell = await rc.create(kind: RcKind.shell);
+  final shell = await rc.create(kind: const BridgeRcKind.shell());
   print(
     '  created slug=${shell.slug} state=${shell.state.wire} tmux=${shell.tmuxSession}',
   );
@@ -68,7 +69,7 @@ Future<void> main(List<String> args) async {
   await rc.kill(shell.slug); // must not throw
 
   print('Creating a claude-rc session (informational) ...');
-  final rcs = await rc.create(kind: RcKind.claudeRc);
+  final rcs = await rc.create(kind: const BridgeRcKind.claudeRc());
   print(
     '  created slug=${rcs.slug} kind=${rcs.kind.wire} state=${rcs.state.wire} '
     'url=${rcs.url ?? '(none)'}',

@@ -1,0 +1,14 @@
+# Pinned stable Rust for reproducible dev == CI builds (plan §3.7).
+# rustup auto-installs this exact version on first `cargo`/`rustup` use, so a
+# developer and CI resolve the SAME compiler. Kept at/above shed-core's MSRV
+# (crates/Cargo.toml rust-version = "1.85") and far above the FRB 1.79
+# StreamSink-panic caveat. Cross-compile targets are added per-job in CI
+# (`rustup target add …`), not here — keep this file minimal.
+[toolchain]
+channel = "1.96.1"
+# rustfmt is load-bearing: flutter_rust_bridge_codegen runs `rustfmt` on the
+# generated frb_generated.rs as its final step. Without this component the
+# generated file is emitted unformatted, which makes the codegen-drift guard
+# spuriously fail. Pinning it here keeps dev == CI formatting reproducible.
+# (Cross-compile TARGETS stay out — those are added per-job in CI.)
+components = ["rustfmt"]
