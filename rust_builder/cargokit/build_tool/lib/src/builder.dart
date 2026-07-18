@@ -1,6 +1,8 @@
 /// This is copied from Cargokit (which is the official way to use it currently)
 /// Details: https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
 
+import 'dart:io';
+
 import 'package:collection/collection.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
@@ -139,7 +141,44 @@ class RustBuilder {
   CargoBuildOptions? get _buildOptions =>
       environment.crateOptions.cargo[environment.configuration];
 
-  String get _toolchain => _buildOptions?.toolchain.name ?? 'stable';
+  // ===========================================================================
+  // LOCAL PATCH (shed-mobile) — honor the crate's rust-toolchain.toml pin.
+  //
+  // Upstream cargokit only knows the stable/beta/nightly channels declared in
+  // cargokit.yaml (see options.dart:Toolchain), so `_toolchain` resolves to
+  // 'stable' and every platform build runs `rustup run stable cargo …` —
+  // meaning the exact version pinned in `<manifestDir>/rust-toolchain.toml`
+  // (e.g. 1.96.1) NEVER governs the platform builds; CI/local build on whatever
+  // stable the runner happens to ship. This patch makes the crate's
+  // rust-toolchain.toml `channel = "…"` win, so prepare() auto-installs that
+  // exact toolchain + its targets and build() runs `rustup run <version> cargo`
+  // on every platform, CI and local (true dev == CI).
+  //
+  // rustup treats a version like "1.96.1" as a toolchain NAME, so
+  // Rustup.installToolchain / installTarget / installedTargets all handle it
+  // unchanged (verified against rustup.dart). The TOML is parsed minimally with
+  // a regex (no TOML dependency).
+  //
+  // This mirrors the Gradle-9 ExecOperations local patch marked in
+  // rust_builder/cargokit/gradle/plugin.gradle — it is a deliberate local
+  // divergence from upstream cargokit and MUST be re-applied if cargokit is
+  // ever updated/re-vendored.
+  // ===========================================================================
+  static final _channelRe = RegExp(r'^\s*channel\s*=\s*"([^"]+)"', multiLine: true);
+
+  String? _pinnedToolchainFromToml() {
+    final tomlPath =
+        path.join(environment.manifestDir, 'rust-toolchain.toml');
+    final file = File(tomlPath);
+    if (!file.existsSync()) {
+      return null;
+    }
+    final match = _channelRe.firstMatch(file.readAsStringSync());
+    return match?.group(1);
+  }
+
+  String get _toolchain =>
+      _pinnedToolchainFromToml() ?? _buildOptions?.toolchain.name ?? 'stable';
 
   /// Returns the path of directory containing build artifacts.
   Future<String> build() async {

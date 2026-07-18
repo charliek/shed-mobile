@@ -23,8 +23,14 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.STRIDELABS_FLUTTER_SSH_KEY }}
-      # Cache the cargo registry, git checkouts, and target dir. `~/.cargo/git`
-      # matters most: the shed git-dep clones the WHOLE monorepo per job.
+      # Cache the cargo registry + git checkouts (and `rust/target`). `~/.cargo/git`
+      # matters most: the shed git-dep clones the WHOLE monorepo per job. NOTE:
+      # `workspaces: rust` caches `rust/target`, but cargokit passes `--target-dir`
+      # into per-platform temp build dirs, so the platform BUILD jobs
+      # (linux/macos/android) reuse only the registry/git data, not compiled
+      # artifacts; only the codegen-drift job (plain `cargo` in `rust/`) gets the
+      # full `rust/target` benefit. (Remapping the per-platform target-dir is not
+      # worth it — registry/git reuse is where the win is.)
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
@@ -87,13 +93,13 @@ jobs:
           workspaces: rust
       - run: flutter pub get
       - name: Add Android arm64 Rust target
-        # Add the target to BOTH toolchains: the pinned one (active inside
-        # rust/, per rust/rust-toolchain.toml — auto-installed by this rustup
-        # call) and the runner default (cargokit's cargo cwd may sit outside
-        # rust/, where the pin does not apply).
-        run: |
-          (cd rust && rustup target add aarch64-linux-android)
-          rustup target add aarch64-linux-android
+        # cargokit's prepare() now installs the Android target for the PINNED
+        # toolchain itself (the vendored build_tool reads rust/rust-toolchain.toml
+        # and runs `rustup run <version> cargo …`), so this step is no longer
+        # load-bearing. Keep the pinned add as a fast-fail belt-and-suspenders so
+        # a broken rustup/target surfaces here with a clear message rather than
+        # deep inside the gradle build.
+        run: (cd rust && rustup target add aarch64-linux-android)
       # Single ABI keeps CI time sane. The NDK is auto-installed by sdkmanager
       # during the gradle build (android/app delegates to flutter.ndkVersion).
       # This build exercises the vendored cargokit Gradle-9 patch.
@@ -108,14 +114,19 @@ jobs:
           echo "APK: $APK"
           WORK=$(mktemp -d)
           unzip -o -q "$APK" -d "$WORK"
-          SO=$(find "$WORK" -name 'librust_lib_shed_mobile.so' | head -1)
-          if [ -z "$SO" ]; then
+          # Cargokit unconditionally adds android-x86/x86_64 for DEBUG builds, so
+          # the APK carries up to 3 copies of librust_lib_shed_mobile.so under
+          # different lib/<abi>/ dirs. The 16 KB gate must check EVERY one — a
+          # `find | head -1` would validate an arbitrary ABI and miss a regression
+          # in another. Enumerate them all (no `| head` under pipefail — a closed
+          # pipe would SIGPIPE `find` and trip -o pipefail).
+          mapfile -t SOS < <(find "$WORK/lib" -name 'librust_lib_shed_mobile.so')
+          if [ "${#SOS[@]}" -eq 0 ]; then
             echo "librust_lib_shed_mobile.so not found in APK" >&2
             exit 1
           fi
-          echo "== per-ABI .so size =="
-          ls -l "$SO"
-          echo "== LOAD segment alignment (must be >= 0x4000 / 16384) =="
+          echo "Found ${#SOS[@]} librust_lib_shed_mobile.so copy/copies:"
+          printf '  %s\n' "${SOS[@]}"
           # The Align field is the LAST column of each LOAD program-header line
           # (0x-prefixed hex). Compare in bash arithmetic (no gawk strtonum —
           # ubuntu's default awk is mawk). Ubuntu's llvm metapackage doesn't
@@ -126,23 +137,30 @@ jobs:
           else
             RE="readelf -l -W"
           fi
-          aligns=$($RE "$SO" | awk '$1 == "LOAD" { print $NF }')
-          if [ -z "$aligns" ]; then
-            echo "FAIL: no LOAD segments found in $SO" >&2
-            exit 1
-          fi
           bad=0
-          while read -r a; do
-            [ -z "$a" ] && continue
-            dec=$(( a ))   # bash parses the 0x-prefixed hex
-            printf 'LOAD align = %s (%d)\n' "$a" "$dec"
-            if [ "$dec" -lt 16384 ]; then bad=1; fi
-          done <<< "$aligns"
+          for SO in "${SOS[@]}"; do
+            # ABI dir is the parent folder name (lib/<abi>/librust…so).
+            abi=$(basename "$(dirname "$SO")")
+            echo "== [$abi] .so size =="
+            ls -l "$SO"
+            echo "== [$abi] LOAD segment alignment (must be >= 0x4000 / 16384) =="
+            aligns=$($RE "$SO" | awk '$1 == "LOAD" { print $NF }')
+            if [ -z "$aligns" ]; then
+              echo "FAIL: [$abi] no LOAD segments found in $SO" >&2
+              exit 1
+            fi
+            while read -r a; do
+              [ -z "$a" ] && continue
+              dec=$(( a ))   # bash parses the 0x-prefixed hex
+              printf '[%s] LOAD align = %s (%d)\n' "$abi" "$a" "$dec"
+              if [ "$dec" -lt 16384 ]; then bad=1; fi
+            done <<< "$aligns"
+          done
           if [ "$bad" -ne 0 ]; then
-            echo "FAIL: a LOAD segment is aligned < 16 KB (0x4000)" >&2
+            echo "FAIL: a LOAD segment is aligned < 16 KB (0x4000) in some ABI" >&2
             exit 1
           fi
-          echo "OK: all LOAD segments aligned >= 16 KB"
+          echo "OK: all LOAD segments in all ABIs aligned >= 16 KB"
 
   # Committed-glue drift guard: regenerate with the PINNED codegen and assert the
   # generated outputs are byte-identical to what's committed (mirrors `make frb-gen`).
@@ -172,9 +190,25 @@ jobs:
       - name: Install pinned flutter_rust_bridge_codegen
         if: steps.frb-cache.outputs.cache-hit != 'true'
         run: cargo install flutter_rust_bridge_codegen --version 2.13.0-beta.5 --locked
+      # FRB's `generate` shells out to `cargo expand`; on a cold runner missing it
+      # FRB auto-installs an UNPINNED cargo-expand, which is a tool-dependent drift
+      # source. Pin it to the version dev uses (cargo expand --version) so the
+      # generated glue is reproducible. Cache the built binary keyed by version —
+      # it pays only on a version bump.
+      - name: Cache cargo-expand binary
+        id: cargo-expand-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-expand*
+          key: cargo-expand-1.0.123
+      - name: Install pinned cargo-expand
+        if: steps.cargo-expand-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-expand --version 1.0.123 --locked
       - run: flutter pub get
       # The mandatory two-step codegen (mirror `make frb-gen`): FRB generate THEN
-      # build_runner expands the @freezed sealed-class sources.
+      # build_runner expands the @freezed sealed-class sources. The explicit
+      # `dart run build_runner build` intentionally mirrors `make frb-gen` even
+      # though FRB may auto-run build_runner itself (a harmless double-run).
       - name: Regenerate bridge glue (two-step)
         run: |
           flutter_rust_bridge_codegen generate

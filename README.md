@@ -34,8 +34,12 @@ flutter run -d macos          # or: -d linux
 Requires Flutter 3.44.2 (Dart 3.12).
 
 **Rust toolchain required.** The client core is Rust, so builds now need
-[rustup](https://rustup.rs/). The exact stable version is pinned in
-`rust/rust-toolchain.toml` and auto-resolves on first `cargo` use (dev == CI).
+[rustup](https://rustup.rs/). The exact version is pinned in
+`rust/rust-toolchain.toml`; it auto-resolves on first `cargo` use, and the
+vendored cargokit build_tool is locally patched to read that same
+`channel = "…"` pin so the platform builds (macOS/Linux/Android, via
+`rustup run <version> cargo …`) use it too — the pin genuinely governs every
+build, dev and CI (dev == CI).
 Regenerating the bridge glue is a two-step codegen — `make frb-gen` (see below).
 
 ### Rust bridge codegen (two-step)

@@ -14,29 +14,77 @@ set -euo pipefail
 TOML="rust/Cargo.toml"
 LOCK="rust/Cargo.lock"
 
-# The single rev the shed git deps pin to (both crates must agree).
-REV=$(grep -E '^shed-(core|app)\b' "$TOML" \
-  | grep -oE 'rev = "[^"]+"' \
-  | sed -E 's/rev = "([^"]+)"/\1/' \
-  | sort -u)
+# Extract the pinned rev(s) for a single crate from Cargo.toml. Supports BOTH:
+#   - inline table:   shed-core = { git = "…", rev = "…" }
+#   - section form:   [dependencies.shed-core]  (or [<target>.dependencies.<crate>])
+#                        git = "…"
+#                        rev = "…"
+# Prints one rev per match found (so the caller can require exactly one).
+extract_rev() {
+  local crate="$1"
+  awk -v c="$crate" '
+    function emit_rev(line,   tmp) {
+      if (match(line, /rev[ \t]*=[ \t]*"[^"]+"/)) {
+        tmp = substr(line, RSTART, RLENGTH)
+        sub(/^rev[ \t]*=[ \t]*"/, "", tmp)
+        sub(/".*$/, "", tmp)
+        print tmp
+      }
+    }
+    # Any section header: are we entering the [<…>dependencies.<crate>] table?
+    /^\[/ {
+      insec = ($0 ~ ("^\\[([^]]*\\.)?dependencies\\." c "\\]"))
+      next
+    }
+    insec { emit_rev($0); next }
+    # inline table form: "<crate> = { … }" (under a [dependencies] section)
+    $0 ~ ("^" c "[ \t]*=") { emit_rev($0) }
+  ' "$TOML"
+}
 
-if [ -z "$REV" ]; then
-  echo "check-lock-rev: could not find a shed git rev in $TOML" >&2
-  exit 1
-fi
-if [ "$(printf '%s\n' "$REV" | wc -l | tr -d ' ')" != "1" ]; then
-  echo "check-lock-rev: shed-core and shed-app pin DIFFERENT revs in $TOML:" >&2
-  printf '%s\n' "$REV" >&2
-  exit 1
-fi
+# Look up the `source = …` line for a crate in Cargo.lock, BOUNDED to that crate's
+# own [[package]] block. A path/dev dependency has no source line; without the
+# bound a source-less matching block would leak the NEXT package's source line.
+lock_source() {
+  local crate="$1"
+  awk -v c="$crate" '
+    $0 == "[[package]]" {
+      if (matched) exit    # left the matching block without a source line
+      matched = 0
+      next
+    }
+    $0 == "name = \"" c "\"" { matched = 1; next }
+    matched && /^source = / { print; exit }
+  ' "$LOCK"
+}
+
+REV=""
+for crate in shed-core shed-app; do
+  revs=$(extract_rev "$crate")
+  if [ -z "$revs" ]; then
+    echo "check-lock-rev: could not find a 'rev = \"…\"' for $crate in $TOML" >&2
+    exit 1
+  fi
+  n=$(printf '%s\n' "$revs" | sort -u | wc -l | tr -d ' ')
+  if [ "$n" != "1" ]; then
+    echo "check-lock-rev: $crate declares MULTIPLE distinct revs in $TOML:" >&2
+    printf '%s\n' "$revs" >&2
+    exit 1
+  fi
+  crate_rev=$(printf '%s\n' "$revs" | sort -u)
+  if [ -z "$REV" ]; then
+    REV="$crate_rev"
+  elif [ "$REV" != "$crate_rev" ]; then
+    echo "check-lock-rev: shed-core and shed-app pin DIFFERENT revs in $TOML:" >&2
+    echo "  shed-core/shed-app disagree: '$REV' vs '$crate_rev'" >&2
+    exit 1
+  fi
+done
 
 EXPECTED="git+https://github.com/charliek/shed?rev=${REV}#"
 fail=0
 for crate in shed-core shed-app; do
-  src=$(awk -v c="$crate" '
-    $0 == "name = \"" c "\"" { found = 1; next }
-    found && /^source = / { print; exit }
-  ' "$LOCK")
+  src=$(lock_source "$crate")
   case "$src" in
     *"$EXPECTED"*)
       echo "check-lock-rev: OK  $crate -> ${EXPECTED}"
