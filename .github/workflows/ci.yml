@@ -143,7 +143,15 @@ jobs:
             abi=$(basename "$(dirname "$SO")")
             echo "== [$abi] .so size =="
             ls -l "$SO"
-            echo "== [$abi] LOAD segment alignment (must be >= 0x4000 / 16384) =="
+            # Google's 16 KB page requirement applies to 64-BIT ABIs only (16 KB
+            # pages exist only on arm64/x86_64 devices; NDK r28 aligns only those
+            # by default — armeabi-v7a ships 0x1000 and that is fine). Enforce on
+            # 64-bit, record-only on 32-bit.
+            case "$abi" in
+              arm64-v8a|x86_64) enforce=1 ;;
+              *) enforce=0 ;;
+            esac
+            echo "== [$abi] LOAD segment alignment (64-bit must be >= 0x4000 / 16384; enforce=$enforce) =="
             aligns=$($RE "$SO" | awk '$1 == "LOAD" { print $NF }')
             if [ -z "$aligns" ]; then
               echo "FAIL: [$abi] no LOAD segments found in $SO" >&2
@@ -153,14 +161,14 @@ jobs:
               [ -z "$a" ] && continue
               dec=$(( a ))   # bash parses the 0x-prefixed hex
               printf '[%s] LOAD align = %s (%d)\n' "$abi" "$a" "$dec"
-              if [ "$dec" -lt 16384 ]; then bad=1; fi
+              if [ "$enforce" -eq 1 ] && [ "$dec" -lt 16384 ]; then bad=1; fi
             done <<< "$aligns"
           done
           if [ "$bad" -ne 0 ]; then
-            echo "FAIL: a LOAD segment is aligned < 16 KB (0x4000) in some ABI" >&2
+            echo "FAIL: a 64-bit ABI LOAD segment is aligned < 16 KB (0x4000)" >&2
             exit 1
           fi
-          echo "OK: all LOAD segments in all ABIs aligned >= 16 KB"
+          echo "OK: all 64-bit ABI LOAD segments aligned >= 16 KB"
 
   # Committed-glue drift guard: regenerate with the PINNED codegen and assert the
   # generated outputs are byte-identical to what's committed (mirrors `make frb-gen`).

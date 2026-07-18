@@ -39,12 +39,31 @@ jobs:
           flutter-version: 3.44.2
           channel: stable
 
+      # Gradle 9 requires JDK 17+; android/app/build.gradle.kts targets Java 17.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       # Private git dependency (stridelabs_drive lives in a private repo). The
       # ssh-agent must be loaded before `pub get` resolves the git dep.
       - name: Load SSH key for private Flutter deps
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.STRIDELABS_FLUTTER_SSH_KEY }}
+
+      # Cargo registry + git-checkout cache (the shed git-dep clones the whole
+      # monorepo). The release build compiles the Rust bridge lib per ABI via
+      # cargokit, which honors rust/rust-toolchain.toml (local patch).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Add Android Rust targets (all release ABIs)
+        # A release appbundle builds android-arm64 + android-arm + android-x64.
+        # cargokit's prepare() installs these for the pinned toolchain itself;
+        # this is the fast-fail belt-and-suspenders (same as ci.yml).
+        run: (cd rust && rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android)
 
       - name: Flutter checks
         run: |
@@ -76,6 +95,63 @@ jobs:
             --release \
             --build-number=${{ steps.version.outputs.build_number }} \
             --build-name=${{ steps.version.outputs.version_name }}
+
+      # Play now REQUIRES 16 KB page alignment. NDK r28 emits it by default;
+      # this gate makes a toolchain/config regression fail the release build
+      # rather than Play's own validation. Also records the per-ABI .so size
+      # (release, stripped) in the job log. Same parsing as ci.yml's debug gate.
+      - name: Verify 16 KB alignment + record per-ABI .so size (release)
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y llvm unzip binutils
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          test -f "$AAB" || { echo "AAB not found: $AAB" >&2; exit 1; }
+          WORK=$(mktemp -d)
+          unzip -o -q "$AAB" -d "$WORK"
+          # An AAB stages native libs under base/lib/<abi>/.
+          mapfile -t SOS < <(find "$WORK/base/lib" -name 'librust_lib_shed_mobile.so')
+          if [ "${#SOS[@]}" -eq 0 ]; then
+            echo "librust_lib_shed_mobile.so not found in AAB" >&2
+            exit 1
+          fi
+          echo "Found ${#SOS[@]} librust_lib_shed_mobile.so copy/copies:"
+          printf '  %s\n' "${SOS[@]}"
+          if command -v llvm-readelf >/dev/null 2>&1; then
+            RE="llvm-readelf -l"
+          else
+            RE="readelf -l -W"
+          fi
+          bad=0
+          for SO in "${SOS[@]}"; do
+            abi=$(basename "$(dirname "$SO")")
+            echo "== [$abi] release .so size =="
+            ls -l "$SO"
+            # Google's 16 KB page requirement applies to 64-BIT ABIs only (16 KB
+            # pages exist only on arm64/x86_64 devices; NDK r28 aligns only those
+            # by default — armeabi-v7a ships 0x1000 and that is fine). Enforce on
+            # 64-bit, record-only on 32-bit.
+            case "$abi" in
+              arm64-v8a|x86_64) enforce=1 ;;
+              *) enforce=0 ;;
+            esac
+            echo "== [$abi] LOAD segment alignment (64-bit must be >= 0x4000 / 16384; enforce=$enforce) =="
+            aligns=$($RE "$SO" | awk '$1 == "LOAD" { print $NF }')
+            if [ -z "$aligns" ]; then
+              echo "FAIL: [$abi] no LOAD segments found in $SO" >&2
+              exit 1
+            fi
+            while read -r a; do
+              [ -z "$a" ] && continue
+              dec=$(( a ))
+              printf '[%s] LOAD align = %s (%d)\n' "$abi" "$a" "$dec"
+              if [ "$enforce" -eq 1 ] && [ "$dec" -lt 16384 ]; then bad=1; fi
+            done <<< "$aligns"
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "FAIL: a 64-bit ABI LOAD segment is aligned < 16 KB (0x4000)" >&2
+            exit 1
+          fi
+          echo "OK: all 64-bit release-ABI LOAD segments aligned >= 16 KB"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
