@@ -104,71 +104,20 @@ jobs:
       # during the gradle build (android/app delegates to flutter.ndkVersion).
       # This build exercises the vendored cargokit Gradle-9 patch.
       - run: flutter build apk --debug --target-platform android-arm64
-      # 16 KB page-alignment + size record. Debug alignment holds with NDK r28;
-      # this catches toolchain drift early (the release-path gate lands in B6).
-      - name: Verify 16 KB alignment + record .so size
+      # 16 KB page-alignment gate + native-lib size record (every .so, every
+      # ABI; 64-bit enforced, 32-bit recorded — see the shared script). Debug
+      # alignment holds with NDK r28; this catches toolchain drift early.
+      # arm64-v8a is the ABI we build for; cargokit adds extra debug ABIs,
+      # which the script classifies fail-closed.
+      - name: Verify 16 KB alignment + record native-lib sizes
         run: |
           set -euo pipefail
           sudo apt-get update && sudo apt-get install -y llvm unzip binutils
-          APK=$(find build/app/outputs -name '*.apk' | head -1)
+          APK=$(find build/app/outputs -name '*.apk' -print -quit)
           echo "APK: $APK"
           WORK=$(mktemp -d)
           unzip -o -q "$APK" -d "$WORK"
-          # Cargokit unconditionally adds android-x86/x86_64 for DEBUG builds, so
-          # the APK carries up to 3 copies of librust_lib_shed_mobile.so under
-          # different lib/<abi>/ dirs. The 16 KB gate must check EVERY one — a
-          # `find | head -1` would validate an arbitrary ABI and miss a regression
-          # in another. Enumerate them all (no `| head` under pipefail — a closed
-          # pipe would SIGPIPE `find` and trip -o pipefail).
-          mapfile -t SOS < <(find "$WORK/lib" -name 'librust_lib_shed_mobile.so')
-          if [ "${#SOS[@]}" -eq 0 ]; then
-            echo "librust_lib_shed_mobile.so not found in APK" >&2
-            exit 1
-          fi
-          echo "Found ${#SOS[@]} librust_lib_shed_mobile.so copy/copies:"
-          printf '  %s\n' "${SOS[@]}"
-          # The Align field is the LAST column of each LOAD program-header line
-          # (0x-prefixed hex). Compare in bash arithmetic (no gawk strtonum —
-          # ubuntu's default awk is mawk). Ubuntu's llvm metapackage doesn't
-          # always ship an unversioned llvm-readelf — fall back to GNU readelf
-          # (-W keeps each segment on one line; same trailing Align column).
-          if command -v llvm-readelf >/dev/null 2>&1; then
-            RE="llvm-readelf -l"
-          else
-            RE="readelf -l -W"
-          fi
-          bad=0
-          for SO in "${SOS[@]}"; do
-            # ABI dir is the parent folder name (lib/<abi>/librust…so).
-            abi=$(basename "$(dirname "$SO")")
-            echo "== [$abi] .so size =="
-            ls -l "$SO"
-            # Google's 16 KB page requirement applies to 64-BIT ABIs only (16 KB
-            # pages exist only on arm64/x86_64 devices; NDK r28 aligns only those
-            # by default — armeabi-v7a ships 0x1000 and that is fine). Enforce on
-            # 64-bit, record-only on 32-bit.
-            case "$abi" in
-              arm64-v8a|x86_64) enforce=1 ;;
-              *) enforce=0 ;;
-            esac
-            echo "== [$abi] LOAD segment alignment (64-bit must be >= 0x4000 / 16384; enforce=$enforce) =="
-            aligns=$($RE "$SO" | awk '$1 == "LOAD" { print $NF }')
-            if [ -z "$aligns" ]; then
-              echo "FAIL: [$abi] no LOAD segments found in $SO" >&2
-              exit 1
-            fi
-            while read -r a; do
-              [ -z "$a" ] && continue
-              dec=$(( a ))   # bash parses the 0x-prefixed hex
-              printf '[%s] LOAD align = %s (%d)\n' "$abi" "$a" "$dec"
-              if [ "$enforce" -eq 1 ] && [ "$dec" -lt 16384 ]; then bad=1; fi
-            done <<< "$aligns"
-          done
-          if [ "$bad" -ne 0 ]; then
-            echo "FAIL: a 64-bit ABI LOAD segment is aligned < 16 KB (0x4000)" >&2
-            exit 1
-          fi
-          echo "OK: all 64-bit ABI LOAD segments aligned >= 16 KB"
+          bash scripts/check-16kb-alignment.sh "$WORK/lib" arm64-v8a
 
   # Committed-glue drift guard: regenerate with the PINNED codegen and assert the
   # generated outputs are byte-identical to what's committed (mirrors `make frb-gen`).

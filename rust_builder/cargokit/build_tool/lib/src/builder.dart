@@ -164,11 +164,11 @@ class RustBuilder {
   // divergence from upstream cargokit and MUST be re-applied if cargokit is
   // ever updated/re-vendored.
   // ===========================================================================
-  static final _channelRe = RegExp(r'^\s*channel\s*=\s*"([^"]+)"', multiLine: true);
+  static final _channelRe =
+      RegExp(r'^\s*channel\s*=\s*"([^"]+)"', multiLine: true);
 
   String? _pinnedToolchainFromToml() {
-    final tomlPath =
-        path.join(environment.manifestDir, 'rust-toolchain.toml');
+    final tomlPath = path.join(environment.manifestDir, 'rust-toolchain.toml');
     final file = File(tomlPath);
     if (!file.existsSync()) {
       return null;
