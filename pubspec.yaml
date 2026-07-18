@@ -46,6 +46,9 @@ dependencies:
   # Android specialUse foreground service — keeps the SSH/terminal session alive
   # when backgrounded (M4). No-op on desktop.
   flutter_foreground_task: ^9.2.2
+  rust_lib_shed_mobile:
+    path: rust_builder
+  flutter_rust_bridge: 2.12.0
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +59,8 @@ dev_dependencies:
   # Deploys the generated owl PNGs (scripts/generate_app_icons.py) into the
   # android/ and macos/ icon slots. Config: flutter_launcher_icons.yaml.
   flutter_launcher_icons: ^0.14.3
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true
