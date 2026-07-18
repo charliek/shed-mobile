@@ -33,6 +33,11 @@ flutter run -d macos          # or: -d linux
 
 Requires Flutter 3.44.2 (Dart 3.12).
 
+**Rust toolchain required.** The client core is Rust, so builds now need
+[rustup](https://rustup.rs/). The exact stable version is pinned in
+`rust/rust-toolchain.toml` and auto-resolves on first `cargo` use (dev == CI).
+Regenerating the bridge glue is a two-step codegen — `make frb-gen` (see below).
+
 ### Rust bridge codegen (two-step)
 
 The client core is shared Rust (`rust/src/api/*.rs`, depending on `shed-core` +
