@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
 import '../../servers/server_record.dart';
-import '../../shed/shed_dtos.dart';
+import '../../shed/format.dart';
+import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/card_shell.dart';
@@ -59,7 +61,7 @@ class HostCard extends ConsumerWidget {
     final overview = ref.watch(overviewProvider(serverName));
     // The served snapshot, or null while loading / on a transport error / on an
     // old server (the terminal OverviewUnsupported value).
-    final Overview? data = switch (overview.asData?.value) {
+    final BridgeOverview? data = switch (overview.asData?.value) {
       OverviewData(:final overview) => overview,
       _ => null,
     };
@@ -80,7 +82,7 @@ class HostCard extends ConsumerWidget {
       loading: () => (ShedStatusTone.idle, 'Loading…'),
     );
 
-    final SystemDiskUsage? df = data?.df;
+    final BridgeSystemDiskUsage? df = data?.df;
 
     // Runtime badge: prefer df's backend; fall back to a shed's backend (so a
     // host whose df block degraded still shows vz/firecracker); else no badge.
@@ -175,8 +177,10 @@ class HostCard extends ConsumerWidget {
 
   /// The "N sheds · M running" (or "No sheds") summary line for a served
   /// overview.
-  static String _shedSummary(Overview overview) {
-    final running = overview.sheds.where((s) => s.shed.isRunning).length;
+  static String _shedSummary(BridgeOverview overview) {
+    final running = overview.sheds
+        .where((s) => bridgeShedIsRunning(s.shed))
+        .length;
     final n = overview.sheds.length;
     return n == 0
         ? 'No sheds'
@@ -186,7 +190,7 @@ class HostCard extends ConsumerWidget {
 
   /// The bold total for the header trailing slot (df physical bytes), or null
   /// when the overview hasn't resolved a df block yet.
-  String? _total(SystemDiskUsage? df) =>
+  String? _total(BridgeSystemDiskUsage? df) =>
       df == null ? null : formatBytes(df.totals.all.physicalBytes);
 
   /// The disk area under the header: the four-column breakdown when the overview

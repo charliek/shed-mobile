@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:stridelabs_drive/stridelabs_drive.dart';
+
+import '../../bridge/bridge_adapters.dart';
 import '../../core/app_error.dart';
-import '../../marionette/drive_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_feed.dart';
 import '../../rc/rc_models.dart';
@@ -106,11 +108,13 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       var first = true;
       var restarted = false;
       while (true) {
-        final page = await client.fetchRcMessages(
-          widget.shedName,
-          _slug,
-          since: cursor,
-          limit: _pageLimit,
+        final page = rcMessagesPageFromBridge(
+          await client.rcMessages(
+            shed: widget.shedName,
+            slug: _slug,
+            since: BigInt.from(cursor),
+            limit: _pageLimit,
+          ),
         );
         if (!mounted || gen != _generation) return; // superseded
         if (page.truncated) {
@@ -152,7 +156,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       // land in the error state, never stuck on _loading forever.
       if (!mounted || gen != _generation) return;
       setState(() {
-        _loadError = e;
+        _loadError = appErrorFrom(e);
         _loading = false;
       });
     }
@@ -170,11 +174,13 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
         shedClientProvider(widget.serverName).future,
       );
       while (mounted && gen == _generation) {
-        final page = await client.fetchRcMessages(
-          widget.shedName,
-          _slug,
-          since: _lastSeq,
-          limit: _pageLimit,
+        final page = rcMessagesPageFromBridge(
+          await client.rcMessages(
+            shed: widget.shedName,
+            slug: _slug,
+            since: BigInt.from(_lastSeq),
+            limit: _pageLimit,
+          ),
         );
         if (!mounted || gen != _generation) return;
         if (page.truncated) {
@@ -219,7 +225,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       final client = await ref.read(
         shedClientProvider(widget.serverName).future,
       );
-      await client.postRcInput(widget.shedName, _slug, text);
+      await client.rcInput(shed: widget.shedName, slug: _slug, text: text);
       if (!mounted) return; // the controller is disposed with the screen
       _input.clear();
       logDriveResult('codex-watch-input', ok: true);
@@ -228,18 +234,18 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       // like an AppError would, not escape as an unhandled async exception.
       logDriveResult('codex-watch-input', ok: false, error: e);
       if (!mounted) return;
-      final err = e is AppError ? e : null;
+      final err = appErrorFrom(e);
       // 409 = the session stopped waiting between the gate check and the post
       // (a race). Refresh the base state so the input bar re-gates correctly.
-      if (err?.statusCode == 409) {
+      if (err.statusCode == 409) {
         ref.invalidate(overviewProvider(widget.serverName));
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            err?.statusCode == 409
+            err.statusCode == 409
                 ? 'Session is no longer waiting for input'
-                : 'Send failed: ${err?.message ?? e}',
+                : 'Send failed: ${err.message}',
           ),
         ),
       );

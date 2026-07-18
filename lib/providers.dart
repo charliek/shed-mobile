@@ -5,12 +5,9 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app_section.dart';
-import 'control/control_token_provider.dart';
-import 'control/token_bundle.dart';
-import 'core/app_error.dart';
+import 'bridge/bridge_adapters.dart';
 import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
-import 'net/pinned_http_client.dart';
 import 'rc/rc_capabilities.dart';
 import 'rc/rc_events.dart';
 import 'rc/rc_models.dart';
@@ -18,8 +15,9 @@ import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
 import 'servers/server_store.dart';
-import 'shed/shed_client.dart';
-import 'shed/shed_dtos.dart';
+import 'src/rust/api/client.dart';
+import 'src/rust/api/dto.dart';
+import 'src/rust/api/error.dart';
 import 'ssh/bootstrap_service.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
@@ -119,51 +117,54 @@ HostKeyStore pinnedHostKeysFor(ServerRecord rec) => HostKeyStore(
   tofu: false,
 );
 
-/// Build a ShedClient for a saved server: pinned-TLS HTTP + a token provider
-/// whose minter re-mints over SSH (host key verified against the stored pin).
-ShedClient _buildShedClient(ServerRecord rec, List<SSHKeyPair> identities) {
-  final hostKeys = pinnedHostKeysFor(rec);
-  final bootstrap = BootstrapService(identities, hostKeys);
-  final target = rec.toTarget();
-  final http = PinnedHttpClient(
+/// Build a [BridgeClient] for a saved server: a pinned-TLS, provider-backed
+/// shed-core HTTP client (FRB). The transport identity (base URL, pin, SSH
+/// host/port) is immutable per client; the token FSM lives in Rust and mints via
+/// the app-scoped mint sink (see `lib/bridge/mint_sink.dart`). The persisted
+/// control token seeds the provider so the first request can skip a mint.
+Future<BridgeClient> _buildBridgeClient(ServerRecord rec) {
+  final seed = rec.controlToken;
+  final seedExpiry = rec.controlTokenExpiresAt;
+  return BridgeClient.connect(
+    baseUrl: rec.apiUrl,
+    serverName: rec.name,
     host: rec.host,
-    port: Uri.parse(rec.apiUrl).port,
-    fingerprint: rec.tlsCertFingerprint,
+    sshPort: rec.sshPort,
+    tlsPin: rec.tlsCertFingerprint,
+    seedToken: seed,
+    seedExpiryUnix: (seed != null && seedExpiry != null)
+        ? BigInt.from(seedExpiry.millisecondsSinceEpoch ~/ 1000)
+        : null,
   );
-  final tokens = ControlTokenProvider(
-    rec.name,
-    resolve: () async => target,
-    minter: (t) async {
-      final b = await bootstrap.mint(t, expectedPin: t.tlsCertFingerprint);
-      return MintedToken(b.token, b.expiresAt);
-    },
-  );
-  return ShedClient(http, tokens);
 }
 
+/// One [BridgeClient] per saved server, keyed by name (autoDispose.family). A
+/// server-record change (host/port/pin) rebuilds it because a new client is
+/// constructed from the freshly-read record. Disposed on last-listener-gone.
 final shedClientProvider = FutureProvider.autoDispose
-    .family<ShedClient, String>((ref, serverName) async {
+    .family<BridgeClient, String>((ref, serverName) async {
       final rec = await ref.watch(serverStoreProvider).get(serverName);
       if (rec == null) throw StateError('unknown server: $serverName');
-      final identities = await ref.watch(identitiesProvider.future);
-      final client = _buildShedClient(rec, identities);
-      ref.onDispose(client.close); // release the pinned HTTP client/socket
+      final client = await _buildBridgeClient(rec);
+      // Explicitly drop the Rust-owned opaque on dispose (the finalizer is the
+      // backstop). A double dispose is a no-op.
+      ref.onDispose(() {
+        if (!client.isDisposed) client.dispose();
+      });
       return client;
     });
 
-final shedsProvider = FutureProvider.autoDispose.family<List<Shed>, String>((
-  ref,
-  serverName,
-) async {
-  final client = await ref.watch(shedClientProvider(serverName).future);
-  return client.listSheds();
-});
+final shedsProvider = FutureProvider.autoDispose
+    .family<List<BridgeShed>, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      return client.listSheds();
+    });
 
 /// Image variants available on a server (`GET /api/images`), for the create-shed
 /// Image picker. Never blocks creation — the picker falls back to "(server
 /// default)" if this errors.
 final imagesProvider = FutureProvider.autoDispose
-    .family<List<ImageInfo>, String>((ref, serverName) async {
+    .family<List<BridgeShedImage>, String>((ref, serverName) async {
       final client = await ref.watch(shedClientProvider(serverName).future);
       return client.listImages();
     });
@@ -202,7 +203,7 @@ sealed class OverviewResult {
 /// A served overview snapshot.
 class OverviewData extends OverviewResult {
   const OverviewData(this.overview);
-  final Overview overview;
+  final BridgeOverview overview;
 }
 
 /// The server predates GET /api/overview (404 on the route) — the Hosts and
@@ -224,156 +225,30 @@ final overviewProvider = FutureProvider.autoDispose
       final client = await ref.watch(shedClientProvider(serverName).future);
       try {
         return OverviewData(
-          await client.fetchOverview().timeout(_hostFanoutTimeout),
+          await client.overview().timeout(_hostFanoutTimeout),
         );
-      } on AppError catch (e) {
-        if (e.statusCode == 404) return const OverviewUnsupported();
+      } on BridgeError_BadStatus catch (e) {
+        // A top-level 404 can only mean the /api/overview route doesn't exist
+        // (server too old) — the terminal upgrade-required value, never retried.
+        if (e.code == 404) return const OverviewUnsupported();
         rethrow;
       }
     });
 
-/// SSE reconnect backoff bounds for [liveActivityProvider]. The initial delay is
-/// small so a transient blip resyncs quickly; it doubles to a 30s ceiling so a
-/// hub that stays down (or an old server without rc-events) can't retry-storm.
-const Duration _rcReconnectInitial = Duration(milliseconds: 500);
-const Duration _rcReconnectMax = Duration(seconds: 30);
-
-/// Debounce for the unknown-slug overview refetch: a session created outside
-/// the app (e.g. via the CLI) announces itself on the SSE stream, but the
-/// overlay can only patch EXISTING cards — the overview must be refetched once
-/// for the new card to appear at all. At most one such refetch per window, so
-/// a burst of events for a new session (or several new sessions at once) costs
-/// a single fetch.
-const Duration _rcUnknownSlugDebounce = Duration(seconds: 5);
-
-/// The live rc-activity overlay for one host, folded from its `GET /api/rc/events`
-/// SSE stream. A StreamProvider so the sessions view (and per-card `.select`s)
-/// react to each folded snapshot without re-fetching the overview per event.
-///
-/// Lifecycle: autoDispose — the subscription runs only while something watches
-/// it (i.e. while the Sessions view / a watch screen for this host is visible),
-/// and tears the SSE down when the last watcher leaves. The caller is
-/// responsible for only watching this when the server advertises `rc-events`
-/// (see the Sessions view); absent that feature there is no subscription and
-/// behavior stays today's manual refresh.
-///
-/// Reconnect contract: an upstream drop backs off (exponential, capped) and
-/// reconnects; on every reconnect that delivers data (not the first-ever
-/// connection — the view just loaded the overview) it clears the stale overlay
-/// FIRST (so old patches can't override the fresh snapshot) and then triggers
-/// exactly one overview refetch, per the best-effort SSE posture. Degrading
-/// events (hub.unavailable / shed.stopped) drop that shed's live patches
-/// inside [ActivityOverlay.apply].
-///
-/// Deliberately NOT an `async*` body: awaits inside an async* generator are not
-/// yield points, so a disposed provider could neither cancel a quiet SSE read
-/// (the subscription would stay open forever) nor stop the backoff/retry loop
-/// (a zombie reconnector). Instead the SSE is driven by an explicit
-/// [StreamSubscription] and the backoff by a [Timer], both torn down in
-/// `ref.onDispose` — dispose cancels the in-flight read AND any pending retry.
+/// The live rc-activity overlay for one host. **B3 stub.** The real bridge
+/// watcher (`createRcWatcher` + `rcWatcherEvents`, plus the resync-flag → overview
+/// invalidation and the consumer-side unknown-slug debounce) is wired in B4; the
+/// old Dart SSE loop was deleted with `ShedClient`. Until then this emits a single
+/// empty overlay and completes, so every consumer (session cards, the codex watch
+/// view) falls through to the base overview snapshot — exactly the behavior a
+/// server that doesn't advertise `rc-events` already produces. No live badge
+/// updates in this interim, but the LIST/overview render identically (B3's gate).
 final liveActivityProvider = StreamProvider.autoDispose
     .family<ActivityOverlay, String>((ref, serverName) {
       final controller = StreamController<ActivityOverlay>();
-      var disposed = false;
-      StreamSubscription<RcEvent>? sub;
-      Timer? retryTimer;
-      ref.onDispose(() {
-        disposed = true;
-        retryTimer?.cancel();
-        unawaited(sub?.cancel());
-        unawaited(controller.close());
-      });
-
-      var overlay = ActivityOverlay.empty;
-      var connectedBefore = false;
-      var backoff = _rcReconnectInitial;
-      controller.add(overlay);
-
-      // Unknown-slug refetch (debounced): an event for a session the current
-      // overview snapshot doesn't hold (a CLI-created session) means there is
-      // no card for the patch to land on — refetch the overview once so the
-      // new card appears without an app relaunch. ref.read (not watch): the
-      // overview must never be a dependency, or its own invalidation would
-      // rebuild this provider and tear down the SSE.
-      var lastUnknownRefetch = DateTime.fromMillisecondsSinceEpoch(0);
-      bool overviewHasSession(String shed, String slug) {
-        final r = ref.read(overviewProvider(serverName)).value;
-        // No snapshot to compare against — don't churn.
-        if (r is! OverviewData) {
-          return true;
-        }
-        for (final s in r.overview.sheds) {
-          if (s.shed.name == shed) {
-            return s.sessions.any((sess) => sess.slug == slug);
-          }
-        }
-        return false; // whole shed unknown → the snapshot is stale too
-      }
-
-      void maybeRefetchUnknown(String shed, String slug) {
-        if (overviewHasSession(shed, slug)) return;
-        final now = DateTime.now();
-        if (now.difference(lastUnknownRefetch) < _rcUnknownSlugDebounce) return;
-        lastUnknownRefetch = now;
-        ref.invalidate(overviewProvider(serverName));
-      }
-
-      void connect(ShedClient client) {
-        if (disposed) return;
-        var gotData = false;
-
-        void scheduleReconnect() {
-          if (disposed) return;
-          retryTimer = Timer(backoff, () {
-            final doubled = backoff * 2;
-            backoff = doubled > _rcReconnectMax ? _rcReconnectMax : doubled;
-            connect(client);
-          });
-        }
-
-        sub = client.rcEvents().listen(
-          (ev) {
-            if (disposed) return;
-            if (!gotData) {
-              gotData = true;
-              backoff = _rcReconnectInitial;
-              if (connectedBefore) {
-                // Reconnect resync, in this order: clear the overlay first so
-                // stale pre-drop patches can't override the fresh snapshot,
-                // THEN refetch the base overview. The first-ever connection
-                // skips the refetch (the view just loaded a fresh overview).
-                overlay = ActivityOverlay.empty;
-                controller.add(overlay);
-                ref.invalidate(overviewProvider(serverName));
-              }
-              connectedBefore = true;
-            }
-            // A live event for a session the overview doesn't know about →
-            // one debounced overview refetch so the new card materializes.
-            if (ev is RcSessionUpdated && !ev.removed) {
-              maybeRefetchUnknown(ev.shed, ev.slug);
-            } else if (ev is RcActivityChanged) {
-              maybeRefetchUnknown(ev.shed, ev.slug);
-            }
-            overlay = overlay.apply(ev);
-            controller.add(overlay);
-          },
-          // Transport / hub-down / 503 — back off and reconnect.
-          onError: (Object _) => scheduleReconnect(),
-          onDone: scheduleReconnect,
-          cancelOnError: true,
-        );
-      }
-
-      ref
-          .watch(shedClientProvider(serverName).future)
-          .then((client) => connect(client))
-          .catchError((Object e, StackTrace st) {
-            // Client build failed (unknown server / keychain error): surface it
-            // as the provider's error state rather than silently idling.
-            if (!disposed) controller.addError(e, st);
-          });
-
+      controller.add(ActivityOverlay.empty);
+      unawaited(controller.close());
+      ref.onDispose(() {});
       return controller.stream;
     });
 
@@ -382,11 +257,13 @@ typedef ShedSession = ({String shedName, RcSession session});
 
 /// Flatten an overview into the Sessions view's (shed, session) pairs — the
 /// server rc-enriches the sessions, and a stopped shed contributes none. The
-/// pure core of what replaced the per-shed SSH fan-out (SSH now stays only for
-/// terminal attach, RcService create/kill/prompt, and token mint).
-List<ShedSession> shedSessionPairs(Overview overview) => [
+/// embedded bridge sessions are converted to the Dart [RcSession] domain (still
+/// Dart until B4), so the shared session card renders identically whether the
+/// data came from the overview (here) or the per-shed SSH `rc list` fan-out.
+List<ShedSession> shedSessionPairs(BridgeOverview overview) => [
   for (final s in overview.sheds)
-    for (final sess in s.sessions) (shedName: s.shed.name, session: sess),
+    for (final sess in s.sessions)
+      (shedName: s.shed.name, session: rcSessionFromBridge(sess)),
 ];
 
 /// The rc capabilities of one shed, read from the host overview (a single call
@@ -400,7 +277,10 @@ final shedCapabilitiesProvider = FutureProvider.autoDispose
       final result = await ref.watch(overviewProvider(key.serverName).future);
       if (result is! OverviewData) return null; // old server → absent caps
       for (final s in result.overview.sheds) {
-        if (s.shed.name == key.shedName) return s.capabilities;
+        if (s.shed.name == key.shedName) {
+          final caps = s.capabilities;
+          return caps == null ? null : rcCapabilitiesFromBridge(caps);
+        }
       }
       return null;
     });

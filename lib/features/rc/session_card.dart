@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_section.dart';
 import '../../providers.dart';
 import '../../rc/rc_models.dart';
-import '../../shed/shed_dtos.dart';
+import '../../shed/format.dart';
 import '../../shed/shed_status.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';

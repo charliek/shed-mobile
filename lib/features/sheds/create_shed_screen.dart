@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
-import '../../shed/shed_dtos.dart';
+import '../../shed/format.dart';
 import '../../shed/shed_name.dart';
+import '../../src/rust/api/create_stream.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/primary_button.dart';
@@ -31,6 +33,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
   bool _noProvision = false;
   String? _image; // null = server default
   String? _error;
+  BridgeCreateHandle? _handle;
   // Last auto-suggested name — lets us refresh the suggestion as the repo
   // changes without ever overwriting a name the user typed themselves.
   String _lastSuggestion = '';
@@ -67,12 +70,18 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
 
   @override
   void dispose() {
+    // Cancel a create still streaming when the screen is torn down (idempotent,
+    // synchronous — co-primary with the handle's Drop).
+    final h = _handle;
+    if (h != null) cancelCreate(handle: h);
     _name.dispose();
     _repo.dispose();
     _cpus.dispose();
     _memory.dispose();
     super.dispose();
   }
+
+  String? _blank(String s) => s.trim().isEmpty ? null : s.trim();
 
   Future<void> _create() async {
     setState(() {
@@ -85,25 +94,31 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
       final client = await ref.read(
         shedClientProvider(widget.serverName).future,
       );
-      final req = CreateShedRequest.fromForm(
-        name: _name.text,
-        repo: _repo.text,
-        image: _image ?? '',
-        cpus: _cpus.text,
-        memoryMb: _memory.text,
-        noProvision: _noProvision,
+      final req = BridgeCreateShedRequest(
+        name: _name.text.trim(),
+        repo: _blank(_repo.text),
+        image: _blank(_image ?? ''),
+        cpus: parsePositiveInt(_cpus.text),
+        memoryMb: parsePositiveInt(_memory.text),
+        noProvision: _noProvision ? true : null,
       );
-      await for (final e in client.createShed(req)) {
+      // Two-call create stream (FRB can't both stream AND return a handle):
+      // stash the handle for cancellation, then drain the progress stream.
+      final handle = await createShedStream(client: client, req: req);
+      _handle = handle;
+      await for (final e in createShedEvents(handle: handle)) {
         if (!mounted) return;
         setState(() {
           switch (e) {
-            case ShedProgress(:final phase, :final message):
-              _lines.add('[$phase] $message');
-            case ShedComplete(:final shed):
-              _lines.add('complete: ${shed.name} (${shed.status})');
+            case BridgeCreateUpdate_Progress(:final message):
+              _lines.add(message);
+            case BridgeCreateUpdate_Complete(:final shed):
+              _lines.add(
+                'complete: ${shed.name} (${bridgeShedStatusWire(shed.status)})',
+              );
               _done = true;
-            case ShedCreateError(:final code, :final message):
-              _error = '$code: $message';
+            case BridgeCreateUpdate_Error(:final message):
+              _error = message;
           }
         });
         logDriveState('screen=create lines=${_lines.length} done=$_done');
@@ -117,6 +132,7 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
       if (mounted) setState(() => _error = '$e');
       logDriveResult('shed-create', ok: false, error: e);
     } finally {
+      _handle = null;
       if (mounted) setState(() => _running = false);
     }
   }
@@ -127,8 +143,6 @@ class _CreateShedScreenState extends ConsumerState<CreateShedScreen> {
     final cpusError = validatePositiveIntField(_cpus.text);
     final memError = validatePositiveIntField(_memory.text);
     // Images are best-effort: an empty list just leaves "(server default)".
-    // (Type is inferred as List<ImageInfo> from asData; naming it here would
-    // collide with Flutter's painting-layer ImageInfo.)
     final images =
         ref.watch(imagesProvider(widget.serverName)).asData?.value ?? const [];
     // Hoisted: the SSE log rebuilds on every progress event, and every line

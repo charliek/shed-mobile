@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_section.dart';
-import '../../shed/shed_client.dart';
-import '../../shed/shed_dtos.dart';
+import '../../bridge/bridge_adapters.dart';
+import '../../shed/format.dart';
 import '../../shed/shed_status.dart';
+import '../../src/rust/api/client.dart';
+import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/card_shell.dart';
@@ -23,7 +25,7 @@ class ShedCard extends ConsumerStatefulWidget {
   const ShedCard({required this.serverName, required this.shed, super.key});
 
   final String serverName;
-  final Shed shed;
+  final BridgeShed shed;
 
   @override
   ConsumerState<ShedCard> createState() => _ShedCardState();
@@ -45,7 +47,7 @@ class _ShedCardState extends ConsumerState<ShedCard> {
 
   Future<void> _run(
     String action,
-    Future<void> Function(ShedClient c) op,
+    Future<void> Function(BridgeClient c) op,
   ) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -68,21 +70,26 @@ class _ShedCardState extends ConsumerState<ShedCard> {
   Future<void> _toggle({required bool start}) =>
       _run(start ? 'shed-start' : 'shed-stop', (c) async {
         if (start) {
-          await c.startShed(widget.shed.name);
+          await c.start(name: widget.shed.name);
         } else {
-          await c.stopShed(widget.shed.name);
+          await c.stop(name: widget.shed.name);
         }
       });
 
-  Future<void> _restart() =>
-      _run('shed-restart', (c) => c.restartShed(widget.shed.name));
+  // Restart = stop then start (shed-core has no atomic restart). A start that
+  // fails after a successful stop leaves the shed stopped; the invalidate
+  // refetches the real state.
+  Future<void> _restart() => _run('shed-restart', (c) async {
+    await c.stop(name: widget.shed.name);
+    await c.start(name: widget.shed.name);
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.shed;
     final s = widget.shed;
     final desktop = isDesktopWidth(MediaQuery.sizeOf(context).width);
-    final st = shedStatusTone(s.status);
+    final st = shedStatusTone(bridgeShedStatusWire(s.status));
     final meta = shedMetaLine(s);
 
     final body = CardShell(
@@ -174,7 +181,7 @@ class _ShedCardState extends ConsumerState<ShedCard> {
           tooltip: 'Sessions',
           onPressed: _open,
         ),
-        if (s.isRunning) ...[
+        if (bridgeShedIsRunning(s)) ...[
           const SizedBox(width: 8),
           SquareIconButton(
             key: ValueKey('all-shed-restart-$_base'),

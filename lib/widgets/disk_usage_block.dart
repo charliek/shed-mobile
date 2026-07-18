@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../shed/shed_dtos.dart';
+import '../shed/format.dart';
+import '../src/rust/api/dto.dart';
 import '../theme/shed_colors.dart';
 import '../theme/shed_theme.dart';
 
@@ -12,7 +13,7 @@ import '../theme/shed_theme.dart';
 class DiskUsageBlock extends StatelessWidget {
   const DiskUsageBlock(this.totals, {super.key});
 
-  final DiskTotals totals;
+  final BridgeDiskTotals totals;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +33,7 @@ class _DiskCol extends StatelessWidget {
   const _DiskCol(this.label, this.size);
 
   final String label;
-  final DiskSize size;
+  final BridgeDiskSize size;
 
   @override
   Widget build(BuildContext context) {

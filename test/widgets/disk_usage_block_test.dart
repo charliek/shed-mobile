@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shed_mobile/shed/shed_dtos.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 import 'package:shed_mobile/widgets/disk_usage_block.dart';
 
-const _totals = DiskTotals(
-  images: DiskSize(physicalBytes: 1323184128), // 1.23 GB
-  sheds: DiskSize(physicalBytes: 6615306240), // 6.16 GB
-  snapshots: DiskSize(),
-  orphans: DiskSize(),
-  all: DiskSize(physicalBytes: 14506430464),
+const _totals = BridgeDiskTotals(
+  images: BridgeDiskSize(logicalBytes: 0, physicalBytes: 1323184128), // 1.23 GB
+  sheds: BridgeDiskSize(logicalBytes: 0, physicalBytes: 6615306240), // 6.16 GB
+  snapshots: BridgeDiskSize(logicalBytes: 0, physicalBytes: 0),
+  orphans: BridgeDiskSize(logicalBytes: 0, physicalBytes: 0),
+  all: BridgeDiskSize(logicalBytes: 0, physicalBytes: 14506430464),
 );
 
-Future<void> _pump(WidgetTester tester, DiskTotals totals) => tester.pumpWidget(
-  MaterialApp(
-    theme: shedLightTheme,
-    home: Scaffold(body: DiskUsageBlock(totals)),
-  ),
-);
+Future<void> _pump(WidgetTester tester, BridgeDiskTotals totals) =>
+    tester.pumpWidget(
+      MaterialApp(
+        theme: shedLightTheme,
+        home: Scaffold(body: DiskUsageBlock(totals)),
+      ),
+    );
 
 void main() {
   testWidgets('renders the four labelled buckets with physical sizes', (

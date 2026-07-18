@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shed_mobile/shed/shed_dtos.dart';
+import 'package:shed_mobile/shed/format.dart';
 import 'package:shed_mobile/shed/shed_name.dart';
 
 void main() {
@@ -92,40 +92,10 @@ void main() {
     });
   });
 
-  group('CreateShedRequest.fromForm', () {
-    test('omits blank/zero fields', () {
-      final req = CreateShedRequest.fromForm(name: ' my-shed ', repo: '   ');
-      expect(req.name, 'my-shed');
-      expect(req.repo, isNull);
-      expect(req.image, isNull);
-      expect(req.cpus, isNull);
-      expect(req.memoryMb, isNull);
-      expect(req.noProvision, isNull);
-      expect(req.toJson().containsKey('repo'), isFalse);
-    });
-
-    test('keeps provided fields; parses positive ints; drops non-positive', () {
-      final req = CreateShedRequest.fromForm(
-        name: 'web',
-        repo: 'owner/web',
-        image: 'full',
-        cpus: '4',
-        memoryMb: '8192',
-        noProvision: true,
-      );
-      expect(req.repo, 'owner/web');
-      expect(req.image, 'full');
-      expect(req.cpus, 4);
-      expect(req.memoryMb, 8192);
-      expect(req.noProvision, true);
-
-      final bad = CreateShedRequest.fromForm(
-        name: 'web',
-        cpus: '0',
-        memoryMb: '-2',
-      );
-      expect(bad.cpus, isNull);
-      expect(bad.memoryMb, isNull);
-    });
-  });
+  // NOTE (B3 FRB swap): the former `CreateShedRequest.fromForm` shaping tests
+  // were removed with `shed_dtos.dart`. The create request is now built inline in
+  // `create_shed_screen._create()` as a `BridgeCreateShedRequest` (blank/zero
+  // omission via `_blank`/`parsePositiveInt`); the field-omission shaping is
+  // exercised by driving the create flow. `parsePositiveInt` itself is covered by
+  // the `validatePositiveIntField` group above (they share the one rule).
 }

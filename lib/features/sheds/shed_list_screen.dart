@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
-import '../../shed/shed_client.dart';
-import '../../shed/shed_dtos.dart';
 import '../../shed/shed_status.dart';
+import '../../src/rust/api/client.dart';
+import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
@@ -35,7 +36,7 @@ class ShedListScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String action,
-    Future<void> Function(ShedClient c) op,
+    Future<void> Function(BridgeClient c) op,
   ) => runShedAction(
     ref,
     context,
@@ -68,7 +69,7 @@ class ShedListScreen extends ConsumerWidget {
       ),
     );
     if (ok == true && context.mounted) {
-      await _run(context, ref, 'shed-delete', (c) => c.deleteShed(name));
+      await _run(context, ref, 'shed-delete', (c) => c.delete(name: name));
     }
   }
 
@@ -143,13 +144,13 @@ class ShedListScreen extends ConsumerWidget {
                     context,
                     ref,
                     'shed-start',
-                    (c) => c.startShed(s.name),
+                    (c) => c.start(name: s.name),
                   ),
                   onStop: () => _run(
                     context,
                     ref,
                     'shed-stop',
-                    (c) => c.stopShed(s.name),
+                    (c) => c.stop(name: s.name),
                   ),
                   onDelete: () => _confirmDelete(context, ref, s.name),
                 );
@@ -171,7 +172,7 @@ class _ShedTile extends StatelessWidget {
     required this.onDelete,
   });
 
-  final Shed shed;
+  final BridgeShed shed;
   final VoidCallback onOpen;
   final VoidCallback onStart;
   final VoidCallback onStop;
@@ -180,8 +181,9 @@ class _ShedTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.shed;
-    final (tone, animate) = ShedListScreen.toneFor(shed.status);
-    final running = shed.isRunning;
+    final status = bridgeShedStatusWire(shed.status);
+    final (tone, animate) = ShedListScreen.toneFor(status);
+    final running = bridgeShedIsRunning(shed);
     return InkWell(
       key: ValueKey('shed-${shed.name}'),
       onTap: onOpen,
@@ -205,7 +207,7 @@ class _ShedTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    shed.status,
+                    status,
                     style: monoStyle(
                       fontSize: 11.5,
                       color: colors.toneFg(tone),

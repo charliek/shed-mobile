@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
@@ -175,7 +176,7 @@ class _ShedPickerSheet extends ConsumerWidget {
           final sheds = ref.watch(shedsProvider(h.name));
           sheds.when(
             data: (list) {
-              for (final s in list.where((s) => s.isRunning)) {
+              for (final s in list.where(bridgeShedIsRunning)) {
                 rows.add(
                   _PickRow(
                     key: ValueKey('pick-shed-${h.name}-${s.name}'),

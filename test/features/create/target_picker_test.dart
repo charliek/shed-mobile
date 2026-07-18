@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/create/target_picker.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
-import 'package:shed_mobile/shed/shed_dtos.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 ServerRecord _rec(String name) => ServerRecord(
@@ -23,7 +23,7 @@ Future<Object?> _run(
   WidgetTester tester,
   Future<Object?> Function(BuildContext, WidgetRef) fn, {
   required List<ServerRecord> hosts,
-  Future<List<Shed>> Function(String name)? sheds,
+  Future<List<BridgeShed>> Function(String name)? sheds,
 }) async {
   Object? result;
   await tester.binding.setSurfaceSize(const Size(500, 900));
@@ -111,10 +111,27 @@ void main() {
       hosts: [_rec('h1'), _rec('h2')],
       sheds: (name) async => name == 'h1'
           ? const [
-              Shed(name: 'run', status: 'running'),
-              Shed(name: 'stop', status: 'stopped'),
+              BridgeShed(
+                host: 'h',
+                name: 'run',
+                status: BridgeShedStatus.running,
+                activeNamespaces: [],
+              ),
+              BridgeShed(
+                host: 'h',
+                name: 'stop',
+                status: BridgeShedStatus.stopped,
+                activeNamespaces: [],
+              ),
             ]
-          : const [Shed(name: 'run2', status: 'running')],
+          : const [
+              BridgeShed(
+                host: 'h',
+                name: 'run2',
+                status: BridgeShedStatus.running,
+                activeNamespaces: [],
+              ),
+            ],
     );
     expect(find.byKey(const ValueKey('pick-shed-h1-run')), findsOneWidget);
     expect(find.byKey(const ValueKey('pick-shed-h2-run2')), findsOneWidget);
@@ -131,7 +148,14 @@ void main() {
       hosts: [_rec('down'), _rec('up')],
       sheds: (name) async {
         if (name == 'down') throw StateError('offline');
-        return const [Shed(name: 'ok', status: 'running')];
+        return const [
+          BridgeShed(
+            host: 'h',
+            name: 'ok',
+            status: BridgeShedStatus.running,
+            activeNamespaces: [],
+          ),
+        ];
       },
     );
     expect(find.byKey(const ValueKey('pick-shed-up-ok')), findsOneWidget);
@@ -144,7 +168,14 @@ void main() {
       tester,
       pickShed,
       hosts: [_rec('h')],
-      sheds: (name) async => const [Shed(name: 'idle', status: 'stopped')],
+      sheds: (name) async => const [
+        BridgeShed(
+          host: 'h',
+          name: 'idle',
+          status: BridgeShedStatus.stopped,
+          activeNamespaces: [],
+        ),
+      ],
     );
     expect(find.byKey(const ValueKey('pick-empty')), findsOneWidget);
   });

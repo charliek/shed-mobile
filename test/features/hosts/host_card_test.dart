@@ -7,7 +7,7 @@ import 'package:shed_mobile/features/hosts/host_card.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
 import 'package:shed_mobile/servers/server_store.dart';
-import 'package:shed_mobile/shed/shed_dtos.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
 import 'package:shed_mobile/storage/secret_store.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
@@ -20,33 +20,53 @@ const _rec = ServerRecord(
   hostKeyPin: 'pin',
 );
 
-const _usage = SystemDiskUsage(
+const _usage = BridgeSystemDiskUsage(
   serverName: 'h',
   backend: 'vz',
-  totals: DiskTotals(
-    images: DiskSize(physicalBytes: 1323184128), // 1.23 GB
-    sheds: DiskSize(physicalBytes: 6615306240),
-    snapshots: DiskSize(),
-    orphans: DiskSize(),
-    all: DiskSize(physicalBytes: 14506430464), // 13.51 GB
+  images: [],
+  sheds: [],
+  orphans: [],
+  totals: BridgeDiskTotals(
+    images: BridgeDiskSize(
+      logicalBytes: 0,
+      physicalBytes: 1323184128,
+    ), // 1.23 GB
+    sheds: BridgeDiskSize(logicalBytes: 0, physicalBytes: 6615306240),
+    snapshots: BridgeDiskSize(logicalBytes: 0, physicalBytes: 0),
+    orphans: BridgeDiskSize(logicalBytes: 0, physicalBytes: 0),
+    all: BridgeDiskSize(
+      logicalBytes: 0,
+      physicalBytes: 14506430464,
+    ), // 13.51 GB
   ),
 );
 
 const _twoSheds = [
-  OverviewShed(
-    shed: Shed(name: 'a', status: 'running', backend: 'vz'),
+  BridgeOverviewShed(
+    shed: BridgeShed(
+      host: 'h',
+      name: 'a',
+      status: BridgeShedStatus.running,
+      backend: 'vz',
+      activeNamespaces: [],
+    ),
     sessions: [],
   ),
-  OverviewShed(
-    shed: Shed(name: 'b', status: 'stopped'),
+  BridgeOverviewShed(
+    shed: BridgeShed(
+      host: 'h',
+      name: 'b',
+      status: BridgeShedStatus.stopped,
+      activeNamespaces: [],
+    ),
     sessions: [],
   ),
 ];
 
 /// A whole-host overview with a df block + two sheds, as the served result.
-OverviewResult _overview({SystemDiskUsage? df = _usage}) => OverviewData(
-  Overview(
-    server: const OverviewServer(version: '1', features: []),
+OverviewResult _overview({BridgeSystemDiskUsage? df = _usage}) => OverviewData(
+  BridgeOverview(
+    server: const BridgeOverviewServer(version: '1', features: []),
     df: df,
     sheds: _twoSheds,
     warnings: const [],
