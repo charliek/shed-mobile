@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../core/url_launch.dart';
+import '../../core/url_scan.dart';
 import '../../providers.dart';
 import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
@@ -36,6 +38,7 @@ class TerminalScreen extends ConsumerStatefulWidget {
     required this.slug,
     required this.title,
     this.ptyBuilder,
+    this.urlLauncher,
     super.key,
   });
 
@@ -49,6 +52,13 @@ class TerminalScreen extends ConsumerStatefulWidget {
   /// null in production.
   @visibleForTesting
   final PtyBuilder? ptyBuilder;
+
+  /// Test seam for the URL banner's "Open" action: an injected launcher passed
+  /// straight through to [launchExternalUrl]. Production leaves this null (the
+  /// real url_launcher is used); tests inject a fake to assert the launched
+  /// [Uri] and to simulate success / false / throw. Mirrors `SessionCard`.
+  @visibleForTesting
+  final UrlLauncher? urlLauncher;
 
   @override
   ConsumerState<TerminalScreen> createState() => _TerminalScreenState();
@@ -73,6 +83,17 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   int? _exitCode;
   bool _ctrlArmed = false;
   double _fontSize = 13;
+
+  /// Bounded rolling tail of decoded output, scanned for a login/any http(s) URL
+  /// (see [appendBoundedTail] — a small fixed window, never a second copy of the
+  /// terminal's scrollback).
+  String _urlScanTail = '';
+
+  /// The URL currently surfaced in the banner (null when none is showing), and
+  /// the one the user last dismissed. Re-detecting either is a no-op: a TUI
+  /// redraw re-emits the same URL, and a dismissed URL must not pop back.
+  String? _detectedUrl;
+  String? _dismissedUrl;
 
   @visibleForTesting
   Terminal get terminal => _terminal;
@@ -126,14 +147,56 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     final range = _terminalController.selection;
     if (range == null) return;
     // Never log the copied text: a cursor login URL carries an auth token.
-    final text = _terminal.buffer.getText(range);
+    await _copyToClipboard(_terminal.buffer.getText(range), 'terminal-copy');
+  }
+
+  /// Copy [text] to the clipboard, log [logName] as ok, and — once mounted —
+  /// show the "Copied" snackbar. Shared by [_copy] (the xterm selection) and the
+  /// URL banner's Copy link action: both copy-then-confirm identically and only
+  /// differ in the source text and the drive-log name. [text] itself is never
+  /// logged (a selection or a detected URL may carry an auth token).
+  Future<void> _copyToClipboard(String text, String logName) async {
     await Clipboard.setData(ClipboardData(text: text));
-    logDriveResult('terminal-copy', ok: true);
+    logDriveResult(logName, ok: true);
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Copied')));
   }
+
+  /// Feed one decoded output [data] chunk through the bounded scan tail and, if a
+  /// NEW http(s) URL surfaces, raise the banner. De-duped: a re-emitted (TUI
+  /// redraw) or already-dismissed URL is ignored. Called only from inside the
+  /// output listener's `mounted && gen == _generation` guard, so the setState is
+  /// safe. The URL is NEVER logged — a cursor login link carries an auth token.
+  void _scanForUrl(String data) {
+    _urlScanTail = appendBoundedTail(_urlScanTail, data);
+    final u = latestUrlIn(_urlScanTail);
+    if (u == null || u == _detectedUrl || u == _dismissedUrl) return;
+    setState(() => _detectedUrl = u);
+    logDriveState('terminal-url detected=t');
+  }
+
+  /// Open the detected URL via the shared safe-launch helper (http/https only; a
+  /// rejected/failed launch snackbars instead of throwing).
+  Future<void> _openUrl(String url) async {
+    final outcome = await launchExternalUrl(url, launcher: widget.urlLauncher);
+    logDriveResult(
+      'terminal-url-open',
+      ok: outcome == UrlLaunchOutcome.success,
+    );
+    if (!mounted || outcome == UrlLaunchOutcome.success) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Could not open URL')));
+  }
+
+  /// Dismiss the banner and remember the URL so a redraw can't re-surface it (a
+  /// reconnect clears the memory — see [_connect]).
+  void _dismissUrl() => setState(() {
+    _dismissedUrl = _detectedUrl;
+    _detectedUrl = null;
+  });
 
   Future<void> _connect() async {
     // Claim this generation; anything the previous connection fires from here on
@@ -152,6 +215,12 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       _connecting = true;
       _error = null;
       _exitCode = null;
+      // Fresh session -> re-detect from scratch: a URL from the previous
+      // connection is stale, and a previously-dismissed one should be offered
+      // again if it reappears.
+      _urlScanTail = '';
+      _detectedUrl = null;
+      _dismissedUrl = null;
     });
     PtySession? pty;
     try {
@@ -177,7 +246,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       _outputSub = const Utf8Decoder(allowMalformed: true)
           .bind(pty.output)
           .listen((data) {
-            if (mounted && gen == _generation) _terminal.write(data);
+            if (mounted && gen == _generation) {
+              _terminal.write(data);
+              _scanForUrl(data);
+            }
           });
       pty.done.then((code) {
         if (!mounted || gen != _generation) return;
@@ -329,6 +401,11 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
               style: TextStyle(color: ShedColors.dark.fg),
             ),
           ),
+        // A detected login/any http(s) URL: a one-tap Copy/Open banner (grabbing
+        // a cursor login URL by drag-selecting on a phone terminal is painful).
+        // Shown only while the session is live.
+        if (_detectedUrl != null && _exitCode == null)
+          _urlBanner(_detectedUrl!),
         Expanded(
           child: TerminalView(
             _terminal,
@@ -353,6 +430,79 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
             },
           ),
       ],
+    );
+  }
+
+  /// The dismissible "Link detected" banner. Styled for the always-dark terminal
+  /// chrome (this builds under the State's ambient context, above the Theme wrap,
+  /// so the dark tokens are pinned). Shows a truncated preview of the URL but the
+  /// value is never logged.
+  Widget _urlBanner(String url) {
+    const c = ShedColors.dark;
+    return Container(
+      key: const ValueKey('terminal-url-banner'),
+      width: double.infinity,
+      color: c.surface2,
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      child: Row(
+        children: [
+          Icon(Icons.link, size: 18, color: c.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Link detected',
+                  style: TextStyle(
+                    color: c.fg,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  url,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: c.fg3, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          TextButton(
+            key: const ValueKey('terminal-url-copy'),
+            style: TextButton.styleFrom(
+              foregroundColor: c.fg,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 36),
+            ),
+            onPressed: () => _copyToClipboard(url, 'terminal-url-copy'),
+            child: const Text('Copy link'),
+          ),
+          TextButton(
+            key: const ValueKey('terminal-url-open'),
+            style: TextButton.styleFrom(
+              foregroundColor: c.accent,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 36),
+            ),
+            onPressed: () => _openUrl(url),
+            child: const Text('Open'),
+          ),
+          IconButton(
+            key: const ValueKey('terminal-url-dismiss'),
+            icon: const Icon(Icons.close, size: 18),
+            color: c.fg3,
+            tooltip: 'Dismiss',
+            visualDensity: VisualDensity.compact,
+            onPressed: _dismissUrl,
+          ),
+        ],
+      ),
     );
   }
 }

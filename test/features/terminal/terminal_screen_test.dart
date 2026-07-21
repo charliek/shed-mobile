@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/core/url_launch.dart';
 import 'package:shed_mobile/features/terminal/terminal_screen.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/pty_session.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:xterm/xterm.dart';
 
 /// A [PtySession]-shaped double whose output stream, `done` future, and start
@@ -91,7 +93,11 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
-Future<void> _pump(WidgetTester tester, {required PtyBuilder builder}) async {
+Future<void> _pump(
+  WidgetTester tester, {
+  required PtyBuilder builder,
+  UrlLauncher? urlLauncher,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
@@ -101,12 +107,37 @@ Future<void> _pump(WidgetTester tester, {required PtyBuilder builder}) async {
           slug: 'abc123',
           title: 'frontend',
           ptyBuilder: builder,
+          urlLauncher: urlLauncher,
         ),
       ),
     ),
   );
   await _settle(tester);
 }
+
+/// Records the clipboard text a `Clipboard.setData` call carries, until torn
+/// down. Returns a getter for the last-copied text.
+String? Function() _mockClipboard(WidgetTester tester) {
+  String? copied;
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+  return () => copied;
+}
+
+final _urlBanner = find.byKey(const ValueKey('terminal-url-banner'));
 
 IconButton _copyButton(WidgetTester tester) =>
     tester.widget<IconButton>(find.byKey(const ValueKey('terminal-copy')));
@@ -239,5 +270,112 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'an http(s) URL in the output surfaces the banner; Copy link puts '
+    'the exact URL on the clipboard',
+    (tester) async {
+      final clipboard = _mockClipboard(tester);
+      final pty = _FakePty();
+      await _pump(tester, builder: _queue([pty]));
+
+      // No URL emitted yet -> no banner.
+      expect(_urlBanner, findsNothing);
+
+      const url = 'https://cursor.com/login/device?code=ABCD-1234';
+      // ANSI-wrapped and followed by trailing prose the extractor must not eat.
+      pty.emit('\x1B[36mOpen $url in your browser.\x1B[0m\r\n');
+      await _settle(tester);
+
+      expect(_urlBanner, findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('terminal-url-copy')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(clipboard(), url);
+      expect(find.text('Copied'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Open invokes the injected launcher with the detected URL as an '
+      'external-application Uri', (tester) async {
+    Uri? launched;
+    LaunchMode? launchedMode;
+    Future<bool> fakeLauncher(
+      Uri uri, {
+      LaunchMode mode = LaunchMode.platformDefault,
+    }) async {
+      launched = uri;
+      launchedMode = mode;
+      return true;
+    }
+
+    final pty = _FakePty();
+    await _pump(tester, builder: _queue([pty]), urlLauncher: fakeLauncher);
+
+    const url = 'https://claude.ai/login/abc?tok=xyz#frag';
+    pty.emit('Login here: $url\n');
+    await _settle(tester);
+    expect(_urlBanner, findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('terminal-url-open')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(launched, Uri.parse(url));
+    // The safe-launch helper always requests an external application.
+    expect(launchedMode, LaunchMode.externalApplication);
+    // No failure snackbar on a successful open.
+    expect(find.text('Could not open URL'), findsNothing);
+  });
+
+  testWidgets('dismiss hides the banner and re-emitting the SAME URL does not '
+      're-show it', (tester) async {
+    final pty = _FakePty();
+    await _pump(tester, builder: _queue([pty]));
+
+    const url = 'https://ex.example/login/tok';
+    pty.emit('go to $url now\n');
+    await _settle(tester);
+    expect(_urlBanner, findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('terminal-url-dismiss')));
+    await tester.pump();
+    expect(_urlBanner, findsNothing);
+
+    // A TUI redraw re-emits the same URL: the dismissed URL must stay dismissed.
+    pty.emit('go to $url now\n');
+    await _settle(tester);
+    expect(_urlBanner, findsNothing);
+  });
+
+  testWidgets('reconnect resets detection: the banner clears and a fresh session '
+      're-detects (even the same URL)', (tester) async {
+    final pty1 = _FakePty();
+    final pty2 = _FakePty();
+    await _pump(tester, builder: _queue([pty1, pty2]));
+
+    const url = 'https://ex.example/auth/tok';
+    pty1.emit('open $url\n');
+    await _settle(tester);
+    expect(_urlBanner, findsOneWidget);
+
+    // Session ends -> banner hidden (not active) + reconnect affordance shown.
+    pty1.finish(0);
+    await _settle(tester);
+    expect(_urlBanner, findsNothing);
+    expect(find.byKey(const ValueKey('terminal-reconnect')), findsOneWidget);
+
+    // Reconnect -> gen 2: detection state reset, so no banner yet.
+    await tester.tap(find.byKey(const ValueKey('terminal-reconnect')));
+    await _settle(tester);
+    expect(_urlBanner, findsNothing);
+
+    // The same URL on the fresh session surfaces again (dedup memory cleared).
+    pty2.emit('open $url\n');
+    await _settle(tester);
+    expect(_urlBanner, findsOneWidget);
   });
 }

@@ -187,3 +187,29 @@ activity=<wire|none> msgs=N truncated=t|f input=enabled|disabled|blocked`.
 MRESULT: `codex-watch-input ok|error=…` (a 409 send → snackbar "Session is no
 longer waiting for input" + a state refresh); `codex-watch-handoff ok` (opened
 the TUI).
+
+### Terminal screen — `TerminalScreen` (Scaffold `terminal-screen`)
+The in-app xterm TUI, attached to a shed rc session's tmux pane over pinned SSH.
+Reached from `all-session-open-<base>` (the "›_ open" pill) and the codex-watch
+TUI handoff. Always dark chrome (the terminal is dark regardless of app theme).
+
+| Key | What |
+|---|---|
+| `terminal-back` | app-bar back (Detach — leaves the rc session running) |
+| `terminal-font-dec` / `terminal-font-inc` | shrink / grow the text (8–28pt) |
+| `terminal-paste` | paste the clipboard into the PTY (bracketed-paste aware) |
+| `terminal-copy` | copy the current xterm selection (MRESULT `terminal-copy ok`); `onPressed:null` (disabled) when there's no selection; the copied text is **never** logged (a login URL carries an auth token) |
+| `terminal-reconnect` | re-attach after the session ended/errored (only shown then) |
+| `terminal-connecting` / `terminal-error` / `terminal-ended` | connect spinner / connect-error text / "session ended (exit N)" banner |
+| `terminal-view` | the xterm `TerminalView` |
+| `term-key-ctrl`, `term-key-<id>` | the virtual-key toolbar (sticky-Ctrl + esc/tab/arrows/^C/…), hidden once the session ends |
+| `terminal-url-banner` | dismissible "Link detected" banner above the view — auto-detected login/any http(s) URL in the output (ANSI/OSC-stripped, bounded rolling tail, de-duped, hidden once the session ends). Shown only while the session is live |
+| `terminal-url-copy` | copy the detected URL to the clipboard (MRESULT `terminal-url-copy ok`; snackbar "Copied") |
+| `terminal-url-open` | open it in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `terminal-url-open ok\|error` |
+| `terminal-url-dismiss` | X → hide the banner; a redraw re-emitting the SAME URL won't re-surface it (a reconnect clears the memory) |
+
+MSTATE: `screen=terminal slug=<slug> state=ready|exited keyboardVisible=t|f
+inset=N font=N` (`state=ready` while live, `state=exited` after the pane closes);
+`terminal-url detected=t` when a URL banner is raised — the **URL itself is never
+logged**. MRESULT: `terminal-connect ok|error=…`, `terminal-copy ok`,
+`terminal-url-copy ok`, `terminal-url-open ok|error`.
