@@ -40,16 +40,52 @@ MSTATE: `screen=add-server step=input|confirm`. MRESULT: `add-server ok|error`,
 `add-server-connect error=…`.
 
 ### ShedListScreen — `sheds-screen`
+Sheds on one server. Each row now renders the shared **`ShedCard`** (see its
+section below) keyed `all-shed-<server>-<name>`, so the per-host list gains
+restart and exposes the identical `all-shed-*` actions — incl.
+`all-shed-delete-*` — that the cross-host Sheds tab shows, at both widths.
+
 | Key | What |
 |---|---|
 | `sheds-refresh` | refetch |
 | `sheds-create` | FAB → CreateShedScreen |
 | `sheds-empty` / `sheds-error` | states |
-| `shed-<name>` | shed tile |
-| `shed-start-<name>` / `shed-stop-<name>` / `shed-delete-<name>` | actions |
-| `shed-delete-confirm` | confirm delete dialog |
+| `shed-delete-confirm` | confirm-delete dialog (shared `confirmShedDelete`) |
 
-MSTATE: `screen=sheds server=X count=N`. MRESULT: `shed-start|shed-stop|shed-delete ok|error`.
+The old per-host `_ShedTile` keys are **retired** — use the `all-shed-*` keys:
+
+| Retired key | Replaced by |
+|---|---|
+| `shed-<name>` | `all-shed-<server>-<name>` (row identity) |
+| `shed-start-<name>` | `all-shed-start-<base>` |
+| `shed-stop-<name>` | `all-shed-stop-<base>` |
+| `shed-delete-<name>` | `all-shed-delete-<base>` |
+
+MSTATE: `screen=sheds server=X count=N`. MRESULT: the shared ShedCard tokens
+(`shed-start|shed-stop|shed-restart|shed-delete ok|error`).
+
+### Shed card (shared: cross-host Sheds view AND per-host ShedListScreen) — `ShedCard`
+Base is `<server>-<name>` (e.g. `h-web`). The **same** card renders on the
+cross-host Sheds tab and on the per-host list, so both surfaces expose the
+identical `all-shed-*` keys at both widths. It carries the state-appropriate
+lifecycle actions, a textual status label (`all-shed-status-<base>` — reading
+`running`/`stopped`/`starting`/…), and — on mobile — a whole-card tap that drills
+into the shed's sessions (the action buttons below win the gesture, so tapping
+one acts without also navigating).
+
+| Key | What |
+|---|---|
+| `all-shed-<server>-<name>` | row identity (the card element; drive target) |
+| `all-shed-open-<base>` | open the shed's sessions (→ ShedDetailScreen) |
+| `all-shed-start-<base>` | start — **only** when stopped |
+| `all-shed-stop-<base>` | stop — **only** when running |
+| `all-shed-restart-<base>` | restart (client-side stop→start) — **only** when running |
+| `all-shed-delete-<base>` | delete — shows `shed-delete-confirm` first; a rapid second tap can't stack a second dialog |
+| `all-shed-status-<base>` | textual status label |
+
+Action set by state: running → open/restart/stop/delete; stopped →
+open/start/delete. MRESULT: `shed-start|shed-stop|shed-restart|shed-delete
+ok|error`.
 
 ### ShedDetailScreen (one shed's sessions) — `rc-screen`
 Reached by tapping a shed tile. The session list comes from `rcSessionsProvider`

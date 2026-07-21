@@ -36,6 +36,34 @@ Future<void> runAction(
   }
 }
 
+/// Confirm a shed delete. Shows the destructive-action dialog and resolves to
+/// whether the user confirmed — `true` only when they tap Delete, `false` on
+/// Cancel or a barrier dismiss. The single production call site (after the
+/// cross-host/per-host card unification) is [ShedCard]'s delete action, which
+/// guards against a rapid second tap stacking dialogs and re-checks
+/// `context.mounted` across this await before mutating.
+Future<bool> confirmShedDelete(BuildContext context, String name) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Delete $name?'),
+      content: const Text('This permanently deletes the shed.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('shed-delete-confirm'),
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
 /// A shed lifecycle action (start/stop/restart/delete): resolves the server's
 /// client, runs [op] against it, and refetches the host's shed views (the shed
 /// list AND the overview — the Hosts/Sessions views render from

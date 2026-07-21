@@ -2,76 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
-import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
-import '../../shed/shed_status.dart';
-import '../../src/rust/api/client.dart';
-import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
-import '../../theme/shed_theme.dart';
 import '../../widgets/app_bar_count_title.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/error_retry.dart';
-import '../../widgets/square_icon_button.dart';
-import '../../widgets/status_badge.dart';
-import '../rc/shed_detail_screen.dart';
 import 'create_shed_screen.dart';
-import 'shed_actions.dart';
+import 'shed_card.dart';
 
-/// Sheds on one server: list, start/stop/delete, and create.
+/// Sheds on one server: list, start/stop/restart/delete, and create. Each row is
+/// the shared [ShedCard] — the same widget the cross-host Sheds tab renders — so
+/// both surfaces expose the identical `all-shed-*` actions (incl.
+/// delete-with-confirm) at both widths.
 class ShedListScreen extends ConsumerWidget {
   const ShedListScreen({required this.serverName, super.key});
 
   final String serverName;
-
-  /// Map a server-reported status string to a display tone + whether it pulses.
-  /// Delegates to the shared [shedStatusTone] table so the per-host list and the
-  /// cross-host views can't drift (this is how the list gains `error → err`).
-  static (ShedStatusTone, bool) toneFor(String status) {
-    final d = shedStatusTone(status);
-    return (d.tone, d.pulse);
-  }
-
-  Future<void> _run(
-    BuildContext context,
-    WidgetRef ref,
-    String action,
-    Future<void> Function(BridgeClient c) op,
-  ) => runShedAction(
-    ref,
-    context,
-    serverName: serverName,
-    action: action,
-    op: op,
-  );
-
-  Future<void> _confirmDelete(
-    BuildContext context,
-    WidgetRef ref,
-    String name,
-  ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete $name?'),
-        content: const Text('This permanently deletes the shed.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const ValueKey('shed-delete-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await _run(context, ref, 'shed-delete', (c) => c.delete(name: name));
-    }
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -130,117 +76,15 @@ class ShedListScreen extends ConsumerWidget {
                   Divider(height: 1, color: context.shed.line),
               itemBuilder: (_, i) {
                 final s = list[i];
-                return _ShedTile(
+                return ShedCard(
+                  key: ValueKey('all-shed-$serverName-${s.name}'),
+                  serverName: serverName,
                   shed: s,
-                  onOpen: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ShedDetailScreen(
-                        serverName: serverName,
-                        shedName: s.name,
-                      ),
-                    ),
-                  ),
-                  onStart: () => _run(
-                    context,
-                    ref,
-                    'shed-start',
-                    (c) => c.start(name: s.name),
-                  ),
-                  onStop: () => _run(
-                    context,
-                    ref,
-                    'shed-stop',
-                    (c) => c.stop(name: s.name),
-                  ),
-                  onDelete: () => _confirmDelete(context, ref, s.name),
                 );
               },
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _ShedTile extends StatelessWidget {
-  const _ShedTile({
-    required this.shed,
-    required this.onOpen,
-    required this.onStart,
-    required this.onStop,
-    required this.onDelete,
-  });
-
-  final BridgeShed shed;
-  final VoidCallback onOpen;
-  final VoidCallback onStart;
-  final VoidCallback onStop;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.shed;
-    final status = bridgeShedStatusWire(shed.status);
-    final (tone, animate) = ShedListScreen.toneFor(status);
-    final running = bridgeShedIsRunning(shed);
-    return InkWell(
-      key: ValueKey('shed-${shed.name}'),
-      onTap: onOpen,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 15, 12, 15),
-        child: Row(
-          children: [
-            StatusDot(tone: tone, animate: animate),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    shed.name,
-                    style: sansStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w600,
-                      color: colors.fg,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    status,
-                    style: monoStyle(
-                      fontSize: 11.5,
-                      color: colors.toneFg(tone),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (running)
-              SquareIconButton(
-                key: ValueKey('shed-stop-${shed.name}'),
-                icon: Icons.stop,
-                tooltip: 'Stop',
-                onPressed: onStop,
-              )
-            else
-              SquareIconButton(
-                key: ValueKey('shed-start-${shed.name}'),
-                icon: Icons.play_arrow,
-                tooltip: 'Start',
-                iconColor: colors.dotOk,
-                onPressed: onStart,
-              ),
-            const SizedBox(width: 8),
-            SquareIconButton(
-              key: ValueKey('shed-delete-${shed.name}'),
-              icon: Icons.delete_outline,
-              tooltip: 'Delete',
-              iconColor: colors.fg3,
-              onPressed: onDelete,
-            ),
-          ],
-        ),
       ),
     );
   }
