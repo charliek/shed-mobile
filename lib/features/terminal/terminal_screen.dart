@@ -15,6 +15,17 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import 'terminal_keys.dart';
 
+/// Signature of [buildPtySession] — the production factory that assembles a
+/// (still-unstarted) [PtySession]. A test injects a fake here to exercise the
+/// terminal without a real SSH PTY; null in production (see [buildPtySession]).
+typedef PtyBuilder =
+    Future<PtySession> Function(
+      WidgetRef ref, {
+      required String serverName,
+      required String shedName,
+      required String slug,
+    });
+
 /// In-app terminal: an xterm view wired to a [PtySession] that attaches to a
 /// shed RC session's tmux pane (`tmux attach -t rc-<slug>`) over pinned SSH.
 /// Detaching (leaving the screen) keeps the rc session running.
@@ -24,6 +35,7 @@ class TerminalScreen extends ConsumerStatefulWidget {
     required this.shedName,
     required this.slug,
     required this.title,
+    this.ptyBuilder,
     super.key,
   });
 
@@ -32,19 +44,41 @@ class TerminalScreen extends ConsumerStatefulWidget {
   final String slug;
   final String title;
 
+  /// Test-only seam: overrides the [buildPtySession] factory so the screen's
+  /// lifecycle (connect/reconnect/dispose) can be driven with a fake PTY. Always
+  /// null in production.
+  @visibleForTesting
+  final PtyBuilder? ptyBuilder;
+
   @override
   ConsumerState<TerminalScreen> createState() => _TerminalScreenState();
 }
 
 class _TerminalScreenState extends ConsumerState<TerminalScreen> {
   final _terminal = Terminal(maxLines: 10000);
+  final _terminalController = TerminalController();
   final _terminalFocus = FocusNode();
   PtySession? _pty;
+
+  /// Owned subscription for the decoded remote output. Cancelled on reconnect
+  /// and dispose so a superseded connection's bytes can't reach the terminal.
+  StreamSubscription<String>? _outputSub;
+
+  /// Bumped every [_connect]. Stream/`done` callbacks capture their generation
+  /// and no-op unless they're still the current one — a reconnect (or dispose)
+  /// can't be `setState`-clobbered by the connection it replaced.
+  int _generation = 0;
   bool _connecting = true;
   String? _error;
   int? _exitCode;
   bool _ctrlArmed = false;
   double _fontSize = 13;
+
+  @visibleForTesting
+  Terminal get terminal => _terminal;
+
+  @visibleForTesting
+  TerminalController get terminalController => _terminalController;
 
   @override
   void initState() {
@@ -88,40 +122,72 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     _terminal.paste(text); // honors bracketed-paste mode
   }
 
+  Future<void> _copy() async {
+    final range = _terminalController.selection;
+    if (range == null) return;
+    // Never log the copied text: a cursor login URL carries an auth token.
+    final text = _terminal.buffer.getText(range);
+    await Clipboard.setData(ClipboardData(text: text));
+    logDriveResult('terminal-copy', ok: true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Copied')));
+  }
+
   Future<void> _connect() async {
+    // Claim this generation; anything the previous connection fires from here on
+    // is stale and must no-op (see the mounted && gen == _generation guards).
+    final gen = ++_generation;
+    // Reconnect tears the old connection down first: cancel its output stream and
+    // close its pty so it stops emitting before the new one opens. Null-safe on
+    // the first connect. Not awaited — cancel() removes the listener immediately
+    // (so no more chunks reach the terminal), but its returned future can hang on
+    // a converter-bound broadcast stream; the generation guard is the backstop.
+    unawaited(_outputSub?.cancel());
+    _outputSub = null;
+    _pty?.close();
+    _pty = null;
     setState(() {
       _connecting = true;
       _error = null;
       _exitCode = null;
     });
+    PtySession? pty;
     try {
-      final pty = await buildPtySession(
+      pty = await (widget.ptyBuilder ?? buildPtySession)(
         ref,
         serverName: widget.serverName,
         shedName: widget.shedName,
         slug: widget.slug,
       );
-      // Disposed while resolving connect params? The session is unstarted (no
-      // connection opened yet), so just drop it — dispose() couldn't have closed
-      // it (_pty was still null).
-      if (!mounted) return;
-      // Own it before awaiting start() so dispose() is the single teardown
-      // authority (closing mid-connect tears the session down promptly).
+      // Disposed — or superseded by a newer connect — while resolving connect
+      // params? The session is unstarted (no connection opened yet), so just drop
+      // it. `_pty` is still null here, so teardown couldn't have closed it.
+      if (!mounted || gen != _generation) {
+        pty.close();
+        return;
+      }
+      // Own it before awaiting start() so dispose()/the next connect is the single
+      // teardown authority (closing mid-connect tears the session down promptly).
       _pty = pty;
       // Stream remote output into the terminal. A chunked UTF-8 decoder buffers
-      // multibyte sequences split across SSH packets.
-      const Utf8Decoder(
-        allowMalformed: true,
-      ).bind(pty.output).listen(_terminal.write);
+      // multibyte sequences split across SSH packets. Guarded so a chunk delivered
+      // after dispose/reconnect can't write into a torn-down terminal.
+      _outputSub = const Utf8Decoder(allowMalformed: true)
+          .bind(pty.output)
+          .listen((data) {
+            if (mounted && gen == _generation) _terminal.write(data);
+          });
       pty.done.then((code) {
-        if (!mounted) return;
+        if (!mounted || gen != _generation) return;
         setState(() => _exitCode = code);
         logDriveState('screen=terminal slug=${widget.slug} state=exited');
       });
       // Start at the terminal's current size if laid out, else a sane default;
       // the TerminalView fires onResize after layout to correct it.
       await pty.start(cols: _terminal.viewWidth, rows: _terminal.viewHeight);
-      if (!mounted) return; // dispose() already closed the pty
+      if (!mounted || gen != _generation) return; // torn down mid-start
       setState(() => _connecting = false);
       // Keep the SSH session alive if the app is backgrounded (Android only;
       // best-effort, no-op elsewhere). Generic text — the shed name/slug stays
@@ -130,18 +196,26 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
       logDriveResult('terminal-connect', ok: true);
     } catch (e) {
       logDriveResult('terminal-connect', ok: false, error: e);
-      if (mounted) {
-        setState(() {
-          _connecting = false;
-          _error = '$e';
-        });
+      // start() may have thrown after `_pty` was assigned — close that pty so its
+      // half-open connection isn't leaked. Only if we're still the current
+      // generation; a newer connect already owns (and will tear down) `_pty`.
+      if (gen == _generation) {
+        pty?.close();
+        if (mounted) {
+          setState(() {
+            _connecting = false;
+            _error = '$e';
+          });
+        }
       }
     }
   }
 
   @override
   void dispose() {
+    unawaited(_outputSub?.cancel());
     _pty?.close();
+    _terminalController.dispose();
     _terminalFocus.dispose(); // also drops _onFocusChange
     unawaited(ShedForegroundService.stop());
     super.dispose();
@@ -197,6 +271,19 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
                 tooltip: 'Paste',
                 onPressed: _paste,
               ),
+              // Enabled only while there's a selection; rebuilds as the controller
+              // reports selection changes.
+              AnimatedBuilder(
+                animation: _terminalController,
+                builder: (context, _) => IconButton(
+                  key: const ValueKey('terminal-copy'),
+                  icon: const Icon(Icons.content_copy),
+                  tooltip: 'Copy',
+                  onPressed: _terminalController.selection == null
+                      ? null
+                      : _copy,
+                ),
+              ),
             ],
             if (_exitCode != null || _error != null)
               IconButton(
@@ -246,6 +333,7 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
           child: TerminalView(
             _terminal,
             key: const ValueKey('terminal-view'),
+            controller: _terminalController,
             focusNode: _terminalFocus,
             autofocus: true,
             textStyle: TerminalStyle(fontSize: _fontSize),
