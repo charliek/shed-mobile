@@ -51,6 +51,35 @@ MSTATE: `screen=add-server step=input|confirm`. MRESULT: `add-server ok|error`,
 
 MSTATE: `screen=sheds server=X count=N`. MRESULT: `shed-start|shed-stop|shed-delete ok|error`.
 
+### ShedDetailScreen (one shed's sessions) — `rc-screen`
+Reached by tapping a shed tile. The session list comes from `rcSessionsProvider`
+(SSH `shed-ext-rc list`); each row now renders the shared **`SessionCard`** (see
+its section below) keyed `all-session-<server>-<shed>-<slug>`, so the per-shed list
+gains the watch eye and the claude URL copy/open actions. Each card additionally
+reads the host `GET /api/overview` (for the watch capability); an overview
+error/404 only hides the eye — it does **not** blank the SSH-backed list.
+
+The old per-shed `_SessionCard` keys are **retired** — use the `all-session-*`
+keys instead:
+
+| Retired key | Replaced by |
+|---|---|
+| `rc-session-<slug>` | `all-session-<server>-<shed>-<slug>` (row identity) |
+| `rc-terminal-<slug>` | `all-session-open-<base>` (terminal pill) |
+| `rc-copy-<slug>` | `all-session-url-copy-<base>` |
+| `rc-open-<slug>` | `all-session-url-open-<base>` |
+| `rc-kill-<slug>` | `all-session-delete-<base>` |
+| `rc-state-<wire>` | (folded into the card's lifecycle badge — no discrete key) |
+
+| Key | What |
+|---|---|
+| `rc-refresh` | app-bar refetch (re-list over SSH) |
+| `rc-create` | FAB → CreateRcScreen |
+| `rc-empty` / `rc-error` | states |
+
+MSTATE: `screen=rc server=X shed=Y count=N`. MRESULT: the shared SessionCard tokens
+(`session-delete`, `session-url-copy`, `session-url-open`).
+
 ### CreateShedScreen — `create-shed-screen`
 | Key | What |
 |---|---|
@@ -113,13 +142,17 @@ refresh (no polling).
 MSTATE: `all-sessions host=<name> reachable=true|false|needs-upgrade count=N live=t|f`
 (`live=t` when the `rc-events` SSE subscription is active for that host).
 
-### Session card (cross-host Sessions view) — `SessionCard`
-Base is `<server>-<shed>-<slug>` (e.g. `h-web-abc123`).
+### Session card (shared: cross-host Sessions view AND per-shed `rc-screen`) — `SessionCard`
+Base is `<server>-<shed>-<slug>` (e.g. `h-web-abc123`). The **same** card renders on
+the cross-host Sessions tab and on the per-shed session list (`ShedDetailScreen`),
+so both surfaces expose the identical `all-session-*` keys.
 
 | Key | What |
 |---|---|
 | `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI) |
 | `all-session-watch-<base>` | "watch" (eye) → CodexWatchScreen; **only** when caps `kind_features[kind].watch` |
+| `all-session-url-copy-<base>` | copy the claude.ai URL to the clipboard (MRESULT `session-url-copy ok`); **only** when the session carries a non-empty `url` (claude-rc/claude-broker) |
+| `all-session-url-open-<base>` | open that URL in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `session-url-open ok\|error`; same `url`-present gate |
 | `all-session-delete-<base>` | delete/kill the session |
 | `all-session-activity-<base>` | live activity badge — present only when lifecycle permits (ready-ish) AND activity is `working` (pulsing) / `needs_input` (steady) / `idle` (quiet); absent for `unknown`, and suppressed for needs-*/dead |
 | `all-session-lastmsg-<base>` | one-line last-message preview (when the hub reports one; suppressed with the activity badge for needs-*/dead — whole-dimension suppression) |

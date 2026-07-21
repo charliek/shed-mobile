@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../app/app_section.dart';
+import '../../core/url_launch.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/format.dart';
@@ -34,6 +37,7 @@ class SessionCard extends ConsumerStatefulWidget {
     required this.shedName,
     required this.session,
     this.live = false,
+    this.urlLauncher,
     super.key,
   });
 
@@ -41,6 +45,12 @@ class SessionCard extends ConsumerStatefulWidget {
   final String shedName;
   final BridgeRcSession session;
   final bool live;
+
+  /// Test seam for the URL "open" action: an injected launcher passed straight
+  /// through to [launchExternalUrl]. Production leaves this null (the real
+  /// url_launcher is used); tests inject a fake to assert the launched [Uri]
+  /// and to simulate success / false / throw.
+  final UrlLauncher? urlLauncher;
 
   @override
   ConsumerState<SessionCard> createState() => _SessionCardState();
@@ -102,11 +112,40 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     }
   }
 
+  /// Copy the session's claude.ai URL to the clipboard (the login/console link a
+  /// claude-rc session advertises). Shown only when the session carries a URL.
+  Future<void> _copyUrl(String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    logDriveResult('session-url-copy', ok: true);
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL copied')));
+    }
+  }
+
+  /// Open the session's URL in an external browser via the shared safe-launch
+  /// helper (http/https only; a rejected/failed launch snackbars instead of
+  /// throwing).
+  Future<void> _openUrl(String url) async {
+    final outcome = await launchExternalUrl(url, launcher: widget.urlLauncher);
+    logDriveResult('session-url-open', ok: outcome == UrlLaunchOutcome.success);
+    if (!mounted || outcome == UrlLaunchOutcome.success) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Could not open URL')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.shed;
     final s = widget.session;
     final desktop = isDesktopWidth(MediaQuery.sizeOf(context).width);
+
+    // A claude-rc (or claude-broker) session advertises its login/console URL;
+    // codex/cursor/shell leave it null, so the copy/open actions only render
+    // when a non-empty URL is present.
+    final url = (s.url != null && s.url!.isNotEmpty) ? s.url : null;
 
     // Overlay the live SSE patch (if watching) onto the base snapshot.
     final patch = widget.live
@@ -205,7 +244,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                 ),
               ),
               const SizedBox(width: 12),
-              if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
+              ..._leadingActions(c, canWatch, url),
               OpenPill(
                 key: ValueKey('all-session-open-$_base'),
                 onTap: _open,
@@ -245,7 +284,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
+                  ..._leadingActions(c, canWatch, url),
                   Expanded(
                     child: OpenPill(
                       key: ValueKey('all-session-open-$_base'),
@@ -263,12 +302,41 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     return CardShell(child: body);
   }
 
+  /// The watch/copy/open action buttons shown ahead of the terminal pill —
+  /// shared by the desktop and mobile layouts so the `canWatch`/`url` gating
+  /// lives in one place instead of two hand-kept copies.
+  List<Widget> _leadingActions(ShedColors c, bool canWatch, String? url) => [
+    if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
+    if (url != null) ...[
+      _urlCopyButton(url),
+      const SizedBox(width: 8),
+      _urlOpenButton(url),
+      const SizedBox(width: 8),
+    ],
+  ];
+
   Widget _watchButton(ShedColors c) => SquareIconButton(
     key: ValueKey('all-session-watch-$_base'),
     icon: Icons.visibility_outlined,
     size: 40,
     tooltip: 'Watch',
     onPressed: _watch,
+  );
+
+  Widget _urlCopyButton(String url) => SquareIconButton(
+    key: ValueKey('all-session-url-copy-$_base'),
+    icon: Icons.copy,
+    size: 40,
+    tooltip: 'Copy URL',
+    onPressed: () => _copyUrl(url),
+  );
+
+  Widget _urlOpenButton(String url) => SquareIconButton(
+    key: ValueKey('all-session-url-open-$_base'),
+    icon: Icons.open_in_new,
+    size: 40,
+    tooltip: 'Open in browser',
+    onPressed: () => _openUrl(url),
   );
 
   Widget _deleteButton(ShedColors c) {
