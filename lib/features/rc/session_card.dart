@@ -115,7 +115,19 @@ class _SessionCardState extends ConsumerState<SessionCard> {
   /// Copy the session's claude.ai URL to the clipboard (the login/console link a
   /// claude-rc session advertises). Shown only when the session carries a URL.
   Future<void> _copyUrl(String url) async {
-    await Clipboard.setData(ClipboardData(text: url));
+    // Match _openUrl: a platform-channel failure snackbars instead of escaping
+    // the button callback as an unhandled async error.
+    try {
+      await Clipboard.setData(ClipboardData(text: url));
+    } catch (e) {
+      logDriveResult('session-url-copy', ok: false, error: e);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not copy URL')));
+      }
+      return;
+    }
     logDriveResult('session-url-copy', ok: true);
     if (mounted) {
       ScaffoldMessenger.of(

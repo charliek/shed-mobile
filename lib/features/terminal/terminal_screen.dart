@@ -255,6 +255,10 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
         if (!mounted || gen != _generation) return;
         setState(() => _exitCode = code);
         logDriveState('screen=terminal slug=${widget.slug} state=exited');
+        // The SSH session ended — stop the keep-alive foreground service
+        // (Android; no-op elsewhere) so its notification doesn't linger past the
+        // session. A reconnect restarts it in _connect; dispose also stops it.
+        unawaited(ShedForegroundService.stop());
       });
       // Start at the terminal's current size if laid out, else a sane default;
       // the TerminalView fires onResize after layout to correct it.
