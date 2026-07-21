@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/core/url_launch.dart';
 import 'package:shed_mobile/features/rc/session_card.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/rc/activity_overlay.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/watcher.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _session = BridgeRcSession(
   host: 'h',
@@ -41,6 +44,7 @@ Future<void> _pump(
   bool live = false,
   BridgeRcCapabilities? caps,
   ActivityOverlay? overlay,
+  UrlLauncher? urlLauncher,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -63,6 +67,7 @@ Future<void> _pump(
               shedName: 'web',
               session: session,
               live: live,
+              urlLauncher: urlLauncher,
             ),
           ),
         ),
@@ -250,5 +255,127 @@ void main() {
     expect(find.text('idle'), findsNothing);
     expect(find.text('fresh live preview'), findsOneWidget);
     expect(find.text('stale overview preview'), findsNothing);
+  });
+
+  // ---- claude URL actions ----------------------------------------------------
+
+  const sessionUrl = 'https://claude.ai/login/xyz';
+  const urlSession = BridgeRcSession(
+    host: 'h',
+    shed: 'web',
+    slug: 'abc123',
+    tmuxSession: 'rc-abc123',
+    displayName: 'frontend',
+    kind: BridgeRcKind.claudeRc(),
+    state: BridgeRcState.ready,
+    managed: true,
+    url: sessionUrl,
+  );
+
+  testWidgets('url copy/open actions absent when the session has no url', (
+    tester,
+  ) async {
+    await _pump(tester, 400); // _session has url == null
+    expect(
+      find.byKey(const ValueKey('all-session-url-copy-h-web-abc123')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('all-session-url-open-h-web-abc123')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('url copy/open actions present when the session carries a url '
+      '(both layouts)', (tester) async {
+    for (final width in const [1100.0, 400.0]) {
+      await _pump(tester, width, session: urlSession);
+      expect(
+        find.byKey(const ValueKey('all-session-url-copy-h-web-abc123')),
+        findsOneWidget,
+        reason: 'copy @ $width',
+      );
+      expect(
+        find.byKey(const ValueKey('all-session-url-open-h-web-abc123')),
+        findsOneWidget,
+        reason: 'open @ $width',
+      );
+    }
+  });
+
+  testWidgets('tapping url-copy places the exact URL on the clipboard', (
+    tester,
+  ) async {
+    String? copied;
+    // Intercept the platform clipboard channel so the copy is observable without
+    // a real platform.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await _pump(tester, 400, session: urlSession);
+    await tester.tap(
+      find.byKey(const ValueKey('all-session-url-copy-h-web-abc123')),
+    );
+    await tester.pump();
+    expect(copied, sessionUrl);
+    // The confirmation snackbar shows.
+    expect(find.text('URL copied'), findsOneWidget);
+  });
+
+  testWidgets('tapping url-open invokes the injected launcher with the URL '
+      'as an http(s) Uri in external mode', (tester) async {
+    Uri? launched;
+    LaunchMode? launchedMode;
+    Future<bool> recordingLauncher(
+      Uri url, {
+      LaunchMode mode = LaunchMode.platformDefault,
+    }) {
+      launched = url;
+      launchedMode = mode;
+      return Future.value(true);
+    }
+
+    await _pump(
+      tester,
+      400,
+      session: urlSession,
+      urlLauncher: recordingLauncher,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('all-session-url-open-h-web-abc123')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(launched, Uri.parse(sessionUrl));
+    expect(launchedMode, LaunchMode.externalApplication);
+  });
+
+  testWidgets('url-open failure (launcher returns false) shows a snackbar', (
+    tester,
+  ) async {
+    Future<bool> fake(
+      Uri url, {
+      LaunchMode mode = LaunchMode.platformDefault,
+    }) => Future.value(false);
+    await _pump(tester, 400, session: urlSession, urlLauncher: fake);
+    await tester.tap(
+      find.byKey(const ValueKey('all-session-url-open-h-web-abc123')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Could not open URL'), findsOneWidget);
   });
 }

@@ -2,12 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
+import '../../src/rust/api/dto.dart';
 import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/primary_button.dart';
+
+/// The reduced create-form view of one host's overview for a target shed:
+/// which kinds to offer, whether full caps are present (unlocks the generic
+/// `skip` perm mode), whether to show the loading spinner, the retry button,
+/// an optional status note, the "present but empty" no-kinds message, and a
+/// drive-state token (`loading|error|unsupported|missing|stopped|absent|
+/// present`) the drive layer can assert the branch on.
+typedef _CapsView = ({
+  List<BridgeRcKind> offered,
+  bool capsPresent,
+  bool loading,
+  bool retry,
+  String? note,
+  bool showNoKinds,
+  String logToken,
+});
 
 /// Create one RC session: pick the kind, optionally set a name / workdir /
 /// kickoff prompt / permission mode, then create with `--wait` so the result
@@ -36,6 +54,10 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   String? _permissionMode = defaultRcPermissionMode;
   bool _busy = false;
   String? _error;
+  // Set the instant a Retry tap fires so a rapid second tap can't stack a
+  // second in-flight probe before the provider transitions to loading; cleared
+  // (via `ref.listen` in build) once the overview reload settles.
+  bool _retrying = false;
 
   ({String serverName, String shedName}) get _key =>
       (serverName: widget.serverName, shedName: widget.shedName);
@@ -93,36 +115,136 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
     }
   }
 
-  /// The kinds this shed offers, gated on its capabilities:
-  ///   - caps == data(non-null) → the shed's own `creatableKinds()` (empty when
-  ///     the shed advertises nothing installed — "present but empty");
-  ///   - caps == data(null) (absent — stopped/old binary) → the safe base
-  ///     (claude + shell), so an un-probed shed can still start those;
-  ///   - loading/error → the same safe base, so the form is usable immediately
-  ///     and degrades rather than blanking.
-  List<BridgeRcKind> _offeredKinds(AsyncValue<BridgeRcCapabilities?> caps) =>
-      caps.when(
-        data: (c) => c == null ? _baseKinds : c.creatableKinds(),
-        loading: () => _baseKinds,
-        error: (_, _) => _baseKinds,
-      );
-
   /// The always-safe base when a shed's capabilities are absent: claude + shell.
   static const List<BridgeRcKind> _baseKinds = [
     BridgeRcKind.claudeRc(),
     BridgeRcKind.shell(),
   ];
 
+  /// Re-probe this host's overview. Guarded so a rapid second tap can't stack a
+  /// second in-flight probe before the provider even transitions to loading.
+  void _retryCaps() {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    ref.invalidate(overviewProvider(widget.serverName));
+  }
+
+  /// Reduce the host overview into everything the offering + status area needs.
+  /// We key off [overviewProvider] (not the lossy `shedCapabilitiesProvider`,
+  /// which collapses server-too-old / shed-missing / shed-stopped / probe-failed
+  /// all into one `null`) so each of those becomes a distinct, honest UI branch:
+  /// a bare loading spinner, an error+retry, a quiet non-retry base (old server),
+  /// a neutral base note (stopped/missing shed), a base+unavailable+retry
+  /// (running but no caps), or the real `creatableKinds()` (caps present).
+  _CapsView _resolveCaps(AsyncValue<OverviewResult> caps) {
+    // A retained previous value (a reload after data) still renders from data;
+    // only a value-less loading/error surfaces the loading/error branches.
+    if (!caps.hasValue) {
+      return caps.hasError
+          ? _base(
+              offered: const [],
+              retry: true,
+              note: "Couldn't read this shed's capabilities.",
+              logToken: 'error',
+            )
+          : _base(offered: const [], loading: true, logToken: 'loading');
+    }
+    final result = caps.requireValue;
+    // Server predates GET /api/overview: base is CORRECT here and a retry would
+    // just re-404 forever — quiet base + a non-retry note, today's good path.
+    if (result is OverviewUnsupported) {
+      return _base(
+        note: 'Server too old for codex/cursor/opencode.',
+        logToken: 'unsupported',
+      );
+    }
+    final overview = (result as OverviewData).overview;
+    BridgeOverviewShed? row;
+    for (final s in overview.sheds) {
+      if (s.shed.name == widget.shedName) {
+        row = s;
+        break;
+      }
+    }
+    // Shed not in the overview at all: neutral — do NOT claim "unreadable".
+    if (row == null) {
+      return _base(
+        note: 'This shed isn\'t on this server — refresh its host.',
+        logToken: 'missing',
+      );
+    }
+    // Found but not running: caps only exist for a running shed, so this is not
+    // a failure — a neutral "start it" note, no retry.
+    if (!bridgeShedIsRunning(row.shed)) {
+      final note = switch (row.shed.status) {
+        BridgeShedStatus.stopped => 'Start the shed to see its session kinds.',
+        BridgeShedStatus.starting =>
+          'This shed is starting — its session kinds will appear once it\'s '
+              'running.',
+        _ => 'This shed isn\'t running — start it to see its session kinds.',
+      };
+      return _base(note: note, logToken: 'stopped');
+    }
+    final shedCaps = row.capabilities;
+    // Running but no caps: a probe miss (retry re-probes) or an old binary that
+    // can't advertise (retry is a harmless no-op) — the note is honest either
+    // way, and unlike an old SERVER a retry here can genuinely self-heal.
+    if (shedCaps == null) {
+      return _base(
+        retry: true,
+        note: 'codex/cursor/opencode unavailable for this shed.',
+        logToken: 'absent',
+      );
+    }
+    // Caps present: the shed's own creatable set (empty → "present but empty").
+    final offered = shedCaps.creatableKinds();
+    return (
+      offered: offered,
+      capsPresent: true,
+      loading: false,
+      retry: false,
+      note: null,
+      showNoKinds: offered.isEmpty,
+      logToken: 'present',
+    );
+  }
+
+  /// The shared shape of every "capabilities not usable yet" branch except
+  /// loading: caps absent (so [_baseKinds] is offered by default), not loading,
+  /// and never "present but empty" (base kinds are never empty). Folds the
+  /// boilerplate that would otherwise repeat across five [_resolveCaps] arms.
+  _CapsView _base({
+    List<BridgeRcKind> offered = _baseKinds,
+    bool loading = false,
+    bool retry = false,
+    String? note,
+    required String logToken,
+  }) => (
+    offered: offered,
+    capsPresent: false,
+    loading: loading,
+    retry: retry,
+    note: note,
+    showNoKinds: false,
+    logToken: logToken,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final caps = ref.watch(shedCapabilitiesProvider(_key));
-    final offered = _offeredKinds(caps);
+    final capsAsync = ref.watch(overviewProvider(widget.serverName));
+    // Clear the retry guard once a reload settles (data or error), re-enabling
+    // the Retry button. Firing outside build makes the setState safe.
+    ref.listen(overviewProvider(widget.serverName), (_, next) {
+      if (_retrying && !next.isLoading) setState(() => _retrying = false);
+    });
+    final view = _resolveCaps(capsAsync);
+    final offered = view.offered;
     // Permission-mode gate: the generic `skip` is new — an OLD binary (a shed
     // whose capabilities are absent) rejects it, so only the historical claude
     // set is offered there; present capabilities unlock the full set. Sending
     // still goes through the clamped [claudeMode] so a stale selection can
     // never reach an old binary.
-    final capsPresent = caps.asData?.value != null;
+    final capsPresent = view.capsPresent;
     final modes = capsPresent ? rcPermissionModes : rcClaudeHistoricalModes;
     final String? claudeMode =
         (_permissionMode != null && modes.contains(_permissionMode))
@@ -134,7 +256,8 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
         ? _kind
         : (offered.isEmpty ? null : offered.first);
     logDriveState(
-      'screen=create-rc kind=${selected?.wire ?? '-'} '
+      'screen=create-rc caps=${view.logToken} '
+      'kind=${selected?.wire ?? '-'} '
       'offered=${offered.map((k) => k.wire).join(',')}',
     );
     return Scaffold(
@@ -154,13 +277,31 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            if (offered.isEmpty)
-              Text(
-                'This shed offers no session kinds — update the shed image.',
-                key: const ValueKey('createrc-no-kinds'),
-                style: monoStyle(fontSize: 12.5, color: context.shed.fg3),
+            // The offering area is a single-state branch keyed off the overview
+            // reduction: a bare spinner while probing, the chips once we have an
+            // offering, the "present but empty" message when caps advertise
+            // nothing, or nothing at all (the error branch renders only the note
+            // + Retry below — no premature base chips).
+            if (view.loading)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  key: const ValueKey('createrc-caps-loading'),
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Reading capabilities…',
+                      style: monoStyle(fontSize: 12.5, color: context.shed.fg3),
+                    ),
+                  ],
+                ),
               )
-            else
+            else if (offered.isNotEmpty)
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -173,7 +314,42 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                       onTap: _busy ? null : () => setState(() => _kind = k),
                     ),
                 ],
+              )
+            else if (view.showNoKinds)
+              Text(
+                'This shed offers no session kinds — update the shed image.',
+                key: const ValueKey('createrc-no-kinds'),
+                style: monoStyle(fontSize: 12.5, color: context.shed.fg3),
               ),
+            // Status note (loading has none): the honest reason base kinds are
+            // (or aren't) all that's offered — old server / stopped / missing /
+            // running-but-no-caps / couldn't-read.
+            if (view.note != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                view.note!,
+                key: const ValueKey('createrc-caps-note'),
+                style: monoStyle(fontSize: 12.5, color: context.shed.fg3),
+              ),
+            ],
+            // Retry ONLY where a re-probe can actually change the answer (a real
+            // error, or a running shed whose caps didn't come through) — never
+            // on an old SERVER (it would re-404 forever). Disabled while a reload
+            // is already in flight so taps can't stack probes.
+            if (view.retry) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('createrc-caps-retry'),
+                  onPressed: (_retrying || capsAsync.isLoading)
+                      ? null
+                      : _retryCaps,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               key: const ValueKey('createrc-name'),

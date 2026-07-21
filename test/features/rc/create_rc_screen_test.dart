@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/providers.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
@@ -31,120 +34,210 @@ BridgeRcCapabilities _caps({
   kindFeatures: const {},
 );
 
+/// One shed row (the screen looks the target up by name inside the overview).
+BridgeShed _shed(String name, BridgeShedStatus status) => BridgeShed(
+  host: 'h',
+  name: name,
+  status: status,
+  activeNamespaces: const [],
+);
+
+/// An [OverviewData] carrying a single shed with the given status + caps. The
+/// shed defaults to the screen's target (`proj`, running) so tests only vary
+/// what they care about; pass [shedName] `'other'` to model a missing target.
+OverviewResult _data({
+  String shedName = 'proj',
+  BridgeShedStatus status = BridgeShedStatus.running,
+  BridgeRcCapabilities? caps,
+}) => OverviewData(
+  BridgeOverview(
+    server: const BridgeOverviewServer(version: '1', features: []),
+    sheds: [
+      BridgeOverviewShed(
+        shed: _shed(shedName, status),
+        sessions: const [],
+        capabilities: caps,
+      ),
+    ],
+    warnings: const [],
+  ),
+);
+
+/// Present caps that offer claude-rc + codex + shell (all installed).
+BridgeRcCapabilities _codexCaps() => _caps(
+  kinds: ['claude-rc', 'codex', 'shell'],
+  installed: {'claude': true, 'codex': true},
+);
+
+/// Present caps that offer only the base pair (claude-rc + shell).
+BridgeRcCapabilities _baseCaps() =>
+    _caps(kinds: ['claude-rc', 'shell'], installed: {'claude': true});
+
+/// Pump [CreateRcScreen] with `overviewProvider('h')` driven by [build] — a
+/// value → data, a thrown error → `AsyncError`, a never-completing future →
+/// `AsyncLoading`. [build] re-runs on every (re)compute so a captured counter
+/// can prove a Retry actually re-probes. Bounded pumps (never `pumpAndSettle`)
+/// so a loading/error case can't hang; `retry:(_,_)=>null` stops Riverpod from
+/// auto-retrying a thrown provider error.
 Future<void> _pump(
   WidgetTester tester,
-  Future<BridgeRcCapabilities?> Function() caps,
+  FutureOr<OverviewResult> Function() build,
 ) async {
   await tester.binding.setSurfaceSize(const Size(500, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        shedCapabilitiesProvider.overrideWith((ref, key) async => caps()),
-      ],
+      retry: (_, _) => null,
+      overrides: [overviewProvider.overrideWith((ref, name) async => build())],
       child: MaterialApp(
         theme: shedLightTheme,
         home: const CreateRcScreen(serverName: 'h', shedName: 'proj'),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
+Finder _kindChip(String wire) => find.byKey(ValueKey('createrc-kind-$wire'));
+
+bool _submitEnabled(WidgetTester tester) {
+  final button = tester.widget<FilledButton>(
+    find.descendant(
+      of: find.byKey(const ValueKey('createrc-submit')),
+      matching: find.byType(FilledButton),
+    ),
+  );
+  return button.onPressed != null;
 }
 
 void main() {
-  testWidgets('absent capabilities → claude + shell only (the safe base)', (
+  testWidgets('loading → spinner, no kind chips, submit disabled', (
     tester,
   ) async {
-    await _pump(tester, () async => null);
-    expect(
-      find.byKey(const ValueKey('createrc-kind-claude-rc')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('createrc-kind-shell')), findsOneWidget);
-    // No new-agent chips and no claude-broker chip when caps are absent.
-    expect(find.byKey(const ValueKey('createrc-kind-codex')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('createrc-kind-claude-broker')),
-      findsNothing,
-    );
-    // The old "codex-rc · soon" placeholder is gone.
-    expect(find.textContaining('soon'), findsNothing);
-  });
-
-  testWidgets('capabilities with installed agents → their chips appear', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      () async => _caps(
-        kinds: ['claude-rc', 'codex', 'opencode', 'cursor', 'shell'],
-        installed: {
-          'claude': true,
-          'codex': true,
-          'cursor': true,
-          'opencode': false,
-        },
-      ),
-    );
-    expect(
-      find.byKey(const ValueKey('createrc-kind-claude-rc')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('createrc-kind-codex')), findsOneWidget);
-    expect(find.byKey(const ValueKey('createrc-kind-cursor')), findsOneWidget);
-    expect(find.byKey(const ValueKey('createrc-kind-shell')), findsOneWidget);
-    // opencode advertised but NOT installed → gated out.
-    expect(find.byKey(const ValueKey('createrc-kind-opencode')), findsNothing);
-  });
-
-  testWidgets('selecting codex hides the claude-only permission dropdown', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      () async => _caps(
-        kinds: ['claude-rc', 'codex', 'shell'],
-        installed: {'claude': true, 'codex': true},
-      ),
-    );
-    // claude-rc is the default selection → the permission dropdown shows.
-    expect(
-      find.byKey(const ValueKey('createrc-permission-mode')),
-      findsOneWidget,
-    );
-    await tester.tap(find.byKey(const ValueKey('createrc-kind-codex')));
-    await tester.pumpAndSettle();
-    // codex is not a claude kind → no permission dropdown.
-    expect(
-      find.byKey(const ValueKey('createrc-permission-mode')),
-      findsNothing,
-    );
-    // codex accepts a prompt.
-    expect(find.byKey(const ValueKey('createrc-prompt')), findsOneWidget);
+    // A future that never completes → the screen stays in AsyncLoading.
+    await _pump(tester, () => Completer<OverviewResult>().future);
+    expect(find.byKey(const ValueKey('createrc-caps-loading')), findsOneWidget);
+    // No premature base chips while we still don't know the offering.
+    expect(_kindChip('claude-rc'), findsNothing);
+    expect(_kindChip('shell'), findsNothing);
+    expect(find.byKey(const ValueKey('createrc-caps-note')), findsNothing);
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
+    expect(_submitEnabled(tester), isFalse);
   });
 
   testWidgets(
-    'absent capabilities: the permission dropdown excludes the NEW generic '
-    '"skip" (an old binary rejects it) but keeps the historical claude set',
+    'error → Retry (no silent base chips); tapping it re-probes → present',
     (tester) async {
-      await _pump(tester, () async => null);
-      await tester.tap(find.byKey(const ValueKey('createrc-permission-mode')));
-      await tester.pumpAndSettle();
-      expect(find.text('skip'), findsNothing);
-      // Historical modes stay offered (parity with the shipped app).
-      expect(find.text('bypassPermissions'), findsOneWidget);
-      expect(find.text('plan'), findsOneWidget);
+      var calls = 0;
+      var present = false;
+      await _pump(tester, () {
+        calls++;
+        if (!present) throw StateError('probe boom');
+        return _data(caps: _codexCaps());
+      });
+      // Errored: NOT the silent claude+shell downgrade — a Retry instead.
+      expect(calls, 1);
+      expect(find.byKey(const ValueKey('createrc-caps-retry')), findsOneWidget);
+      expect(_kindChip('claude-rc'), findsNothing);
+      expect(_kindChip('shell'), findsNothing);
+      expect(_kindChip('codex'), findsNothing);
+
+      // Flip the source to a served overview, then Retry → the provider MUST
+      // re-run (counter proves it) and the screen transitions to present.
+      present = true;
+      await tester.tap(find.byKey(const ValueKey('createrc-caps-retry')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(calls, 2);
+      expect(_kindChip('codex'), findsOneWidget);
+      expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
     },
   );
 
+  testWidgets('OverviewUnsupported → quiet base + non-retry note (no Retry)', (
+    tester,
+  ) async {
+    await _pump(tester, () => const OverviewUnsupported());
+    // Base kinds are correct here (an old server has no /api/overview).
+    expect(_kindChip('claude-rc'), findsOneWidget);
+    expect(_kindChip('shell'), findsOneWidget);
+    expect(find.byKey(const ValueKey('createrc-caps-note')), findsOneWidget);
+    // A Retry would just re-404 forever — it must NOT be offered.
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
+    expect(find.textContaining('too old'), findsOneWidget);
+  });
+
+  testWidgets('running shed + null caps → base chips + note + Retry', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      () => _data(status: BridgeShedStatus.running, caps: null),
+    );
+    expect(_kindChip('claude-rc'), findsOneWidget);
+    expect(_kindChip('shell'), findsOneWidget);
+    expect(find.byKey(const ValueKey('createrc-caps-note')), findsOneWidget);
+    // A running shed's caps CAN self-heal on re-probe → Retry is offered.
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsOneWidget);
+    expect(find.textContaining('unavailable'), findsOneWidget);
+  });
+
+  testWidgets('stopped shed → base chips + "start the shed" note, NOT Retry', (
+    tester,
+  ) async {
+    await _pump(tester, () => _data(status: BridgeShedStatus.stopped));
+    expect(_kindChip('claude-rc'), findsOneWidget);
+    expect(_kindChip('shell'), findsOneWidget);
+    final note = find.byKey(const ValueKey('createrc-caps-note'));
+    expect(note, findsOneWidget);
+    expect(tester.widget<Text>(note).data, contains('Start the shed'));
+    // A stopped shed is not a failure — no "unreadable"/"couldn't" framing.
+    expect(find.textContaining('unreadable'), findsNothing);
+    expect(find.textContaining("Couldn't"), findsNothing);
+    // Nothing to re-probe until it's running.
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
+  });
+
+  testWidgets('missing shed → base chips + neutral note (no false failure)', (
+    tester,
+  ) async {
+    // Target `proj`, but the overview only knows `other` → not found.
+    await _pump(tester, () => _data(shedName: 'other'));
+    expect(_kindChip('claude-rc'), findsOneWidget);
+    expect(_kindChip('shell'), findsOneWidget);
+    expect(find.byKey(const ValueKey('createrc-caps-note')), findsOneWidget);
+    expect(find.textContaining('unreadable'), findsNothing);
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
+  });
+
+  testWidgets('present caps with codex installed → codex chip appears', (
+    tester,
+  ) async {
+    await _pump(tester, () => _data(caps: _codexCaps()));
+    expect(_kindChip('claude-rc'), findsOneWidget);
+    expect(_kindChip('codex'), findsOneWidget);
+    expect(_kindChip('shell'), findsOneWidget);
+    // No status note / retry when the real offering is known.
+    expect(find.byKey(const ValueKey('createrc-caps-note')), findsNothing);
+    expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
+    expect(_submitEnabled(tester), isTrue);
+  });
+
+  testWidgets('present-but-empty caps → no-kinds message, submit disabled', (
+    tester,
+  ) async {
+    await _pump(tester, () => _data(caps: _caps(kinds: const [])));
+    expect(find.byKey(const ValueKey('createrc-no-kinds')), findsOneWidget);
+    expect(_kindChip('claude-rc'), findsNothing);
+    expect(_submitEnabled(tester), isFalse);
+  });
+
   testWidgets(
-    'present capabilities: the full permission set including "skip" is offered',
+    'present caps offer the generic "skip"; a base state excludes it',
     (tester) async {
-      await _pump(
-        tester,
-        () async =>
-            _caps(kinds: ['claude-rc', 'shell'], installed: {'claude': true}),
-      );
+      // Present caps: the claude dropdown includes the NEW generic `skip`.
+      await _pump(tester, () => _data(caps: _baseCaps()));
       await tester.tap(find.byKey(const ValueKey('createrc-permission-mode')));
       await tester.pumpAndSettle();
       expect(find.text('skip'), findsOneWidget);
@@ -152,19 +245,53 @@ void main() {
     },
   );
 
-  testWidgets('present-but-empty capabilities → no kinds, create disabled', (
-    tester,
-  ) async {
-    await _pump(tester, () async => _caps(kinds: const []));
-    expect(find.byKey(const ValueKey('createrc-no-kinds')), findsOneWidget);
-    expect(find.byKey(const ValueKey('createrc-kind-claude-rc')), findsNothing);
-    // Create is disabled when there is nothing to create.
-    final button = tester.widget<FilledButton>(
-      find.descendant(
-        of: find.byKey(const ValueKey('createrc-submit')),
-        matching: find.byType(FilledButton),
-      ),
-    );
-    expect(button.onPressed, isNull);
-  });
+  testWidgets(
+    'a base state (unsupported) keeps the historical claude set but drops "skip"',
+    (tester) async {
+      // caps absent → an old binary would reject the generic `skip`.
+      await _pump(tester, () => const OverviewUnsupported());
+      await tester.tap(find.byKey(const ValueKey('createrc-permission-mode')));
+      await tester.pumpAndSettle();
+      expect(find.text('skip'), findsNothing);
+      expect(find.text('bypassPermissions'), findsOneWidget);
+      expect(find.text('plan'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'selecting codex then losing it (caps change) falls back sanely',
+    (tester) async {
+      var offerCodex = true;
+      await _pump(
+        tester,
+        () => _data(caps: offerCodex ? _codexCaps() : _baseCaps()),
+      );
+      // Pick codex → the claude-only permission dropdown hides.
+      await tester.tap(_kindChip('codex'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('createrc-permission-mode')),
+        findsNothing,
+      );
+
+      // Caps change so codex is no longer offered; re-probe the overview.
+      offerCodex = false;
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(CreateRcScreen)),
+      );
+      container.invalidate(overviewProvider('h'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // The vanished selection falls back to a still-offered kind (claude-rc):
+      // codex gone, submit still enabled, no crash, dropdown back.
+      expect(_kindChip('codex'), findsNothing);
+      expect(_kindChip('claude-rc'), findsOneWidget);
+      expect(_submitEnabled(tester), isTrue);
+      expect(
+        find.byKey(const ValueKey('createrc-permission-mode')),
+        findsOneWidget,
+      );
+    },
+  );
 }

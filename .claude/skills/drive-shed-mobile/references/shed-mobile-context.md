@@ -40,16 +40,81 @@ MSTATE: `screen=add-server step=input|confirm`. MRESULT: `add-server ok|error`,
 `add-server-connect error=…`.
 
 ### ShedListScreen — `sheds-screen`
+Sheds on one server. Each row now renders the shared **`ShedCard`** (see its
+section below) keyed `all-shed-<server>-<name>`, so the per-host list gains
+restart and exposes the identical `all-shed-*` actions — incl.
+`all-shed-delete-*` — that the cross-host Sheds tab shows, at both widths.
+
 | Key | What |
 |---|---|
 | `sheds-refresh` | refetch |
 | `sheds-create` | FAB → CreateShedScreen |
 | `sheds-empty` / `sheds-error` | states |
-| `shed-<name>` | shed tile |
-| `shed-start-<name>` / `shed-stop-<name>` / `shed-delete-<name>` | actions |
-| `shed-delete-confirm` | confirm delete dialog |
+| `shed-delete-confirm` | confirm-delete dialog (shared `confirmShedDelete`) |
 
-MSTATE: `screen=sheds server=X count=N`. MRESULT: `shed-start|shed-stop|shed-delete ok|error`.
+The old per-host `_ShedTile` keys are **retired** — use the `all-shed-*` keys:
+
+| Retired key | Replaced by |
+|---|---|
+| `shed-<name>` | `all-shed-<server>-<name>` (row identity) |
+| `shed-start-<name>` | `all-shed-start-<base>` |
+| `shed-stop-<name>` | `all-shed-stop-<base>` |
+| `shed-delete-<name>` | `all-shed-delete-<base>` |
+
+MSTATE: `screen=sheds server=X count=N`. MRESULT: the shared ShedCard tokens
+(`shed-start|shed-stop|shed-restart|shed-delete ok|error`).
+
+### Shed card (shared: cross-host Sheds view AND per-host ShedListScreen) — `ShedCard`
+Base is `<server>-<name>` (e.g. `h-web`). The **same** card renders on the
+cross-host Sheds tab and on the per-host list, so both surfaces expose the
+identical `all-shed-*` keys at both widths. It carries the state-appropriate
+lifecycle actions, a textual status label (`all-shed-status-<base>` — reading
+`running`/`stopped`/`starting`/…), and — on mobile — a whole-card tap that drills
+into the shed's sessions (the action buttons below win the gesture, so tapping
+one acts without also navigating).
+
+| Key | What |
+|---|---|
+| `all-shed-<server>-<name>` | row identity (the card element; drive target) |
+| `all-shed-open-<base>` | open the shed's sessions (→ ShedDetailScreen) |
+| `all-shed-start-<base>` | start — **only** when stopped |
+| `all-shed-stop-<base>` | stop — **only** when running |
+| `all-shed-restart-<base>` | restart (client-side stop→start) — **only** when running |
+| `all-shed-delete-<base>` | delete — shows `shed-delete-confirm` first; a rapid second tap can't stack a second dialog |
+| `all-shed-status-<base>` | textual status label |
+
+Action set by state: running → open/restart/stop/delete; stopped →
+open/start/delete. MRESULT: `shed-start|shed-stop|shed-restart|shed-delete
+ok|error`.
+
+### ShedDetailScreen (one shed's sessions) — `rc-screen`
+Reached by tapping a shed tile. The session list comes from `rcSessionsProvider`
+(SSH `shed-ext-rc list`); each row now renders the shared **`SessionCard`** (see
+its section below) keyed `all-session-<server>-<shed>-<slug>`, so the per-shed list
+gains the watch eye and the claude URL copy/open actions. Each card additionally
+reads the host `GET /api/overview` (for the watch capability); an overview
+error/404 only hides the eye — it does **not** blank the SSH-backed list.
+
+The old per-shed `_SessionCard` keys are **retired** — use the `all-session-*`
+keys instead:
+
+| Retired key | Replaced by |
+|---|---|
+| `rc-session-<slug>` | `all-session-<server>-<shed>-<slug>` (row identity) |
+| `rc-terminal-<slug>` | `all-session-open-<base>` (terminal pill) |
+| `rc-copy-<slug>` | `all-session-url-copy-<base>` |
+| `rc-open-<slug>` | `all-session-url-open-<base>` |
+| `rc-kill-<slug>` | `all-session-delete-<base>` |
+| `rc-state-<wire>` | (folded into the card's lifecycle badge — no discrete key) |
+
+| Key | What |
+|---|---|
+| `rc-refresh` | app-bar refetch (re-list over SSH) |
+| `rc-create` | FAB → CreateRcScreen |
+| `rc-empty` / `rc-error` | states |
+
+MSTATE: `screen=rc server=X shed=Y count=N`. MRESULT: the shared SessionCard tokens
+(`session-delete`, `session-url-copy`, `session-url-open`).
 
 ### CreateShedScreen — `create-shed-screen`
 | Key | What |
@@ -113,13 +178,17 @@ refresh (no polling).
 MSTATE: `all-sessions host=<name> reachable=true|false|needs-upgrade count=N live=t|f`
 (`live=t` when the `rc-events` SSE subscription is active for that host).
 
-### Session card (cross-host Sessions view) — `SessionCard`
-Base is `<server>-<shed>-<slug>` (e.g. `h-web-abc123`).
+### Session card (shared: cross-host Sessions view AND per-shed `rc-screen`) — `SessionCard`
+Base is `<server>-<shed>-<slug>` (e.g. `h-web-abc123`). The **same** card renders on
+the cross-host Sessions tab and on the per-shed session list (`ShedDetailScreen`),
+so both surfaces expose the identical `all-session-*` keys.
 
 | Key | What |
 |---|---|
 | `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI) |
 | `all-session-watch-<base>` | "watch" (eye) → CodexWatchScreen; **only** when caps `kind_features[kind].watch` |
+| `all-session-url-copy-<base>` | copy the claude.ai URL to the clipboard (MRESULT `session-url-copy ok`); **only** when the session carries a non-empty `url` (claude-rc/claude-broker) |
+| `all-session-url-open-<base>` | open that URL in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `session-url-open ok\|error`; same `url`-present gate |
 | `all-session-delete-<base>` | delete/kill the session |
 | `all-session-activity-<base>` | live activity badge — present only when lifecycle permits (ready-ish) AND activity is `working` (pulsing) / `needs_input` (steady) / `idle` (quiet); absent for `unknown`, and suppressed for needs-*/dead |
 | `all-session-lastmsg-<base>` | one-line last-message preview (when the hub reports one; suppressed with the activity badge for needs-*/dead — whole-dimension suppression) |
@@ -154,3 +223,29 @@ activity=<wire|none> msgs=N truncated=t|f input=enabled|disabled|blocked`.
 MRESULT: `codex-watch-input ok|error=…` (a 409 send → snackbar "Session is no
 longer waiting for input" + a state refresh); `codex-watch-handoff ok` (opened
 the TUI).
+
+### Terminal screen — `TerminalScreen` (Scaffold `terminal-screen`)
+The in-app xterm TUI, attached to a shed rc session's tmux pane over pinned SSH.
+Reached from `all-session-open-<base>` (the "›_ open" pill) and the codex-watch
+TUI handoff. Always dark chrome (the terminal is dark regardless of app theme).
+
+| Key | What |
+|---|---|
+| `terminal-back` | app-bar back (Detach — leaves the rc session running) |
+| `terminal-font-dec` / `terminal-font-inc` | shrink / grow the text (8–28pt) |
+| `terminal-paste` | paste the clipboard into the PTY (bracketed-paste aware) |
+| `terminal-copy` | copy the current xterm selection (MRESULT `terminal-copy ok`); `onPressed:null` (disabled) when there's no selection; the copied text is **never** logged (a login URL carries an auth token) |
+| `terminal-reconnect` | re-attach after the session ended/errored (only shown then) |
+| `terminal-connecting` / `terminal-error` / `terminal-ended` | connect spinner / connect-error text / "session ended (exit N)" banner |
+| `terminal-view` | the xterm `TerminalView` |
+| `term-key-ctrl`, `term-key-<id>` | the virtual-key toolbar (sticky-Ctrl + esc/tab/arrows/^C/…), hidden once the session ends |
+| `terminal-url-banner` | dismissible "Link detected" banner above the view — auto-detected login/any http(s) URL in the output (ANSI/OSC-stripped, bounded rolling tail, de-duped, hidden once the session ends). Shown only while the session is live |
+| `terminal-url-copy` | copy the detected URL to the clipboard (MRESULT `terminal-url-copy ok`; snackbar "Copied") |
+| `terminal-url-open` | open it in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `terminal-url-open ok\|error` |
+| `terminal-url-dismiss` | X → hide the banner; a redraw re-emitting the SAME URL won't re-surface it (a reconnect clears the memory) |
+
+MSTATE: `screen=terminal slug=<slug> state=ready|exited keyboardVisible=t|f
+inset=N font=N` (`state=ready` while live, `state=exited` after the pane closes);
+`terminal-url detected=t` when a URL banner is raised — the **URL itself is never
+logged**. MRESULT: `terminal-connect ok|error=…`, `terminal-copy ok`,
+`terminal-url-copy ok`, `terminal-url-open ok|error`.
