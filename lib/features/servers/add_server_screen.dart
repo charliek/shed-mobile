@@ -38,14 +38,17 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
       _error = null;
     });
     try {
-      final flow = await ref.read(addServerFlowProvider.future);
+      final flow = ref.read(addServerFlowProvider);
       final preview = await flow.preview(
         host: _host.text.trim(),
         sshPort: int.tryParse(_port.text.trim()) ?? 2222,
       );
       if (!mounted) return;
       setState(() => _preview = preview);
-      logDriveState('screen=add-server step=confirm host=${preview.host}');
+      logDriveState(
+        'screen=add-server step=confirm host=${preview.host} '
+        'auth=${preview.authMode}',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
@@ -61,7 +64,7 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
       _error = null;
     });
     try {
-      final flow = await ref.read(addServerFlowProvider.future);
+      final flow = ref.read(addServerFlowProvider);
       final name = _name.text.trim();
       await flow.commit(
         name: name.isEmpty ? _preview!.host : name,
@@ -138,6 +141,12 @@ class _AddServerScreenState extends ConsumerState<AddServerScreen> {
               ),
               const SizedBox(height: 8),
               Text('API: ${preview.apiUrl}'),
+              // The credential shape the server just issued. Informational — the
+              // app never configures it, and it can flip under a running app.
+              Text(
+                key: const ValueKey('addserver-authmode'),
+                'Auth: ${preview.isMtls ? 'mtls (client certificate)' : 'token'}',
+              ),
               const SizedBox(height: 16),
               PrimaryButton(
                 key: const ValueKey('addserver-confirm'),

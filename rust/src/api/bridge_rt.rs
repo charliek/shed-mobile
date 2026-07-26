@@ -33,6 +33,12 @@ pub(crate) static ACTIVE_WATCHERS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static ACTIVE_FORWARDERS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static ACTIVE_CREATE_STREAMS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static PENDING_MINTS: AtomicU64 = AtomicU64::new(0);
+/// Ephemeral add-server enrollment credentials currently alive (plan 002 §7 P7).
+/// Bumped when `preview::preview_add_server` generates its keypair, dropped by
+/// that keypair's `Drop` — so a non-zero reading after every preview has settled
+/// means a preview credential outlived its future, which is the ONE thing the
+/// disposal contract forbids.
+pub(crate) static PENDING_PREVIEW_CREDENTIALS: AtomicU64 = AtomicU64::new(0);
 /// Hermetic test-support SSE servers (local_sse.rs). Tracked so the zero-leak
 /// assertions stay HONEST — the accept loops would otherwise run detached until
 /// process exit (Codex review #11).
@@ -46,6 +52,7 @@ pub struct BridgeLiveCounters {
     pub active_create_streams: u64,
     pub pending_mints: u64,
     pub active_sse_servers: u64,
+    pub pending_preview_credentials: u64,
 }
 
 /// Read the current live-resource counters.
@@ -56,6 +63,7 @@ pub fn live_counters() -> BridgeLiveCounters {
         active_create_streams: ACTIVE_CREATE_STREAMS.load(Ordering::SeqCst),
         pending_mints: PENDING_MINTS.load(Ordering::SeqCst),
         active_sse_servers: ACTIVE_SSE_SERVERS.load(Ordering::SeqCst),
+        pending_preview_credentials: PENDING_PREVIEW_CREDENTIALS.load(Ordering::SeqCst),
     }
 }
 

@@ -19,11 +19,13 @@ host is a merged `HostCard` (status + disk usage). Bottom tabs are `nav-hosts` /
 | `hosts-empty` | empty-state text (from the shared HostGroups body) |
 | `host-card-<name>` | host card (mobile: tap → ShedListScreen) |
 | `host-card-error-<name>` | host card when the host is unreachable |
+| `host-card-enrolling-<name>` | host card while an mtls host is enrolling a client certificate (first authenticated call of the session; summary reads "Enrolling certificate…") |
 | `server-remove-<name>` | remove host (mobile card) |
 | `desktop-server-remove-<name>` | remove host (desktop pane card) |
 
 MSTATE: `screen=hosts hosts=N`; per card `host-card host=<name> reachable=t|f|-
-df=ok|error|loading sheds=N`; shell `layout=mobile|desktop section=hosts`.
+df=ok|error|loading sheds=N` (plus ` state=enrolling` while an mtls host has no
+adopted credential yet); shell `layout=mobile|desktop section=hosts`.
 MRESULT: `server-remove ok`.
 
 ### AddServerScreen — `add-server-screen`
@@ -34,10 +36,18 @@ MRESULT: `server-remove ok`.
 | `addserver-connect` | mint + fetch fingerprints |
 | `addserver-name` | display name (appears after connect) |
 | `addserver-confirm` | trust fingerprints + persist |
+| `addserver-authmode` | the credential shape the server issued (`token` / `mtls (client certificate)`) |
 | `addserver-error` | error text |
 
-MSTATE: `screen=add-server step=input|confirm`. MRESULT: `add-server ok|error`,
+MSTATE: `screen=add-server step=input|confirm` (the confirm line also carries
+`host=<host> auth=token|mtls`). MRESULT: `add-server ok|error`,
 `add-server-connect error=…`.
+
+Note: `addserver-connect` now drives the RUST preview (`previewAddServer`), which
+needs the app-scoped mint sink — it is registered in `main()`, so this works in
+the debug app as-is. An mtls server costs two SSH round-trips per add (the
+preview's certificate is discarded); expect the connect step to take a beat
+longer there.
 
 ### ShedListScreen — `sheds-screen`
 Sheds on one server. Each row now renders the shared **`ShedCard`** (see its

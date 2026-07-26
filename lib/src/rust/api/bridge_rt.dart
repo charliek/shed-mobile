@@ -20,6 +20,7 @@ class BridgeLiveCounters {
   final BigInt activeCreateStreams;
   final BigInt pendingMints;
   final BigInt activeSseServers;
+  final BigInt pendingPreviewCredentials;
 
   const BridgeLiveCounters({
     required this.activeWatchers,
@@ -27,6 +28,7 @@ class BridgeLiveCounters {
     required this.activeCreateStreams,
     required this.pendingMints,
     required this.activeSseServers,
+    required this.pendingPreviewCredentials,
   });
 
   @override
@@ -35,7 +37,8 @@ class BridgeLiveCounters {
       activeForwarders.hashCode ^
       activeCreateStreams.hashCode ^
       pendingMints.hashCode ^
-      activeSseServers.hashCode;
+      activeSseServers.hashCode ^
+      pendingPreviewCredentials.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -46,5 +49,6 @@ class BridgeLiveCounters {
           activeForwarders == other.activeForwarders &&
           activeCreateStreams == other.activeCreateStreams &&
           pendingMints == other.pendingMints &&
-          activeSseServers == other.activeSseServers;
+          activeSseServers == other.activeSseServers &&
+          pendingPreviewCredentials == other.pendingPreviewCredentials;
 }

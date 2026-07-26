@@ -43,6 +43,29 @@ class ServerStore {
     await _save(all);
   }
 
+  /// Persist the credential shape [name]'s server just issued (plan 002 §7 P1).
+  ///
+  /// Driven by the Rust credential-event stream, which fires on EVERY successful
+  /// mint — so this is idempotent and writes NOTHING when the stored value
+  /// already matches (a rotation must not cost a secure-storage write). A flip
+  /// to mtls also drops the stored seed token: it can no longer authenticate
+  /// anything, so keeping it is pure liability. An unknown [name] (the record was
+  /// removed while a mint was in flight) is a no-op.
+  ///
+  /// Returns whether anything was written.
+  Future<bool> setAuthMode(String name, String authMode) async {
+    final mode = normalizeAuthMode(authMode);
+    final all = await list();
+    final i = all.indexWhere((r) => r.name == name);
+    if (i < 0) return false;
+    final cur = all[i];
+    final dropSeed = mode == kAuthModeMtls && cur.controlToken != null;
+    if (cur.authMode == mode && !dropSeed) return false;
+    all[i] = cur.copyWith(authMode: mode, dropControlToken: dropSeed);
+    await _save(all);
+    return true;
+  }
+
   Future<void> remove(String name) async {
     final all = await list();
     all.removeWhere((r) => r.name == name);

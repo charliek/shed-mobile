@@ -46,6 +46,41 @@ void main() {
     );
   });
 
+  group('setAuthMode', () {
+    test('flips to mtls and drops the now-useless seed', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      expect(await store.setAuthMode('mini3', 'mtls'), isTrue);
+
+      final got = (await store.get('mini3'))!;
+      expect(got.authMode, kAuthModeMtls);
+      expect(got.controlToken, isNull);
+      expect(got.controlTokenExpiresAt, isNull);
+    });
+
+    test('is a no-op when nothing changed', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      // Adopted fires on every mint — a same-shape rotation must not write.
+      expect(await store.setAuthMode('mini3', 'token'), isFalse);
+      expect(await store.setAuthMode('mini3', 'mtls'), isTrue);
+      expect(await store.setAuthMode('mini3', 'mtls'), isFalse);
+    });
+
+    test('normalizes an unknown mode to token', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      await store.setAuthMode('mini3', 'mtls');
+      expect(await store.setAuthMode('mini3', 'future-mode'), isTrue);
+      expect((await store.get('mini3'))!.authMode, kAuthModeToken);
+    });
+
+    test('an unknown server is a no-op', () async {
+      final store = ServerStore(InMemorySecretStore());
+      expect(await store.setAuthMode('ghost', 'mtls'), isFalse);
+    });
+  });
+
   test('resolveTarget maps to a secure ServerTarget', () async {
     final store = ServerStore(InMemorySecretStore());
     await store.add(rec('mini3'));

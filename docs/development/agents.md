@@ -26,12 +26,12 @@ Reference repos (siblings on disk):
 |---|---|
 | Pure ports | `lib/core/` (shell quoting, fingerprints, SSE parser, `AppError`) |
 | SSH | `lib/ssh/` (`ssh_connection` primitive, `ssh_runner`, `bootstrap_service`, `pty_session`, `host_key_store`) |
-| Control token | `lib/control/` (`control_token_provider`, `token_bundle`) |
-| Shed API | `lib/shed/` (`shed_client`, `shed_dtos`) |
+| Rust core (HTTP/TLS/credentials) | `rust/src/api/` (`client`, `mint`, `preview`, `create_stream`, `watcher`) |
+| Bridge listeners | `lib/bridge/` (`mint_sink`, `credential_sink`, `bridge_adapters`) |
+| Shed API glue | `lib/shed/` (formatting + adapters over the bridge DTOs) |
 | RC | `lib/rc/` (`rc_service`, `rc_models`) |
 | Keys / identity | `lib/keys/` (`key_manager`, `identity_store`) |
 | Storage | `lib/storage/secret_store.dart` |
-| Net | `lib/net/pinned_http_client.dart` |
 | Providers | `lib/providers.dart` |
 | UI | `lib/features/{servers,sheds,rc,terminal,onboarding}/` |
 | Drive instrumentation | `lib/marionette/` |

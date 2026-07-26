@@ -8,8 +8,33 @@ import 'dto.dart';
 import 'dto_rc.dart';
 import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'client.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `inner`, `run`
+// These functions are ignored because they are not marked as `pub`: `build_provider`, `emit_credential_event`, `inner`, `run`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeCredentialObserver`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `on_credential_adopted`, `on_mode_changed`
+
+/// Register the app-scoped credential-event stream and stay alive until
+/// [`shutdown_credential_event_sink`] fires.
+///
+/// Same generation-guarded shape as the mint sink (`mint::set_mint_sink`): a new
+/// registration supersedes the previous one atomically, and a task whose await
+/// returns clears the slot only if it still owns it, so a sink installed while
+/// an older task was parked is never clobbered. Unlike the mint sink there is
+/// nothing to drain — these events are fire-and-forget notifications, not parked
+/// requests, so a lost one costs exactly one re-learn.
+///
+/// Register it at startup alongside the mint sink; a client built before it
+/// exists simply drops the events it would have delivered.
+Stream<BridgeCredentialEvent> setCredentialEventSink() =>
+    RustLib.instance.api.crateApiClientSetCredentialEventSink();
+
+/// End the credential-event stream cleanly (Dart calls this in `onDispose`
+/// before unsubscribing). Idempotent, and synchronous so Riverpod's `onDispose`
+/// can call it without an unawaitable future.
+void shutdownCredentialEventSink() =>
+    RustLib.instance.api.crateApiClientShutdownCredentialEventSink();
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeClient>>
 abstract class BridgeClient implements RustOpaqueInterface {
@@ -19,12 +44,21 @@ abstract class BridgeClient implements RustOpaqueInterface {
   /// inversion dials; `seed_token`/`seed_expiry_unix`, when present, prime the
   /// provider so the first request skips a mint. Fails with
   /// [`BridgeError::Config`] on a pin/URL mismatch (fail-closed).
+  ///
+  /// `auth_mode` is the shape the app last stored for this server
+  /// (`ServerRecord.authMode`) — `"token"`, `"mtls"`, or absent. It is a HINT,
+  /// not a switch: an unrecognized value (including the legacy `"secure"`
+  /// spelling) reads as token, and whatever the server issues at the next mint
+  /// wins regardless. Its one effect is that a stored seed token is ignored for
+  /// a server the app believes is in mtls mode, where a bearer cannot
+  /// authenticate anything.
   static Future<BridgeClient> connect({
     required String baseUrl,
     required String serverName,
     required String host,
     required int sshPort,
     String? tlsPin,
+    String? authMode,
     String? seedToken,
     BigInt? seedExpiryUnix,
   }) => RustLib.instance.api.crateApiClientBridgeClientConnect(
@@ -33,6 +67,7 @@ abstract class BridgeClient implements RustOpaqueInterface {
     host: host,
     sshPort: sshPort,
     tlsPin: tlsPin,
+    authMode: authMode,
     seedToken: seedToken,
     seedExpiryUnix: seedExpiryUnix,
   );
@@ -81,4 +116,30 @@ abstract class BridgeClient implements RustOpaqueInterface {
   Future<void> stop({required String name});
 
   Future<BridgeSystemDiskUsage> systemDf();
+}
+
+@freezed
+sealed class BridgeCredentialEvent with _$BridgeCredentialEvent {
+  const BridgeCredentialEvent._();
+
+  /// A mint succeeded and the provider adopted this shape. Fires on EVERY
+  /// successful mint, including a plain rotation — Dart's write must be
+  /// idempotent (it is: same `authMode`, same record).
+  const factory BridgeCredentialEvent.adopted({
+    required String server,
+
+    /// `"token"` or `"mtls"`.
+    required String authMode,
+    BigInt? expiresAtUnix,
+  }) = BridgeCredentialEvent_Adopted;
+
+  /// The DERIVED transition (plan 001 D5's `mode_changed`): the adopted shape
+  /// differs from the one last announced, in either direction. Always
+  /// immediately follows the [`Self::Adopted`] that caused it, so a consumer
+  /// handling both sees the adoption first. This is the event a UI reacts to;
+  /// persistence can hang off `Adopted` alone.
+  const factory BridgeCredentialEvent.modeChanged({
+    required String server,
+    required String authMode,
+  }) = BridgeCredentialEvent_ModeChanged;
 }

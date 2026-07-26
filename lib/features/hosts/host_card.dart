@@ -67,6 +67,21 @@ class HostCard extends ConsumerWidget {
     };
     final unsupported = overview.asData?.value is OverviewUnsupported;
 
+    // "Enrolling certificate" (plan 002 §7 P8): an mtls host whose credential
+    // this process has not adopted yet is not merely "loading" — its first call
+    // is blocked on a whole `_bootstrap` SSH round-trip that issues a client
+    // certificate, which is visibly slower than a warm request and is exactly
+    // what the wider first-call timeout budget in `overviewProvider` exists for.
+    // Naming it keeps a healthy-but-enrolling host from reading as a hung one.
+    // Clears as soon as Rust announces the adoption (the credential-event
+    // stream feeds `adoptedServersProvider`), not when the request completes.
+    final enrolling =
+        record.isMtls &&
+        overview.isLoading &&
+        !ref.watch(
+          adoptedServersProvider.select((s) => s.contains(serverName)),
+        );
+
     // Reachability gate: the overview is the primary (single) HTTP call. Data →
     // ok/summary; an old server (terminal value, never retried) → "Needs
     // upgrade" (warn); a transport error → unreachable (warn); loading → neutral.
@@ -79,7 +94,10 @@ class HostCard extends ConsumerWidget {
         ),
       },
       error: (_, _) => (ShedStatusTone.warn, 'Unreachable'),
-      loading: () => (ShedStatusTone.idle, 'Loading…'),
+      loading: () => (
+        ShedStatusTone.idle,
+        enrolling ? 'Enrolling certificate…' : 'Loading…',
+      ),
     );
 
     final BridgeSystemDiskUsage? df = data?.df;
@@ -106,12 +124,15 @@ class HostCard extends ConsumerWidget {
         : 'loading';
     logDriveState(
       'host-card host=$serverName reachable=$reachable df=$dfState '
-      'sheds=${data?.sheds.length ?? '-'}',
+      'sheds=${data?.sheds.length ?? '-'}'
+      '${enrolling ? ' state=enrolling' : ''}',
     );
 
     final key = ValueKey(
       overview.hasError || unsupported
           ? 'host-card-error-$serverName'
+          : enrolling
+          ? 'host-card-enrolling-$serverName'
           : 'host-card-$serverName',
     );
     final total = _total(df);

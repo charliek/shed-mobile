@@ -18,7 +18,6 @@ import 'src/rust/api/dto.dart';
 import 'src/rust/api/dto_rc.dart';
 import 'src/rust/api/error.dart';
 import 'src/rust/api/watcher.dart';
-import 'ssh/bootstrap_service.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
 import 'ssh/ssh_runner.dart';
@@ -96,15 +95,41 @@ final publicIdentityProvider = FutureProvider.autoDispose<PublicIdentity?>((
 /// TOFU host-key store used by the add-server flow (first contact).
 final addHostKeysProvider = Provider<HostKeyStore>((ref) => HostKeyStore());
 
-final addServerFlowProvider = FutureProvider<AddServerFlow>((ref) async {
-  final identities = await ref.watch(identitiesProvider.future);
-  final hostKeys = ref.watch(addHostKeysProvider);
-  return AddServerFlow(
+/// The add-server flow. Synchronous now: the SSH mint it drives runs through the
+/// app-scoped mint sink (which resolves the identities itself), so the flow needs
+/// only the store and the TOFU host-key store the preview's SSH leg pins into.
+final addServerFlowProvider = Provider<AddServerFlow>(
+  (ref) => AddServerFlow(
     ref.watch(serverStoreProvider),
-    BootstrapService(identities, hostKeys),
-    hostKeys,
-  );
-});
+    ref.watch(addHostKeysProvider),
+  ),
+);
+
+/// Servers whose credential the Rust provider has ADOPTED in this app session,
+/// fed by `CredentialSink`. Two consumers:
+///
+/// * the per-host overview timeout below — the FIRST authenticated call of a
+///   session may have to run a whole SSH enrollment first, and must not lose to
+///   a bound sized for the steady state;
+/// * the "enrolling certificate" state on the host card (plan 002 §7 P8).
+///
+/// Monotonic and session-scoped: it never un-marks a server, and it is not
+/// persisted (it answers "has this process minted yet?", not "what mode is this
+/// server?" — that is `ServerRecord.authMode`).
+final adoptedServersProvider =
+    NotifierProvider<AdoptedServersNotifier, Set<String>>(
+      AdoptedServersNotifier.new,
+    );
+
+class AdoptedServersNotifier extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => const {};
+
+  void markAdopted(String server) {
+    if (state.contains(server)) return;
+    state = {...state, server};
+  }
+}
 
 final serversProvider = FutureProvider<List<ServerRecord>>(
   (ref) async => ref.watch(serverStoreProvider).list(),
@@ -123,7 +148,11 @@ HostKeyStore pinnedHostKeysFor(ServerRecord rec) => HostKeyStore(
 /// the app-scoped mint sink (see `lib/bridge/mint_sink.dart`). The persisted
 /// control token seeds the provider so the first request can skip a mint.
 Future<BridgeClient> _buildBridgeClient(ServerRecord rec) {
-  final seed = rec.controlToken;
+  // A stored bearer is meaningless for a server the app believes issues
+  // certificates, so it is not even handed across the bridge. Rust applies the
+  // same rule to whatever it receives (`AuthMode::from_wire` + the seed gate);
+  // this keeps the crossing itself minimal.
+  final seed = rec.isMtls ? null : rec.controlToken;
   final seedExpiry = rec.controlTokenExpiresAt;
   return BridgeClient.connect(
     baseUrl: rec.apiUrl,
@@ -131,6 +160,9 @@ Future<BridgeClient> _buildBridgeClient(ServerRecord rec) {
     host: rec.host,
     sshPort: rec.sshPort,
     tlsPin: rec.tlsCertFingerprint,
+    // A HINT, never a switch: whatever the server issues at the next mint wins,
+    // and the credential-event stream writes the answer back to the record.
+    authMode: rec.authMode,
     seedToken: seed,
     seedExpiryUnix: (seed != null && seedExpiry != null)
         ? BigInt.from(seedExpiry.millisecondsSinceEpoch ~/ 1000)
@@ -190,6 +222,27 @@ class AppSectionNotifier extends Notifier<AppSection> {
 /// fill in independently rather than all-or-nothing.
 const _hostFanoutTimeout = Duration(seconds: 12);
 
+/// The bound for a host's FIRST authenticated call of the session (plan 002
+/// §7 P8's budget alignment).
+///
+/// 12 s is a steady-state bound: it assumes a credential is already held, so the
+/// call is one HTTPS round-trip. The first call of a session may instead have to
+/// run a full enrollment first — a `_bootstrap` SSH dial + remote exec, which
+/// Dart bounds at 15 s (`BootstrapService.timeout`) — and then the real request.
+/// A valid-but-slow mtls enrollment would lose to a 12 s outer bound every time,
+/// which would present a HEALTHY server as unreachable.
+///
+/// So the first call gets a bound that strictly dominates the SSH leg that
+/// actually gates it (15 s + the request + margin), and the steady state keeps
+/// its fast 12 s failure so an offline host still degrades quickly. This is
+/// mode-independent on purpose: a token-mode host with an expired seed mints on
+/// its first call too, and had exactly the same latent problem.
+///
+/// Rust's own 45 s mint timeout stays a pure backstop above both — it can only
+/// fire if the Dart sink never answers at all, and cancelling this call aborts
+/// the Rust request (and frees its parked mint) via the abort-on-drop guard.
+const _enrollingFanoutTimeout = Duration(seconds: 30);
+
 /// The outcome of one host's overview fetch. Sealed so the old-server case is a
 /// terminal VALUE the views render as a "needs upgrade" card, not a retryable
 /// error: Riverpod 3 auto-retries thrown `Exception`s, and a server that
@@ -223,10 +276,12 @@ class OverviewUnsupported extends OverviewResult {
 final overviewProvider = FutureProvider.autoDispose
     .family<OverviewResult, String>((ref, serverName) async {
       final client = await ref.watch(shedClientProvider(serverName).future);
+      // read, not watch: the bound is decided once per call. Watching would make
+      // every host's first adoption invalidate every other host's overview.
+      final enrolled = ref.read(adoptedServersProvider).contains(serverName);
+      final bound = enrolled ? _hostFanoutTimeout : _enrollingFanoutTimeout;
       try {
-        return OverviewData(
-          await client.overview().timeout(_hostFanoutTimeout),
-        );
+        return OverviewData(await client.overview().timeout(bound));
       } on BridgeError_BadStatus catch (e) {
         // A top-level 404 can only mean the /api/overview route doesn't exist
         // (server too old) — the terminal upgrade-required value, never retried.

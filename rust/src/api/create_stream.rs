@@ -14,15 +14,32 @@
 //! task self-tears-down on completion so the counter is honest even if Dart never
 //! cancels.
 //!
-//! **401 behavior — ACCEPTED CHANGE, NOT parity (Codex review #8):** shed-core's
-//! `create_stream` is deliberately ONE-SHOT on a stream-open 401 — it invalidates
-//! the token it sent (so the NEXT create re-mints) and returns `BadStatus(401)`
-//! immediately (`http.rs` create_stream, Phase A). The pre-bridge Dart create
-//! retried a stream-open 401 once transparently. B2 does NOT restore that retry:
-//! a stale-token create surfaces `BridgeError::BadStatus{401}` (an `Error` update)
-//! and the USER retries (the re-mint already happened). This is recorded as an
-//! accepted behavior change; restoring retry-once belongs in shed-core
-//! `create_stream`, not the bridge (candidate shed follow-up).
+//! **401 behavior — RESTORED upstream (plan 002 C0/C2a; supersedes the B2 note
+//! kept here since Codex review #8).** The bridge still adds no retry of its
+//! own — but it no longer has to. shed-core's create path now routes through the
+//! ONE re-auth seam every request uses (`http.rs` `send_resolved`/`send_authed`),
+//! so a stream-open refusal that is auth-shaped — an HTTP 401 **or** a peer TLS
+//! alert naming a certificate problem, the shape an mtls client gets — is
+//! invalidated, re-minted, and retried ONCE on a FRESH connection, transparently,
+//! before this module sees anything. The user-visible effect is the reverse of
+//! what this comment used to describe: a stale credential now recovers silently
+//! instead of surfacing `BadStatus{401}` for the user to retry by hand.
+//!
+//! What still reaches Dart as an `Error` update:
+//!   * a refusal that survived the retry (the re-minted credential was refused
+//!     too, or came back with the SAME identity — a guaranteed second rejection,
+//!     so shed-core skips the retry rather than spending it);
+//!   * a refusal whose real cause is a failed MINT. When nothing could be
+//!     presented because the mint failed, the reported error is that mint
+//!     failure, not the bare 401 — which for mobile means the message names the
+//!     SSH/bootstrap problem the user can act on. `BridgeError::Transport` (or a
+//!     typed `Token*` variant recovered from the marked message, see `error.rs`)
+//!     rather than `BadStatus{401}`.
+//!
+//! So a `BadStatus{401}` from create is now a genuinely refused, freshly minted
+//! credential — a server-side authorization problem — and not "our token went
+//! stale". Nothing in this module changes for it; the note exists so the next
+//! reader does not go looking for a retry that was already added upstream.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -82,7 +99,9 @@ impl CreateSink for ForwardingCreateSink {
         let _ = self.sink.add(BridgeCreateUpdate::Progress { message });
     }
     fn on_complete(&self, shed: Shed) {
-        let _ = self.sink.add(BridgeCreateUpdate::Complete { shed: shed.into() });
+        let _ = self
+            .sink
+            .add(BridgeCreateUpdate::Complete { shed: shed.into() });
     }
     fn on_error(&self, message: String) {
         let _ = self.sink.add(BridgeCreateUpdate::Error { message });

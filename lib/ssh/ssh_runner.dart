@@ -27,6 +27,23 @@ typedef SshRun =
       Duration timeout,
     });
 
+/// The signature shared by [SshRunner.runWire] and the fakes that stand in for
+/// it: one ALREADY-COMPOSED wire command, not an argv list.
+///
+/// Distinct from [SshRun] on purpose. Every normal path sends a command a remote
+/// `bash -lc` re-parses, so [SshRun]'s argv is POSIX-quoted by `wireCmd`. The
+/// reserved `_bootstrap` channel has NO shell on the far side — shed-server reads
+/// `sess.RawCommand()` and splits it on whitespace — so its request line is
+/// COMPOSED, and quoting it would corrupt it (plan 002 §7 P2; see
+/// [BootstrapService.requestLine]). This seam is what lets that composition be
+/// asserted byte-for-byte in a unit test.
+typedef SshRunWire =
+    Future<SshResult> Function(
+      String command, {
+      String? stdin,
+      Duration timeout,
+    });
+
 /// Runs one-shot commands over SSH as `<user>@host`, pinned to the stored host
 /// key. Port of apps/api/src/lib/ssh.ts `run` for the ssh target — the
 /// orchestrator shells out to the `ssh` binary; here dartssh2 speaks the protocol
@@ -58,6 +75,17 @@ class SshRunner {
     List<String> argv, {
     String? stdin,
     Duration timeout = const Duration(seconds: 15),
+  }) => runWire(wireCmd(argv), stdin: stdin, timeout: timeout);
+
+  /// Connect and run one ALREADY-COMPOSED [command] verbatim — no quoting layer
+  /// at all. Only the `_bootstrap` mint uses this (that channel has no remote
+  /// shell); everything else goes through [run], which quotes its argv. Callers
+  /// of this method own the wire shape and must not interpolate untrusted data
+  /// into it.
+  Future<SshResult> runWire(
+    String command, {
+    String? stdin,
+    Duration timeout = const Duration(seconds: 15),
   }) {
     return withSshClient(
       host: host,
@@ -66,7 +94,7 @@ class SshRunner {
       identities: identities,
       hostKeys: hostKeys,
       timeout: timeout,
-      body: (client) => _exec(client, wireCmd(argv), stdin).timeout(timeout),
+      body: (client) => _exec(client, command, stdin).timeout(timeout),
     );
   }
 

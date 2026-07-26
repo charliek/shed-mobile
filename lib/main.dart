@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import 'app/app_shell.dart';
+import 'bridge/credential_sink.dart';
 import 'bridge/mint_sink.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'providers.dart';
@@ -24,13 +25,21 @@ Future<void> main() async {
   // Load the Rust core (shed-core over FRB) before anything touches the bridge.
   await RustLib.init();
 
-  // One app-scoped container shared by the widget tree AND the app-scoped mint
-  // sink. The mint listener MUST be registered before any BridgeClient is built
-  // (listener-before-client, plan §3.2) — so wire it here, then hand the SAME
+  // One app-scoped container shared by the widget tree AND both app-scoped
+  // bridge listeners. BOTH MUST be registered before any BridgeClient is built
+  // (listener-before-client, plan §3.2) — so wire them here, then hand the SAME
   // container to the widget tree via UncontrolledProviderScope.
+  //
+  // Credentials first: a mint can only be emitted once the mint sink exists, and
+  // the credential event it produces has nowhere to go if that listener isn't up
+  // yet (Rust drops events with no sink), which would silently lose the learned
+  // auth mode for that launch.
   final container = ProviderContainer();
+  final credentialSink = CredentialSink.register(container);
   final mintSink = MintSink.register(container);
-  WidgetsBinding.instance.addObserver(_MintSinkLifecycle(mintSink));
+  WidgetsBinding.instance.addObserver(
+    _BridgeSinkLifecycle(mintSink, credentialSink),
+  );
 
   runApp(
     UncontrolledProviderScope(
@@ -40,18 +49,21 @@ Future<void> main() async {
   );
 }
 
-/// Tears the mint sink down when the app process is detached (Rust-side shutdown
-/// + Dart unsubscribe). The sink is otherwise app-lifetime (one listener).
-class _MintSinkLifecycle with WidgetsBindingObserver {
-  _MintSinkLifecycle(this._sink);
+/// Tears both bridge sinks down when the app process is detached (Rust-side
+/// shutdown + Dart unsubscribe). They are otherwise app-lifetime (one listener
+/// each). Mints first: resolving every parked mint can produce a final credential
+/// event, which the credential listener should still be up to persist.
+class _BridgeSinkLifecycle with WidgetsBindingObserver {
+  _BridgeSinkLifecycle(this._mint, this._credentials);
 
-  final MintSink _sink;
+  final MintSink _mint;
+  final CredentialSink _credentials;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
       // Fire-and-forget: the process is going away; best-effort clean teardown.
-      _sink.dispose();
+      _mint.dispose().whenComplete(_credentials.dispose);
     }
   }
 }

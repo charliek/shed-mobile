@@ -63,3 +63,7 @@ android/app/upload-keystore.jks
 # FRB spike: local sibling-checkout cargo patch override (never committed).
 # Copy rust/.cargo/config.toml.template -> rust/.cargo/config.toml for local dev.
 rust/.cargo/config.toml
+
+# `make cargo-test` stashes the canonical lock here while the local [patch] is
+# resolved, and restores it on exit. Only visible if a run is killed uncleanly.
+rust/.Cargo.lock.canonical
