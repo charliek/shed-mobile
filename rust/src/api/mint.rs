@@ -290,7 +290,7 @@ pub fn shutdown_mint_sink() {
 /// indivisible step. Lock order is registry → pending, and nothing takes them
 /// the other way round: [`run_mint_raw`] parks (pending) and releases before it
 /// emits (registry).
-fn drain_pending_locked() {
+pub(crate) fn drain_pending_locked() {
     let entries: Vec<(String, oneshot::Sender<MintResolution>)> =
         pending().lock().unwrap().drain().collect();
     for (_id, tx) in entries {
@@ -632,6 +632,7 @@ mod tests {
 
     #[test]
     fn unknown_submit_is_benign() {
+        let _g = test_guard();
         let r = submit_mint_result(
             "does-not-exist".to_string(),
             BridgeMintOutcome::Failure { code: "x".into() },
@@ -864,6 +865,14 @@ mod tests {
 
     #[test]
     fn pending_registry_single_resume_and_counter_discipline() {
+        // The guard is load-bearing, not decoration: this test parks an entry in
+        // the PROCESS-GLOBAL pending map and then submits against it, while every
+        // sink-registering test drains that same map on registration (eviction
+        // resolves the outgoing sink's parked mints under one lock — the
+        // shutdown-race fix). Unguarded, a concurrent `install_sink_hook` removes
+        // "req-x" before the submit lands and this fails with "rejected (unknown
+        // request_id)" — the CI flake in run 30197516584.
+        let _g = test_guard();
         // Drive the registry directly (no async sink): a parked entry resolves
         // exactly once; a duplicate/late submit for the same id is benign; the
         // leak counter tracks the map exactly.
@@ -1386,6 +1395,79 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// **The parallelism rule, enforced instead of documented.**
+    ///
+    /// The bridge's mint machinery is process-global by design (one app-scoped
+    /// sink, one pending map, one set of leak counters), and `cargo test` runs
+    /// tests on many threads — so a test that touches any of it must hold
+    /// `test_guard()`. Forgetting is not a local failure: registering a sink
+    /// EVICTS the previous one, and eviction drains the pending map, so an
+    /// unguarded test's parked request is resolved and removed by a neighbour
+    /// that has nothing to do with it. That is a flake that reproduces on CI's
+    /// machine shape and not on a developer's (run 30197516584), which is the
+    /// worst kind to leave to a convention.
+    ///
+    /// So: any `#[test]` whose body mentions the shared state must also mention
+    /// `test_guard()`. Cheap, mechanical, and it fails on the commit that
+    /// introduces the omission rather than three CI runs later.
+    #[test]
+    fn every_test_touching_global_state_takes_the_guard() {
+        /// Touching any of these means touching state another test can see.
+        const GLOBAL_STATE: &[&str] = &[
+            "pending()",
+            "PENDING_MINTS",
+            "PENDING_PREVIEW_CREDENTIALS",
+            "submit_mint_result(",
+            "install_sink_hook(",
+            "install_mint_emitter(",
+            "shutdown_mint_sink(",
+            "MINT_SINK",
+            "CRED_SINK",
+            "live_counters(",
+            "credential_events_for(",
+            "preview_add_server(",
+            "run_preview(",
+            "build_provider(",
+            "mint_credential(",
+        ];
+        // This test's own body quotes every marker above, so it would flag itself.
+        const SELF: &str = "every_test_touching_global_state_takes_the_guard";
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
+        let mut offenders = Vec::new();
+        let mut checked = 0usize;
+        for name in ["mint.rs", "preview.rs", "client.rs"] {
+            let text = std::fs::read_to_string(src.join(name)).unwrap();
+            let tests = text
+                .split_at(text.find("#[cfg(test)]").expect("a test module"))
+                .1;
+            for chunk in tests.split("\n    #[test]\n").skip(1) {
+                // Stop at the end of the test fn so a helper defined after it is
+                // not attributed to it.
+                let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
+                let fn_name = body
+                    .lines()
+                    .find_map(|l| l.trim().strip_prefix("fn "))
+                    .map(|l| l.split('(').next().unwrap_or("?").to_string())
+                    .unwrap_or_else(|| "?".into());
+                if fn_name == SELF {
+                    continue;
+                }
+                checked += 1;
+                let touches = GLOBAL_STATE.iter().any(|m| body.contains(m));
+                if touches && !body.contains("test_guard()") {
+                    offenders.push(format!("{name}::{fn_name}"));
+                }
+            }
+        }
+        assert!(checked > 30, "the scan found almost no tests ({checked})");
+        assert!(
+            offenders.is_empty(),
+            "these tests touch process-global bridge state without `let _g = test_guard();`: \
+             {offenders:?}\nSee testsupport::TEST_LOCK for why that is a race, not a style point."
+        );
     }
 
     fn collect_dart(dir: &std::path::Path, out: &mut Vec<(std::path::PathBuf, String)>) {

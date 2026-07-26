@@ -45,9 +45,22 @@ impl<T> Emitter<T> for ClosedEmitter {
     }
 }
 
-/// Serializes every test that touches the process-global mint state (the sink
-/// registries, the pending map, the leak counters), which would otherwise
-/// interleave across `cargo test`'s threads.
+/// Serializes every test that touches the process-global bridge state — the two
+/// sink registries, the pending-mint map, the leak counters, the preview
+/// single-flight — which would otherwise interleave across `cargo test`'s
+/// threads.
+///
+/// **The rule: a test that touches ANY of that state must hold a [`TestGuard`]
+/// for its whole body.** It is not advisory. Registering a sink
+/// ([`install_sink_hook`]) EVICTS the previous registration, and eviction drains
+/// the pending-mint map by design (`mint::drain_pending_locked` — that atomicity
+/// is the shutdown-race fix) — so one guarded test starting up will resolve and
+/// remove an unguarded test's parked request out from under it, and decrement
+/// the leak counter it was asserting on. That is exactly the CI flake this
+/// comment exists to prevent: `pending_registry_single_resume_and_counter_
+/// discipline` submitting its own id and being told "rejected (unknown
+/// request_id)". `every_test_touching_global_state_takes_the_guard` enforces the
+/// rule mechanically.
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Hold the global test lock for the duration of a test, tearing down whatever
@@ -57,18 +70,19 @@ pub(crate) struct TestGuard(#[allow(dead_code)] MutexGuard<'static, ()>);
 
 impl Drop for TestGuard {
     fn drop(&mut self) {
-        reset_sinks();
+        reset_globals();
     }
 }
 
-/// Acquire the global test lock, starting from a clean slate: no mint sink, and
-/// a credential sink that captures into [`credential_events_for`].
+/// Acquire the global test lock, starting from a clean slate: no mint sink, an
+/// EMPTY pending map, and a credential sink that captures into
+/// [`credential_events_for`].
 ///
 /// Recovers from a poisoned mutex — a panicking test must fail on its own
 /// assertion, not cascade into every later one.
 pub(crate) fn test_guard() -> TestGuard {
     let g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    reset_sinks();
+    reset_globals();
     // Credential events are asserted by nearly every client test, and delivery is
     // asynchronous, so the capturing sink is always installed rather than opted
     // into per test.
@@ -81,8 +95,16 @@ pub(crate) fn test_guard() -> TestGuard {
     TestGuard(g)
 }
 
-fn reset_sinks() {
-    MINT_SINK.shutdown(|| {});
+/// Return every process-global the bridge tests share to its zero state, on both
+/// sides of a test.
+///
+/// The pending map is drained here (not just the sinks) so the isolation is
+/// STRUCTURAL rather than a matter of each test cleaning up after itself: a test
+/// that leaks a parked request — because it panicked mid-flight, or because an
+/// `FnEmitter` never answered — cannot leave it behind to be found, resolved, or
+/// counted by the next test.
+fn reset_globals() {
+    MINT_SINK.shutdown(super::mint::drain_pending_locked);
     CRED_SINK.shutdown(|| {});
 }
 
