@@ -11,6 +11,7 @@ import 'api/dto_rc.dart';
 import 'api/error.dart';
 import 'api/local_sse.dart';
 import 'api/mint.dart';
+import 'api/preview.dart';
 import 'api/rc_runner.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
@@ -77,7 +78,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0-beta.5';
 
   @override
-  int get rustContentHash => 1510541065;
+  int get rustContentHash => 1581507483;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -95,6 +96,7 @@ abstract class RustLibApi extends BaseApi {
     required String host,
     required int sshPort,
     String? tlsPin,
+    String? authMode,
     String? seedToken,
     BigInt? seedExpiryUnix,
   });
@@ -202,6 +204,12 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateApiMintMintRequestIsTokenFree({required BridgeMintRequest req});
 
+  Future<BridgeAddServerPreview> crateApiPreviewPreviewAddServer({
+    required String host,
+    required int sshPort,
+    required BigInt timeoutMs,
+  });
+
   Future<BridgeRcInvocation> crateApiRcRunnerRcCreateInvocation({
     required String kind,
     required String name,
@@ -244,11 +252,15 @@ abstract class RustLibApi extends BaseApi {
     required BridgeWatcherHandle handle,
   });
 
+  Stream<BridgeCredentialEvent> crateApiClientSetCredentialEventSink();
+
   Stream<BridgeMintRequest> crateApiMintSetMintSink();
 
   Future<String> crateApiShedShedAppProbe();
 
   Future<String> crateApiShedShedCoreProbe({required String echo});
+
+  void crateApiClientShutdownCredentialEventSink();
 
   void crateApiMintShutdownMintSink();
 
@@ -318,6 +330,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String host,
     required int sshPort,
     String? tlsPin,
+    String? authMode,
     String? seedToken,
     BigInt? seedExpiryUnix,
   }) {
@@ -330,6 +343,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(host, serializer);
           sse_encode_u_16(sshPort, serializer);
           sse_encode_opt_String(tlsPin, serializer);
+          sse_encode_opt_String(authMode, serializer);
           sse_encode_opt_String(seedToken, serializer);
           sse_encode_opt_box_autoadd_u_64(seedExpiryUnix, serializer);
           pdeCallFfi(
@@ -351,6 +365,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           host,
           sshPort,
           tlsPin,
+          authMode,
           seedToken,
           seedExpiryUnix,
         ],
@@ -368,6 +383,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           'host',
           'sshPort',
           'tlsPin',
+          'authMode',
           'seedToken',
           'seedExpiryUnix',
         ],
@@ -1213,6 +1229,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<BridgeAddServerPreview> crateApiPreviewPreviewAddServer({
+    required String host,
+    required int sshPort,
+    required BigInt timeoutMs,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(host, serializer);
+          sse_encode_u_16(sshPort, serializer);
+          sse_encode_u_64(timeoutMs, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 26,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_add_server_preview,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiPreviewPreviewAddServerConstMeta,
+        argValues: [host, sshPort, timeoutMs],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPreviewPreviewAddServerConstMeta =>
+      const TaskConstMeta(
+        debugName: 'preview_add_server',
+        argNames: ['host', 'sshPort', 'timeoutMs'],
+      );
+
+  @override
   Future<BridgeRcInvocation> crateApiRcRunnerRcCreateInvocation({
     required String kind,
     required String name,
@@ -1238,7 +1291,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1293,7 +1346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1330,7 +1383,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1367,7 +1420,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1398,7 +1451,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1425,7 +1478,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1457,7 +1510,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1496,7 +1549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 33,
+              funcId: 34,
               port: port_,
             );
           },
@@ -1520,6 +1573,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Stream<BridgeCredentialEvent> crateApiClientSetCredentialEventSink() {
+    final sink = RustStreamSink<BridgeCredentialEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_bridge_credential_event_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 35,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiClientSetCredentialEventSinkConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiClientSetCredentialEventSinkConstMeta =>
+      const TaskConstMeta(
+        debugName: 'set_credential_event_sink',
+        argNames: ['sink'],
+      );
+
+  @override
   Stream<BridgeMintRequest> crateApiMintSetMintSink() {
     final sink = RustStreamSink<BridgeMintRequest>();
     unawaited(
@@ -1531,7 +1619,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 34,
+              funcId: 36,
               port: port_,
             );
           },
@@ -1560,7 +1648,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1588,7 +1676,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1607,12 +1695,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'shed_core_probe', argNames: ['echo']);
 
   @override
+  void crateApiClientShutdownCredentialEventSink() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClientShutdownCredentialEventSinkConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientShutdownCredentialEventSinkConstMeta =>
+      const TaskConstMeta(
+        debugName: 'shutdown_credential_event_sink',
+        argNames: [],
+      );
+
+  @override
   void crateApiMintShutdownMintSink() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1637,7 +1750,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1668,7 +1781,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1699,7 +1812,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1728,7 +1841,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             handle,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1758,7 +1871,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1955,6 +2068,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<BridgeCredentialEvent>
+  dco_decode_StreamSink_bridge_credential_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
   RustStreamSink<BridgeMintRequest>
   dco_decode_StreamSink_bridge_mint_request_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -2077,6 +2197,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeAddServerPreview dco_decode_bridge_add_server_preview(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return BridgeAddServerPreview(
+      authMode: dco_decode_String(arr[0]),
+      tlsCertFingerprint: dco_decode_String(arr[1]),
+      httpsPort: dco_decode_u_16(arr[2]),
+      token: dco_decode_opt_String(arr[3]),
+      tokenExpiresAtUnix: dco_decode_opt_box_autoadd_u_64(arr[4]),
+    );
+  }
+
+  @protected
   BridgeControlBundle dco_decode_bridge_control_bundle(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2121,6 +2256,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         );
       case 2:
         return BridgeCreateUpdate_Error(message: dco_decode_String(raw[1]));
+      default:
+        throw Exception('unreachable');
+    }
+  }
+
+  @protected
+  BridgeCredentialEvent dco_decode_bridge_credential_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return BridgeCredentialEvent_Adopted(
+          server: dco_decode_String(raw[1]),
+          authMode: dco_decode_String(raw[2]),
+          expiresAtUnix: dco_decode_opt_box_autoadd_u_64(raw[3]),
+        );
+      case 1:
+        return BridgeCredentialEvent_ModeChanged(
+          server: dco_decode_String(raw[1]),
+          authMode: dco_decode_String(raw[2]),
+        );
       default:
         throw Exception('unreachable');
     }
@@ -2205,14 +2360,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BridgeLiveCounters dco_decode_bridge_live_counters(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return BridgeLiveCounters(
       activeWatchers: dco_decode_u_64(arr[0]),
       activeForwarders: dco_decode_u_64(arr[1]),
       activeCreateStreams: dco_decode_u_64(arr[2]),
       pendingMints: dco_decode_u_64(arr[3]),
       activeSseServers: dco_decode_u_64(arr[4]),
+      pendingPreviewCredentials: dco_decode_u_64(arr[5]),
     );
   }
 
@@ -2230,17 +2386,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMintPurpose dco_decode_bridge_mint_purpose(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeMintPurpose.values[raw as int];
+  }
+
+  @protected
   BridgeMintRequest dco_decode_bridge_mint_request(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return BridgeMintRequest(
       requestId: dco_decode_String(arr[0]),
-      host: dco_decode_String(arr[1]),
-      sshPort: dco_decode_u_16(arr[2]),
-      baseUrl: dco_decode_String(arr[3]),
-      expectedTlsPin: dco_decode_opt_String(arr[4]),
+      purpose: dco_decode_bridge_mint_purpose(arr[1]),
+      host: dco_decode_String(arr[2]),
+      sshPort: dco_decode_u_16(arr[3]),
+      baseUrl: dco_decode_String(arr[4]),
+      expectedTlsPin: dco_decode_opt_String(arr[5]),
+      extraArgs: dco_decode_list_String(arr[6]),
     );
   }
 
@@ -3030,6 +3194,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<BridgeCredentialEvent>
+  sse_decode_StreamSink_bridge_credential_event_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
   RustStreamSink<BridgeMintRequest>
   sse_decode_StreamSink_bridge_mint_request_Sse(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3169,6 +3342,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeAddServerPreview sse_decode_bridge_add_server_preview(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_authMode = sse_decode_String(deserializer);
+    var var_tlsCertFingerprint = sse_decode_String(deserializer);
+    var var_httpsPort = sse_decode_u_16(deserializer);
+    var var_token = sse_decode_opt_String(deserializer);
+    var var_tokenExpiresAtUnix = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return BridgeAddServerPreview(
+      authMode: var_authMode,
+      tlsCertFingerprint: var_tlsCertFingerprint,
+      httpsPort: var_httpsPort,
+      token: var_token,
+      tokenExpiresAtUnix: var_tokenExpiresAtUnix,
+    );
+  }
+
+  @protected
   BridgeControlBundle sse_decode_bridge_control_bundle(
     SseDeserializer deserializer,
   ) {
@@ -3229,6 +3421,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 2:
         var var_message = sse_decode_String(deserializer);
         return BridgeCreateUpdate_Error(message: var_message);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  BridgeCredentialEvent sse_decode_bridge_credential_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_server = sse_decode_String(deserializer);
+        var var_authMode = sse_decode_String(deserializer);
+        var var_expiresAtUnix = sse_decode_opt_box_autoadd_u_64(deserializer);
+        return BridgeCredentialEvent_Adopted(
+          server: var_server,
+          authMode: var_authMode,
+          expiresAtUnix: var_expiresAtUnix,
+        );
+      case 1:
+        var var_server = sse_decode_String(deserializer);
+        var var_authMode = sse_decode_String(deserializer);
+        return BridgeCredentialEvent_ModeChanged(
+          server: var_server,
+          authMode: var_authMode,
+        );
       default:
         throw UnimplementedError('');
     }
@@ -3331,12 +3552,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_activeCreateStreams = sse_decode_u_64(deserializer);
     var var_pendingMints = sse_decode_u_64(deserializer);
     var var_activeSseServers = sse_decode_u_64(deserializer);
+    var var_pendingPreviewCredentials = sse_decode_u_64(deserializer);
     return BridgeLiveCounters(
       activeWatchers: var_activeWatchers,
       activeForwarders: var_activeForwarders,
       activeCreateStreams: var_activeCreateStreams,
       pendingMints: var_pendingMints,
       activeSseServers: var_activeSseServers,
+      pendingPreviewCredentials: var_pendingPreviewCredentials,
     );
   }
 
@@ -3360,21 +3583,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMintPurpose sse_decode_bridge_mint_purpose(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return BridgeMintPurpose.values[inner];
+  }
+
+  @protected
   BridgeMintRequest sse_decode_bridge_mint_request(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_requestId = sse_decode_String(deserializer);
+    var var_purpose = sse_decode_bridge_mint_purpose(deserializer);
     var var_host = sse_decode_String(deserializer);
     var var_sshPort = sse_decode_u_16(deserializer);
     var var_baseUrl = sse_decode_String(deserializer);
     var var_expectedTlsPin = sse_decode_opt_String(deserializer);
+    var var_extraArgs = sse_decode_list_String(deserializer);
     return BridgeMintRequest(
       requestId: var_requestId,
+      purpose: var_purpose,
       host: var_host,
       sshPort: var_sshPort,
       baseUrl: var_baseUrl,
       expectedTlsPin: var_expectedTlsPin,
+      extraArgs: var_extraArgs,
     );
   }
 
@@ -4436,6 +4672,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_StreamSink_bridge_credential_event_Sse(
+    RustStreamSink<BridgeCredentialEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_credential_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_StreamSink_bridge_mint_request_Sse(
     RustStreamSink<BridgeMintRequest> self,
     SseSerializer serializer,
@@ -4608,6 +4861,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_bridge_add_server_preview(
+    BridgeAddServerPreview self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.authMode, serializer);
+    sse_encode_String(self.tlsCertFingerprint, serializer);
+    sse_encode_u_16(self.httpsPort, serializer);
+    sse_encode_opt_String(self.token, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.tokenExpiresAtUnix, serializer);
+  }
+
+  @protected
   void sse_encode_bridge_control_bundle(
     BridgeControlBundle self,
     SseSerializer serializer,
@@ -4652,6 +4918,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case BridgeCreateUpdate_Error(message: final message):
         sse_encode_i_32(2, serializer);
         sse_encode_String(message, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_bridge_credential_event(
+    BridgeCredentialEvent self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case BridgeCredentialEvent_Adopted(
+        server: final server,
+        authMode: final authMode,
+        expiresAtUnix: final expiresAtUnix,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(server, serializer);
+        sse_encode_String(authMode, serializer);
+        sse_encode_opt_box_autoadd_u_64(expiresAtUnix, serializer);
+      case BridgeCredentialEvent_ModeChanged(
+        server: final server,
+        authMode: final authMode,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(server, serializer);
+        sse_encode_String(authMode, serializer);
     }
   }
 
@@ -4742,6 +5034,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.activeCreateStreams, serializer);
     sse_encode_u_64(self.pendingMints, serializer);
     sse_encode_u_64(self.activeSseServers, serializer);
+    sse_encode_u_64(self.pendingPreviewCredentials, serializer);
   }
 
   @protected
@@ -4761,16 +5054,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_bridge_mint_purpose(
+    BridgeMintPurpose self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_bridge_mint_request(
     BridgeMintRequest self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.requestId, serializer);
+    sse_encode_bridge_mint_purpose(self.purpose, serializer);
     sse_encode_String(self.host, serializer);
     sse_encode_u_16(self.sshPort, serializer);
     sse_encode_String(self.baseUrl, serializer);
     sse_encode_opt_String(self.expectedTlsPin, serializer);
+    sse_encode_list_String(self.extraArgs, serializer);
   }
 
   @protected

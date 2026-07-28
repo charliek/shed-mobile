@@ -1,6 +1,9 @@
-// M0 end-to-end (tier c): against a REAL shed. Mints a control token over SSH
-// (_bootstrap, host-key-pinned), learns the TLS pin + https port from the
-// bundle, then lists sheds over pinned TLS via the FRB `BridgeClient` (shed-core).
+// M0 end-to-end (tier c): against a REAL shed. Runs the Rust add-server PREVIEW
+// over SSH (_bootstrap, host-key TOFU) to learn the auth mode + TLS pin + https
+// port, then lists sheds over pinned TLS via the FRB `BridgeClient` (shed-core).
+// Works against a token-mode AND an mtls-mode server: the preview always sends a
+// CSR, a token-mode server ignores it, and an mtls server issues a certificate
+// that the preview drops (the client below mints its own).
 // NOT run in CI.
 //
 //   dart run tool/e2e_list.dart [user@host:port]   (default shed-mobile-test@localhost:2222)
@@ -10,9 +13,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:shed_mobile/keys/key_manager.dart';
+import 'package:shed_mobile/servers/server_record.dart';
 import 'package:shed_mobile/servers/server_target.dart';
 import 'package:shed_mobile/src/rust/api/client.dart';
 import 'package:shed_mobile/src/rust/api/mint.dart';
+import 'package:shed_mobile/src/rust/api/preview.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 import 'package:shed_mobile/ssh/bootstrap_service.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
@@ -39,12 +44,14 @@ Future<void> main(List<String> args) async {
     baseUrl: 'https://$host',
   );
 
-  // Register the app-scoped mint sink BEFORE constructing the client: a
-  // BridgeClient token refresh emits a need-token request, we run the same SSH
-  // mint over dartssh2 and submit the RAW stdout (parsed in Rust).
+  // Register the app-scoped mint sink BEFORE anything that mints: both the
+  // add-server preview and a BridgeClient credential refresh emit a request
+  // here, we run the SSH round-trip over dartssh2 — appending the request's
+  // extra args (an mtls `csr=…`) VERBATIM — and submit the RAW stdout back for
+  // Rust to parse.
   final sub = setMintSink().listen((req) async {
     try {
-      final raw = await bootstrap.mintRaw(pre);
+      final raw = await bootstrap.mintRaw(pre, extraArgs: req.extraArgs);
       await submitMintResult(
         requestId: req.requestId,
         outcome: BridgeMintOutcome.success(rawStdout: raw),
@@ -57,25 +64,38 @@ Future<void> main(List<String> args) async {
     }
   });
 
-  print('Minting over SSH (_bootstrap@$host:$sshPort control shed-mobile)...');
-  final bundle = await bootstrap.mint(pre);
-  print(
-    '  pin=${bundle.tlsCertFingerprint}  https_port=${bundle.httpsPort}  '
-    'token=${bundle.token.length}ch  expires=${bundle.expiresAt.toIso8601String()}',
+  // Persist the learned mode the way the app does (here: just print it).
+  final credentials = setCredentialEventSink().listen(
+    (e) => print('  event: $e'),
   );
 
-  final baseUrl = 'https://$host:${bundle.httpsPort}';
+  print(
+    'Previewing over SSH (_bootstrap@$host:$sshPort control shed-mobile)...',
+  );
+  final preview = await previewAddServer(
+    host: host,
+    sshPort: sshPort,
+    timeoutMs: BigInt.from(20000),
+  );
+  final mtls = normalizeAuthMode(preview.authMode) == kAuthModeMtls;
+  print(
+    '  auth=${preview.authMode}  pin=${preview.tlsCertFingerprint}  '
+    'https_port=${preview.httpsPort}  '
+    'seed=${mtls ? 'none (mtls)' : '${preview.token?.length ?? 0}ch'}',
+  );
+
+  final baseUrl = 'https://$host:${preview.httpsPort}';
   print('Listing sheds over pinned TLS ($baseUrl/api/sheds)...');
+  final expiry = preview.tokenExpiresAtUnix;
   final client = await BridgeClient.connect(
     baseUrl: baseUrl,
     serverName: name,
     host: host,
     sshPort: sshPort,
-    tlsPin: bundle.tlsCertFingerprint,
-    seedToken: bundle.token,
-    seedExpiryUnix: BigInt.from(
-      bundle.expiresAt.millisecondsSinceEpoch ~/ 1000,
-    ),
+    tlsPin: preview.tlsCertFingerprint,
+    authMode: preview.authMode,
+    seedToken: mtls ? null : preview.token,
+    seedExpiryUnix: mtls ? null : expiry,
   );
   final sheds = await client.listSheds();
   print(
@@ -85,6 +105,8 @@ Future<void> main(List<String> args) async {
   client.dispose();
   await sub.cancel();
   shutdownMintSink();
+  await credentials.cancel();
+  shutdownCredentialEventSink();
   print('\nE2E PASS');
   exit(0);
 }

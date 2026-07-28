@@ -14,6 +14,7 @@ import 'api/dto_rc.dart';
 import 'api/error.dart';
 import 'api/local_sse.dart';
 import 'api/mint.dart';
+import 'api/preview.dart';
 import 'api/rc_runner.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
@@ -135,6 +136,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_bridge_create_update_Sse(dynamic raw);
 
   @protected
+  RustStreamSink<BridgeCredentialEvent>
+  dco_decode_StreamSink_bridge_credential_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<BridgeMintRequest>
   dco_decode_StreamSink_bridge_mint_request_Sse(dynamic raw);
 
@@ -200,6 +205,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  BridgeAddServerPreview dco_decode_bridge_add_server_preview(dynamic raw);
+
+  @protected
   BridgeControlBundle dco_decode_bridge_control_bundle(dynamic raw);
 
   @protected
@@ -207,6 +215,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeCreateUpdate dco_decode_bridge_create_update(dynamic raw);
+
+  @protected
+  BridgeCredentialEvent dco_decode_bridge_credential_event(dynamic raw);
 
   @protected
   BridgeDiskEntry dco_decode_bridge_disk_entry(dynamic raw);
@@ -225,6 +236,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeMintOutcome dco_decode_bridge_mint_outcome(dynamic raw);
+
+  @protected
+  BridgeMintPurpose dco_decode_bridge_mint_purpose(dynamic raw);
 
   @protected
   BridgeMintRequest dco_decode_bridge_mint_request(dynamic raw);
@@ -499,6 +513,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_bridge_create_update_Sse(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<BridgeCredentialEvent>
+  sse_decode_StreamSink_bridge_credential_event_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<BridgeMintRequest>
   sse_decode_StreamSink_bridge_mint_request_Sse(SseDeserializer deserializer);
 
@@ -578,6 +598,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  BridgeAddServerPreview sse_decode_bridge_add_server_preview(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeControlBundle sse_decode_bridge_control_bundle(
     SseDeserializer deserializer,
   );
@@ -589,6 +614,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeCreateUpdate sse_decode_bridge_create_update(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCredentialEvent sse_decode_bridge_credential_event(
     SseDeserializer deserializer,
   );
 
@@ -611,6 +641,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeMintOutcome sse_decode_bridge_mint_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeMintPurpose sse_decode_bridge_mint_purpose(
     SseDeserializer deserializer,
   );
 
@@ -960,6 +995,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_bridge_credential_event_Sse(
+    RustStreamSink<BridgeCredentialEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_bridge_mint_request_Sse(
     RustStreamSink<BridgeMintRequest> self,
     SseSerializer serializer,
@@ -1059,6 +1100,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bridge_add_server_preview(
+    BridgeAddServerPreview self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_control_bundle(
     BridgeControlBundle self,
     SseSerializer serializer,
@@ -1073,6 +1120,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_create_update(
     BridgeCreateUpdate self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_credential_event(
+    BridgeCredentialEvent self,
     SseSerializer serializer,
   );
 
@@ -1106,6 +1159,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_mint_outcome(
     BridgeMintOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_mint_purpose(
+    BridgeMintPurpose self,
     SseSerializer serializer,
   );
 

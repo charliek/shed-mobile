@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'mint.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `drain_pending_on_shutdown`, `pending`, `run_mint`, `shutdown_cell`, `sink_cell`, `take_pending`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeMinter`, `MintResolution`, `PendingGuard`, `RunMintError`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `drop`, `mint`
+// These functions are ignored because they are not marked as `pub`: `as_str`, `csr_extra_args`, `drain_pending_locked`, `emit_request`, `install_mint_sink`, `into_shed_error`, `pending`, `run_mint_raw`, `run_mint`, `take_pending`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeMinter`, `MintResolution`, `PendingGuard`, `RawBundle`, `RunMintError`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `drop`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `mint_credential`, `mint`, `supports_mtls`
 
 /// Register the app-scoped mint StreamSink and stay alive until
 /// [`shutdown_mint_sink`] fires (keeping the FRB stream open for the app's
@@ -18,10 +18,10 @@ part 'mint.freezed.dart';
 /// (listener-before-client); a `mint` emitted with no sink fails fast.
 ///
 /// Generation-guarded (Codex review #1): each registration takes a fresh
-/// generation and, if a prior sink is live, evicts it FIRST (fires its shutdown
-/// + drains its pending). When this task's await returns, it clears the slot
-/// ONLY if it still owns the generation — so a later sink B installed while A's
-/// task was parked is never clobbered by A.
+/// generation and, if a prior sink is live, evicts it FIRST (drains its pending
+/// under the same lock, then fires its shutdown). When this task's await
+/// returns, it clears the slot ONLY if it still owns the generation — so a later
+/// sink B installed while A's task was parked is never clobbered by A.
 Stream<BridgeMintRequest> setMintSink() =>
     RustLib.instance.api.crateApiMintSetMintSink();
 
@@ -30,6 +30,12 @@ Stream<BridgeMintRequest> setMintSink() =>
 /// non-secret `SinkShutdown` (Codex review #2 — no more 45 s strand), then fires
 /// the sink's shutdown signal. Synchronous so Riverpod `onDispose` can call it
 /// without an unawaitable future (Codex review #9).
+///
+/// Removal and drain happen under ONE lock, which closes the window a split
+/// implementation left open: a mint that parked after the drain but before the
+/// sink was cleared used to stay parked to its 45 s timer even though its
+/// listener was already gone. Now the emit that follows such a park sees no
+/// sink and fails immediately.
 void shutdownMintSink() => RustLib.instance.api.crateApiMintShutdownMintSink();
 
 /// The direct integration proof of the full inversion (retained from B1): emit →
@@ -63,7 +69,9 @@ Future<String> submitMintResult({
 
 /// AC#5 helper: proves the request DTO carries no token field (there is nothing
 /// token-bearing to leak on the Rust→Dart request). The real enforcement is the
-/// unit test below.
+/// unit tests below — in particular `production_request_dto_carries_no_secret`,
+/// which destructures the REAL type rather than trusting this constant (plan 002
+/// §7 P3(b): "not a tautological helper").
 bool mintRequestIsTokenFree({required BridgeMintRequest req}) =>
     RustLib.instance.api.crateApiMintMintRequestIsTokenFree(req: req);
 
@@ -114,31 +122,72 @@ sealed class BridgeMintOutcome with _$BridgeMintOutcome {
       BridgeMintOutcome_Failure;
 }
 
-/// The need-token request Rust emits to Dart. Carries the IMMUTABLE transport
-/// identity (plan §3.2) — not a mutable server-name to be looked up at submit
-/// time.
+/// Why Rust is asking Dart to run a `_bootstrap` round-trip. The two purposes
+/// differ ONLY in the trust anchor Dart must use for the SSH host key, which is
+/// Dart's half of the flow and cannot be decided in Rust:
+///   * [`BridgeMintPurpose::ControlMint`] — a saved server: the host key is
+///     PINNED to the stored `ServerRecord.hostKeyPin`;
+///   * [`BridgeMintPurpose::AddServerPreview`] — first contact ([`preview`]):
+///     TOFU, and the fingerprint Dart learns is what the user confirms.
+///
+/// [`preview`]: super::preview
+enum BridgeMintPurpose { controlMint, addServerPreview }
+
+/// The need-credential request Rust emits to Dart. Carries the IMMUTABLE
+/// transport identity (plan §3.2) — not a mutable server-name to be looked up at
+/// submit time.
+///
+/// # `extra_args` — the mtls enrollment channel (plan 002 §7 P2, plan 001 D4)
+///
+/// The `_bootstrap` request grammar is `<scope> [<kind>] [csr=<base64 std DER>]`.
+/// Dart already composes the first two tokens (`control shed-mobile`); this field
+/// carries whatever else the mint needs — today exactly one `csr=…` argument, or
+/// nothing for a CSR-less mint. **Dart appends these VERBATIM**: they are
+/// already in wire form.
+///
+/// That "verbatim" is load-bearing, not stylistic. shed-server reads the request
+/// line with `sess.RawCommand()` and splits it on whitespace — there is no shell
+/// on that path, so a POSIX-quoted argument arrives WITH its quotes and the
+/// `csr=` prefix match fails. Standard base64 uses `+` and `=`, which mobile's
+/// `shellQuote` does not consider bare-safe, so routing these through
+/// `wireCmd`/`shellQuote` would silently produce `'csr=…'` and an mtls server
+/// would answer "this server requires auth.mode: mtls; upgrade shed". The M2 Dart
+/// change must append them to the composed command string, not through the
+/// quoter, and its injected-`SshRun` test asserts the exact argv.
+///
+/// Key containment (§7 P3): a CSR is a PUBLIC artifact — the private half stays
+/// in the `ControlTokenProvider` that generated it (control mint) or in the
+/// preview future (add-server), and no field on this type can carry it.
 class BridgeMintRequest {
   final String requestId;
+  final BridgeMintPurpose purpose;
   final String host;
   final int sshPort;
   final String baseUrl;
   final String? expectedTlsPin;
 
+  /// Extra `_bootstrap` arguments, appended VERBATIM after `control <kind>`.
+  final List<String> extraArgs;
+
   const BridgeMintRequest({
     required this.requestId,
+    required this.purpose,
     required this.host,
     required this.sshPort,
     required this.baseUrl,
     this.expectedTlsPin,
+    required this.extraArgs,
   });
 
   @override
   int get hashCode =>
       requestId.hashCode ^
+      purpose.hashCode ^
       host.hashCode ^
       sshPort.hashCode ^
       baseUrl.hashCode ^
-      expectedTlsPin.hashCode;
+      expectedTlsPin.hashCode ^
+      extraArgs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -146,8 +195,10 @@ class BridgeMintRequest {
       other is BridgeMintRequest &&
           runtimeType == other.runtimeType &&
           requestId == other.requestId &&
+          purpose == other.purpose &&
           host == other.host &&
           sshPort == other.sshPort &&
           baseUrl == other.baseUrl &&
-          expectedTlsPin == other.expectedTlsPin;
+          expectedTlsPin == other.expectedTlsPin &&
+          extraArgs == other.extraArgs;
 }

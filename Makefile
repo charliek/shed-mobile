@@ -1,4 +1,4 @@
-.PHONY: get fmt check check-lock analyze test build-macos build-linux icons docs docs-serve frb-gen
+.PHONY: get fmt check check-lock analyze test cargo-test build-macos build-linux icons docs docs-serve frb-gen
 
 get:
 	flutter pub get
@@ -20,11 +20,45 @@ frb-gen: get
 fmt:
 	dart format .
 
-# The CI gate (mirrors .github/workflows/ci.yml).
-check: get
+# The CI gate (mirrors .github/workflows/ci.yml). The Rust bridge crate is part
+# of it: half this app's behaviour (the whole credential/transport layer) lives
+# in `rust/src/api/`, and `flutter test` cannot see any of it.
+check: get check-lock
 	dart format --output=none --set-exit-if-changed .
 	flutter analyze
 	flutter test
+	$(MAKE) cargo-test
+
+# Unit-test the Rust bridge crate.
+#
+# `--locked` is the canonical (CI) form: it proves the committed Cargo.lock
+# resolves with no drift, which `check-lock` alone cannot — that one compares
+# text, this one resolves.
+#
+# A sibling-checkout dev is the awkward case, and the awkwardness is inherent:
+# the gitignored rust/.cargo/config.toml [patch] resolves the shed deps to LOCAL
+# PATHS, and cargo can only apply that by REWRITING Cargo.lock to name those
+# paths — the exact leak `check-lock` exists to catch. So `--locked` there is
+# guaranteed to fail for a reason that says nothing about the code, and a plain
+# `cargo test` leaves a dirty, uncommittable lock behind.
+#
+# Handle it explicitly: point the lock at the local crates, run the tests, and
+# restore the canonical lock on the way out (trap, so a failing or interrupted
+# run restores it too). Local dev and CI then run the same tests against
+# different resolutions, which is precisely what the [patch] is for.
+cargo-test:
+	@set -u; \
+	if [ -f rust/.cargo/config.toml ]; then \
+	  echo "NOTE: local sibling [patch] active (rust/.cargo/config.toml) — testing"; \
+	  echo "      against the LOCAL shed crates and restoring the canonical Cargo.lock"; \
+	  echo "      afterwards. CI runs 'cargo test --locked' with no patch."; \
+	  root=$$(pwd); \
+	  cp "$$root/rust/Cargo.lock" "$$root/rust/.Cargo.lock.canonical"; \
+	  trap 'mv -f "$$root/rust/.Cargo.lock.canonical" "$$root/rust/Cargo.lock"' EXIT INT TERM; \
+	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app && cargo test ); \
+	else \
+	  cd rust && cargo test --locked; \
+	fi
 
 # Assert the committed Cargo.lock resolves the shed core deps to the exact
 # git rev pinned in rust/Cargo.toml (the gitignored local [patch] must never

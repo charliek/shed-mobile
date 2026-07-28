@@ -43,7 +43,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1510541065;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1581507483;
 
 // Section: executor
 
@@ -78,6 +78,7 @@ fn wire__crate__api__client__BridgeClient_connect_impl(
             let api_host = <String>::sse_decode(&mut deserializer);
             let api_ssh_port = <u16>::sse_decode(&mut deserializer);
             let api_tls_pin = <Option<String>>::sse_decode(&mut deserializer);
+            let api_auth_mode = <Option<String>>::sse_decode(&mut deserializer);
             let api_seed_token = <Option<String>>::sse_decode(&mut deserializer);
             let api_seed_expiry_unix = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -89,6 +90,7 @@ fn wire__crate__api__client__BridgeClient_connect_impl(
                         api_host,
                         api_ssh_port,
                         api_tls_pin,
+                        api_auth_mode,
                         api_seed_token,
                         api_seed_expiry_unix,
                     )?;
@@ -1349,6 +1351,49 @@ fn wire__crate__api__mint__mint_request_is_token_free_impl(
         },
     )
 }
+fn wire__crate__api__preview__preview_add_server_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "preview_add_server",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_host = <String>::sse_decode(&mut deserializer);
+            let api_ssh_port = <u16>::sse_decode(&mut deserializer);
+            let api_timeout_ms = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::error::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::api::preview::preview_add_server(
+                            api_host,
+                            api_ssh_port,
+                            api_timeout_ms,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__rc_runner__rc_create_invocation_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1670,6 +1715,47 @@ fn wire__crate__api__watcher__rc_watcher_events_impl(
         },
     )
 }
+fn wire__crate__api__client__set_credential_event_sink_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_credential_event_sink",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink = <StreamSink<
+                crate::api::client::BridgeCredentialEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok({
+                            crate::api::client::set_credential_event_sink(api_sink).await;
+                        })?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__mint__set_mint_sink_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1777,6 +1863,37 @@ fn wire__crate__api__shed__shed_core_probe_impl(
                     .await,
                 )
             }
+        },
+    )
+}
+fn wire__crate__api__client__shutdown_credential_event_sink_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "shutdown_credential_event_sink",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::client::shutdown_credential_event_sink();
+                })?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -2149,6 +2266,19 @@ impl SseDecode
 
 impl SseDecode
     for StreamSink<
+        crate::api::client::BridgeCredentialEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
         crate::api::mint::BridgeMintRequest,
         flutter_rust_bridge::for_generated::SseCodec,
     >
@@ -2185,6 +2315,24 @@ impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u8().unwrap() != 0
+    }
+}
+
+impl SseDecode for crate::api::preview::BridgeAddServerPreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_authMode = <String>::sse_decode(deserializer);
+        let mut var_tlsCertFingerprint = <String>::sse_decode(deserializer);
+        let mut var_httpsPort = <u16>::sse_decode(deserializer);
+        let mut var_token = <Option<String>>::sse_decode(deserializer);
+        let mut var_tokenExpiresAtUnix = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::preview::BridgeAddServerPreview {
+            auth_mode: var_authMode,
+            tls_cert_fingerprint: var_tlsCertFingerprint,
+            https_port: var_httpsPort,
+            token: var_token,
+            token_expires_at_unix: var_tokenExpiresAtUnix,
+        };
     }
 }
 
@@ -2249,6 +2397,36 @@ impl SseDecode for crate::api::create_stream::BridgeCreateUpdate {
                 let mut var_message = <String>::sse_decode(deserializer);
                 return crate::api::create_stream::BridgeCreateUpdate::Error {
                     message: var_message,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::client::BridgeCredentialEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_server = <String>::sse_decode(deserializer);
+                let mut var_authMode = <String>::sse_decode(deserializer);
+                let mut var_expiresAtUnix = <Option<u64>>::sse_decode(deserializer);
+                return crate::api::client::BridgeCredentialEvent::Adopted {
+                    server: var_server,
+                    auth_mode: var_authMode,
+                    expires_at_unix: var_expiresAtUnix,
+                };
+            }
+            1 => {
+                let mut var_server = <String>::sse_decode(deserializer);
+                let mut var_authMode = <String>::sse_decode(deserializer);
+                return crate::api::client::BridgeCredentialEvent::ModeChanged {
+                    server: var_server,
+                    auth_mode: var_authMode,
                 };
             }
             _ => {
@@ -2370,12 +2548,14 @@ impl SseDecode for crate::api::bridge_rt::BridgeLiveCounters {
         let mut var_activeCreateStreams = <u64>::sse_decode(deserializer);
         let mut var_pendingMints = <u64>::sse_decode(deserializer);
         let mut var_activeSseServers = <u64>::sse_decode(deserializer);
+        let mut var_pendingPreviewCredentials = <u64>::sse_decode(deserializer);
         return crate::api::bridge_rt::BridgeLiveCounters {
             active_watchers: var_activeWatchers,
             active_forwarders: var_activeForwarders,
             active_create_streams: var_activeCreateStreams,
             pending_mints: var_pendingMints,
             active_sse_servers: var_activeSseServers,
+            pending_preview_credentials: var_pendingPreviewCredentials,
         };
     }
 }
@@ -2402,20 +2582,36 @@ impl SseDecode for crate::api::mint::BridgeMintOutcome {
     }
 }
 
+impl SseDecode for crate::api::mint::BridgeMintPurpose {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::mint::BridgeMintPurpose::ControlMint,
+            1 => crate::api::mint::BridgeMintPurpose::AddServerPreview,
+            _ => unreachable!("Invalid variant for BridgeMintPurpose: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::mint::BridgeMintRequest {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_requestId = <String>::sse_decode(deserializer);
+        let mut var_purpose = <crate::api::mint::BridgeMintPurpose>::sse_decode(deserializer);
         let mut var_host = <String>::sse_decode(deserializer);
         let mut var_sshPort = <u16>::sse_decode(deserializer);
         let mut var_baseUrl = <String>::sse_decode(deserializer);
         let mut var_expectedTlsPin = <Option<String>>::sse_decode(deserializer);
+        let mut var_extraArgs = <Vec<String>>::sse_decode(deserializer);
         return crate::api::mint::BridgeMintRequest {
             request_id: var_requestId,
+            purpose: var_purpose,
             host: var_host,
             ssh_port: var_sshPort,
             base_url: var_baseUrl,
             expected_tls_pin: var_expectedTlsPin,
+            extra_args: var_extraArgs,
         };
     }
 }
@@ -3382,47 +3578,54 @@ fn pde_ffi_dispatcher_primary_impl(
         21 => wire__crate__api__mint__demo_mint_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__rc_runner__rc_create_invocation_impl(
+        26 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__rc_runner__rc_create_invocation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        27 => {
+        28 => {
             wire__crate__api__rc_runner__rc_decode_session_impl(port, ptr, rust_vec_len, data_len)
         }
-        28 => {
+        29 => {
             wire__crate__api__rc_runner__rc_decode_sessions_impl(port, ptr, rust_vec_len, data_len)
         }
-        29 => {
+        30 => {
             wire__crate__api__rc_runner__rc_error_from_exit_impl(port, ptr, rust_vec_len, data_len)
         }
-        30 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+        31 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__client__set_credential_event_sink_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+        36 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+        42 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        42 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        45 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3440,8 +3643,13 @@ fn pde_ffi_dispatcher_sync_impl(
         17 => wire__crate__api__create_stream__cancel_create_impl(ptr, rust_vec_len, data_len),
         22 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         25 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        40 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3514,6 +3722,30 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<BridgeWatcherHandle>> for Brid
     }
 }
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::preview::BridgeAddServerPreview {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.auth_mode.into_into_dart().into_dart(),
+            self.tls_cert_fingerprint.into_into_dart().into_dart(),
+            self.https_port.into_into_dart().into_dart(),
+            self.token.into_into_dart().into_dart(),
+            self.token_expires_at_unix.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::preview::BridgeAddServerPreview
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::preview::BridgeAddServerPreview>
+    for crate::api::preview::BridgeAddServerPreview
+{
+    fn into_into_dart(self) -> crate::api::preview::BridgeAddServerPreview {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::mint::BridgeControlBundle {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -3592,6 +3824,44 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::create_stream::BridgeCreateUp
     for crate::api::create_stream::BridgeCreateUpdate
 {
     fn into_into_dart(self) -> crate::api::create_stream::BridgeCreateUpdate {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::client::BridgeCredentialEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::client::BridgeCredentialEvent::Adopted {
+                server,
+                auth_mode,
+                expires_at_unix,
+            } => [
+                0.into_dart(),
+                server.into_into_dart().into_dart(),
+                auth_mode.into_into_dart().into_dart(),
+                expires_at_unix.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::client::BridgeCredentialEvent::ModeChanged { server, auth_mode } => [
+                1.into_dart(),
+                server.into_into_dart().into_dart(),
+                auth_mode.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::client::BridgeCredentialEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::client::BridgeCredentialEvent>
+    for crate::api::client::BridgeCredentialEvent
+{
+    fn into_into_dart(self) -> crate::api::client::BridgeCredentialEvent {
         self
     }
 }
@@ -3723,6 +3993,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::bridge_rt::BridgeLiveCounters
             self.active_create_streams.into_into_dart().into_dart(),
             self.pending_mints.into_into_dart().into_dart(),
             self.active_sse_servers.into_into_dart().into_dart(),
+            self.pending_preview_credentials
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -3766,14 +4039,37 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::mint::BridgeMintOutcome>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::mint::BridgeMintPurpose {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::ControlMint => 0.into_dart(),
+            Self::AddServerPreview => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::mint::BridgeMintPurpose
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::mint::BridgeMintPurpose>
+    for crate::api::mint::BridgeMintPurpose
+{
+    fn into_into_dart(self) -> crate::api::mint::BridgeMintPurpose {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::mint::BridgeMintRequest {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.request_id.into_into_dart().into_dart(),
+            self.purpose.into_into_dart().into_dart(),
             self.host.into_into_dart().into_dart(),
             self.ssh_port.into_into_dart().into_dart(),
             self.base_url.into_into_dart().into_dart(),
             self.expected_tls_pin.into_into_dart().into_dart(),
+            self.extra_args.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4528,6 +4824,18 @@ impl SseEncode
 
 impl SseEncode
     for StreamSink<
+        crate::api::client::BridgeCredentialEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<
         crate::api::mint::BridgeMintRequest,
         flutter_rust_bridge::for_generated::SseCodec,
     >
@@ -4561,6 +4869,17 @@ impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u8(self as _).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::preview::BridgeAddServerPreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.auth_mode, serializer);
+        <String>::sse_encode(self.tls_cert_fingerprint, serializer);
+        <u16>::sse_encode(self.https_port, serializer);
+        <Option<String>>::sse_encode(self.token, serializer);
+        <Option<u64>>::sse_encode(self.token_expires_at_unix, serializer);
     }
 }
 
@@ -4604,6 +4923,32 @@ impl SseEncode for crate::api::create_stream::BridgeCreateUpdate {
             crate::api::create_stream::BridgeCreateUpdate::Error { message } => {
                 <i32>::sse_encode(2, serializer);
                 <String>::sse_encode(message, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::client::BridgeCredentialEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::client::BridgeCredentialEvent::Adopted {
+                server,
+                auth_mode,
+                expires_at_unix,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(server, serializer);
+                <String>::sse_encode(auth_mode, serializer);
+                <Option<u64>>::sse_encode(expires_at_unix, serializer);
+            }
+            crate::api::client::BridgeCredentialEvent::ModeChanged { server, auth_mode } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(server, serializer);
+                <String>::sse_encode(auth_mode, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -4707,6 +5052,7 @@ impl SseEncode for crate::api::bridge_rt::BridgeLiveCounters {
         <u64>::sse_encode(self.active_create_streams, serializer);
         <u64>::sse_encode(self.pending_mints, serializer);
         <u64>::sse_encode(self.active_sse_servers, serializer);
+        <u64>::sse_encode(self.pending_preview_credentials, serializer);
     }
 }
 
@@ -4729,14 +5075,32 @@ impl SseEncode for crate::api::mint::BridgeMintOutcome {
     }
 }
 
+impl SseEncode for crate::api::mint::BridgeMintPurpose {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::mint::BridgeMintPurpose::ControlMint => 0,
+                crate::api::mint::BridgeMintPurpose::AddServerPreview => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::mint::BridgeMintRequest {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.request_id, serializer);
+        <crate::api::mint::BridgeMintPurpose>::sse_encode(self.purpose, serializer);
         <String>::sse_encode(self.host, serializer);
         <u16>::sse_encode(self.ssh_port, serializer);
         <String>::sse_encode(self.base_url, serializer);
         <Option<String>>::sse_encode(self.expected_tls_pin, serializer);
+        <Vec<String>>::sse_encode(self.extra_args, serializer);
     }
 }
 

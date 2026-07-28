@@ -73,11 +73,23 @@ OverviewResult _overview({BridgeSystemDiskUsage? df = _usage}) => OverviewData(
   ),
 );
 
+/// Seeds the session-scoped adopted set (normally fed by `CredentialSink`).
+class _Adopted extends AdoptedServersNotifier {
+  _Adopted(this._initial);
+
+  final Set<String> _initial;
+
+  @override
+  Set<String> build() => _initial;
+}
+
 Future<void> _pump(
   WidgetTester tester, {
   required bool mobile,
   required Future<OverviewResult> Function(Ref, String) overview,
   VoidCallback? onOpen,
+  ServerRecord record = _rec,
+  Set<String> adopted = const {},
 }) async {
   await tester.binding.setSurfaceSize(const Size(900, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -86,11 +98,14 @@ Future<void> _pump(
       // Disable Riverpod 3 auto-retry so an errored overview settles to a stable
       // error the card renders (rather than being retried into perpetual loading).
       retry: (_, _) => null,
-      overrides: [overviewProvider.overrideWith(overview)],
+      overrides: [
+        overviewProvider.overrideWith(overview),
+        adoptedServersProvider.overrideWith(() => _Adopted(adopted)),
+      ],
       child: MaterialApp(
         theme: shedLightTheme,
         home: Scaffold(
-          body: HostCard(record: _rec, mobile: mobile, onOpen: onOpen),
+          body: HostCard(record: record, mobile: mobile, onOpen: onOpen),
         ),
       ),
     ),
@@ -160,6 +175,71 @@ void main() {
       overview: (_, _) => Completer<OverviewResult>().future, // never resolves
     );
     expect(find.text('Loading…'), findsOneWidget);
+  });
+
+  group('the enrolling-certificate state (plan 002 §7 P8)', () {
+    const mtlsRec = ServerRecord(
+      name: 'h',
+      host: 'h.example',
+      sshPort: 2222,
+      apiUrl: 'https://h.example:8443',
+      tlsCertFingerprint: 'sha256:x',
+      hostKeyPin: 'pin',
+      authMode: kAuthModeMtls,
+    );
+
+    testWidgets('an mtls host with no adopted credential yet shows it', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        mobile: true,
+        record: mtlsRec,
+        overview: (_, _) => Completer<OverviewResult>().future,
+      );
+      expect(
+        find.byKey(const ValueKey('host-card-enrolling-h')),
+        findsOneWidget,
+      );
+      expect(find.text('Enrolling certificate…'), findsOneWidget);
+      expect(find.text('Loading…'), findsNothing);
+    });
+
+    testWidgets('clears once Rust announces the adoption', (tester) async {
+      await _pump(
+        tester,
+        mobile: true,
+        record: mtlsRec,
+        adopted: const {'h'},
+        overview: (_, _) => Completer<OverviewResult>().future,
+      );
+      // Still loading (the HTTP call is in flight) — but no longer enrolling.
+      expect(find.text('Loading…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('host-card-h')), findsOneWidget);
+    });
+
+    testWidgets('a token-mode host never shows it', (tester) async {
+      await _pump(
+        tester,
+        mobile: true,
+        overview: (_, _) => Completer<OverviewResult>().future,
+      );
+      expect(find.text('Loading…'), findsOneWidget);
+      expect(find.byKey(const ValueKey('host-card-enrolling-h')), findsNothing);
+    });
+
+    testWidgets('an unreachable mtls host is an error, not enrolling', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        mobile: true,
+        record: mtlsRec,
+        overview: (_, _) async => throw StateError('offline'),
+      );
+      expect(find.byKey(const ValueKey('host-card-error-h')), findsOneWidget);
+      expect(find.text('Unreachable'), findsOneWidget);
+    });
   });
 
   testWidgets('mobile card taps through to onOpen', (tester) async {

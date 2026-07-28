@@ -12,8 +12,8 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "daad497" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "daad497" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "861fedae296bc6d0ac7d8bc81852b3c04297400b" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "861fedae296bc6d0ac7d8bc81852b3c04297400b" }
 # Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
 # registry, local SSE test servers (net/io-util), and time-bounded awaits.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
@@ -22,6 +22,18 @@ serde_json = "1"
 # The shed-core `TokenMinter` trait is `#[async_trait]`; the bridge minter impl
 # must use the same macro (same version family as shed's lock).
 async-trait = "0.1"
+
+[dev-dependencies]
+# Test-only: signing a certificate for the CSR a `ControlTokenProvider` generated
+# mid-test. The provider VERIFIES that an adopted certificate belongs to the key
+# it just made, so the token↔mtls flip tests cannot use a canned fixture — they
+# have to sign the live CSR. Same spec as shed-core's (default-features off + the
+# `ring` backend rustls already pulls in), so no second rcgen enters the lock and
+# no C/asm stack (`aws_lc_rs`) ever does.
+rcgen = { version = "0.13", default-features = false, features = ["ring"] }
+# Standard-alphabet base64 for those test fixtures (decode a `csr=` value, encode
+# a leaf PEM). Already in the tree via shed-core/reqwest.
+base64 = "0.22"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
-import '../servers/server_record.dart';
 import '../servers/server_target.dart';
 import '../src/rust/api/mint.dart';
 import '../ssh/bootstrap_service.dart';
@@ -60,33 +60,24 @@ class MintSink {
 
   /// Run the `_bootstrap` SSH mint for the server identified by the request's
   /// immutable transport identity (host + ssh port), returning the raw bundle
-  /// stdout. The saved [ServerRecord] supplies the pinned SSH host key; a request
-  /// with no matching saved server fails (the production mint path always has
-  /// one — the client was built from it).
+  /// stdout.
+  ///
+  /// The request's `extraArgs` (an mtls CSR, or nothing) ride the request line
+  /// **verbatim** — see [BootstrapService.requestLine] for why quoting them
+  /// would break an mtls enrollment.
   Future<String> _mint(BridgeMintRequest req) async {
-    final servers = await _container.read(serverStoreProvider).list();
-    ServerRecord? rec;
-    for (final r in servers) {
-      if (r.host == req.host && r.sshPort == req.sshPort) {
-        rec = r;
-        break;
-      }
-    }
-    if (rec == null) {
-      throw StateError('no saved server for ${req.host}:${req.sshPort}');
-    }
+    final trust = await resolveMintTrust(_container, req);
     final identities = await _container.read(identitiesProvider.future);
-    final HostKeyStore hostKeys = pinnedHostKeysFor(rec);
-    final bootstrap = BootstrapService(identities, hostKeys);
+    final bootstrap = BootstrapService(identities, trust.hostKeys);
     final target = ServerTarget(
-      name: rec.name,
+      name: trust.serverName,
       host: req.host,
       sshPort: req.sshPort,
       secure: true,
       baseUrl: req.baseUrl,
       tlsCertFingerprint: req.expectedTlsPin,
     );
-    return bootstrap.mintRaw(target);
+    return bootstrap.mintRaw(target, extraArgs: req.extraArgs);
   }
 
   static String _code(Object e) => 'MINT_FAILED';
@@ -99,5 +90,48 @@ class MintSink {
     shutdownMintSink();
     await _sub?.cancel();
     _sub = null;
+  }
+}
+
+/// The SSH trust anchor for one mint round-trip, plus the server identity the
+/// mint runs under.
+class MintTrust {
+  const MintTrust({required this.serverName, required this.hostKeys});
+
+  final String serverName;
+  final HostKeyStore hostKeys;
+}
+
+/// Choose the SSH host-key anchor for [req] — the whole of what
+/// [BridgeMintPurpose] decides, and the one half of the flow Rust cannot decide
+/// for itself (plan 002 §7 P7).
+///
+/// * [BridgeMintPurpose.controlMint] — a SAVED server: the host key is PINNED to
+///   the stored `ServerRecord.hostKeyPin`. A request with no matching saved
+///   server fails; the production mint path always has one (the client was built
+///   from it).
+/// * [BridgeMintPurpose.addServerPreview] — FIRST CONTACT: there is no saved
+///   record yet (learning what to save is the point), so the anchor is the app's
+///   TOFU store — the same instance `AddServerFlow` reads the learned
+///   fingerprint back from, so the user confirms the key this mint actually saw.
+@visibleForTesting
+Future<MintTrust> resolveMintTrust(
+  ProviderContainer container,
+  BridgeMintRequest req,
+) async {
+  switch (req.purpose) {
+    case BridgeMintPurpose.addServerPreview:
+      return MintTrust(
+        serverName: req.host,
+        hostKeys: container.read(addHostKeysProvider),
+      );
+    case BridgeMintPurpose.controlMint:
+      final servers = await container.read(serverStoreProvider).list();
+      for (final r in servers) {
+        if (r.host == req.host && r.sshPort == req.sshPort) {
+          return MintTrust(serverName: r.name, hostKeys: pinnedHostKeysFor(r));
+        }
+      }
+      throw StateError('no saved server for ${req.host}:${req.sshPort}');
   }
 }

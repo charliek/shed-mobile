@@ -11,11 +11,11 @@ the control API over pinned TLS.
 |---|---|---|
 | UI | `lib/features/` | Riverpod-driven screens (servers, sheds, RC, terminal, onboarding). |
 | Providers | `lib/providers.dart` | Wires stores, clients, and per-target services. |
-| Shed API | `lib/shed/` | `ShedClient` — typed CRUD + create-SSE over pinned TLS. |
-| Control token | `lib/control/` | `ControlTokenProvider` FSM (mint, cache, refresh, 401-retry). |
+| Shed API + credentials | `rust/src/api/` | The Rust core (`shed-core`) over `flutter_rust_bridge`: pinned-TLS HTTP, create-SSE, and the credential FSM (token **and** mtls). |
+| Bridge listeners | `lib/bridge/` | App-scoped `MintSink` (runs the SSH mint Rust asks for) + `CredentialSink` (persists the learned auth mode). |
+| Shed API glue | `lib/shed/` | Formatting + adapters over the bridge DTOs. |
 | RC | `lib/rc/` | `RcService` + DTOs — drives `shed-ext-rc` over SSH. |
 | SSH | `lib/ssh/` | Connection primitive, one-shot exec, bootstrap mint, PTY, host-key store. |
-| Net | `lib/net/` | `PinnedHttpClient` — fail-closed TLS pinning. |
 | Keys | `lib/keys/` | Key import (desktop) and in-app keygen + identity store (mobile). |
 | Storage | `lib/storage/` | `SecretStore` — secure storage (mobile) / 0600 files (desktop). |
 | Core | `lib/core/` | Pure ports: POSIX quoting, fingerprints, SSE parser, `AppError`. |
@@ -24,13 +24,17 @@ the control API over pinned TLS.
 
 A shed API call (e.g. *list sheds*):
 
-1. `ShedClient` asks `ControlTokenProvider` for a valid bearer token.
-2. If none is cached/valid, the provider **mints** one over SSH
-   (`_bootstrap@host`, host-key pinned) and caches it with its expiry.
-3. `PinnedHttpClient` issues the HTTPS request, verifying the server cert against
-   the stored pin (hostname is irrelevant — the pin is authoritative).
-4. A `401` invalidates the token and retries once with a freshly minted, distinct
-   token.
+1. `BridgeClient` asks the Rust `ControlTokenProvider` for a valid credential —
+   a bearer token, or a client certificate in `auth.mode: mtls`.
+2. If none is cached/valid, the provider **mints** one: it emits a request that
+   Dart answers by running the `_bootstrap` SSH round-trip (host-key pinned),
+   and Rust parses the returned bundle. The credential shape is the SERVER's
+   choice, learned at every mint.
+3. The Rust transport issues the HTTPS request, verifying the server cert against
+   the stored pin (hostname is irrelevant — the pin is authoritative) and
+   presenting the client certificate when one is held.
+4. A `401` invalidates the credential and retries once with a freshly minted,
+   distinct one.
 
 An RC or terminal action instead SSHes as `<shed>@host` (the shed name is the SSH
 username) and runs `shed-ext-rc …` or `tmux attach …`.

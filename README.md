@@ -64,6 +64,36 @@ sibling-checkout dev builds against `../shed/crates` via a gitignored
 `rust/.cargo/config.toml` (`[patch]`) — copy `rust/.cargo/config.toml.template` to
 enable it; the committed `Cargo.lock` always resolves the canonical `git+rev`.
 
+**Install `cargo-expand` with the PINNED toolchain.**
+`flutter_rust_bridge_codegen generate` shells out to `cargo expand`, so install
+it explicitly:
+
+```bash
+cargo +1.96.1 install cargo-expand --version 1.0.123 --locked
+```
+
+A plain `cargo install cargo-expand` uses whatever your *default* toolchain is
+(1.85 here), and current `cargo-expand` does not build there — it fails. The trap
+is what happens next: FRB does not stop, it falls back to an older `cargo-expand`
+it can find, which expands differently and produces **silently drifted**
+generated glue — surfacing later as a CI `codegen-drift` diff that looks like a
+code problem. Pin the version too (CI pins `1.0.123`); an unpinned install is the
+same drift source with a different cause.
+
+### The gate
+
+```bash
+make check        # pub get + lock-rev + format + analyze + flutter test + cargo test
+make check-lock   # just the lock-rev guard
+make cargo-test   # just the Rust bridge-crate tests
+```
+
+`make check` includes the Rust bridge crate: half the app's behaviour (the whole
+credential/transport layer) lives in `rust/src/api/` and `flutter test` cannot
+see any of it. CI runs `cargo test --locked`; with the local `[patch]` active,
+`make cargo-test` drops `--locked` (the patch resolves to paths the committed
+lock cannot name) and says so.
+
 ### Drive / smoke-test (desktop)
 
 A headless Marionette skill drives the debug app like a user:
