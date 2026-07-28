@@ -90,4 +90,56 @@ void main() {
     expect(t.baseUrl, 'https://mini3:8443');
     expect(t.tlsCertFingerprint, 'sha256:${'a' * 64}');
   });
+
+  test('concurrent mutations are serialized — neither update is lost', () async {
+    // Every mutation rewrites the WHOLE servers.v1 blob. With a real async gap
+    // between the read and the write, two overlapping read-modify-writes both
+    // observe the same starting list and the second write clobbers the first.
+    // This store makes that gap explicit; without the mutation queue in
+    // ServerStore the two adds below collapse to one surviving record.
+    final store = ServerStore(_SlowSecretStore());
+
+    await Future.wait([store.add(rec('alpha')), store.add(rec('beta'))]);
+
+    final names = (await store.list()).map((r) => r.name).toList()..sort();
+    expect(names, ['alpha', 'beta']);
+  });
+
+  test('a failed mutation does not wedge the queue', () async {
+    final store = ServerStore(_SlowSecretStore());
+    await store.add(rec('alpha'));
+
+    // A duplicate add throws; the queue tail must still complete so later
+    // mutations run rather than hanging forever behind the failure.
+    await expectLater(store.add(rec('alpha')), throwsA(isA<AppError>()));
+
+    await store.add(rec('beta'));
+    final names = (await store.list()).map((r) => r.name).toList()..sort();
+    expect(names, ['alpha', 'beta']);
+  });
+}
+
+/// A [SecretStore] with a real async gap on both sides of a read-modify-write,
+/// so overlapping mutations genuinely interleave instead of completing in one
+/// synchronous microtask burst the way [InMemorySecretStore] does.
+class _SlowSecretStore implements SecretStore {
+  final Map<String, String> _m = {};
+
+  @override
+  Future<String?> read(String key) async {
+    await Future<void>.delayed(Duration.zero);
+    return _m[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    await Future<void>.delayed(Duration.zero);
+    _m[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    await Future<void>.delayed(Duration.zero);
+    _m.remove(key);
+  }
 }

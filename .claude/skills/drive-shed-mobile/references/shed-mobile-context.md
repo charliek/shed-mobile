@@ -24,7 +24,7 @@ host is a merged `HostCard` (status + disk usage). Bottom tabs are `nav-hosts` /
 | `desktop-server-remove-<name>` | remove host (desktop pane card) |
 
 MSTATE: `screen=hosts hosts=N`; per card `host-card host=<name> reachable=t|f|-
-df=ok|error|loading sheds=N` (plus ` state=enrolling` while an mtls host has no
+df=ok|error|loading sheds=N` (plus a trailing `state=enrolling` while an mtls host has no
 adopted credential yet); shell `layout=mobile|desktop section=hosts`.
 MRESULT: `server-remove ok`.
 

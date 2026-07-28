@@ -45,9 +45,12 @@ When a server is added:
 2. Both fingerprints — the SSH host key and the TLS cert — are shown to the user
    for confirmation, then **pinned and persisted**.
 
-Rust owns the request because an `auth.mode: mtls` server rejects a CSR-less
-bootstrap *before* returning any JSON, so the side that composes the request has
-to be the side that can generate a keypair. In mtls mode the certificate the
+Rust owns the request *data* because an `auth.mode: mtls` server rejects a
+CSR-less bootstrap *before* returning any JSON, so the side that supplies the
+request has to be the side that can generate a keypair. Concretely: Rust
+generates the keypair and CSR and hands back the `csr=<base64>` argument, while
+Dart composes the final `_bootstrap` command line from it
+(`BootstrapService.requestLine`) and puts it on the SSH channel. In mtls mode the certificate the
 preview receives is **discarded** with its key — the user has not confirmed the
 server yet, and the first real client mints its own. That costs two SSH
 round-trips per mtls add, accepted deliberately.
