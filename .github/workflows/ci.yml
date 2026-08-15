@@ -171,11 +171,11 @@ jobs:
         if: steps.cargo-expand-cache.outputs.cache-hit != 'true'
         # Runs with the runner's default (latest stable) toolchain, which builds
         # cargo-expand fine. LOCALLY the same command can fail — a default
-        # toolchain older than cargo-expand's MSRV (e.g. 1.85) errors out, FRB
-        # then silently falls back to whatever older cargo-expand it can find,
-        # and the drift shows up HERE as a mystery diff. Install it locally with
-        # the pinned toolchain: `cargo +1.96.1 install cargo-expand --version
-        # 1.0.123 --locked` (see README).
+        # toolchain older than cargo-expand's MSRV errors out, FRB then silently
+        # falls back to whatever older cargo-expand it can find, and the drift
+        # shows up HERE as a mystery diff. Install it locally with the pinned
+        # toolchain: `cargo +1.97.1 install cargo-expand --version 1.0.123
+        # --locked` (see README).
         run: cargo install cargo-expand --version 1.0.123 --locked
       - run: flutter pub get
       # The mandatory two-step codegen (mirror `make frb-gen`): FRB generate THEN

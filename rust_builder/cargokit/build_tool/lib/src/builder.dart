@@ -148,13 +148,13 @@ class RustBuilder {
   // cargokit.yaml (see options.dart:Toolchain), so `_toolchain` resolves to
   // 'stable' and every platform build runs `rustup run stable cargo …` —
   // meaning the exact version pinned in `<manifestDir>/rust-toolchain.toml`
-  // (e.g. 1.96.1) NEVER governs the platform builds; CI/local build on whatever
+  // (e.g. 1.97.1) NEVER governs the platform builds; CI/local build on whatever
   // stable the runner happens to ship. This patch makes the crate's
   // rust-toolchain.toml `channel = "…"` win, so prepare() auto-installs that
   // exact toolchain + its targets and build() runs `rustup run <version> cargo`
   // on every platform, CI and local (true dev == CI).
   //
-  // rustup treats a version like "1.96.1" as a toolchain NAME, so
+  // rustup treats a version like "1.97.1" as a toolchain NAME, so
   // Rustup.installToolchain / installTarget / installedTargets all handle it
   // unchanged (verified against rustup.dart). The TOML is parsed minimally with
   // a regex (no TOML dependency).
