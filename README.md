@@ -69,13 +69,13 @@ enable it; the committed `Cargo.lock` always resolves the canonical `git+rev`.
 it explicitly:
 
 ```bash
-cargo +1.96.1 install cargo-expand --version 1.0.123 --locked
+cargo +1.97.1 install cargo-expand --version 1.0.123 --locked
 ```
 
-A plain `cargo install cargo-expand` uses whatever your *default* toolchain is
-(1.85 here), and current `cargo-expand` does not build there — it fails. The trap
-is what happens next: FRB does not stop, it falls back to an older `cargo-expand`
-it can find, which expands differently and produces **silently drifted**
+A plain `cargo install cargo-expand` uses whatever your *default* toolchain is,
+and if that default is older than `cargo-expand`'s MSRV the install fails. The
+trap is what happens next: FRB does not stop, it falls back to an older
+`cargo-expand` it can find, which expands differently and produces **silently drifted**
 generated glue — surfacing later as a CI `codegen-drift` diff that looks like a
 code problem. Pin the version too (CI pins `1.0.123`); an unpinned install is the
 same drift source with a different cause.
