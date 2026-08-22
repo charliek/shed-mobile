@@ -18,7 +18,9 @@ import '../sheds/shed_list_screen.dart';
 /// disk usage). Add a host, tap one to browse its sheds, or remove it. (Absorbed
 /// the former System section — every card carries its own df breakdown.) The body
 /// is the shared [HostGroups] (same iteration as the desktop Hosts pane), wrapped
-/// in this screen's brand app bar + `servers-add` FAB.
+/// in this screen's brand app bar. Both sections carry their own add action in
+/// their header — there is no floating button, so the two kinds of place a
+/// session can run are added the same way.
 class ServerListScreen extends ConsumerWidget {
   const ServerListScreen({super.key});
 
@@ -72,12 +74,6 @@ class ServerListScreen extends ConsumerWidget {
           const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const ValueKey('servers-add'),
-        onPressed: () => openAddHost(context, ref),
-        icon: const Icon(Icons.add, size: 20),
-        label: const Text('Add host'),
-      ),
       // Shared cross-host body (same as the desktop Hosts pane), with extra
       // bottom inset so the last card clears the Add-host FAB. Empty state is
       // keyed `hosts-empty` by HostGroups.
@@ -90,11 +86,21 @@ class ServerListScreen extends ConsumerWidget {
       body: HostGroups(
         section: 'hosts',
         header: false,
-        // Bottom inset clears the Add-host FAB.
-        bottomInset: 96,
+        bottomInset: 24,
         emptyMessage: 'Tap "Add host" to connect one.',
         onRefresh: invalidateHosts,
-        leading: const SectionHeader(label: 'SHED SERVERS'),
+        // "Add server", not "Add shed": what this adds is a shed SERVER. Creating
+        // a shed is a different thing entirely and lives on the Sheds tab, so
+        // borrowing its name here would send people to the wrong place.
+        leading: SectionHeader(
+          label: 'SHED SERVERS',
+          action: TextButton.icon(
+            key: const ValueKey('servers-add'),
+            onPressed: () => openAddHost(context, ref),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add server'),
+          ),
+        ),
         trailing: const MachinesSection(),
         hostBuilder: (rec) => HostCard(
           record: rec,

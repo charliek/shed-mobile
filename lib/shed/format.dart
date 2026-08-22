@@ -75,11 +75,17 @@ String sessionMetaLine(
   String tmuxSession,
   String? createdAtIso, {
   DateTime? now,
+  String? workdir,
 }) {
   final age = ageLabel(parseServerTime(createdAtIso), now: now);
   return [
-    shedName,
-    'tmux $tmuxSession',
+    // WORKDIR FIRST when there is one. On a narrow phone this line truncates,
+    // and the working directory is what tells two sessions on the same box
+    // apart — the slug is recoverable from `sx ls`, the directory is not
+    // recoverable from anywhere on screen. The origin is not repeated here at
+    // all: the list is grouped by it.
+    if (workdir != null && workdir.isNotEmpty) workdir else shedName,
+    tmuxSession,
     if (age != null) 'made $age ago',
   ].join(' · ');
 }

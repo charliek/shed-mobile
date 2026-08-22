@@ -216,7 +216,12 @@ class _SessionCardState extends ConsumerState<SessionCard> {
       ),
     );
     final metaText = Text(
-      sessionMetaLine(widget.shedName, s.tmuxSession, s.createdAt),
+      sessionMetaLine(
+        widget.shedName,
+        s.tmuxSession,
+        s.createdAt,
+        workdir: s.workdir,
+      ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: monoStyle(fontSize: 11.5, color: c.fg3),
@@ -276,11 +281,17 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Both badges beside the name: lifecycle and activity are read
+              // together, in one glance, instead of on separate lines.
               Row(
                 children: [
                   Expanded(child: nameText),
                   const SizedBox(width: 10),
                   badge,
+                  if (activityBadge != null) ...[
+                    const SizedBox(width: 6),
+                    activityBadge,
+                  ],
                 ],
               ),
               const SizedBox(height: 9),
@@ -289,10 +300,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                   kindChip,
                   const SizedBox(width: 9),
                   Flexible(child: metaText),
-                  if (activityBadge != null) ...[
-                    const SizedBox(width: 9),
-                    activityBadge,
-                  ],
                 ],
               ),
               if (lastMessageText != null) ...[
@@ -317,7 +324,10 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             ],
           );
 
-    return CardShell(child: body);
+    return CardShell(
+      rail: sessionRailColor(c, state, activity),
+      child: body,
+    );
   }
 
   /// The watch/copy/open action buttons shown ahead of the terminal pill —

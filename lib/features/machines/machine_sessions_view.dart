@@ -11,8 +11,10 @@ import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
 import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
+import '../../theme/shed_theme.dart';
 import '../../widgets/card_shell.dart';
 import '../../widgets/kind_chip.dart';
+import '../../widgets/host_groups.dart';
 import '../../widgets/status_badge.dart';
 
 /// **Machine sessions, beside shed sessions** (plan 012, roadmap R4).
@@ -73,12 +75,11 @@ class _MachineGroup extends ConsumerWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _MachineHeader(machine: machine, state: state),
-          const SizedBox(height: 8),
           if (sessions.isEmpty)
             _MachineNote(
               key: ValueKey('machine-empty-${machine.name}'),
@@ -111,6 +112,14 @@ class _MachineGroup extends ConsumerWidget {
   }
 }
 
+/// A machine's group heading in the sessions list.
+///
+/// The SHARED [SectionHeader], not a hand-rolled Row: a machine group and a
+/// shed group sit in the same list, so any difference in indent or weight reads
+/// as a mistake. It was one — this header carried no padding of its own and
+/// relied on a wrapper that went away when the tab became a single scroll view,
+/// leaving `MACHINE:MINI3` jammed against the edge while the shed headings kept
+/// their indent.
 class _MachineHeader extends StatelessWidget {
   const _MachineHeader({required this.machine, required this.state});
 
@@ -120,27 +129,20 @@ class _MachineHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reachable = state?.reachable ?? false;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            machine.origin.toUpperCase(),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              letterSpacing: 1.2,
-              fontWeight: FontWeight.w700,
-              color: context.shed.fg3,
+    return SectionHeader(
+      label: machine.origin.toUpperCase(),
+      action: reachable
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: StatusBadge(
+                key: ValueKey('machine-unreachable-${machine.name}'),
+                label: (state?.connectedOnce ?? false)
+                    ? 'unreachable'
+                    : 'connecting',
+                tone: ShedStatusTone.warn,
+              ),
             ),
-          ),
-        ),
-        if (!reachable)
-          StatusBadge(
-            key: ValueKey('machine-unreachable-${machine.name}'),
-            label: (state?.connectedOnce ?? false)
-                ? 'unreachable'
-                : 'connecting',
-            tone: ShedStatusTone.warn,
-          ),
-      ],
     );
   }
 }
@@ -152,7 +154,8 @@ class _MachineNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
+    // 20 left to sit under the section heading, matching HostNote.
+    padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
     child: Text(
       text,
       style: Theme.of(
@@ -197,44 +200,69 @@ class _MachineSessionCard extends StatelessWidget {
       // available answer to "what is running on mini3?".
       opacity: state.reachable ? 1 : 0.55,
       child: CardShell(
+        // The SAME rule the shed card uses, so a column of both kinds reads as
+        // one column. A row we cannot currently reach gets no edge — colouring
+        // it would assert something present about a machine we cannot see.
+        rail: sessionRailColor(
+          colors,
+          lifecycle,
+          activity,
+          stale: !state.reachable,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Name first, both badges beside it — identical to the shed card,
+            // because where a session runs should not change how it is read.
             Row(
               children: [
+                Expanded(
+                  child: Text(
+                    session.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: sansStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.fg,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 StatusBadge(
                   tone: shedStatusTone(lifecycle.wire).tone,
                   label: lifecycle.wire.replaceAll('-', ' '),
                 ),
-                const SizedBox(width: 8),
                 if (display != null) ...[
+                  const SizedBox(width: 6),
                   StatusBadge(
                     tone: display.tone,
                     label: display.label,
                     pulse: display.pulse,
                   ),
-                  const SizedBox(width: 8),
                 ],
-                KindChip(session.kind.wire),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              session.displayName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              [
-                'tmux ${session.tmuxSession}',
-                if (session.workdir != null) session.workdir!,
-                if (!state.reachable) 'last known',
-              ].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.fg3),
+            const SizedBox(height: 9),
+            Row(
+              children: [
+                KindChip(session.kind.wire),
+                const SizedBox(width: 9),
+                Flexible(
+                  child: Text(
+                    // Workdir first — see `sessionMetaLine`. The machine is not
+                    // repeated: the list is grouped by it.
+                    [
+                      if (session.workdir != null) session.workdir!,
+                      session.tmuxSession,
+                      if (!state.reachable) 'last known',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: monoStyle(fontSize: 11.5, color: colors.fg3),
+                  ),
+                ),
+              ],
             ),
             // Watch, and end. Steering and interrupting live INSIDE the watch
             // view, beside the output: nobody directs an agent they cannot see,

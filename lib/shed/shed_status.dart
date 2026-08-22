@@ -82,6 +82,36 @@ ActivityDisplay? rcActivityBadge(
   BridgeRcActivity? activity,
 ) => rcStatePermitsActivity(state) ? rcActivityDisplay(activity) : null;
 
+/// The colour of a session card's left edge — what most wants your attention.
+///
+/// Precedence is deliberate and not the same as the badges': a bad LIFECYCLE
+/// outranks any activity, because a dead session is not merely idle. Below
+/// that, an activity that is asking for a person (needs input / needs approval)
+/// outranks one that is merely busy, and busy outranks idle. Nothing worth
+/// saying returns null, and the card renders without an edge.
+///
+/// One rule, shared by every card: the point of the edge is a COLUMN that reads
+/// at a glance, and a column whose colours mean different things per row would
+/// be worse than no colour at all.
+Color? sessionRailColor(
+  ShedColors shed,
+  BridgeRcState state,
+  BridgeRcActivity? activity, {
+  bool stale = false,
+}) {
+  // A row we can no longer reach says so by being dimmed; colouring its edge
+  // would assert something current about a machine we cannot see.
+  if (stale) return null;
+  if (!rcStatePermitsActivity(state)) {
+    return state == BridgeRcState.dead ? shed.dotErr : shed.dotWarn;
+  }
+  return switch (activity) {
+    BridgeRcActivity.needsInput || BridgeRcActivity.needsApproval => shed.dotWarn,
+    BridgeRcActivity.working => shed.dotOk,
+    _ => null,
+  };
+}
+
 /// Agent-kind wire string → accent color (the kind chip's colored left border and
 /// the terminal `[kind]` label). Mirrors the design's `agent()` map. Reads raw
 /// wire strings (not the [RcKind] enum) because `GET /api/sessions` reports the

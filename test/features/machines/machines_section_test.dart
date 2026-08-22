@@ -158,6 +158,35 @@ void main() {
     );
   });
 
+  testWidgets('both sections add from their own header, with no floating button', (
+    tester,
+  ) async {
+    // The two kinds of place a session can run are added the same way. A single
+    // floating button could only ever serve one of them, so it is gone — and
+    // "Add server", not "Add shed": creating a shed is a different thing on a
+    // different tab, and borrowing its name here would send people to the wrong
+    // place.
+    await tester.pumpWidget(_app(const [_mini3], {}, hosts: const [_host]));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('servers-add')), findsOneWidget);
+    expect(find.byKey(const ValueKey('machines-add')), findsOneWidget);
+    expect(find.text('Add server'), findsOneWidget);
+    expect(find.text('Add machine'), findsOneWidget);
+    expect(
+      find.byType(FloatingActionButton),
+      findsNothing,
+      reason: 'the add actions live in their headers now',
+    );
+
+    // …and each sits with its own heading, not the other's.
+    final serversY = tester.getTopLeft(find.text('SHED SERVERS')).dy;
+    // "MACHINES (1)" once there is one to count.
+    final machinesY = tester.getTopLeft(find.textContaining('MACHINES')).dy;
+    expect(tester.getTopLeft(find.text('Add server')).dy, closeTo(serversY, 24));
+    expect(tester.getTopLeft(find.text('Add machine')).dy, closeTo(machinesY, 24));
+  });
+
   testWidgets('with no machines the section is a quiet line, not a page', (
     tester,
   ) async {
