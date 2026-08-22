@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shed_mobile/features/rc/codex_watch_screen.dart';
+import 'package:shed_mobile/features/rc/session_watch_screen.dart';
 import 'package:shed_mobile/features/rc/shed_detail_screen.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/rc/activity_overlay.dart';
@@ -110,7 +110,7 @@ void main() {
   });
 
   testWidgets('codex row whose caps advertise watch shows the eye and tapping '
-      'it pushes CodexWatchScreen', (tester) async {
+      'it pushes SessionWatchScreen', (tester) async {
     await _pump(
       tester,
       sessions: [_session(kind: const BridgeRcKind.codex())],
@@ -122,7 +122,7 @@ void main() {
     await tester.tap(eye);
     await tester.pump(); // start the route push
     await tester.pump(const Duration(milliseconds: 350)); // finish transition
-    expect(find.byType(CodexWatchScreen), findsOneWidget);
+    expect(find.byType(SessionWatchScreen), findsOneWidget);
   });
 
   testWidgets('claude row with a url shows url-copy and url-open', (

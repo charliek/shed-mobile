@@ -52,6 +52,24 @@ Future<String> machineTurn({
   text: text,
 );
 
+/// A page of a machine session's message feed.
+///
+/// The same `/v1/sessions/{slug}/messages` cursor a shed serves through its
+/// server, read straight off the machine's hub over the tunnel — so the rich
+/// per-session view a shed session gets renders identically for a machine. The
+/// feed is where a person READS what an agent is doing; steering it without
+/// that is guesswork, which is why this exists before the control verbs are
+/// worth offering.
+Future<BridgeRcMessagesPage> machineMessages({
+  required int localPort,
+  required String slug,
+  required BigInt since,
+}) => RustLib.instance.api.crateApiMachineMachineMessages(
+  localPort: localPort,
+  slug: slug,
+  since: since,
+);
+
 /// Interrupt the running turn. `false` means nothing was running — a legitimate
 /// answer, not a failure.
 Future<bool> machineInterrupt({required int localPort, required String slug}) =>

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/core/url_launch.dart';
 import 'package:shed_mobile/features/terminal/terminal_screen.dart';
+import 'package:shed_mobile/features/terminal/terminal_target.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/pty_session.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -73,12 +74,7 @@ class _FakePty extends PtySession {
 /// reconnect gets a distinct pty from the original connection.
 PtyBuilder _queue(List<_FakePty> ptys) {
   var i = 0;
-  return (
-    WidgetRef ref, {
-    required String serverName,
-    required String shedName,
-    required String slug,
-  }) async {
+  return (WidgetRef ref, TerminalTarget target) async {
     final pty = ptys[i];
     i++;
     return pty;
@@ -102,10 +98,12 @@ Future<void> _pump(
     ProviderScope(
       child: MaterialApp(
         home: TerminalScreen(
-          serverName: 'srv',
-          shedName: 'web',
-          slug: 'abc123',
-          title: 'frontend',
+          target: const ShedTerminalTarget(
+            serverName: 'srv',
+            shedName: 'web',
+            slug: 'abc123',
+            title: 'frontend',
+          ),
           ptyBuilder: builder,
           urlLauncher: urlLauncher,
         ),

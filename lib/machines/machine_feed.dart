@@ -108,14 +108,25 @@ class MachineFeedState {
 
 /// One session's live patch — the activity dimension only.
 class MachinePatch {
-  const MachinePatch({this.activity, this.state});
+  const MachinePatch({this.activity, this.state, this.lastSeq});
 
   final BridgeRcActivity? activity;
   final BridgeRcState? state;
 
+  /// The feed's high-water mark for this session, from `message.appended`.
+  ///
+  /// A NOTIFICATION, not content: the event says "there is something new past
+  /// seq N", and the body comes from a follow-up `/messages` fetch. A watcher
+  /// keyed on this is what makes the rich view live without polling.
+  final BigInt? lastSeq;
+
+  /// Later wins per FIELD, so an `activity.changed` cannot erase a seq bump
+  /// that arrived first (and vice versa) — the two dimensions travel on
+  /// separate events and must not clobber each other.
   MachinePatch merge(MachinePatch other) => MachinePatch(
     activity: other.activity ?? activity,
     state: other.state ?? state,
+    lastSeq: other.lastSeq ?? lastSeq,
   );
 }
 
@@ -163,6 +174,13 @@ class MachineFeed {
   Stream<MachineFeedState> get updates => _controller.stream;
 
   bool get isRunning => _watcher != null;
+
+  /// The local port the hub is forwarded to, or null when the tunnel is down.
+  ///
+  /// Exposed so the rich session view can read the message cursor and post
+  /// control verbs over the SAME tunnel the feed holds — a second connection
+  /// per screen would double the SSH cost of simply looking at a session.
+  int? get tunnelPort => _tunnel?.port;
 
   /// Open the tunnel and start watching. Idempotent, and safe to call on every
   /// foreground.
@@ -388,6 +406,14 @@ class MachineFeed {
           _state.copyWith(
             overlay: _withPatch(slug, MachinePatch(state: state)),
           ),
+        );
+      case BridgeRcEvent_MessageAppended(:final slug, :final seq):
+        // The seq only ever moves FORWARD within a hub run. A lower value means
+        // the hub restarted (seq resets to 1), and the reader treats that as
+        // "refetch from scratch" rather than a targeted drain — so it is passed
+        // through unfiltered and interpreted there, where the cursor lives.
+        _emit(
+          _state.copyWith(overlay: _withPatch(slug, MachinePatch(lastSeq: seq))),
         );
       default:
         break;

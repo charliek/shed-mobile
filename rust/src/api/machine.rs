@@ -44,7 +44,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::bridge_rt;
-use super::dto_rc::{BridgeRcEvent, BridgeRcSession};
+use super::dto_rc::{BridgeRcEvent, BridgeRcMessagesPage, BridgeRcSession};
 
 /// One update from a machine's hub.
 ///
@@ -222,6 +222,26 @@ pub async fn machine_turn(local_port: u16, slug: String, text: String) -> Result
     client(local_port)?
         .turn(&slug, &text)
         .await
+        .map_err(|e| e.to_string())
+}
+
+/// A page of a machine session's message feed.
+///
+/// The same `/v1/sessions/{slug}/messages` cursor a shed serves through its
+/// server, read straight off the machine's hub over the tunnel — so the rich
+/// per-session view a shed session gets renders identically for a machine. The
+/// feed is where a person READS what an agent is doing; steering it without
+/// that is guesswork, which is why this exists before the control verbs are
+/// worth offering.
+pub async fn machine_messages(
+    local_port: u16,
+    slug: String,
+    since: u64,
+) -> Result<BridgeRcMessagesPage, String> {
+    client(local_port)?
+        .messages(&slug, since)
+        .await
+        .map(Into::into)
         .map_err(|e| e.to_string())
 }
 

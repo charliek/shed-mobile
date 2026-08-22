@@ -12,8 +12,8 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
 # Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
 # registry, local SSE test servers (net/io-util), and time-bounded awaits.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }

@@ -19,7 +19,9 @@ import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
 import '../sheds/shed_actions.dart';
 import '../terminal/terminal_screen.dart';
-import 'codex_watch_screen.dart';
+import '../terminal/terminal_target.dart';
+import 'session_watch_screen.dart';
+import 'session_watch_source.dart';
 
 /// A cross-host rc-session card: lifecycle badge, a live activity badge (when the
 /// hub reports one and lifecycle permits it), kind chip, a meta line
@@ -68,20 +70,24 @@ class _SessionCardState extends ConsumerState<SessionCard> {
   void _open() => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => TerminalScreen(
-        serverName: widget.serverName,
-        shedName: widget.shedName,
-        slug: widget.session.slug,
-        title: '${widget.shedName}/${widget.session.slug}',
+        target: ShedTerminalTarget(
+          serverName: widget.serverName,
+          shedName: widget.shedName,
+          slug: widget.session.slug,
+          title: '${widget.shedName}/${widget.session.slug}',
+        ),
       ),
     ),
   );
 
   void _watch() => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => CodexWatchScreen(
-        serverName: widget.serverName,
-        shedName: widget.shedName,
-        session: widget.session,
+      builder: (_) => SessionWatchScreen(
+        source: ShedWatchSource(
+          serverName: widget.serverName,
+          shedName: widget.shedName,
+          session: widget.session,
+        ),
       ),
     ),
   );

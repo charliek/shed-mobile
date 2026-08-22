@@ -5,6 +5,8 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 import '../../machines/machine_feed.dart';
 import '../../machines/machine_record.dart';
 import '../../providers.dart';
+import '../rc/session_watch_screen.dart';
+import '../rc/session_watch_source.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
 import '../../src/rust/api/dto_rc.dart';
@@ -234,13 +236,16 @@ class _MachineSessionCard extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.fg3),
             ),
-            // **Controls render off `kind_features`, never off the kind.**
-            // A session whose `approvals` is "tui" reports them for information
-            // only — they are answered in its terminal — so offering a button
-            // would produce a 409 the user cannot act on. Unknown capabilities
-            // (an older binary) mean observe-only, which is the safe default.
+            // Watch, and end. Steering and interrupting live INSIDE the watch
+            // view, beside the output: nobody directs an agent they cannot see,
+            // and a control on a list row is a decision made blind. What a
+            // session accepts is still gated on `kind_features` — that gate
+            // just belongs where the acting happens.
             if (state.reachable)
-              _MachineControls(session: session, state: state),
+              _MachineActions(
+                machineName: state.machine.name,
+                session: session,
+              ),
           ],
         ),
       ),
@@ -248,37 +253,47 @@ class _MachineSessionCard extends StatelessWidget {
   }
 }
 
-/// The per-session control row.
+/// Watch and End — the two things worth doing from a LIST.
 ///
-/// Every affordance is gated on the machine's advertised `kind_features`, so
-/// this row is EMPTY for a kind that supports none — which is the honest
-/// rendering, not a degraded one. A `shell` session, for instance, accepts no
-/// structured turn and resolves no approvals remotely; it simply has nothing to
-/// offer here beyond ending it.
-class _MachineControls extends ConsumerStatefulWidget {
-  const _MachineControls({required this.session, required this.state});
+/// Everything that steers a session (a turn, a keystroke, an interrupt) is on
+/// the watch screen instead, because acting on an agent without reading its
+/// output first is guesswork. End stays here because it is not direction: it is
+/// removal, and it needs no context to mean what it says.
+class _MachineActions extends ConsumerStatefulWidget {
+  const _MachineActions({required this.machineName, required this.session});
 
+  final String machineName;
   final BridgeRcSession session;
-  final MachineFeedState state;
 
   @override
-  ConsumerState<_MachineControls> createState() => _MachineControlsState();
+  ConsumerState<_MachineActions> createState() => _MachineActionsState();
 }
 
-class _MachineControlsState extends ConsumerState<_MachineControls> {
+class _MachineActionsState extends ConsumerState<_MachineActions> {
   bool _busy = false;
   String? _error;
 
-  Future<void> _run(Future<void> Function(MachineFeed feed) op) async {
+  void _watch() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SessionWatchScreen(
+        source: MachineWatchSource(
+          machineName: widget.machineName,
+          session: widget.session,
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _end() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final feed = ref.read(
-        machineFeedControllerProvider(widget.state.machine.name),
-      );
-      await op(feed);
+      await ref
+          .read(machineFeedControllerProvider(widget.machineName))
+          .kill(widget.session.slug);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -288,50 +303,35 @@ class _MachineControlsState extends ConsumerState<_MachineControls> {
 
   @override
   Widget build(BuildContext context) {
-    final s = widget.session;
-    final st = widget.state;
-    final canSteer = st.canSteer(s);
-    final canInterrupt = st.canInterrupt(s);
-    // Nothing to offer beyond ending it — render nothing rather than a row of
-    // disabled buttons that implies the feature is merely unavailable.
-    final anything = canSteer || canInterrupt;
-
+    final slug = widget.session.slug;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 10),
         Row(
           children: [
-            if (canSteer)
-              TextButton.icon(
-                key: ValueKey('machine-steer-${s.slug}'),
-                onPressed: _busy ? null : () => _promptSteer(s),
-                icon: const Icon(Icons.send, size: 16),
-                label: const Text('Steer'),
-              ),
-            if (canInterrupt)
-              TextButton.icon(
-                key: ValueKey('machine-interrupt-${s.slug}'),
-                onPressed: _busy
-                    ? null
-                    : () => _run((f) async => f.interrupt(s.slug)),
-                icon: const Icon(Icons.stop_circle_outlined, size: 16),
-                label: const Text('Interrupt'),
-              ),
-            if (anything) const Spacer(),
             TextButton.icon(
-              key: ValueKey('machine-kill-${s.slug}'),
-              onPressed: _busy ? null : () => _run((f) => f.kill(s.slug)),
+              key: ValueKey('machine-watch-$slug'),
+              onPressed: _busy ? null : _watch,
+              icon: const Icon(Icons.visibility_outlined, size: 16),
+              label: const Text('Watch'),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              key: ValueKey('machine-kill-$slug'),
+              onPressed: _busy ? null : _end,
               icon: const Icon(Icons.delete_outline, size: 16),
               label: const Text('End'),
-              style: TextButton.styleFrom(foregroundColor: context.shed.errFg),
+              style: TextButton.styleFrom(
+                foregroundColor: context.shed.errFg,
+              ),
             ),
           ],
         ),
         if (_error != null)
           Text(
             _error!,
-            key: ValueKey('machine-control-error-${s.slug}'),
+            key: ValueKey('machine-control-error-$slug'),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: context.shed.errFg),
@@ -339,70 +339,4 @@ class _MachineControlsState extends ConsumerState<_MachineControls> {
       ],
     );
   }
-
-  Future<void> _promptSteer(BridgeRcSession s) async {
-    final text = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _SteerDialog(title: 'Steer ${s.displayName}'),
-    );
-    final trimmed = text?.trim() ?? '';
-    if (trimmed.isEmpty) return;
-    await _run((f) async => f.steer(s.slug, trimmed));
-  }
-}
-
-/// The steer prompt.
-///
-/// A StatefulWidget so the dialog OWNS its [TextEditingController] and disposes
-/// it in `dispose()`. Creating the controller in the caller and disposing it
-/// when `showDialog` returns looks equivalent and is not: the future completes
-/// when the route is popped, while the route is still animating OUT with the
-/// TextField mounted and listening. Disposing under it trips
-/// `_dependents.isEmpty` and takes the app down — which it did, on a real
-/// phone, on the first steer.
-class _SteerDialog extends StatefulWidget {
-  const _SteerDialog({required this.title});
-
-  final String title;
-
-  @override
-  State<_SteerDialog> createState() => _SteerDialogState();
-}
-
-class _SteerDialogState extends State<_SteerDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _send() => Navigator.of(context).pop(_controller.text);
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
-    content: TextField(
-      key: const ValueKey('machine-steer-text'),
-      controller: _controller,
-      autofocus: true,
-      minLines: 1,
-      maxLines: 4,
-      textInputAction: TextInputAction.send,
-      onSubmitted: (_) => _send(),
-      decoration: const InputDecoration(hintText: 'What should it do next?'),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        key: const ValueKey('machine-steer-send'),
-        onPressed: _send,
-        child: const Text('Send'),
-      ),
-    ],
-  );
 }

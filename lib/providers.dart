@@ -668,6 +668,23 @@ final machinesProvider = FutureProvider<List<MachineRecord>>(
   (ref) async => ref.watch(machineStoreProvider).list(),
 );
 
+/// The ONE trust-on-first-use host-key store every machine connection shares —
+/// the feed's tunnel, its one-shot execs, and the terminal's PTY.
+///
+/// A machine is an ordinary SSH host with no endpoint that publishes a
+/// fingerprint (a shed server has `/api/ssh-host-key`; a machine has nothing),
+/// so first use is the only moment a key can be learned. Sharing ONE store is
+/// what makes that mean anything: a per-connection store starts empty every
+/// time, accepts whatever answers, and pins it somewhere nobody reads — TOFU
+/// with no memory, which is just "trust anything" wearing a better name.
+///
+/// Not `autoDispose`, for the same reason. Still in-memory only, so the trust
+/// resets when the app does; persisting it is a separate change (it wants a
+/// user-visible "this machine's key changed" story, not a silent upgrade).
+final machineHostKeysProvider = Provider<HostKeyStore>(
+  (ref) => HostKeyStore(tofu: true),
+);
+
 /// One machine's live feed — the SSH tunnel plus the shared Rust hub watcher.
 ///
 /// Split in two on purpose: this provider owns the FEED OBJECT (so the control
@@ -695,11 +712,10 @@ final machineFeedControllerProvider = Provider.autoDispose
       final feed = MachineFeed(
         machine: machine,
         identities: identities,
-        // Machines are ordinary SSH hosts the operator already manages, so the
-        // phone pins on first use rather than demanding a fingerprint it has no
-        // way to obtain (a shed server publishes one over /api/ssh-host-key; a
-        // machine has no such endpoint).
-        hostKeys: HostKeyStore(tofu: true),
+        // Shared across every connection to every machine — see
+        // [machineHostKeysProvider] for why a per-feed store would be TOFU in
+        // name only.
+        hostKeys: ref.watch(machineHostKeysProvider),
       );
       ref.onDispose(feed.dispose);
       return feed;

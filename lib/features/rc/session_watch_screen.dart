@@ -5,7 +5,6 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../bridge/bridge_adapters.dart';
 import '../../core/app_error.dart';
-import '../../providers.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
 import '../../src/rust/api/dto_rc.dart';
@@ -13,31 +12,39 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../terminal/terminal_screen.dart';
+import 'session_watch_source.dart';
 
-/// The codex non-TUI "watch" view: a read-only rendering of a session's message
-/// feed (`GET /api/sheds/{shed}/rc/v1/sessions/{slug}/messages`) with a gated
-/// input bar. Messages are hub-sanitized, so they render as plain [Text] — no
-/// markdown. Live append rides the host's `GET /api/rc/events` stream via
-/// [liveActivityProvider] (the `message.appended` seq bump triggers a targeted
-/// /messages fetch). Anything the feed can't serve (needs-auth/dead lifecycle,
-/// hub unavailable) hands off to the in-app TUI terminal.
-class CodexWatchScreen extends ConsumerStatefulWidget {
-  const CodexWatchScreen({
-    required this.serverName,
-    required this.shedName,
-    required this.session,
-    super.key,
-  });
+/// **Watching one session**: its message feed, its live status, and the one
+/// way to act on it that makes sense for its kind.
+///
+/// This is the screen the whole remote-control story is FOR. Nobody steers an
+/// agent they cannot see — you open a session to read what it has done and what
+/// it is asking, and only then answer it. So the controls live here, beside the
+/// output, rather than on a list row where acting would be guesswork.
+///
+/// Transport-agnostic by construction: a [SessionWatchSource] supplies the feed,
+/// the input path, and the terminal target, so a session in a SHED (reached
+/// through its server) and one on a MACHINE (reached over an SSH-forwarded port
+/// to the machine's own hub) render and behave identically. They serve the same
+/// `/v1` cursor; only the route differs, and that is not a thing a person
+/// should have to think about.
+///
+/// Messages are hub-sanitized, so they render as plain [Text] — no markdown.
+/// Live append rides the source's seq bumps (`message.appended` carries a
+/// high-water mark, not content, so a bump triggers a targeted fetch). Anything
+/// the feed cannot serve — a needs-auth or dead lifecycle, no feed for this
+/// kind at all — hands off to the in-app TUI, which is the floor every kind
+/// can stand on.
+class SessionWatchScreen extends ConsumerStatefulWidget {
+  const SessionWatchScreen({required this.source, super.key});
 
-  final String serverName;
-  final String shedName;
-  final BridgeRcSession session;
+  final SessionWatchSource source;
 
   @override
-  ConsumerState<CodexWatchScreen> createState() => _CodexWatchScreenState();
+  ConsumerState<SessionWatchScreen> createState() => _SessionWatchScreenState();
 }
 
-class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
+class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
   static const int _pageLimit = 200;
 
   final _messages = <BridgeRcFeedMessage>[];
@@ -48,6 +55,9 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
   Object? _loadError;
   bool _historyTruncated = false;
   BigInt _lastSeq = BigInt.zero;
+
+  /// The last seq this build reacted to, so one bump schedules one drain.
+  BigInt? _seenSeq;
   bool _sending = false;
   bool _appending = false;
 
@@ -57,7 +67,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
   /// ListView).
   int _generation = 0;
 
-  String get _slug => widget.session.slug;
+  String get _slug => widget.source.slug;
 
   @override
   void initState() {
@@ -102,18 +112,14 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       _loadError = null;
     });
     try {
-      final client = await ref.read(
-        shedClientProvider(widget.serverName).future,
-      );
       final acc = <BridgeRcFeedMessage>[];
       var cursor = BigInt.zero;
       var truncated = false;
       var first = true;
       var restarted = false;
       while (true) {
-        final page = await client.rcMessages(
-          shed: widget.shedName,
-          slug: _slug,
+        final page = await widget.source.messages(
+          ref,
           since: cursor,
           limit: _pageLimit,
         );
@@ -171,13 +177,9 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     _appending = true;
     final gen = _generation; // abort if a reload supersedes this drain
     try {
-      final client = await ref.read(
-        shedClientProvider(widget.serverName).future,
-      );
       while (mounted && gen == _generation) {
-        final page = await client.rcMessages(
-          shed: widget.shedName,
-          slug: _slug,
+        final page = await widget.source.messages(
+          ref,
           since: _lastSeq,
           limit: _pageLimit,
         );
@@ -216,34 +218,36 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     });
   }
 
-  Future<void> _send() async {
+  /// Send what is typed, by whichever verb this KIND accepts.
+  ///
+  /// `turn` and `gated` are not two features to choose between — they are how
+  /// two different kinds of agent take direction, and offering the wrong one
+  /// earns a 409 the user cannot act on. One text field, one Send, and the verb
+  /// resolved from `kind_features`.
+  Future<void> _send({required bool asTurn}) async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      final client = await ref.read(
-        shedClientProvider(widget.serverName).future,
-      );
-      await client.rcInput(shed: widget.shedName, slug: _slug, text: text);
+      if (asTurn) {
+        await widget.source.steer(ref, text);
+      } else {
+        await widget.source.sendInput(ref, text);
+      }
       if (!mounted) return; // the controller is disposed with the screen
       _input.clear();
-      logDriveResult('codex-watch-input', ok: true);
+      logDriveResult('session-watch-input', ok: true);
     } catch (e) {
       // Broad catch: raw transport failures must land in the snackbar path
       // like an AppError would, not escape as an unhandled async exception.
-      logDriveResult('codex-watch-input', ok: false, error: e);
+      logDriveResult('session-watch-input', ok: false, error: e);
       if (!mounted) return;
       final err = appErrorFrom(e);
-      // 409 = the session stopped waiting between the gate check and the post
-      // (a race). Refresh the base state so the input bar re-gates correctly.
-      if (err.statusCode == 409) {
-        ref.invalidate(overviewProvider(widget.serverName));
-      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             err.statusCode == 409
-                ? 'Session is no longer waiting for input'
+                ? 'The session is not accepting that right now'
                 : 'Send failed: ${err.message}',
           ),
         ),
@@ -254,85 +258,98 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
   }
 
   void _openTui() {
-    logDriveResult('codex-watch-handoff', ok: true);
+    logDriveResult('session-watch-handoff', ok: true);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TerminalScreen(
-          serverName: widget.serverName,
-          shedName: widget.shedName,
-          slug: _slug,
-          title: '${widget.shedName}/$_slug',
-        ),
+        builder: (_) => TerminalScreen(target: widget.source.terminalTarget),
       ),
     );
   }
 
+  /// Stop the running turn. Offered only for a kind that advertises it, and the
+  /// answer `false` ("nothing was running") is reported as information rather
+  /// than an error — it is a legitimate outcome of asking.
+  Future<void> _interrupt() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      final stopped = await widget.source.interrupt(ref);
+      logDriveResult('session-watch-interrupt', ok: true);
+      if (!mounted) return;
+      if (!stopped) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nothing was running')),
+        );
+      }
+    } catch (e) {
+      logDriveResult('session-watch-interrupt', ok: false, error: e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Interrupt failed: ${appErrorFrom(e).message}')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final s = widget.session;
+    // The live view, however this source obtains it — the screen never learns
+    // whether it is looking at a shed or a machine.
+    final live = widget.source.watch(ref);
+    _reactToSeq(live.lastSeq);
 
-    // Overlay the live SSE patch onto the base session for state/activity, and
-    // react to the feed's latest-seq bumps by draining new messages.
-    final patch = ref.watch(
-      liveActivityProvider(
-        widget.serverName,
-      ).select((a) => a.value?.lookup(widget.shedName, _slug)),
-    );
-    ref.listen(
-      liveActivityProvider(
-        widget.serverName,
-      ).select((a) => a.value?.lookup(widget.shedName, _slug)?.lastSeq),
-      (prev, next) {
-        if (next == null) return;
-        final n = next;
-        if (n < _lastSeq) {
-          // The hub restarted (seq is monotonic per hub run and resets to 1):
-          // our cursor is from a previous incarnation, so a targeted drain
-          // would stall on empty/truncated pages forever — full refetch.
-          _reload();
-        } else if (n > _lastSeq) {
-          _appendNew();
-        }
-      },
-    );
+    final state = live.state;
+    final activity = live.activity;
+    final kf = live.features;
 
-    final state = patch?.state ?? s.state;
-    final activity = patch?.activity ?? s.activity;
-    final caps = ref
-        .watch(
-          shedCapabilitiesProvider((
-            serverName: widget.serverName,
-            shedName: widget.shedName,
-          )),
-        )
-        .value;
-    final kf = caps?.kindFeatures[s.kind.wire];
-
-    // Input is only ever enabled for a gated kind that is actively waiting AND
-    // whose lifecycle permits it (needs-*/dead never accept input).
-    final inputAvailable =
-        (kf?.inputGated ?? false) &&
-        rcStatePermitsActivity(state) &&
-        activity == BridgeRcActivity.needsInput;
+    // **Every affordance below is gated on kind_features, never on the kind.**
+    // A kind takes direction as a structured TURN or as a gated keystroke, and
+    // offering the wrong one produces a 409 the user cannot act on.
+    final permits = rcStatePermitsActivity(state);
+    final asTurn = kf?.input == 'turn';
+    // A turn kind accepts direction whenever it is alive; a gated kind only
+    // while it is actually waiting for an answer.
+    final inputAvailable = permits &&
+        (asTurn || ((kf?.inputGated ?? false) && activity == BridgeRcActivity.needsInput));
+    final canInterrupt = (kf?.interrupt ?? false) && permits;
     // needs-auth / dead → the feed can't drive the session; hand off to the TUI.
     final blocked =
         state == BridgeRcState.needsAuth || state == BridgeRcState.dead;
 
     logDriveState(
-      'screen=codex-watch server=${widget.serverName} shed=${widget.shedName} '
+      'screen=session-watch title=${widget.source.title} '
       'slug=$_slug state=${state.wire} activity=${activity?.wire ?? 'none'} '
       'msgs=${_messages.length} truncated=$_historyTruncated '
-      'input=${inputAvailable ? 'enabled' : (blocked ? 'blocked' : 'disabled')}',
+      'verb=${asTurn ? 'turn' : 'input'} '
+      'input=${inputAvailable ? 'enabled' : (blocked ? 'blocked' : 'disabled')} '
+      'interrupt=${canInterrupt ? 'offered' : 'hidden'}',
     );
 
     return Scaffold(
-      key: const ValueKey('codex-watch-screen'),
+      key: const ValueKey('session-watch-screen'),
       appBar: AppBar(
-        title: Text(_slug),
+        title: Text(widget.source.title),
         actions: [
           _activityBadge(activity, state),
+          if (canInterrupt)
+            IconButton(
+              key: const ValueKey('session-watch-interrupt'),
+              icon: const Icon(Icons.stop_circle_outlined),
+              tooltip: 'Interrupt',
+              onPressed: _sending ? null : _interrupt,
+            ),
+          // The terminal is always one tap away, not only when the feed fails.
+          // Some kinds have no feed at all, and for the rest the TUI is where
+          // you go when the rendered view is not telling you enough.
           IconButton(
-            key: const ValueKey('codex-watch-refresh'),
+            key: const ValueKey('session-watch-open-tui-action'),
+            icon: const Icon(Icons.terminal),
+            tooltip: 'Terminal',
+            onPressed: _openTui,
+          ),
+          IconButton(
+            key: const ValueKey('session-watch-refresh'),
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
             onPressed: _reload,
@@ -344,10 +361,29 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
           if (blocked) _handoffBanner(context, state),
           Expanded(child: _feedBody(context)),
           if (!_loading && _loadError == null)
-            _inputBar(context, enabled: inputAvailable),
+            _inputBar(context, enabled: inputAvailable, asTurn: asTurn),
         ],
       ),
     );
+  }
+
+  /// Drain or refetch when the feed's high-water mark moves.
+  ///
+  /// A LOWER seq means the hub restarted (seq is monotonic per hub run and
+  /// resets to 1), so the cursor belongs to a previous incarnation and a
+  /// targeted drain would stall on empty pages forever — refetch instead.
+  void _reactToSeq(BigInt? seq) {
+    if (seq == null || seq == _seenSeq) return;
+    _seenSeq = seq;
+    // Deferred: this runs during build, and both paths call setState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (seq < _lastSeq) {
+        _reload();
+      } else if (seq > _lastSeq) {
+        _appendNew();
+      }
+    });
   }
 
   Widget _activityBadge(BridgeRcActivity? activity, BridgeRcState state) {
@@ -357,7 +393,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Center(
         child: StatusBadge(
-          key: const ValueKey('codex-watch-activity'),
+          key: const ValueKey('session-watch-activity'),
           tone: d.tone,
           label: d.label,
           pulse: d.pulse,
@@ -370,7 +406,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     final c = context.shed;
     if (_loading) {
       return const Center(
-        key: ValueKey('codex-watch-loading'),
+        key: ValueKey('session-watch-loading'),
         child: CircularProgressIndicator(),
       );
     }
@@ -391,7 +427,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
                     ? 'Live view unavailable on this shed'
                     : 'Could not load the feed: ${app?.message ?? err}',
                 key: ValueKey(
-                  unavailable ? 'codex-watch-unavailable' : 'codex-watch-error',
+                  unavailable ? 'session-watch-unavailable' : 'session-watch-error',
                 ),
                 textAlign: TextAlign.center,
                 style: sansStyle(fontSize: 14, color: c.fg2),
@@ -402,13 +438,13 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
                 alignment: WrapAlignment.center,
                 children: [
                   OutlinedButton.icon(
-                    key: const ValueKey('codex-watch-retry'),
+                    key: const ValueKey('session-watch-retry'),
                     onPressed: _reload,
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('Retry'),
                   ),
                   FilledButton.icon(
-                    key: const ValueKey('codex-watch-open-tui'),
+                    key: const ValueKey('session-watch-open-tui'),
                     onPressed: _openTui,
                     icon: const Icon(Icons.terminal, size: 18),
                     label: const Text('Open terminal'),
@@ -424,13 +460,13 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
       return Center(
         child: Text(
           'No messages yet',
-          key: const ValueKey('codex-watch-empty'),
+          key: const ValueKey('session-watch-empty'),
           style: sansStyle(fontSize: 14, color: c.fg3),
         ),
       );
     }
     return ListView.builder(
-      key: const ValueKey('codex-watch-list'),
+      key: const ValueKey('session-watch-list'),
       controller: _scroll,
       padding: const EdgeInsets.symmetric(vertical: 10),
       // Leading extra slot for the truncation divider when applicable.
@@ -439,7 +475,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
         if (_historyTruncated && i == 0) return const _TruncatedDivider();
         final msg = _messages[i - (_historyTruncated ? 1 : 0)];
         return _MessageTile(
-          key: ValueKey('codex-watch-msg-${msg.seq}'),
+          key: ValueKey('session-watch-msg-${msg.seq}'),
           msg: msg,
         );
       },
@@ -452,7 +488,7 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
         ? 'Session ended'
         : 'Session needs sign-in';
     return Container(
-      key: const ValueKey('codex-watch-banner'),
+      key: const ValueKey('session-watch-banner'),
       width: double.infinity,
       color: c.toneBg(ShedStatusTone.warn),
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
@@ -471,9 +507,9 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
           const SizedBox(width: 8),
           FilledButton.icon(
             // Suffixed -banner: the error/unavailable body carries the plain
-            // codex-watch-open-tui key, and both can never share one key (the
+            // session-watch-open-tui key, and both can never share one key (the
             // banner + error body can be on screen together).
-            key: const ValueKey('codex-watch-open-tui-banner'),
+            key: const ValueKey('session-watch-open-tui-banner'),
             onPressed: _openTui,
             icon: const Icon(Icons.terminal, size: 18),
             label: const Text('Terminal'),
@@ -483,7 +519,11 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
     );
   }
 
-  Widget _inputBar(BuildContext context, {required bool enabled}) {
+  Widget _inputBar(
+    BuildContext context, {
+    required bool enabled,
+    required bool asTurn,
+  }) {
     final c = context.shed;
     return SafeArea(
       top: false,
@@ -498,18 +538,18 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
           children: [
             Expanded(
               child: TextField(
-                key: const ValueKey('codex-watch-input'),
+                key: const ValueKey('session-watch-input'),
                 controller: _input,
                 enabled: enabled && !_sending,
                 minLines: 1,
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => enabled ? _send() : null,
+                onSubmitted: (_) => enabled ? _send(asTurn: asTurn) : null,
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: enabled
-                      ? 'Reply to codex…'
-                      : 'Input available when codex is waiting',
+                      ? (asTurn ? 'What should it do next?' : 'Reply…')
+                      : 'Waiting for the session to ask',
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -528,8 +568,8 @@ class _CodexWatchScreenState extends ConsumerState<CodexWatchScreen> {
                     ),
                   )
                 : IconButton.filled(
-                    key: const ValueKey('codex-watch-send'),
-                    onPressed: enabled ? _send : null,
+                    key: const ValueKey('session-watch-send'),
+                    onPressed: enabled ? () => _send(asTurn: asTurn) : null,
                     icon: const Icon(Icons.send, size: 20),
                     tooltip: 'Send',
                   ),
@@ -549,7 +589,7 @@ class _TruncatedDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.shed;
     return Padding(
-      key: const ValueKey('codex-watch-truncated'),
+      key: const ValueKey('session-watch-truncated'),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
         children: [

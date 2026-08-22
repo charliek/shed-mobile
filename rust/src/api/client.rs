@@ -202,6 +202,30 @@ impl BridgeClient {
             .map_err(Into::into)
     }
 
+    /// Start a structured turn on a shed session — the `input: "turn"`
+    /// counterpart to [`Self::rc_input`]'s `"gated"` keystroke path. Which one
+    /// applies is the kind's business (`kind_features.input`), never a guess.
+    pub async fn rc_turn(
+        &self,
+        shed: String,
+        slug: String,
+        text: String,
+    ) -> Result<String, BridgeError> {
+        let client = self.inner.clone();
+        run(async move { client.rc_turn(&shed, &slug, &text).await })
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Interrupt the running turn. `false` = nothing was running, which is an
+    /// answer rather than a failure.
+    pub async fn rc_interrupt(&self, shed: String, slug: String) -> Result<bool, BridgeError> {
+        let client = self.inner.clone();
+        run(async move { client.rc_interrupt(&shed, &slug).await })
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn start(&self, name: String) -> Result<(), BridgeError> {
         let client = self.inner.clone();
         run(async move { client.start(&name).await })
