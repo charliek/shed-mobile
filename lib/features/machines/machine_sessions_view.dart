@@ -273,6 +273,7 @@ class _MachineSessionCard extends StatelessWidget {
               _MachineActions(
                 machineName: state.machine.name,
                 session: session,
+                state: state,
               ),
           ],
         ),
@@ -288,10 +289,15 @@ class _MachineSessionCard extends StatelessWidget {
 /// output first is guesswork. End stays here because it is not direction: it is
 /// removal, and it needs no context to mean what it says.
 class _MachineActions extends ConsumerStatefulWidget {
-  const _MachineActions({required this.machineName, required this.session});
+  const _MachineActions({
+    required this.machineName,
+    required this.session,
+    required this.state,
+  });
 
   final String machineName;
   final BridgeRcSession session;
+  final MachineFeedState state;
 
   @override
   ConsumerState<_MachineActions> createState() => _MachineActionsState();
@@ -332,18 +338,26 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
   @override
   Widget build(BuildContext context) {
     final slug = widget.session.slug;
+    // **Gated on the kind's own capability, exactly as the shed card is.**
+    // A kind with no feed opens a watch screen that can only fail against the
+    // messages endpoint — and a machine session offering Watch where the same
+    // kind in a shed does not is precisely the inconsistency this block exists
+    // to remove. Unknown capabilities mean no, which is the safe direction.
+    final canWatch =
+        widget.state.featuresFor(widget.session)?.watch ?? false;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 10),
         Row(
           children: [
-            TextButton.icon(
-              key: ValueKey('machine-watch-$slug'),
-              onPressed: _busy ? null : _watch,
-              icon: const Icon(Icons.visibility_outlined, size: 16),
-              label: const Text('Watch'),
-            ),
+            if (canWatch)
+              TextButton.icon(
+                key: ValueKey('machine-watch-$slug'),
+                onPressed: _busy ? null : _watch,
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Text('Watch'),
+              ),
             const Spacer(),
             TextButton.icon(
               key: ValueKey('machine-kill-$slug'),

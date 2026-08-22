@@ -39,6 +39,7 @@ class SessionCard extends ConsumerStatefulWidget {
     required this.shedName,
     required this.session,
     this.live = false,
+    this.originIsImplied = false,
     this.urlLauncher,
     super.key,
   });
@@ -47,6 +48,14 @@ class SessionCard extends ConsumerStatefulWidget {
   final String shedName;
   final BridgeRcSession session;
   final bool live;
+
+  /// Whether the surrounding view already says which shed this session is in.
+  ///
+  /// True on a shed's own detail screen, whose app bar names it — repeating it
+  /// on every card wastes a line that truncates. FALSE in the cross-host list,
+  /// which groups by SERVER: two sheds on one server would otherwise leave
+  /// their sessions with nothing on the card saying which is which.
+  final bool originIsImplied;
 
   /// Test seam for the URL "open" action: an injected launcher passed straight
   /// through to [launchExternalUrl]. Production leaves this null (the real
@@ -221,6 +230,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
         s.tmuxSession,
         s.createdAt,
         workdir: s.workdir,
+        originIsImplied: widget.originIsImplied,
       ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,

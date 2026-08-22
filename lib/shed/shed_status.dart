@@ -84,11 +84,12 @@ ActivityDisplay? rcActivityBadge(
 
 /// The colour of a session card's left edge — what most wants your attention.
 ///
-/// Precedence is deliberate and not the same as the badges': a bad LIFECYCLE
-/// outranks any activity, because a dead session is not merely idle. Below
-/// that, an activity that is asking for a person (needs input / needs approval)
-/// outranks one that is merely busy, and busy outranks idle. Nothing worth
-/// saying returns null, and the card renders without an edge.
+/// Precedence: a `dead` lifecycle is red; ANY lifecycle the badge renders as a
+/// warning is amber, whether or not it suppresses activity — otherwise the edge
+/// can contradict the badge sitting next to it. Only once the lifecycle is
+/// unremarkable does activity decide: asking for a person outranks merely being
+/// busy, and idle says nothing at all. Nothing worth saying returns null, and
+/// the card renders without an edge.
 ///
 /// One rule, shared by every card: the point of the edge is a COLUMN that reads
 /// at a glance, and a column whose colours mean different things per row would
@@ -102,9 +103,13 @@ Color? sessionRailColor(
   // A row we can no longer reach says so by being dimmed; colouring its edge
   // would assert something current about a machine we cannot see.
   if (stale) return null;
-  if (!rcStatePermitsActivity(state)) {
-    return state == BridgeRcState.dead ? shed.dotErr : shed.dotWarn;
-  }
+  if (state == BridgeRcState.dead) return shed.dotErr;
+  // EVERY lifecycle the badge renders as a warning gets the warning edge, not
+  // just the ones that suppress activity. `starting` and `reconnecting` permit
+  // activity, so gating on `rcStatePermitsActivity` alone let a reconnecting
+  // session show a GREEN edge beside an amber `reconnecting` badge — the card
+  // contradicting itself, which is worse than either colour alone.
+  if (shedStatusTone(state.wire).tone == ShedStatusTone.warn) return shed.dotWarn;
   return switch (activity) {
     BridgeRcActivity.needsInput || BridgeRcActivity.needsApproval => shed.dotWarn,
     BridgeRcActivity.working => shed.dotOk,

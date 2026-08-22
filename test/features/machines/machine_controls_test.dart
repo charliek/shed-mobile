@@ -17,9 +17,12 @@ import 'package:shed_mobile/theme/shed_theme.dart';
 /// governs them live on the watch screen, beside the output
 /// (`session_watch_screen_test.dart`).
 ///
-/// So the rule this file pins is the inverse of a gate: EVERY kind gets the
-/// same two actions here, because "can I direct this?" is not a question the
-/// list is allowed to answer.
+/// Two rules, then. "Can I direct this?" is not a question the list is allowed
+/// to answer — nothing here steers. But "can I READ this?" is a capability like
+/// any other, so Watch is gated on `kind_features.watch` exactly as the shed
+/// card gates it: a kind with no feed must not be offered a view that can only
+/// fail, and it must not be offered one on a machine that it would be denied in
+/// a shed.
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3.example');
 
 BridgeRcKindFeatures _features({
@@ -92,11 +95,13 @@ MachineFeedState _live(
 );
 
 void main() {
-  testWidgets('every kind gets the same two list actions: Watch and End', (
+  testWidgets('Watch is offered exactly where the kind advertises a feed', (
     tester,
   ) async {
-    // opencode is fully steerable, codex takes keystrokes only, shell takes
-    // nothing — and on the LIST that difference is invisible, by design.
+    // codex review: this used to offer Watch for EVERY kind, which meant a
+    // `shell` session on a machine opened a watch screen that could only fail
+    // against the messages endpoint — while the same kind in a SHED offered no
+    // Watch at all. Same capability, two answers, decided by where it ran.
     await tester.pumpWidget(
       _app(
         _live([
@@ -108,14 +113,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // opencode and codex both report `watch: true`.
+    for (final slug in ['oc1', 'cx1']) {
+      expect(find.byKey(ValueKey('machine-watch-$slug')), findsOneWidget);
+    }
+    // `shell` has no kind_features entry at all — no feed to watch.
+    expect(find.byKey(const ValueKey('machine-watch-sh1')), findsNothing);
+
+    // Ending it is not a hub verb and needs no capability: always offered.
     for (final slug in ['oc1', 'cx1', 'sh1']) {
-      expect(
-        find.byKey(ValueKey('machine-watch-$slug')),
-        findsOneWidget,
-        reason: '$slug must be watchable',
-      );
       expect(find.byKey(ValueKey('machine-kill-$slug')), findsOneWidget);
     }
+  });
+
+  testWidgets('with capabilities unknown, nothing is watchable', (tester) async {
+    // The probe is a second SSH exec that can fail. Failing OPEN — assuming a
+    // feed because the kind usually has one — is the mistake the whole
+    // render-off-features rule exists to prevent.
+    await tester.pumpWidget(
+      _app(_live([_session('oc1', const BridgeRcKind.opencode())])),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('machine-watch-oc1')), findsNothing);
+    expect(find.byKey(const ValueKey('machine-kill-oc1')), findsOneWidget);
   });
 
   testWidgets('the list offers nothing that steers a session', (tester) async {

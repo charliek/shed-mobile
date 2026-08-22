@@ -102,7 +102,9 @@ class ShedDetailScreen extends ConsumerWidget {
                   shedName: shedName,
                   session: s,
                   live: false,
-                );
+                
+                  // This screen's app bar already names the shed.
+                  originIsImplied: true,);
               },
             ),
           );

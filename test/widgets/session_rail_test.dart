@@ -34,6 +34,17 @@ void main() {
     expect(rail(BridgeRcState.ready, BridgeRcActivity.working), shed.dotOk);
   });
 
+  test('every warning lifecycle gets the warning edge, not just blocking ones', () {
+    // codex review: `starting` and `reconnecting` render warning badges but
+    // PERMIT activity, so gating on rcStatePermitsActivity alone gave a
+    // reconnecting-and-working session a green edge beside an amber badge —
+    // the card contradicting itself.
+    expect(rail(BridgeRcState.reconnecting, BridgeRcActivity.working), shed.dotWarn);
+    expect(rail(BridgeRcState.reconnecting, BridgeRcActivity.idle), shed.dotWarn);
+    expect(rail(BridgeRcState.starting, BridgeRcActivity.working), shed.dotWarn);
+    expect(rail(BridgeRcState.starting), shed.dotWarn);
+  });
+
   test('nothing worth saying gets no edge at all', () {
     // An uncoloured row is the default, so the coloured ones carry weight. If
     // idle were a colour, a full list would be a wall of stripes saying nothing.

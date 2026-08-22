@@ -61,6 +61,10 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
   bool _sending = false;
   bool _appending = false;
 
+  /// A seq bump arrived while a drain was in flight. Set instead of dropping
+  /// it, and consumed when that drain finishes — see [_appendNew].
+  bool _appendAgain = false;
+
   /// Bumped at the start of every [_reload]; in-flight [_appendNew] drains (and
   /// stale [_reload]s) capture it and abort when it moves, so a reload can never
   /// race an append into duplicate rows (duplicate seq ValueKeys would crash the
@@ -75,7 +79,12 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
     // Defer the first load until after the initial build has established the
     // liveActivityProvider watch (which keeps shedClientProvider alive), so the
     // client isn't disposed out from under the fetch.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+    // `mounted` because a screen can be pushed and popped before its first
+    // post-frame callback runs (an immediate programmatic replace), and
+    // `_reload` calls setState.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reload();
+    });
   }
 
   @override
@@ -173,7 +182,15 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
   /// `message.appended` seq bump). A `truncated` page means the cursor is stale
   /// (the ring dropped messages or restarted, resetting seq) → full refetch.
   Future<void> _appendNew() async {
-    if (_appending || _loading) return;
+    // A bump that lands while a drain is in flight is NOT dropped — it is
+    // remembered and drained when this one finishes. Returning early used to
+    // lose it outright: the seq was already marked seen, so nothing would fetch
+    // that message until some *later* message happened to arrive. On a session
+    // that then went quiet, the last thing it said stayed invisible.
+    if (_appending || _loading) {
+      _appendAgain = true;
+      return;
+    }
     _appending = true;
     final gen = _generation; // abort if a reload supersedes this drain
     try {
@@ -204,6 +221,11 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
       // rendered feed with an error state.
     } finally {
       _appending = false;
+    }
+    // Drain again for anything that arrived while we were busy.
+    if (_appendAgain && mounted) {
+      _appendAgain = false;
+      await _appendNew();
     }
   }
 
@@ -394,7 +416,16 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
   /// resets to 1), so the cursor belongs to a previous incarnation and a
   /// targeted drain would stall on empty pages forever — refetch instead.
   void _reactToSeq(BigInt? seq) {
-    if (seq == null || seq == _seenSeq) return;
+    // The feed went away (a reconnect cleared the overlay). What is on screen
+    // belongs to a connection that no longer exists, so the next non-null seq
+    // must be acted on even if it repeats a number we have already seen — a new
+    // hub run restarts its counter, and `seq == _seenSeq` across that boundary
+    // is a coincidence, not a duplicate.
+    if (seq == null) {
+      _seenSeq = null;
+      return;
+    }
+    if (seq == _seenSeq) return;
     _seenSeq = seq;
     // Deferred: this runs during build, and both paths call setState.
     WidgetsBinding.instance.addPostFrameCallback((_) {
