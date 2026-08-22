@@ -334,10 +334,7 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             ],
           );
 
-    return CardShell(
-      rail: sessionRailColor(c, state, activity),
-      child: body,
-    );
+    return CardShell(rail: sessionRailColor(c, state, activity), child: body);
   }
 
   /// The watch/copy/open action buttons shown ahead of the terminal pill —

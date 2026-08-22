@@ -154,7 +154,6 @@ class MachineFeed {
     required this.hostKeys,
   }) : _state = MachineFeedState(machine: machine);
 
-
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
   final HostKeyStore hostKeys;
@@ -413,7 +412,9 @@ class MachineFeed {
         // "refetch from scratch" rather than a targeted drain — so it is passed
         // through unfiltered and interpreted there, where the cursor lives.
         _emit(
-          _state.copyWith(overlay: _withPatch(slug, MachinePatch(lastSeq: seq))),
+          _state.copyWith(
+            overlay: _withPatch(slug, MachinePatch(lastSeq: seq)),
+          ),
         );
       default:
         break;

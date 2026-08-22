@@ -51,14 +51,11 @@ Widget _app(
     overviewProvider.overrideWith((ref, name) => throw StateError('offline')),
     machinesProvider.overrideWith((ref) async => machines),
     for (final m in machines)
-      machineFeedProvider(m.name).overrideWith(
-        (ref) => Stream.value(states[m.name] ?? _state(m)),
-      ),
+      machineFeedProvider(
+        m.name,
+      ).overrideWith((ref) => Stream.value(states[m.name] ?? _state(m))),
   ],
-  child: MaterialApp(
-    theme: shedLightTheme,
-    home: const ServerListScreen(),
-  ),
+  child: MaterialApp(theme: shedLightTheme, home: const ServerListScreen()),
 );
 
 void main() {
@@ -92,10 +89,13 @@ void main() {
     // the whole body, so a user with zero hosts and two machines saw NO
     // machines — and no way to add one.
     await tester.pumpWidget(
-      _app(const [_mini2, _mini3], {
-        'mini2': _state(_mini2, reachable: true, connectedOnce: true),
-        'mini3': _state(_mini3, reachable: true, connectedOnce: true),
-      }),
+      _app(
+        const [_mini2, _mini3],
+        {
+          'mini2': _state(_mini2, reachable: true, connectedOnce: true),
+          'mini3': _state(_mini3, reachable: true, connectedOnce: true),
+        },
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -134,13 +134,16 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _app(const [_sleepy], {
-        'sleepy': _state(
-          _sleepy,
-          connectedOnce: true,
-          detail: 'nothing is listening on 1029',
-        ),
-      }),
+      _app(
+        const [_sleepy],
+        {
+          'sleepy': _state(
+            _sleepy,
+            connectedOnce: true,
+            detail: 'nothing is listening on 1029',
+          ),
+        },
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -183,8 +186,14 @@ void main() {
     final serversY = tester.getTopLeft(find.text('SHED SERVERS')).dy;
     // "MACHINES (1)" once there is one to count.
     final machinesY = tester.getTopLeft(find.textContaining('MACHINES')).dy;
-    expect(tester.getTopLeft(find.text('Add server')).dy, closeTo(serversY, 24));
-    expect(tester.getTopLeft(find.text('Add machine')).dy, closeTo(machinesY, 24));
+    expect(
+      tester.getTopLeft(find.text('Add server')).dy,
+      closeTo(serversY, 24),
+    );
+    expect(
+      tester.getTopLeft(find.text('Add machine')).dy,
+      closeTo(machinesY, 24),
+    );
   });
 
   testWidgets('with no machines the section is a quiet line, not a page', (

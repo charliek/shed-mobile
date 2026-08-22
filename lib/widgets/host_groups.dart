@@ -128,7 +128,12 @@ class HostGroupHeader extends StatelessWidget {
 /// is the point: a shed host and a machine are the same kind of thing to a
 /// person, differing only in how they are reached.
 class SectionHeader extends StatelessWidget {
-  const SectionHeader({required this.label, this.count, this.action, super.key});
+  const SectionHeader({
+    required this.label,
+    this.count,
+    this.action,
+    super.key,
+  });
 
   final String label;
   final int? count;

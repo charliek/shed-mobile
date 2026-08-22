@@ -49,8 +49,7 @@ class MachinesSection extends ConsumerWidget {
             'activity hub.',
           )
         else
-          for (final m in _healthyFirst(ref, list))
-            _MachineCard(machine: m),
+          for (final m in _healthyFirst(ref, list)) _MachineCard(machine: m),
       ],
     );
   }
@@ -72,7 +71,9 @@ List<MachineRecord> _healthyFirst(WidgetRef ref, List<MachineRecord> list) {
   }
 
   final ranked = [for (final m in list) (rank(m), m)];
-  ranked.sort((a, b) => a.$1 - b.$1 != 0 ? a.$1 - b.$1 : a.$2.name.compareTo(b.$2.name));
+  ranked.sort(
+    (a, b) => a.$1 - b.$1 != 0 ? a.$1 - b.$1 : a.$2.name.compareTo(b.$2.name),
+  );
   return [for (final r in ranked) r.$2];
 }
 

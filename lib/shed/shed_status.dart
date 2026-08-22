@@ -109,9 +109,12 @@ Color? sessionRailColor(
   // activity, so gating on `rcStatePermitsActivity` alone let a reconnecting
   // session show a GREEN edge beside an amber `reconnecting` badge — the card
   // contradicting itself, which is worse than either colour alone.
-  if (shedStatusTone(state.wire).tone == ShedStatusTone.warn) return shed.dotWarn;
+  if (shedStatusTone(state.wire).tone == ShedStatusTone.warn) {
+    return shed.dotWarn;
+  }
   return switch (activity) {
-    BridgeRcActivity.needsInput || BridgeRcActivity.needsApproval => shed.dotWarn,
+    BridgeRcActivity.needsInput ||
+    BridgeRcActivity.needsApproval => shed.dotWarn,
     BridgeRcActivity.working => shed.dotOk,
     _ => null,
   };

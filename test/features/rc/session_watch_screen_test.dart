@@ -49,16 +49,15 @@ class _FakeSource extends SessionWatchSource {
   String get title => 'mini3/abc123';
 
   @override
-  TerminalTarget get terminalTarget =>
-      const MachineTerminalTarget(machineName: 'mini3', slug: 'abc123', title: 't');
+  TerminalTarget get terminalTarget => const MachineTerminalTarget(
+    machineName: 'mini3',
+    slug: 'abc123',
+    title: 't',
+  );
 
   @override
-  WatchedSession watch(WidgetRef ref) => (
-    state: state,
-    activity: activity,
-    lastSeq: null,
-    features: features,
-  );
+  WatchedSession watch(WidgetRef ref) =>
+      (state: state, activity: activity, lastSeq: null, features: features);
 
   @override
   Future<BridgeRcMessagesPage> messages(
@@ -68,7 +67,8 @@ class _FakeSource extends SessionWatchSource {
   }) async => BridgeRcMessagesPage(messages: messages_, truncated: false);
 
   @override
-  Future<void> sendInput(WidgetRef ref, String text) async => sentInputs.add(text);
+  Future<void> sendInput(WidgetRef ref, String text) async =>
+      sentInputs.add(text);
 
   @override
   Future<void> steer(WidgetRef ref, String text) async => sentTurns.add(text);
@@ -94,7 +94,11 @@ BridgeRcKindFeatures _features({
   attach: 'tmux',
 );
 
-final _opencode = _features(approvals: 'remote', input: 'turn', interrupt: true);
+final _opencode = _features(
+  approvals: 'remote',
+  input: 'turn',
+  interrupt: true,
+);
 final _codex = _features(approvals: 'tui', input: 'gated', interrupt: false);
 
 /// Bounded pumps, not `pumpAndSettle`: a session that is WORKING renders a
@@ -127,11 +131,16 @@ bool _enabled(WidgetTester tester) =>
     tester.widget<IconButton>(_sendButton).onPressed != null;
 
 void main() {
-  testWidgets('a turn kind can be directed whenever it is alive', (tester) async {
+  testWidgets('a turn kind can be directed whenever it is alive', (
+    tester,
+  ) async {
     // Not only while it is "waiting": a structured turn is how you interrupt a
     // train of thought with new direction, which is the whole point of being
     // able to steer from a phone.
-    final s = _FakeSource(features: _opencode, activity: BridgeRcActivity.working);
+    final s = _FakeSource(
+      features: _opencode,
+      activity: BridgeRcActivity.working,
+    );
     await _pump(tester, s);
 
     expect(_enabled(tester), isTrue);
@@ -140,16 +149,26 @@ void main() {
     await _settle(tester);
 
     expect(s.sentTurns, ['describe this project']);
-    expect(s.sentInputs, isEmpty, reason: 'a turn kind must not get the keystroke verb');
+    expect(
+      s.sentInputs,
+      isEmpty,
+      reason: 'a turn kind must not get the keystroke verb',
+    );
   });
 
-  testWidgets('a gated kind is only writable while it is WAITING', (tester) async {
+  testWidgets('a gated kind is only writable while it is WAITING', (
+    tester,
+  ) async {
     final working = _FakeSource(
       features: _codex,
       activity: BridgeRcActivity.working,
     );
     await _pump(tester, working);
-    expect(_enabled(tester), isFalse, reason: 'codex is mid-turn; it is not asking');
+    expect(
+      _enabled(tester),
+      isFalse,
+      reason: 'codex is mid-turn; it is not asking',
+    );
 
     final waiting = _FakeSource(
       features: _codex,
@@ -178,9 +197,15 @@ void main() {
       reason: 'codex reports interrupt:false — the button would 409',
     );
 
-    final oc = _FakeSource(features: _opencode, activity: BridgeRcActivity.working);
+    final oc = _FakeSource(
+      features: _opencode,
+      activity: BridgeRcActivity.working,
+    );
     await _pump(tester, oc);
-    expect(find.byKey(const ValueKey('session-watch-interrupt')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('session-watch-interrupt')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('session-watch-interrupt')));
     await _settle(tester);
     expect(oc.interrupts, 1);
@@ -202,11 +227,16 @@ void main() {
     expect(find.textContaining('failed'), findsNothing);
   });
 
-  testWidgets('a kind with no capabilities at all is observe-only', (tester) async {
+  testWidgets('a kind with no capabilities at all is observe-only', (
+    tester,
+  ) async {
     // `shell` has no kind_features entry, and a capability probe that failed
     // yields the same null. Failing OPEN here — assuming a kind is directable
     // because its name usually is — is exactly the mistake the rule forbids.
-    final s = _FakeSource(features: null, activity: BridgeRcActivity.needsInput);
+    final s = _FakeSource(
+      features: null,
+      activity: BridgeRcActivity.needsInput,
+    );
     await _pump(tester, s);
 
     expect(_enabled(tester), isFalse);
@@ -219,10 +249,7 @@ void main() {
     // needs-auth and dead are not "an error loading the feed" — the session is
     // there, and the only thing that can help is a terminal. So the screen says
     // so up front rather than rendering an empty feed and a dead input bar.
-    final s = _FakeSource(
-      features: _opencode,
-      state: BridgeRcState.needsAuth,
-    );
+    final s = _FakeSource(features: _opencode, state: BridgeRcState.needsAuth);
     await _pump(tester, s);
 
     expect(
@@ -266,11 +293,17 @@ void main() {
     // on this screen that cannot be inferred from context.
     await _pump(
       tester,
-      _FakeSource(features: _opencode, activity: BridgeRcActivity.needsApproval),
+      _FakeSource(
+        features: _opencode,
+        activity: BridgeRcActivity.needsApproval,
+      ),
     );
 
     expect(find.byKey(const ValueKey('session-watch-state')), findsOneWidget);
-    expect(find.byKey(const ValueKey('session-watch-activity')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('session-watch-activity')),
+      findsOneWidget,
+    );
     // The slug is never elided, whatever else is on the bar.
     expect(find.text('abc123'), findsOneWidget);
     // …and the origin is readable beside it, so "which box am I on" has an

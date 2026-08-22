@@ -299,9 +299,9 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
       logDriveResult('session-watch-interrupt', ok: true);
       if (!mounted) return;
       if (!stopped) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nothing was running')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Nothing was running')));
       }
     } catch (e) {
       logDriveResult('session-watch-interrupt', ok: false, error: e);
@@ -332,8 +332,11 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
     final asTurn = kf?.input == 'turn';
     // A turn kind accepts direction whenever it is alive; a gated kind only
     // while it is actually waiting for an answer.
-    final inputAvailable = permits &&
-        (asTurn || ((kf?.inputGated ?? false) && activity == BridgeRcActivity.needsInput));
+    final inputAvailable =
+        permits &&
+        (asTurn ||
+            ((kf?.inputGated ?? false) &&
+                activity == BridgeRcActivity.needsInput));
     final canInterrupt = (kf?.interrupt ?? false) && permits;
     // needs-auth / dead → the feed can't drive the session; hand off to the TUI.
     final blocked =
@@ -505,7 +508,9 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
                     ? 'Live view unavailable on this shed'
                     : 'Could not load the feed: ${app?.message ?? err}',
                 key: ValueKey(
-                  unavailable ? 'session-watch-unavailable' : 'session-watch-error',
+                  unavailable
+                      ? 'session-watch-unavailable'
+                      : 'session-watch-error',
                 ),
                 textAlign: TextAlign.center,
                 style: sansStyle(fontSize: 14, color: c.fg2),

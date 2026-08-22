@@ -343,8 +343,7 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
     // messages endpoint — and a machine session offering Watch where the same
     // kind in a shed does not is precisely the inconsistency this block exists
     // to remove. Unknown capabilities mean no, which is the safe direction.
-    final canWatch =
-        widget.state.featuresFor(widget.session)?.watch ?? false;
+    final canWatch = widget.state.featuresFor(widget.session)?.watch ?? false;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -364,9 +363,7 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
               onPressed: _busy ? null : _end,
               icon: const Icon(Icons.delete_outline, size: 16),
               label: const Text('End'),
-              style: TextButton.styleFrom(
-                foregroundColor: context.shed.errFg,
-              ),
+              style: TextButton.styleFrom(foregroundColor: context.shed.errFg),
             ),
           ],
         ),

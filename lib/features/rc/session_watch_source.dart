@@ -95,10 +95,17 @@ class ShedWatchSource extends SessionWatchSource {
   @override
   WatchedSession watch(WidgetRef ref) {
     final patch = ref.watch(
-      liveActivityProvider(serverName).select((a) => a.value?.lookup(shedName, slug)),
+      liveActivityProvider(
+        serverName,
+      ).select((a) => a.value?.lookup(shedName, slug)),
     );
     final caps = ref
-        .watch(shedCapabilitiesProvider((serverName: serverName, shedName: shedName)))
+        .watch(
+          shedCapabilitiesProvider((
+            serverName: serverName,
+            shedName: shedName,
+          )),
+        )
         .value;
     return (
       state: patch?.state ?? session.state,
@@ -115,7 +122,12 @@ class ShedWatchSource extends SessionWatchSource {
     required int limit,
   }) async {
     final client = await ref.read(shedClientProvider(serverName).future);
-    return client.rcMessages(shed: shedName, slug: slug, since: since, limit: limit);
+    return client.rcMessages(
+      shed: shedName,
+      slug: slug,
+      since: since,
+      limit: limit,
+    );
   }
 
   @override
@@ -167,7 +179,8 @@ class MachineWatchSource extends SessionWatchSource {
     final feed = ref.watch(machineFeedProvider(machineName)).value;
     // The row as the feed currently holds it, so a session that ended or
     // changed kind mid-watch is reflected rather than frozen at open time.
-    final live = feed?.sessions.where((s) => s.slug == slug).firstOrNull ?? session;
+    final live =
+        feed?.sessions.where((s) => s.slug == slug).firstOrNull ?? session;
     return (
       state: feed?.stateOf(live) ?? live.state,
       activity: feed?.activityOf(live) ?? live.activity,
@@ -178,7 +191,9 @@ class MachineWatchSource extends SessionWatchSource {
 
   /// The feed's forwarded port, or a thrown error naming the real problem.
   int _port(WidgetRef ref) {
-    final port = ref.read(machineFeedControllerProvider(machineName)).tunnelPort;
+    final port = ref
+        .read(machineFeedControllerProvider(machineName))
+        .tunnelPort;
     if (port == null) {
       throw StateError('$machineName is not connected');
     }
@@ -195,11 +210,7 @@ class MachineWatchSource extends SessionWatchSource {
     // cursor, and the caller pages by advancing `since`. The screen's `limit`
     // is its own pagination budget, honoured by the shed's API; here it is
     // simply not part of the wire.
-    return machineMessages(
-      localPort: _port(ref),
-      slug: slug,
-      since: since,
-    );
+    return machineMessages(localPort: _port(ref), slug: slug, since: since);
   }
 
   @override

@@ -126,7 +126,9 @@ void main() {
     }
   });
 
-  testWidgets('with capabilities unknown, nothing is watchable', (tester) async {
+  testWidgets('with capabilities unknown, nothing is watchable', (
+    tester,
+  ) async {
     // The probe is a second SSH exec that can fail. Failing OPEN — assuming a
     // feed because the kind usually has one — is the mistake the whole
     // render-off-features rule exists to prevent.
@@ -143,7 +145,9 @@ void main() {
     // The regression this guards is the shipped-then-reverted design: Steer and
     // Interrupt sat on the card, so the only way to use them was blind.
     await tester.pumpWidget(
-      _app(_live([_session('oc1', const BridgeRcKind.opencode())], caps: _caps)),
+      _app(
+        _live([_session('oc1', const BridgeRcKind.opencode())], caps: _caps),
+      ),
     );
     await tester.pumpAndSettle();
 

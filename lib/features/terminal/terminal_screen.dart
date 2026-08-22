@@ -21,7 +21,8 @@ import 'terminal_keys.dart';
 /// Signature of the factory that assembles a (still-unstarted) [PtySession] for
 /// a [TerminalTarget]. A test injects a fake here to exercise the terminal
 /// without a real SSH PTY; null in production (see [_defaultPtyBuilder]).
-typedef PtyBuilder = Future<PtySession> Function(WidgetRef ref, TerminalTarget target);
+typedef PtyBuilder =
+    Future<PtySession> Function(WidgetRef ref, TerminalTarget target);
 
 /// The production builder — the target resolves its own coordinates. A test
 /// injects a fake in its place (see [TerminalScreen.ptyBuilder]).
@@ -35,7 +36,12 @@ Future<PtySession> _defaultPtyBuilder(WidgetRef ref, TerminalTarget target) =>
 /// Works against a shed OR a machine — [TerminalTarget] is the whole of the
 /// difference, because once a connection exists the remote command is the same.
 class TerminalScreen extends ConsumerStatefulWidget {
-  const TerminalScreen({required this.target, this.ptyBuilder, this.urlLauncher, super.key});
+  const TerminalScreen({
+    required this.target,
+    this.ptyBuilder,
+    this.urlLauncher,
+    super.key,
+  });
 
   /// Where to attach — a shed or a machine. The screen itself is transport-
   /// agnostic: once a [PtySession] exists, `tmux attach -t rc-<slug>` is the
