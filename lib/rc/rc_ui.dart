@@ -123,6 +123,7 @@ extension BridgeRcActivityUi on BridgeRcActivity {
   String get wire => switch (this) {
     BridgeRcActivity.working => 'working',
     BridgeRcActivity.needsInput => 'needs_input',
+    BridgeRcActivity.needsApproval => 'needs_approval',
     BridgeRcActivity.idle => 'idle',
     BridgeRcActivity.unknown => 'unknown',
   };

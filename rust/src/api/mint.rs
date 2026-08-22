@@ -1224,6 +1224,10 @@ mod tests {
             "BridgeDiskSize",
             "BridgeDiskTotals",
             "BridgeError",
+            // Two Strings — a server NAME and a human detail. No key
+            // material at any depth (plan 012 S5: absorbed with the shed-core
+            // pin bump, where the variant is a server-identity + remedy pair).
+            "BridgeError_AgentUpgradeRequired",
             "BridgeError_BadStatus",
             "BridgeError_Config",
             "BridgeError_Create",

@@ -73,6 +73,13 @@ impl From<RcState> for BridgeRcState {
 pub enum BridgeRcActivity {
     Working,
     NeedsInput,
+    /// The session is blocked on an approval (contract v2). Distinct from
+    /// `NeedsInput`: the agent is not waiting for a prompt, it is waiting for a
+    /// DECISION — and whether the phone can make that decision depends on the
+    /// kind's `approvals` capability (`remote` = steerable here, `tui` =
+    /// informational, open the TUI). Rendering must key on `kind_features`,
+    /// never on the kind.
+    NeedsApproval,
     Idle,
     Unknown,
 }
@@ -82,6 +89,7 @@ impl From<RcActivity> for BridgeRcActivity {
         match a {
             RcActivity::Working => BridgeRcActivity::Working,
             RcActivity::NeedsInput => BridgeRcActivity::NeedsInput,
+            RcActivity::NeedsApproval => BridgeRcActivity::NeedsApproval,
             RcActivity::Idle => BridgeRcActivity::Idle,
             RcActivity::Unknown => BridgeRcActivity::Unknown,
         }
@@ -309,6 +317,10 @@ pub enum BridgeRcEvent {
         activity: Option<BridgeRcActivity>,
         state: Option<BridgeRcState>,
         last_message: Option<String>,
+        /// The session's lane (contract v2), carried verbatim when the hub sends
+        /// one. `None` on a removal, and on a hub that predates the field.
+        /// Additive: a consumer that ignores it behaves exactly as before.
+        lane: Option<String>,
         removed: bool,
     },
     MessageAppended {
@@ -348,6 +360,7 @@ impl From<RcEvent> for BridgeRcEvent {
                 activity,
                 state,
                 last_message,
+                lane,
                 removed,
             } => BridgeRcEvent::SessionUpdated {
                 shed,
@@ -355,6 +368,7 @@ impl From<RcEvent> for BridgeRcEvent {
                 activity: activity.map(Into::into),
                 state: state.map(Into::into),
                 last_message,
+                lane,
                 removed,
             },
             RcEvent::MessageAppended { shed, slug, seq } => {
@@ -444,6 +458,10 @@ mod tests {
                 approvals: "tui".into(),
                 watch: true,
                 input: "gated".into(),
+                // contract v2: the feed/steer affordances the client renders off.
+                feed: "messages".into(),
+                interrupt: false,
+                attach: "tmux".into(),
             },
         );
         let caps = RcCapabilities {
@@ -484,6 +502,8 @@ mod tests {
             created_by: Some("shed-mobile/1".into()),
             created_at: Some("2026-01-01T00:00:00Z".into()),
             target_label: Some("proj".into()),
+            lane: None,
+            pending_approvals: None,
             activity: Some(RcActivity::Working),
             activity_at: Some("2026-01-01T00:01:00Z".into()),
             last_message: Some("building".into()),
@@ -546,6 +566,7 @@ mod tests {
             activity: None,
             state: None,
             last_message: None,
+            lane: None,
             removed: true,
         });
         assert!(matches!(

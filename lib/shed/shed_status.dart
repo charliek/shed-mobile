@@ -37,29 +37,41 @@ StatusDisplay shedStatusTone(String status) => switch (status) {
 /// the activity badge sits beside the lifecycle badge in the same visual
 /// language) with an activity-specific mapping: `working` pulses in the ok tone
 /// (actively producing), `needs_input` is a steady warn (waiting on the
-/// operator), `idle` is the quiet neutral tone, and `unknown`/absent show no
-/// badge at all (indeterminate — the client never invents one).
+/// operator), `needs_approval` is likewise a steady warn (blocked on a decision
+/// rather than on text), `idle` is the quiet neutral tone, and `unknown`/absent
+/// show no badge at all (indeterminate — the client never invents one).
 typedef ActivityDisplay = ({ShedStatusTone tone, bool pulse, String label});
 
-ActivityDisplay? rcActivityDisplay(BridgeRcActivity? activity) =>
-    switch (activity) {
-      BridgeRcActivity.working => (
-        tone: ShedStatusTone.ok,
-        pulse: true,
-        label: 'working',
-      ),
-      BridgeRcActivity.needsInput => (
-        tone: ShedStatusTone.warn,
-        pulse: false,
-        label: 'needs input',
-      ),
-      BridgeRcActivity.idle => (
-        tone: ShedStatusTone.idle,
-        pulse: false,
-        label: 'idle',
-      ),
-      BridgeRcActivity.unknown || null => null,
-    };
+ActivityDisplay? rcActivityDisplay(
+  BridgeRcActivity? activity,
+) => switch (activity) {
+  BridgeRcActivity.working => (
+    tone: ShedStatusTone.ok,
+    pulse: true,
+    label: 'working',
+  ),
+  BridgeRcActivity.needsInput => (
+    tone: ShedStatusTone.warn,
+    pulse: false,
+    label: 'needs input',
+  ),
+  // Blocked on an APPROVAL, not on a prompt (contract v2). Rendered in the
+  // warn tone like needs-input because both mean "stopped, waiting for you",
+  // but labelled distinctly: whether this phone can actually decide depends
+  // on the kind's `approvals` capability, and calling it "needs input" would
+  // promise a text box that may not be the answer.
+  BridgeRcActivity.needsApproval => (
+    tone: ShedStatusTone.warn,
+    pulse: false,
+    label: 'needs approval',
+  ),
+  BridgeRcActivity.idle => (
+    tone: ShedStatusTone.idle,
+    pulse: false,
+    label: 'idle',
+  ),
+  BridgeRcActivity.unknown || null => null,
+};
 
 /// The activity badge to render for a session, honoring the "lifecycle trumps
 /// activity" gate: null when [state] suppresses activity (needs-*/dead) or the

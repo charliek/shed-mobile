@@ -13,7 +13,20 @@ part 'dto_rc.freezed.dart';
 
 /// A session's live work dimension (mirrors `rc::RcActivity`). Plain enum;
 /// an unknown wire token folds to `Unknown` (no `Other` arm, by design).
-enum BridgeRcActivity { working, needsInput, idle, unknown }
+enum BridgeRcActivity {
+  working,
+  needsInput,
+
+  /// The session is blocked on an approval (contract v2). Distinct from
+  /// `NeedsInput`: the agent is not waiting for a prompt, it is waiting for a
+  /// DECISION — and whether the phone can make that decision depends on the
+  /// kind's `approvals` capability (`remote` = steerable here, `tui` =
+  /// informational, open the TUI). Rendering must key on `kind_features`,
+  /// never on the kind.
+  needsApproval,
+  idle,
+  unknown,
+}
 
 /// One agent's install-probe result (mirrors `rc::RcAgentInfo`).
 class BridgeRcAgentInfo {
@@ -88,6 +101,11 @@ sealed class BridgeRcEvent with _$BridgeRcEvent {
     BridgeRcActivity? activity,
     BridgeRcState? state,
     String? lastMessage,
+
+    /// The session's lane (contract v2), carried verbatim when the hub sends
+    /// one. `None` on a removal, and on a hub that predates the field.
+    /// Additive: a consumer that ignores it behaves exactly as before.
+    String? lane,
     required bool removed,
   }) = BridgeRcEvent_SessionUpdated;
   const factory BridgeRcEvent.messageAppended({

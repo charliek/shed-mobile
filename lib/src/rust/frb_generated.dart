@@ -2351,6 +2351,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return BridgeError_TokenPinMismatch();
       case 12:
         return BridgeError_TokenPinMissing();
+      case 13:
+        return BridgeError_AgentUpgradeRequired(
+          server: dco_decode_String(raw[1]),
+          detail: dco_decode_String(raw[2]),
+        );
       default:
         throw Exception('unreachable');
     }
@@ -2516,7 +2521,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           activity: dco_decode_opt_box_autoadd_bridge_rc_activity(raw[3]),
           state: dco_decode_opt_box_autoadd_bridge_rc_state(raw[4]),
           lastMessage: dco_decode_opt_String(raw[5]),
-          removed: dco_decode_bool(raw[6]),
+          lane: dco_decode_opt_String(raw[6]),
+          removed: dco_decode_bool(raw[7]),
         );
       case 2:
         return BridgeRcEvent_MessageAppended(
@@ -3537,6 +3543,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return BridgeError_TokenPinMismatch();
       case 12:
         return BridgeError_TokenPinMissing();
+      case 13:
+        var var_server = sse_decode_String(deserializer);
+        var var_detail = sse_decode_String(deserializer);
+        return BridgeError_AgentUpgradeRequired(
+          server: var_server,
+          detail: var_detail,
+        );
       default:
         throw UnimplementedError('');
     }
@@ -3756,6 +3769,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           deserializer,
         );
         var var_lastMessage = sse_decode_opt_String(deserializer);
+        var var_lane = sse_decode_opt_String(deserializer);
         var var_removed = sse_decode_bool(deserializer);
         return BridgeRcEvent_SessionUpdated(
           shed: var_shed,
@@ -3763,6 +3777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           activity: var_activity,
           state: var_state,
           lastMessage: var_lastMessage,
+          lane: var_lane,
           removed: var_removed,
         );
       case 2:
@@ -5020,6 +5035,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(11, serializer);
       case BridgeError_TokenPinMissing():
         sse_encode_i_32(12, serializer);
+      case BridgeError_AgentUpgradeRequired(
+        server: final server,
+        detail: final detail,
+      ):
+        sse_encode_i_32(13, serializer);
+        sse_encode_String(server, serializer);
+        sse_encode_String(detail, serializer);
     }
   }
 
@@ -5190,6 +5212,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         activity: final activity,
         state: final state,
         lastMessage: final lastMessage,
+        lane: final lane,
         removed: final removed,
       ):
         sse_encode_i_32(1, serializer);
@@ -5198,6 +5221,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_opt_box_autoadd_bridge_rc_activity(activity, serializer);
         sse_encode_opt_box_autoadd_bridge_rc_state(state, serializer);
         sse_encode_opt_String(lastMessage, serializer);
+        sse_encode_opt_String(lane, serializer);
         sse_encode_bool(removed, serializer);
       case BridgeRcEvent_MessageAppended(
         shed: final shed,

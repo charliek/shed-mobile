@@ -2533,6 +2533,14 @@ impl SseDecode for crate::api::error::BridgeError {
             12 => {
                 return crate::api::error::BridgeError::TokenPinMissing;
             }
+            13 => {
+                let mut var_server = <String>::sse_decode(deserializer);
+                let mut var_detail = <String>::sse_decode(deserializer);
+                return crate::api::error::BridgeError::AgentUpgradeRequired {
+                    server: var_server,
+                    detail: var_detail,
+                };
+            }
             _ => {
                 unimplemented!("");
             }
@@ -2687,8 +2695,9 @@ impl SseDecode for crate::api::dto_rc::BridgeRcActivity {
         return match inner {
             0 => crate::api::dto_rc::BridgeRcActivity::Working,
             1 => crate::api::dto_rc::BridgeRcActivity::NeedsInput,
-            2 => crate::api::dto_rc::BridgeRcActivity::Idle,
-            3 => crate::api::dto_rc::BridgeRcActivity::Unknown,
+            2 => crate::api::dto_rc::BridgeRcActivity::NeedsApproval,
+            3 => crate::api::dto_rc::BridgeRcActivity::Idle,
+            4 => crate::api::dto_rc::BridgeRcActivity::Unknown,
             _ => unreachable!("Invalid variant for BridgeRcActivity: {}", inner),
         };
     }
@@ -2761,6 +2770,7 @@ impl SseDecode for crate::api::dto_rc::BridgeRcEvent {
                 let mut var_state =
                     <Option<crate::api::dto_rc::BridgeRcState>>::sse_decode(deserializer);
                 let mut var_lastMessage = <Option<String>>::sse_decode(deserializer);
+                let mut var_lane = <Option<String>>::sse_decode(deserializer);
                 let mut var_removed = <bool>::sse_decode(deserializer);
                 return crate::api::dto_rc::BridgeRcEvent::SessionUpdated {
                     shed: var_shed,
@@ -2768,6 +2778,7 @@ impl SseDecode for crate::api::dto_rc::BridgeRcEvent {
                     activity: var_activity,
                     state: var_state,
                     last_message: var_lastMessage,
+                    lane: var_lane,
                     removed: var_removed,
                 };
             }
@@ -3967,6 +3978,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::BridgeError {
             crate::api::error::BridgeError::TokenAuthExpired => [10.into_dart()].into_dart(),
             crate::api::error::BridgeError::TokenPinMismatch => [11.into_dart()].into_dart(),
             crate::api::error::BridgeError::TokenPinMissing => [12.into_dart()].into_dart(),
+            crate::api::error::BridgeError::AgentUpgradeRequired { server, detail } => [
+                13.into_dart(),
+                server.into_into_dart().into_dart(),
+                detail.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -4182,8 +4199,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_rc::BridgeRcActivity {
         match self {
             Self::Working => 0.into_dart(),
             Self::NeedsInput => 1.into_dart(),
-            Self::Idle => 2.into_dart(),
-            Self::Unknown => 3.into_dart(),
+            Self::NeedsApproval => 2.into_dart(),
+            Self::Idle => 3.into_dart(),
+            Self::Unknown => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -4271,6 +4289,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_rc::BridgeRcEvent {
                 activity,
                 state,
                 last_message,
+                lane,
                 removed,
             } => [
                 1.into_dart(),
@@ -4279,6 +4298,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_rc::BridgeRcEvent {
                 activity.into_into_dart().into_dart(),
                 state.into_into_dart().into_dart(),
                 last_message.into_into_dart().into_dart(),
+                lane.into_into_dart().into_dart(),
                 removed.into_into_dart().into_dart(),
             ]
             .into_dart(),
@@ -5037,6 +5057,11 @@ impl SseEncode for crate::api::error::BridgeError {
             crate::api::error::BridgeError::TokenPinMissing => {
                 <i32>::sse_encode(12, serializer);
             }
+            crate::api::error::BridgeError::AgentUpgradeRequired { server, detail } => {
+                <i32>::sse_encode(13, serializer);
+                <String>::sse_encode(server, serializer);
+                <String>::sse_encode(detail, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -5153,8 +5178,9 @@ impl SseEncode for crate::api::dto_rc::BridgeRcActivity {
             match self {
                 crate::api::dto_rc::BridgeRcActivity::Working => 0,
                 crate::api::dto_rc::BridgeRcActivity::NeedsInput => 1,
-                crate::api::dto_rc::BridgeRcActivity::Idle => 2,
-                crate::api::dto_rc::BridgeRcActivity::Unknown => 3,
+                crate::api::dto_rc::BridgeRcActivity::NeedsApproval => 2,
+                crate::api::dto_rc::BridgeRcActivity::Idle => 3,
+                crate::api::dto_rc::BridgeRcActivity::Unknown => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -5215,6 +5241,7 @@ impl SseEncode for crate::api::dto_rc::BridgeRcEvent {
                 activity,
                 state,
                 last_message,
+                lane,
                 removed,
             } => {
                 <i32>::sse_encode(1, serializer);
@@ -5223,6 +5250,7 @@ impl SseEncode for crate::api::dto_rc::BridgeRcEvent {
                 <Option<crate::api::dto_rc::BridgeRcActivity>>::sse_encode(activity, serializer);
                 <Option<crate::api::dto_rc::BridgeRcState>>::sse_encode(state, serializer);
                 <Option<String>>::sse_encode(last_message, serializer);
+                <Option<String>>::sse_encode(lane, serializer);
                 <bool>::sse_encode(removed, serializer);
             }
             crate::api::dto_rc::BridgeRcEvent::MessageAppended { shed, slug, seq } => {
