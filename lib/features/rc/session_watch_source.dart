@@ -79,8 +79,10 @@ class ShedWatchSource extends SessionWatchSource {
   @override
   String get slug => session.slug;
 
+  /// `<shed>/<slug>` — the same form the terminal's title takes, so moving
+  /// between the two views never leaves you wondering which box you are on.
   @override
-  String get title => slug;
+  String get title => '$shedName/$slug';
 
   @override
   TerminalTarget get terminalTarget => ShedTerminalTarget(
@@ -151,7 +153,7 @@ class MachineWatchSource extends SessionWatchSource {
   String get slug => session.slug;
 
   @override
-  String get title => slug;
+  String get title => '$machineName/$slug';
 
   @override
   TerminalTarget get terminalTarget => MachineTerminalTarget(
