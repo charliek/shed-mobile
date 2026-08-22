@@ -1241,6 +1241,16 @@ mod tests {
             "BridgeError_TokenPinMismatch",
             "BridgeError_TokenPinMissing",
             "BridgeError_Transport",
+            // Plan 012 S5 — the machine hub feed. All five carry SESSION
+            // metadata only (slug, kind, state, activity, display text) plus a
+            // human reason string; the watcher handle is opaque and holds a
+            // channel, not credentials. The SSH identity never crosses this
+            // surface: Dart owns the transport and hands Rust a loopback PORT.
+            "BridgeMachineUpdate",
+            "BridgeMachineUpdate_Down",
+            "BridgeMachineUpdate_Event",
+            "BridgeMachineUpdate_Snapshot",
+            "BridgeMachineWatcher",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
