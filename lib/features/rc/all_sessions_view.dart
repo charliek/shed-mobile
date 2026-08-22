@@ -16,22 +16,11 @@ class AllSessionsView extends StatelessWidget {
   const AllSessionsView({super.key});
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      // Machines first: they are reached DIRECTLY over SSH (no shed server in
-      // the path), so they stay visible even when every configured server is
-      // unreachable — which is exactly when you most want to know what is
-      // still running on mini3.
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16),
-        child: MachineSessionsView(),
-      ),
-      Expanded(child: _shedSessions()),
-    ],
-  );
-
-  Widget _shedSessions() => HostGroups(
+  // ONE scroll view: the machine groups lead, the per-host groups follow, and
+  // both scroll and pull-to-refresh together. A machine session and a shed
+  // session then differ only by the header above them, which is the point —
+  // where a session runs is a label, not a different kind of screen.
+  Widget build(BuildContext context) => HostGroups(
     section: 'all-sessions',
     emptyMessage: 'Add a host to see its sessions.',
     // Extra bottom inset so the last card clears the "New session" FAB (mobile).
@@ -40,6 +29,11 @@ class AllSessionsView extends StatelessWidget {
       ref.invalidate(serversProvider);
       ref.invalidate(overviewProvider);
     },
+    // Machines first: they are reached DIRECTLY over SSH (no shed server in
+    // the path), so they stay visible even when every configured server is
+    // unreachable — which is exactly when you most want to know what is
+    // still running on mini3.
+    leading: const MachineSessionsView(),
     hostBuilder: (s) => _HostSessions(serverName: s.name),
   );
 }

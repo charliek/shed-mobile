@@ -1267,7 +1267,7 @@ dependencies = [
 [[package]]
 name = "shed-app"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=7d96ea51d5f0d347a2292c40272fd659a158d608#7d96ea51d5f0d347a2292c40272fd659a158d608"
+source = "git+https://github.com/charliek/shed?rev=cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d#cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1283,7 +1283,7 @@ dependencies = [
 [[package]]
 name = "shed-core"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=7d96ea51d5f0d347a2292c40272fd659a158d608#7d96ea51d5f0d347a2292c40272fd659a158d608"
+source = "git+https://github.com/charliek/shed?rev=cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d#cb4219d64ecd527184b0ad08f5d4e8abc7f56c8d"
 dependencies = [
  "async-trait",
  "base64",

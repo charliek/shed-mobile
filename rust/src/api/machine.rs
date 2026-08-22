@@ -202,3 +202,83 @@ async fn forward_loop(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The control verbs (plan 012 S5b)
+// ---------------------------------------------------------------------------
+//
+// These go over the SAME tunnel the feed does — the Dart side already owns a
+// local port that reaches the machine's hub, so steering needs no second
+// transport and no process spawn (which a phone cannot do anyway).
+//
+// **Every one is capability-gated on the far side**, and the UI must gate
+// itself the same way off `kind_features` rather than off the kind: a `409
+// not_supported` reaching a user as an error means the button should not have
+// been offered. The error text carries the hub's own reason so a client can
+// tell "this kind never can" from "not right now".
+
+/// Start a turn on a machine session. Returns the turn id.
+pub async fn machine_turn(local_port: u16, slug: String, text: String) -> Result<String, String> {
+    client(local_port)?
+        .turn(&slug, &text)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Interrupt the running turn. `false` means nothing was running — a legitimate
+/// answer, not a failure.
+pub async fn machine_interrupt(local_port: u16, slug: String) -> Result<bool, String> {
+    client(local_port)?
+        .interrupt(&slug)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Send a line of input to a TUI-laned session (the keystroke path).
+pub async fn machine_input(local_port: u16, slug: String, text: String) -> Result<(), String> {
+    client(local_port)?
+        .input(&slug, &text)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Answer a pending approval. `decision` is `allow` / `allow_always` / `deny`.
+///
+/// Only for a kind whose `approvals` capability is `"remote"`; a `"tui"` kind
+/// reports approvals for INFORMATION only and must be answered in its terminal.
+pub async fn machine_approve(
+    local_port: u16,
+    slug: String,
+    id: String,
+    decision: String,
+) -> Result<String, String> {
+    client(local_port)?
+        .approve(&slug, &id, &decision)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Kill a session on a machine.
+///
+/// The one verb that does NOT go over the hub: the hub observes and steers, it
+/// does not remove. A kill is the one-shot engine's `rc kill`, which the Dart
+/// side runs over SSH exactly as it runs `list`/`create` for a shed — so it
+/// takes the composed argv, not a port.
+pub fn machine_kill_argv(rc_bin: String, slug: String) -> Vec<String> {
+    let entry = shed_core::config::MachineEntry {
+        rc_bin: Some(rc_bin),
+        ..Default::default()
+    };
+    let prefix = shed_core::machine::rc_prefix(&entry);
+    let mut argv =
+        shed_core::rc::kill_argv(prefix.last().expect("prefix is never empty"), &slug);
+    // The shed-core builders take one `bin` for argv[0]; splice the full
+    // `<bin> rc` prefix back over it so a multi-token prefix stays separate
+    // argv words under the one quoter.
+    argv.splice(0..1, prefix.iter().cloned());
+    argv
+}
+
+fn client(local_port: u16) -> Result<shed_core::hub_client::HubClient, String> {
+    shed_core::hub_client::HubClient::loopback(local_port).map_err(|e| e.to_string())
+}

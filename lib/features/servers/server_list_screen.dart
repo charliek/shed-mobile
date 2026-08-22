@@ -10,6 +10,7 @@ import '../../widgets/owl.dart';
 import '../../widgets/theme_toggle_button.dart';
 import '../create/target_picker.dart';
 import '../hosts/host_card.dart';
+import '../machines/machines_section.dart';
 import '../identity/identity_screen.dart';
 import '../sheds/shed_list_screen.dart';
 
@@ -80,12 +81,21 @@ class ServerListScreen extends ConsumerWidget {
       // Shared cross-host body (same as the desktop Hosts pane), with extra
       // bottom inset so the last card clears the Add-host FAB. Empty state is
       // keyed `hosts-empty` by HostGroups.
+      // Hosts first, machines second. Both are "somewhere your sessions run",
+      // so they are configured in one place with one card vocabulary; only the
+      // way they are REACHED differs, and that belongs in the plumbing.
+      // ONE scroll view, two labelled sections: shed servers, then machines.
+      // They share the pull-to-refresh and scroll together, so machines are part
+      // of the page rather than pinned to the bottom of the screen.
       body: HostGroups(
         section: 'hosts',
         header: false,
+        // Bottom inset clears the Add-host FAB.
         bottomInset: 96,
         emptyMessage: 'Tap "Add host" to connect one.',
         onRefresh: invalidateHosts,
+        leading: const SectionHeader(label: 'SHED SERVERS'),
+        trailing: const MachinesSection(),
         hostBuilder: (rec) => HostCard(
           record: rec,
           onOpen: () => Navigator.of(context).push(

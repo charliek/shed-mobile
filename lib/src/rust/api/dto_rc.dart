@@ -197,20 +197,47 @@ sealed class BridgeRcKind with _$BridgeRcKind {
 /// Per-kind UI hints (mirrors `rc::RcKindFeatures`).
 class BridgeRcKindFeatures {
   final bool postInput;
+
+  /// `"remote"` = the hub can RESOLVE an approval from here; `"tui"` = the
+  /// rows are informational and the decision must be made in the session's
+  /// terminal. A client that offers an approve button for a `"tui"` kind
+  /// produces a `409 not_supported` the user cannot act on — this field is
+  /// the whole reason the contract carries capabilities.
   final String approvals;
   final bool watch;
+
+  /// `"turn"` = accepts a structured turn; `"gated"`/`"line"` = keystrokes
+  /// only.
   final String input;
+
+  /// contract v2: which feed this kind carries (`"messages"`/`"activity"`).
+  final String feed;
+
+  /// contract v2: whether a running turn can be interrupted.
+  final bool interrupt;
+
+  /// contract v2: how the session is attachable (`"tmux"`).
+  final String attach;
 
   const BridgeRcKindFeatures({
     required this.postInput,
     required this.approvals,
     required this.watch,
     required this.input,
+    required this.feed,
+    required this.interrupt,
+    required this.attach,
   });
 
   @override
   int get hashCode =>
-      postInput.hashCode ^ approvals.hashCode ^ watch.hashCode ^ input.hashCode;
+      postInput.hashCode ^
+      approvals.hashCode ^
+      watch.hashCode ^
+      input.hashCode ^
+      feed.hashCode ^
+      interrupt.hashCode ^
+      attach.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -220,7 +247,10 @@ class BridgeRcKindFeatures {
           postInput == other.postInput &&
           approvals == other.approvals &&
           watch == other.watch &&
-          input == other.input;
+          input == other.input &&
+          feed == other.feed &&
+          interrupt == other.interrupt &&
+          attach == other.attach;
 }
 
 /// A page of the feed (mirrors `rc::RcMessagesPage`).

@@ -116,9 +116,22 @@ impl From<RcAgentInfo> for BridgeRcAgentInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcKindFeatures {
     pub post_input: bool,
+    /// `"remote"` = the hub can RESOLVE an approval from here; `"tui"` = the
+    /// rows are informational and the decision must be made in the session's
+    /// terminal. A client that offers an approve button for a `"tui"` kind
+    /// produces a `409 not_supported` the user cannot act on — this field is
+    /// the whole reason the contract carries capabilities.
     pub approvals: String,
     pub watch: bool,
+    /// `"turn"` = accepts a structured turn; `"gated"`/`"line"` = keystrokes
+    /// only.
     pub input: String,
+    /// contract v2: which feed this kind carries (`"messages"`/`"activity"`).
+    pub feed: String,
+    /// contract v2: whether a running turn can be interrupted.
+    pub interrupt: bool,
+    /// contract v2: how the session is attachable (`"tmux"`).
+    pub attach: String,
 }
 
 impl From<RcKindFeatures> for BridgeRcKindFeatures {
@@ -128,6 +141,9 @@ impl From<RcKindFeatures> for BridgeRcKindFeatures {
             approvals: f.approvals,
             watch: f.watch,
             input: f.input,
+            feed: f.feed,
+            interrupt: f.interrupt,
+            attach: f.attach,
         }
     }
 }

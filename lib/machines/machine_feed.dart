@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import '../rc/rc_ui.dart';
 import '../src/rust/api/dto_rc.dart';
+import '../src/rust/api/rc_runner.dart';
+import '../ssh/ssh_runner.dart';
 import '../src/rust/api/machine.dart';
 import '../ssh/host_key_store.dart';
 import '../ssh/hub_tunnel.dart';
@@ -17,6 +20,7 @@ class MachineFeedState {
     this.reachable = false,
     this.detail,
     this.connectedOnce = false,
+    this.capabilities,
   });
 
   final MachineRecord machine;
@@ -49,12 +53,23 @@ class MachineFeedState {
   /// from "connected, and this machine genuinely has no sessions".
   final bool connectedOnce;
 
+  /// The machine's per-kind affordances, from the one-shot `rc list` envelope.
+  ///
+  /// **Controls render off THIS, never off the kind.** A session whose
+  /// `approvals` is `"tui"` reports approvals for information only — they are
+  /// answered in its terminal — so offering an approve button would produce a
+  /// `409 not_supported` the user cannot act on. `null` means the machine's
+  /// binary predates capability discovery: degrade to observe-only rather than
+  /// guessing.
+  final BridgeRcCapabilities? capabilities;
+
   MachineFeedState copyWith({
     List<BridgeRcSession>? sessions,
     Map<String, MachinePatch>? overlay,
     bool? reachable,
     String? detail,
     bool? connectedOnce,
+    BridgeRcCapabilities? capabilities,
     bool clearDetail = false,
   }) => MachineFeedState(
     machine: machine,
@@ -63,7 +78,25 @@ class MachineFeedState {
     reachable: reachable ?? this.reachable,
     detail: clearDetail ? null : (detail ?? this.detail),
     connectedOnce: connectedOnce ?? this.connectedOnce,
+    capabilities: capabilities ?? this.capabilities,
   );
+
+  /// The affordances for a session's kind, or null when unknown.
+  BridgeRcKindFeatures? featuresFor(BridgeRcSession s) =>
+      capabilities?.kindFeatures[s.kind.wire];
+
+  /// Whether this session can be STEERED from here — a structured turn.
+  /// `input: "turn"` is the only mode that accepts one.
+  bool canSteer(BridgeRcSession s) => featuresFor(s)?.input == 'turn';
+
+  /// Whether a running turn can be interrupted from here.
+  bool canInterrupt(BridgeRcSession s) => featuresFor(s)?.interrupt ?? false;
+
+  /// Whether an approval can be ANSWERED from here.
+  ///
+  /// `"remote"` means the hub can resolve it; `"tui"` means the rows are
+  /// informational and the decision must be made in the session's terminal.
+  bool canApprove(BridgeRcSession s) => featuresFor(s)?.approvals == 'remote';
 
   /// A session's activity, with the live patch applied.
   BridgeRcActivity? activityOf(BridgeRcSession s) =>
@@ -157,6 +190,11 @@ class MachineFeed {
         onError: (Object e) =>
             _emit(_state.copyWith(reachable: false, detail: 'feed error: $e')),
       );
+      // Capabilities ride in the one-shot `list` envelope, not on the hub wire,
+      // so this is a separate SSH round trip — done ONCE per start and not
+      // awaited, because the feed must not be held up by it. Until it lands the
+      // UI offers no controls, which is the correct degraded posture.
+      unawaited(_loadCapabilities());
     } catch (e) {
       // Opening the tunnel failed (no route, auth refused). That is the
       // everyday asleep/unauthorized case, so it becomes a REASON on the row
@@ -166,6 +204,93 @@ class MachineFeed {
     } finally {
       _starting = false;
     }
+  }
+
+  /// Fetch the machine's per-kind affordances.
+  ///
+  /// A failure is deliberately SILENT: capabilities are what gate the controls,
+  /// so not having them means observe-only — a correct, safe degradation that
+  /// does not deserve an error banner on top of a working feed.
+  Future<void> _loadCapabilities() async {
+    try {
+      final argv = await rcListArgv();
+      final res = await _ssh(argv, const Duration(seconds: 15));
+      if (res.code != 0) return;
+      final caps = await rcDecodeCapabilities(stdout: res.stdout);
+      if (caps != null) _emit(_state.copyWith(capabilities: caps));
+    } catch (_) {
+      // observe-only
+    }
+  }
+
+  /// Run one command on the machine over SSH — the one-shot path, distinct from
+  /// the hub tunnel. Used for capabilities and for `kill`, which the hub does
+  /// not serve (it observes and steers; it does not remove).
+  Future<SshResult> _ssh(List<String> argv, Duration timeout) {
+    final runner = SshRunner(
+      host: machine.host,
+      port: machine.sshPort,
+      user: machine.user ?? 'root',
+      identities: identities,
+      hostKeys: hostKeys,
+    );
+    return runner.run(argv, timeout: timeout);
+  }
+
+  // -------------------------------------------------------------------------
+  // Control verbs — every one gated by the CALLER on `kind_features`
+  // -------------------------------------------------------------------------
+
+  /// Start a turn. Only for a kind whose `input` is `turn`
+  /// ([MachineFeedState.canSteer]).
+  Future<void> steer(String slug, String text) async {
+    final port = _tunnel?.port;
+    if (port == null) throw StateError('the machine is not connected');
+    await machineTurn(localPort: port, slug: slug, text: text);
+  }
+
+  /// Interrupt a running turn ([MachineFeedState.canInterrupt]).
+  Future<bool> interrupt(String slug) async {
+    final port = _tunnel?.port;
+    if (port == null) throw StateError('the machine is not connected');
+    return machineInterrupt(localPort: port, slug: slug);
+  }
+
+  /// Answer a pending approval ([MachineFeedState.canApprove]).
+  Future<String> approve(String slug, String id, String decision) async {
+    final port = _tunnel?.port;
+    if (port == null) throw StateError('the machine is not connected');
+    return machineApprove(
+      localPort: port,
+      slug: slug,
+      id: id,
+      decision: decision,
+    );
+  }
+
+  /// Kill a session.
+  ///
+  /// Over SSH rather than the hub: the hub observes and steers, it does not
+  /// remove. The row is dropped optimistically because the hub reconciles on a
+  /// 2s active / 10s idle cadence, and a killed session lingering for ten
+  /// seconds reads as "the kill didn't work"; the next snapshot is
+  /// authoritative and restores it if the kill somehow failed.
+  Future<void> kill(String slug) async {
+    final argv = await machineKillArgv(
+      rcBin: machine.rcBin ?? 'sx',
+      slug: slug,
+    );
+    final res = await _ssh(argv, const Duration(seconds: 15));
+    if (res.code != 0) {
+      throw StateError(
+        res.stderr.trim().isEmpty ? 'kill failed' : res.stderr.trim(),
+      );
+    }
+    _emit(
+      _state.copyWith(
+        sessions: _state.sessions.where((s) => s.slug != slug).toList(),
+      ),
+    );
   }
 
   /// Stop watching and close the tunnel. Called on background and on dispose.

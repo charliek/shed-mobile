@@ -32,6 +32,7 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
   final _host = TextEditingController();
   final _user = TextEditingController();
   final _port = TextEditingController(text: '22');
+  final _rcBin = TextEditingController();
   String? _error;
   bool _saving = false;
 
@@ -41,6 +42,7 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
     _host.dispose();
     _user.dispose();
     _port.dispose();
+    _rcBin.dispose();
     super.dispose();
   }
 
@@ -48,6 +50,7 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
     final name = _name.text.trim();
     final host = _host.text.trim();
     final user = _user.text.trim();
+    final rcBin = _rcBin.text.trim();
     final port = int.tryParse(_port.text.trim());
 
     if (name.isEmpty || host.isEmpty) {
@@ -72,6 +75,7 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
               host: host,
               user: user.isEmpty ? null : user,
               sshPort: port,
+              rcBin: rcBin.isEmpty ? null : rcBin,
             ),
           );
       ref.invalidate(machinesProvider);
@@ -142,6 +146,18 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
               controller: _port,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'SSH port'),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('add-machine-rcbin'),
+              controller: _rcBin,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'sx path (optional)',
+                helperText:
+                    'Where sx lives, if not on the PATH an ssh command sees — '
+                    '~/.local/bin is usually NOT',
+              ),
             ),
             const SizedBox(height: 20),
             Container(

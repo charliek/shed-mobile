@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'machine.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `forward_loop`, `teardown`
+// These functions are ignored because they are not marked as `pub`: `client`, `forward_loop`, `teardown`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WatcherInner`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `drop`, `eq`, `fmt`
 
@@ -40,6 +40,66 @@ Stream<BridgeMachineUpdate> machineWatcherEvents({
 /// calls this). `Drop` is the backstop.
 Future<void> stopMachineWatcher({required BridgeMachineWatcher handle}) =>
     RustLib.instance.api.crateApiMachineStopMachineWatcher(handle: handle);
+
+/// Start a turn on a machine session. Returns the turn id.
+Future<String> machineTurn({
+  required int localPort,
+  required String slug,
+  required String text,
+}) => RustLib.instance.api.crateApiMachineMachineTurn(
+  localPort: localPort,
+  slug: slug,
+  text: text,
+);
+
+/// Interrupt the running turn. `false` means nothing was running — a legitimate
+/// answer, not a failure.
+Future<bool> machineInterrupt({required int localPort, required String slug}) =>
+    RustLib.instance.api.crateApiMachineMachineInterrupt(
+      localPort: localPort,
+      slug: slug,
+    );
+
+/// Send a line of input to a TUI-laned session (the keystroke path).
+Future<void> machineInput({
+  required int localPort,
+  required String slug,
+  required String text,
+}) => RustLib.instance.api.crateApiMachineMachineInput(
+  localPort: localPort,
+  slug: slug,
+  text: text,
+);
+
+/// Answer a pending approval. `decision` is `allow` / `allow_always` / `deny`.
+///
+/// Only for a kind whose `approvals` capability is `"remote"`; a `"tui"` kind
+/// reports approvals for INFORMATION only and must be answered in its terminal.
+Future<String> machineApprove({
+  required int localPort,
+  required String slug,
+  required String id,
+  required String decision,
+}) => RustLib.instance.api.crateApiMachineMachineApprove(
+  localPort: localPort,
+  slug: slug,
+  id: id,
+  decision: decision,
+);
+
+/// Kill a session on a machine.
+///
+/// The one verb that does NOT go over the hub: the hub observes and steers, it
+/// does not remove. A kill is the one-shot engine's `rc kill`, which the Dart
+/// side runs over SSH exactly as it runs `list`/`create` for a shed — so it
+/// takes the composed argv, not a port.
+Future<List<String>> machineKillArgv({
+  required String rcBin,
+  required String slug,
+}) => RustLib.instance.api.crateApiMachineMachineKillArgv(
+  rcBin: rcBin,
+  slug: slug,
+);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeMachineWatcher>>
 abstract class BridgeMachineWatcher implements RustOpaqueInterface {}

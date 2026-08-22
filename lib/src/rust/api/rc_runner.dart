@@ -98,6 +98,25 @@ Future<BridgeError> rcErrorFromExit({
   stdout: stdout,
 );
 
+/// Decode the CAPABILITIES block from a `list` stdout (plan 012 S5b).
+///
+/// Capabilities ride in the `list` envelope rather than needing their own call,
+/// so one round trip yields both the sessions and the per-kind affordances a
+/// client must gate its controls on.
+///
+/// **This is what makes a control surface honest.** A client renders off
+/// `kind_features[kind]` — never off the kind itself — so a session whose
+/// `approvals` is `"tui"` never gets an approve button (its approvals are
+/// informational; they are answered in the terminal), and only an `input:
+/// "turn"` kind gets a steer box. Offering a control the far side will refuse
+/// with `409 not_supported` is a bug the contract exists to prevent.
+///
+/// `None` means the binary predates capability discovery — an ABSENT block, not
+/// an empty one, and a caller must degrade rather than assume nothing is
+/// supported.
+Future<BridgeRcCapabilities?> rcDecodeCapabilities({required String stdout}) =>
+    RustLib.instance.api.crateApiRcRunnerRcDecodeCapabilities(stdout: stdout);
+
 /// argv + optional stdin, marshalled to Dart. The Dart runner executes `argv`
 /// over dartssh2, writing `stdin` (the initial prompt) to the process stdin.
 class BridgeRcInvocation {

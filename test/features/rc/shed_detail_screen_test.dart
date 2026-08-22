@@ -37,6 +37,11 @@ BridgeRcCapabilities _capsWithCodexWatch() => const BridgeRcCapabilities(
       approvals: 'tui',
       watch: true,
       input: 'gated',
+      // contract v2 — codex is a TUI-laned kind: a message feed, no remote
+      // approvals, no interrupt.
+      feed: 'messages',
+      interrupt: false,
+      attach: 'tmux',
     ),
   },
 );

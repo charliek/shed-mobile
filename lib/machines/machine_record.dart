@@ -15,6 +15,7 @@ class MachineRecord {
     required this.host,
     this.user,
     this.sshPort = 22,
+    this.rcBin,
   });
 
   /// The handle the user types and the UI labels rows with (`machine:<name>`).
@@ -31,17 +32,27 @@ class MachineRecord {
 
   final int sshPort;
 
+  /// Where the `sx` binary lives on the machine.
+  ///
+  /// `null` → `sx` on the PATH an `ssh <host> <cmd>` exec sees, which is the
+  /// NON-login PATH and routinely omits `~/.local/bin` and `/opt/homebrew/bin`.
+  /// An absolute path here is the normal case for anything not installed under
+  /// `/usr/bin`, not an exotic override.
+  final String? rcBin;
+
   Map<String, Object?> toJson() => {
     'name': name,
     'host': host,
     if (user != null) 'user': user,
     'ssh_port': sshPort,
+    if (rcBin != null) 'rc_bin': rcBin,
   };
 
   static MachineRecord fromJson(Map<String, Object?> j) => MachineRecord(
     name: (j['name'] as String?) ?? '',
     host: (j['host'] as String?) ?? '',
     user: j['user'] as String?,
+    rcBin: j['rc_bin'] as String?,
     // Tolerant of a stored string (an older write, or a hand-edited blob):
     // a bad port must not make the whole machine list undecodable.
     sshPort: switch (j['ssh_port']) {
@@ -51,13 +62,18 @@ class MachineRecord {
     },
   );
 
-  MachineRecord copyWith({String? host, String? user, int? sshPort}) =>
-      MachineRecord(
-        name: name,
-        host: host ?? this.host,
-        user: user ?? this.user,
-        sshPort: sshPort ?? this.sshPort,
-      );
+  MachineRecord copyWith({
+    String? host,
+    String? user,
+    int? sshPort,
+    String? rcBin,
+  }) => MachineRecord(
+    name: name,
+    host: host ?? this.host,
+    user: user ?? this.user,
+    sshPort: sshPort ?? this.sshPort,
+    rcBin: rcBin ?? this.rcBin,
+  );
 
   /// The origin handle a session row is keyed and labelled by.
   ///
@@ -72,8 +88,9 @@ class MachineRecord {
       other.name == name &&
       other.host == host &&
       other.user == user &&
-      other.sshPort == sshPort;
+      other.sshPort == sshPort &&
+      other.rcBin == rcBin;
 
   @override
-  int get hashCode => Object.hash(name, host, user, sshPort);
+  int get hashCode => Object.hash(name, host, user, sshPort, rcBin);
 }

@@ -670,19 +670,28 @@ final machinesProvider = FutureProvider<List<MachineRecord>>(
 
 /// One machine's live feed — the SSH tunnel plus the shared Rust hub watcher.
 ///
+/// Split in two on purpose: this provider owns the FEED OBJECT (so the control
+/// verbs have something to call), and [machineFeedProvider] exposes its state
+/// stream (so the UI rebuilds). One provider returning a stream could not offer
+/// `steer`/`interrupt`/`kill` without the UI reaching around it.
+///
 /// `autoDispose` with an explicit `onDispose` teardown, deliberately: the feed
 /// owns an SSH connection and an SSE stream, and leaving those alive behind a
 /// screen the user has left is what drains a phone's battery. Losing them costs
 /// nothing — the hub's snapshot is authoritative, so re-subscribing is a
 /// complete resync.
-final machineFeedProvider = StreamProvider.autoDispose
-    .family<MachineFeedState, String>((ref, name) async* {
-      final machines = await ref.watch(machinesProvider.future);
+final machineFeedControllerProvider = Provider.autoDispose
+    .family<MachineFeed, String>((ref, name) {
+      // Read the already-resolved values: this provider is only reached from a
+      // widget that has a live feed, which means both futures have completed.
+      final machines =
+          ref.watch(machinesProvider).value ?? const <MachineRecord>[];
       final machine = machines.firstWhere(
         (m) => m.name == name,
         orElse: () => MachineRecord(name: name, host: name),
       );
-      final identities = await ref.watch(identitiesProvider.future);
+      final identities =
+          ref.watch(identitiesProvider).value ?? const <SSHKeyPair>[];
       final feed = MachineFeed(
         machine: machine,
         identities: identities,
@@ -693,6 +702,17 @@ final machineFeedProvider = StreamProvider.autoDispose
         hostKeys: HostKeyStore(tofu: true),
       );
       ref.onDispose(feed.dispose);
+      return feed;
+    });
+
+/// One machine's live state stream.
+final machineFeedProvider = StreamProvider.autoDispose
+    .family<MachineFeedState, String>((ref, name) async* {
+      // Ensure the machine list + identity are loaded before building the feed,
+      // so the controller reads resolved values rather than empty defaults.
+      await ref.watch(machinesProvider.future);
+      await ref.watch(identitiesProvider.future);
+      final feed = ref.watch(machineFeedControllerProvider(name));
       unawaited(feed.start());
       yield feed.state;
       yield* feed.updates;

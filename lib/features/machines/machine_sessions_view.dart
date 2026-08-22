@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../machines/machine_feed.dart';
-import 'add_machine_screen.dart';
 import '../../machines/machine_record.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
@@ -43,53 +42,15 @@ class MachineSessionsView extends ConsumerWidget {
       data: (list) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SectionHeader(count: list.length),
-          const SizedBox(height: 8),
+          // No add-affordance here: machines are configured on the Hosts tab,
+          // beside shed hosts, so a session view stays a session view. With
+          // none configured this renders nothing at all rather than an empty
+          // section competing with the shed list.
           for (final m in list) _MachineGroup(machine: m),
-          if (list.isEmpty)
-            const _MachineNote(
-              key: ValueKey('machines-none'),
-              text: 'No machines yet — add one to see its sessions here.',
-            ),
-          const SizedBox(height: 8),
         ],
       ),
     );
   }
-}
-
-/// The section header, with the only way IN to adding a machine.
-///
-/// Rendered even with zero machines configured: a section that disappears when
-/// empty leaves a user who has never added one with nothing to discover.
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: Text(
-          count == 0 ? 'MACHINES' : 'MACHINES ($count)',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            letterSpacing: 1.2,
-            fontWeight: FontWeight.w700,
-            color: context.shed.fg3,
-          ),
-        ),
-      ),
-      TextButton.icon(
-        key: const ValueKey('machines-add'),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const AddMachineScreen()),
-        ),
-        icon: const Icon(Icons.add, size: 18),
-        label: const Text('Add'),
-      ),
-    ],
-  );
 }
 
 class _MachineGroup extends ConsumerWidget {
@@ -273,9 +234,144 @@ class _MachineSessionCard extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.fg3),
             ),
+            // **Controls render off `kind_features`, never off the kind.**
+            // A session whose `approvals` is "tui" reports them for information
+            // only — they are answered in its terminal — so offering a button
+            // would produce a 409 the user cannot act on. Unknown capabilities
+            // (an older binary) mean observe-only, which is the safe default.
+            if (state.reachable)
+              _MachineControls(session: session, state: state),
           ],
         ),
       ),
     );
+  }
+}
+
+/// The per-session control row.
+///
+/// Every affordance is gated on the machine's advertised `kind_features`, so
+/// this row is EMPTY for a kind that supports none — which is the honest
+/// rendering, not a degraded one. A `shell` session, for instance, accepts no
+/// structured turn and resolves no approvals remotely; it simply has nothing to
+/// offer here beyond ending it.
+class _MachineControls extends ConsumerStatefulWidget {
+  const _MachineControls({required this.session, required this.state});
+
+  final BridgeRcSession session;
+  final MachineFeedState state;
+
+  @override
+  ConsumerState<_MachineControls> createState() => _MachineControlsState();
+}
+
+class _MachineControlsState extends ConsumerState<_MachineControls> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _run(Future<void> Function(MachineFeed feed) op) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final feed = ref.read(
+        machineFeedControllerProvider(widget.state.machine.name),
+      );
+      await op(feed);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    final st = widget.state;
+    final canSteer = st.canSteer(s);
+    final canInterrupt = st.canInterrupt(s);
+    // Nothing to offer beyond ending it — render nothing rather than a row of
+    // disabled buttons that implies the feature is merely unavailable.
+    final anything = canSteer || canInterrupt;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            if (canSteer)
+              TextButton.icon(
+                key: ValueKey('machine-steer-${s.slug}'),
+                onPressed: _busy ? null : () => _promptSteer(s),
+                icon: const Icon(Icons.send, size: 16),
+                label: const Text('Steer'),
+              ),
+            if (canInterrupt)
+              TextButton.icon(
+                key: ValueKey('machine-interrupt-${s.slug}'),
+                onPressed: _busy
+                    ? null
+                    : () => _run((f) async => f.interrupt(s.slug)),
+                icon: const Icon(Icons.stop_circle_outlined, size: 16),
+                label: const Text('Interrupt'),
+              ),
+            if (anything) const Spacer(),
+            TextButton.icon(
+              key: ValueKey('machine-kill-${s.slug}'),
+              onPressed: _busy ? null : () => _run((f) => f.kill(s.slug)),
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('End'),
+              style: TextButton.styleFrom(foregroundColor: context.shed.errFg),
+            ),
+          ],
+        ),
+        if (_error != null)
+          Text(
+            _error!,
+            key: ValueKey('machine-control-error-${s.slug}'),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: context.shed.errFg),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _promptSteer(BridgeRcSession s) async {
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Steer ${s.displayName}'),
+        content: TextField(
+          key: const ValueKey('machine-steer-text'),
+          controller: controller,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'What should it do next?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('machine-steer-send'),
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = text?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    await _run((f) async => f.steer(s.slug, trimmed));
   }
 }

@@ -22,6 +22,8 @@ class HostGroups extends ConsumerWidget {
     this.header = true,
     this.onRefresh,
     this.bottomInset = 40,
+    this.leading,
+    this.trailing,
     super.key,
   });
 
@@ -43,6 +45,16 @@ class HostGroups extends ConsumerWidget {
   /// list so the last card clears it.
   final double bottomInset;
 
+  /// Widgets above the first host group and below the last, INSIDE the scroll
+  /// view — so a second section (machines) scrolls with the hosts rather than
+  /// being pinned to the bottom of the screen, and shares the pull-to-refresh.
+  ///
+  /// They render even when there are NO hosts: a person with zero hosts and two
+  /// machines must still see their machines, and the trailing section is exactly
+  /// where the affordance to add one lives.
+  final Widget? leading;
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final servers = ref.watch(serversProvider);
@@ -52,7 +64,8 @@ class HostGroups extends ConsumerWidget {
           ErrorRetry(error: e, onRetry: () => ref.invalidate(serversProvider)),
       data: (list) {
         logDriveState('screen=$section hosts=${list.length}');
-        if (list.isEmpty) {
+        // With nothing to put beside it, an empty host list is the whole screen.
+        if (list.isEmpty && leading == null && trailing == null) {
           return EmptyState(
             key: ValueKey('$section-empty'),
             title: 'No hosts yet',
@@ -66,10 +79,18 @@ class HostGroups extends ConsumerWidget {
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: bottomInset),
             children: [
-              for (final s in list) ...[
-                if (header) HostGroupHeader(name: s.name),
-                hostBuilder(s),
-              ],
+              ?leading,
+              // Alongside another section the empty host list is ONE quiet line
+              // under its own header, not a full-page owl — the page still has
+              // content, and a page-sized empty state would deny it.
+              if (list.isEmpty)
+                HostNote(key: ValueKey('$section-empty'), emptyMessage)
+              else
+                for (final s in list) ...[
+                  if (header) HostGroupHeader(name: s.name),
+                  hostBuilder(s),
+                ],
+              ?trailing,
             ],
           ),
         );
@@ -97,6 +118,42 @@ class HostGroupHeader extends StatelessWidget {
           fontWeight: FontWeight.w600,
           letterSpacing: 0.9,
         ),
+      ),
+    );
+  }
+}
+
+/// A tab section heading (SHED SERVERS / MACHINES), with an optional trailing
+/// action. Shared so the two sections of the Hosts tab read as siblings — which
+/// is the point: a shed host and a machine are the same kind of thing to a
+/// person, differing only in how they are reached.
+class SectionHeader extends StatelessWidget {
+  const SectionHeader({required this.label, this.count, this.action, super.key});
+
+  final String label;
+  final int? count;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final shed = context.shed;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, action == null ? 20 : 8, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              count == null ? label : '$label ($count)',
+              style: monoStyle(
+                fontSize: 10.5,
+                color: shed.fg3,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.9,
+              ),
+            ),
+          ),
+          ?action,
+        ],
       ),
     );
   }
