@@ -341,37 +341,68 @@ class _MachineControlsState extends ConsumerState<_MachineControls> {
   }
 
   Future<void> _promptSteer(BridgeRcSession s) async {
-    final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Steer ${s.displayName}'),
-        content: TextField(
-          key: const ValueKey('machine-steer-text'),
-          controller: controller,
-          autofocus: true,
-          minLines: 1,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'What should it do next?',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const ValueKey('machine-steer-send'),
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _SteerDialog(title: 'Steer ${s.displayName}'),
     );
-    controller.dispose();
     final trimmed = text?.trim() ?? '';
     if (trimmed.isEmpty) return;
     await _run((f) async => f.steer(s.slug, trimmed));
   }
+}
+
+/// The steer prompt.
+///
+/// A StatefulWidget so the dialog OWNS its [TextEditingController] and disposes
+/// it in `dispose()`. Creating the controller in the caller and disposing it
+/// when `showDialog` returns looks equivalent and is not: the future completes
+/// when the route is popped, while the route is still animating OUT with the
+/// TextField mounted and listening. Disposing under it trips
+/// `_dependents.isEmpty` and takes the app down — which it did, on a real
+/// phone, on the first steer.
+class _SteerDialog extends StatefulWidget {
+  const _SteerDialog({required this.title});
+
+  final String title;
+
+  @override
+  State<_SteerDialog> createState() => _SteerDialogState();
+}
+
+class _SteerDialogState extends State<_SteerDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _send() => Navigator.of(context).pop(_controller.text);
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      key: const ValueKey('machine-steer-text'),
+      controller: _controller,
+      autofocus: true,
+      minLines: 1,
+      maxLines: 4,
+      textInputAction: TextInputAction.send,
+      onSubmitted: (_) => _send(),
+      decoration: const InputDecoration(hintText: 'What should it do next?'),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const ValueKey('machine-steer-send'),
+        onPressed: _send,
+        child: const Text('Send'),
+      ),
+    ],
+  );
 }

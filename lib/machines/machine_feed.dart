@@ -143,6 +143,7 @@ class MachineFeed {
     required this.hostKeys,
   }) : _state = MachineFeedState(machine: machine);
 
+
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
   final HostKeyStore hostKeys;
@@ -213,7 +214,12 @@ class MachineFeed {
   /// does not deserve an error banner on top of a working feed.
   Future<void> _loadCapabilities() async {
     try {
-      final argv = await rcListArgv();
+      // The MACHINE argv (`<rc_bin> rc list`), not the guest builder: a machine
+      // has no `shed-ext-rc`, so the bare builder exits non-zero and this method
+      // degrades to observe-only — silently, since a failed probe is not an
+      // error. That silence hid the mistake until a live machine had a
+      // steerable session on it.
+      final argv = await machineListArgv(rcBin: machine.rcBin ?? 'sx');
       final res = await _ssh(argv, const Duration(seconds: 15));
       if (res.code != 0) return;
       final caps = await rcDecodeCapabilities(stdout: res.stdout);

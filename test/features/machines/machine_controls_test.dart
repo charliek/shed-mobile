@@ -152,6 +152,40 @@ void main() {
     expect(find.byKey(const ValueKey('machine-kill-oc1')), findsOneWidget);
   });
 
+  testWidgets('the steer dialog survives being dismissed', (tester) async {
+    // A crash, live, on the first real steer: the controller was created by the
+    // caller and disposed when `showDialog` returned — but that future completes
+    // when the route is POPPED, while it is still animating out with the
+    // TextField mounted and listening. Disposing under it trips
+    // `_dependents.isEmpty` and takes the app down.
+    //
+    // `pumpAndSettle` runs the exit animation to completion, which is exactly
+    // the window the bug lived in — so this cell only passes if the dialog owns
+    // its controller.
+    await tester.pumpWidget(
+      _app(_live([_session('oc1', const BridgeRcKind.opencode())], caps: _caps)),
+    );
+    await tester.pumpAndSettle();
+
+    for (final action in ['Cancel', 'Send']) {
+      await tester.tap(find.byKey(const ValueKey('machine-steer-oc1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('machine-steer-text')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('machine-steer-text')),
+        // Blank for Send, so dismissal is what is under test and no turn is
+        // attempted against a machine this test has no connection to.
+        action == 'Send' ? '   ' : 'ignored',
+      );
+      await tester.tap(find.text(action));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: '$action crashed the app');
+      expect(find.byKey(const ValueKey('machine-steer-text')), findsNothing);
+    }
+  });
+
   testWidgets('two kinds side by side get different controls on one machine', (
     tester,
   ) async {

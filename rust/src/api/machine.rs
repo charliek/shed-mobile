@@ -258,6 +258,29 @@ pub async fn machine_approve(
         .map_err(|e| e.to_string())
 }
 
+/// Re-point a shed-core argv builder at a MACHINE's engine.
+///
+/// The shed-core builders take a single `bin` for argv[0] because in a shed the
+/// engine is one binary (`shed-ext-rc`). On a machine it is a two-token prefix
+/// (`<rc_bin> rc`), so argv[0] is replaced by the whole prefix — spliced, not
+/// joined, so a path with a space stays ONE argv word under the quoter rather
+/// than splitting into two.
+///
+/// Every machine-targeted one-shot must go through here. A builder used raw
+/// runs the GUEST binary name on the machine, where it does not exist — which
+/// fails silently for anything whose failure path is a degradation rather than
+/// an error (the capability probe is exactly that).
+fn machine_argv(rc_bin: String, build: impl FnOnce(&str) -> Vec<String>) -> Vec<String> {
+    let entry = shed_core::config::MachineEntry {
+        rc_bin: Some(rc_bin),
+        ..Default::default()
+    };
+    let prefix = shed_core::machine::rc_prefix(&entry);
+    let mut argv = build(prefix.last().expect("prefix is never empty"));
+    argv.splice(0..1, prefix.iter().cloned());
+    argv
+}
+
 /// Kill a session on a machine.
 ///
 /// The one verb that does NOT go over the hub: the hub observes and steers, it
@@ -265,20 +288,57 @@ pub async fn machine_approve(
 /// side runs over SSH exactly as it runs `list`/`create` for a shed — so it
 /// takes the composed argv, not a port.
 pub fn machine_kill_argv(rc_bin: String, slug: String) -> Vec<String> {
-    let entry = shed_core::config::MachineEntry {
-        rc_bin: Some(rc_bin),
-        ..Default::default()
-    };
-    let prefix = shed_core::machine::rc_prefix(&entry);
-    let mut argv =
-        shed_core::rc::kill_argv(prefix.last().expect("prefix is never empty"), &slug);
-    // The shed-core builders take one `bin` for argv[0]; splice the full
-    // `<bin> rc` prefix back over it so a multi-token prefix stays separate
-    // argv words under the one quoter.
-    argv.splice(0..1, prefix.iter().cloned());
-    argv
+    machine_argv(rc_bin, |bin| shed_core::rc::kill_argv(bin, &slug))
+}
+
+/// `<rc_bin> rc list` on a machine — the CAPABILITY probe.
+///
+/// The list response carries the engine's capability envelope, and those
+/// `kind_features` are what gate every control the UI offers. Without this the
+/// probe runs the guest binary name, exits non-zero, and the client degrades to
+/// observe-only — correct, safe, and completely invisible, which is why it went
+/// unnoticed until a live machine had a steerable session on it.
+pub fn machine_list_argv(rc_bin: String) -> Vec<String> {
+    machine_argv(rc_bin, shed_core::rc::list_argv)
 }
 
 fn client(local_port: u16) -> Result<shed_core::hub_client::HubClient, String> {
     shed_core::hub_client::HubClient::loopback(local_port).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A machine's engine is `<rc_bin> rc <verb>`, NOT the guest binary the
+    /// shed-core builders name in argv[0].
+    ///
+    /// This is pinned because getting it wrong fails SILENTLY for the capability
+    /// probe: a probe that exits non-zero means "observe-only", which is a
+    /// legitimate state, so the app worked perfectly with every control missing
+    /// and nothing complained. It survived a green suite, a hermetic e2e, and a
+    /// live watch — it only surfaced once a machine had a steerable session.
+    #[test]
+    fn every_machine_argv_carries_the_two_token_engine_prefix() {
+        let bin = "/home/charliek/.local/bin/sx".to_string();
+
+        let list = machine_list_argv(bin.clone());
+        assert_eq!(&list[..2], &[bin.clone(), "rc".to_string()]);
+        assert_eq!(list.last().unwrap(), "list");
+        assert!(!list.iter().any(|a| a.contains("shed-ext-rc")));
+
+        let kill = machine_kill_argv(bin.clone(), "abc123".to_string());
+        assert_eq!(&kill[..2], &[bin, "rc".to_string()]);
+        assert!(kill.iter().any(|a| a == "kill"));
+        assert!(kill.iter().any(|a| a == "abc123"));
+    }
+
+    /// Spliced, not joined. A joined prefix would split a path containing a
+    /// space into two words on the far side and run a binary that is not there.
+    #[test]
+    fn an_engine_path_with_a_space_stays_one_argv_word() {
+        let argv = machine_list_argv("/opt/my tools/sx".to_string());
+        assert_eq!(argv[0], "/opt/my tools/sx");
+        assert_eq!(argv[1], "rc");
+    }
 }

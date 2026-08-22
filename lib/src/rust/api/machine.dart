@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'machine.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `client`, `forward_loop`, `teardown`
+// These functions are ignored because they are not marked as `pub`: `client`, `forward_loop`, `machine_argv`, `teardown`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WatcherInner`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `drop`, `eq`, `fmt`
 
@@ -100,6 +100,16 @@ Future<List<String>> machineKillArgv({
   rcBin: rcBin,
   slug: slug,
 );
+
+/// `<rc_bin> rc list` on a machine — the CAPABILITY probe.
+///
+/// The list response carries the engine's capability envelope, and those
+/// `kind_features` are what gate every control the UI offers. Without this the
+/// probe runs the guest binary name, exits non-zero, and the client degrades to
+/// observe-only — correct, safe, and completely invisible, which is why it went
+/// unnoticed until a live machine had a steerable session on it.
+Future<List<String>> machineListArgv({required String rcBin}) =>
+    RustLib.instance.api.crateApiMachineMachineListArgv(rcBin: rcBin);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeMachineWatcher>>
 abstract class BridgeMachineWatcher implements RustOpaqueInterface {}

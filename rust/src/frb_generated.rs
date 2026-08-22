@@ -44,7 +44,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 642647382;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2021584604;
 
 // Section: executor
 
@@ -1511,6 +1511,40 @@ fn wire__crate__api__machine__machine_kill_argv_impl(
                     let output_ok = Result::<_, ()>::Ok(crate::api::machine::machine_kill_argv(
                         api_rc_bin, api_slug,
                     ))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__machine__machine_list_argv_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "machine_list_argv",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_rc_bin = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::machine::machine_list_argv(api_rc_bin))?;
                     Ok(output_ok)
                 })())
             }
@@ -4048,70 +4082,71 @@ fn pde_ffi_dispatcher_primary_impl(
         27 => wire__crate__api__machine__machine_input_impl(port, ptr, rust_vec_len, data_len),
         28 => wire__crate__api__machine__machine_interrupt_impl(port, ptr, rust_vec_len, data_len),
         29 => wire__crate__api__machine__machine_kill_argv_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__machine__machine_turn_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__machine__machine_watcher_events_impl(
+        30 => wire__crate__api__machine__machine_list_argv_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__machine__machine_turn_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__machine__machine_watcher_events_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__rc_runner__rc_create_invocation_impl(
+        34 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__rc_runner__rc_create_invocation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__api__rc_runner__rc_decode_capabilities_impl(
+        36 => wire__crate__api__rc_runner__rc_decode_capabilities_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => {
+        37 => {
             wire__crate__api__rc_runner__rc_decode_session_impl(port, ptr, rust_vec_len, data_len)
         }
-        37 => {
+        38 => {
             wire__crate__api__rc_runner__rc_decode_sessions_impl(port, ptr, rust_vec_len, data_len)
         }
-        38 => {
+        39 => {
             wire__crate__api__rc_runner__rc_error_from_exit_impl(port, ptr, rust_vec_len, data_len)
         }
-        39 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__client__set_credential_event_sink_impl(
+        40 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__client__set_credential_event_sink_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+        45 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+        51 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+        52 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => {
+        53 => {
             wire__crate__api__machine__stop_machine_watcher_impl(port, ptr, rust_vec_len, data_len)
         }
-        54 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4128,14 +4163,14 @@ fn pde_ffi_dispatcher_sync_impl(
         16 => wire__crate__api__local_sse__BridgeTestSse_stop_impl(ptr, rust_vec_len, data_len),
         17 => wire__crate__api__create_stream__cancel_create_impl(ptr, rust_vec_len, data_len),
         23 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+        33 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__client__shutdown_credential_event_sink_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
