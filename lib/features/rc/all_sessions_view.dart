@@ -6,6 +6,7 @@ import '../../providers.dart';
 import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
+import '../machines/machine_sessions_view.dart';
 import 'session_card.dart';
 
 /// Cross-host Sessions — every host's rc sessions grouped by host, read from one
@@ -15,7 +16,22 @@ class AllSessionsView extends StatelessWidget {
   const AllSessionsView({super.key});
 
   @override
-  Widget build(BuildContext context) => HostGroups(
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      // Machines first: they are reached DIRECTLY over SSH (no shed server in
+      // the path), so they stay visible even when every configured server is
+      // unreachable — which is exactly when you most want to know what is
+      // still running on mini3.
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
+        child: MachineSessionsView(),
+      ),
+      Expanded(child: _shedSessions()),
+    ],
+  );
+
+  Widget _shedSessions() => HostGroups(
     section: 'all-sessions',
     emptyMessage: 'Add a host to see its sessions.',
     // Extra bottom inset so the last card clears the "New session" FAB (mobile).
