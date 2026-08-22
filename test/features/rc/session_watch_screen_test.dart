@@ -258,6 +258,26 @@ void main() {
     expect(find.text('It is a reverse proxy.'), findsOneWidget);
   });
 
+  testWidgets('the status strip carries lifecycle AND activity, unsqueezed', (
+    tester,
+  ) async {
+    // Both live on their own full-width line rather than beside three action
+    // icons, where the app-bar title was truncating to `8c8…` — the one thing
+    // on this screen that cannot be inferred from context.
+    await _pump(
+      tester,
+      _FakeSource(features: _opencode, activity: BridgeRcActivity.needsApproval),
+    );
+
+    expect(find.byKey(const ValueKey('session-watch-state')), findsOneWidget);
+    expect(find.byKey(const ValueKey('session-watch-activity')), findsOneWidget);
+    // The slug is never elided, whatever else is on the bar.
+    expect(find.text('abc123'), findsOneWidget);
+    // …and the origin is readable beside it, so "which box am I on" has an
+    // answer now that a shed and a machine render identically.
+    expect(find.text('mini3/abc123'), findsOneWidget);
+  });
+
   testWidgets('the terminal is always one tap away', (tester) async {
     // Every kind can fall back to the TUI, including ones with no feed — so the
     // handoff is a permanent action, not something that appears only once the

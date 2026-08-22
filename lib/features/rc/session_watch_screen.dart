@@ -329,9 +329,27 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
     return Scaffold(
       key: const ValueKey('session-watch-screen'),
       appBar: AppBar(
-        title: Text(widget.source.title),
+        // Two lines, because one could not hold both. The SLUG is what you
+        // came looking for and gets the emphasis; the origin answers "which
+        // box am I on", which matters more now that a shed and a machine
+        // render identically. The status badge moved OUT of the actions row —
+        // with three icons beside it the title was truncating to `8c8…`,
+        // which is the one thing here that cannot be inferred from context.
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_slug, style: const TextStyle(fontSize: 17)),
+            Text(
+              widget.source.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, color: context.shed.fg3),
+            ),
+          ],
+        ),
         actions: [
-          _activityBadge(activity, state),
           if (canInterrupt)
             IconButton(
               key: const ValueKey('session-watch-interrupt'),
@@ -358,6 +376,9 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
       ),
       body: Column(
         children: [
+          // The status strip: what the session is doing right now, on its own
+          // line where it has room to say so.
+          _statusStrip(context, activity, state),
           if (blocked) _handoffBanner(context, state),
           Expanded(child: _feedBody(context)),
           if (!_loading && _loadError == null)
@@ -386,19 +407,45 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
     });
   }
 
+  /// A thin full-width strip under the app bar carrying the lifecycle and the
+  /// live activity. Full width because "needs approval" and "reconnecting" are
+  /// sentences a person reads, and squeezing them beside three icons is how
+  /// they get truncated into uselessness.
+  Widget _statusStrip(
+    BuildContext context,
+    BridgeRcActivity? activity,
+    BridgeRcState state,
+  ) {
+    final c = context.shed;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
+      child: Row(
+        children: [
+          StatusBadge(
+            key: const ValueKey('session-watch-state'),
+            tone: shedStatusTone(state.wire).tone,
+            label: state.wire.replaceAll('-', ' '),
+          ),
+          const SizedBox(width: 8),
+          _activityBadge(activity, state),
+        ],
+      ),
+    );
+  }
+
   Widget _activityBadge(BridgeRcActivity? activity, BridgeRcState state) {
     final d = rcActivityBadge(state, activity);
     if (d == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      child: Center(
-        child: StatusBadge(
-          key: const ValueKey('session-watch-activity'),
-          tone: d.tone,
-          label: d.label,
-          pulse: d.pulse,
-        ),
-      ),
+    return StatusBadge(
+      key: const ValueKey('session-watch-activity'),
+      tone: d.tone,
+      label: d.label,
+      pulse: d.pulse,
     );
   }
 
