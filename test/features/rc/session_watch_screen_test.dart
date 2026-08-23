@@ -156,9 +156,13 @@ void main() {
     );
   });
 
-  testWidgets('a gated kind is only writable while it is WAITING', (
+  testWidgets('a gated kind is writable unless it is blocked on a decision', (
     tester,
   ) async {
+    // codex and cursor are TUIs that QUEUE typing mid-turn — codex's own footer
+    // offers "tab to queue message" — and the hub delivers accordingly. Closing
+    // the box while the agent worked hid it during exactly the turn a person
+    // most wants to correct.
     final working = _FakeSource(
       features: _codex,
       activity: BridgeRcActivity.working,
@@ -166,9 +170,15 @@ void main() {
     await _pump(tester, working);
     expect(
       _enabled(tester),
-      isFalse,
-      reason: 'codex is mid-turn; it is not asking',
+      isTrue,
+      reason: 'mid-turn text is queued, not lost',
     );
+
+    await tester.enterText(_input, 'actually, use the other file');
+    await tester.tap(_sendButton);
+    await _settle(tester);
+    expect(working.sentInputs, ['actually, use the other file']);
+    expect(working.sentTurns, isEmpty, reason: 'a gated kind takes keystrokes');
 
     final waiting = _FakeSource(
       features: _codex,
@@ -177,11 +187,18 @@ void main() {
     await _pump(tester, waiting);
     expect(_enabled(tester), isTrue);
 
-    await tester.enterText(_input, 'yes, continue');
-    await tester.tap(_sendButton);
-    await _settle(tester);
-    expect(waiting.sentInputs, ['yes, continue']);
-    expect(waiting.sentTurns, isEmpty, reason: 'a gated kind takes keystrokes');
+    // The one activity that still closes it: under an approval a line does not
+    // queue, it ANSWERS the dialog — and the hub 409s it for the same reason.
+    final blocked = _FakeSource(
+      features: _codex,
+      activity: BridgeRcActivity.needsApproval,
+    );
+    await _pump(tester, blocked);
+    expect(
+      _enabled(tester),
+      isFalse,
+      reason: 'a keystroke under a dialog answers it',
+    );
   });
 
   testWidgets('interrupt is offered only to a kind that advertises it', (

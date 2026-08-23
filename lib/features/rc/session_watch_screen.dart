@@ -330,13 +330,20 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
     // offering the wrong one produces a 409 the user cannot act on.
     final permits = rcStatePermitsActivity(state);
     final asTurn = kf?.input == 'turn';
-    // A turn kind accepts direction whenever it is alive; a gated kind only
-    // while it is actually waiting for an answer.
+    // A turn kind accepts direction whenever it is alive. A `gated` kind takes
+    // a line whenever it is not blocked on a DECISION — including while it is
+    // working: codex and cursor are TUIs that queue typing mid-turn (codex even
+    // says "tab to queue message"), and the hub delivers accordingly. Gating
+    // the box on needs_input hid it during exactly the turn a person most wants
+    // to correct.
+    //
+    // needs_approval is the one activity that still closes it: there a line
+    // does not queue, it ANSWERS the dialog on screen.
     final inputAvailable =
         permits &&
         (asTurn ||
             ((kf?.inputGated ?? false) &&
-                activity == BridgeRcActivity.needsInput));
+                activity != BridgeRcActivity.needsApproval));
     final canInterrupt = (kf?.interrupt ?? false) && permits;
     // needs-auth / dead → the feed can't drive the session; hand off to the TUI.
     final blocked =
