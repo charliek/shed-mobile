@@ -8,6 +8,7 @@ import '../../theme/shed_colors.dart';
 import '../../widgets/app_bar_count_title.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/error_retry.dart';
+import '../create/create_rc_target.dart';
 import 'create_rc_screen.dart';
 import 'session_card.dart';
 
@@ -53,8 +54,12 @@ class ShedDetailScreen extends ConsumerWidget {
         onPressed: () async {
           final created = await Navigator.of(context).push<BridgeRcSession>(
             MaterialPageRoute<BridgeRcSession>(
-              builder: (_) =>
-                  CreateRcScreen(serverName: serverName, shedName: shedName),
+              builder: (_) => CreateRcScreen(
+                target: ShedRcTarget(
+                  serverName: serverName,
+                  shedName: shedName,
+                ),
+              ),
             ),
           );
           // Skip a wasted SSH re-list when the user cancelled (popped null).

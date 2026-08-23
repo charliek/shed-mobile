@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 
 import '../rc/rc_ui.dart';
+import '../bridge/bridge_adapters.dart';
 import '../src/rust/api/dto_rc.dart';
+import '../src/rust/api/error.dart';
 import '../src/rust/api/rc_runner.dart';
 import '../ssh/ssh_runner.dart';
 import '../src/rust/api/machine.dart';
@@ -236,7 +238,7 @@ class MachineFeed {
       // degrades to observe-only — silently, since a failed probe is not an
       // error. That silence hid the mistake until a live machine had a
       // steerable session on it.
-      final argv = await machineListArgv(rcBin: machine.rcBin ?? 'sx');
+      final argv = await machineListArgv(rcBin: _rcBin);
       final res = await _ssh(argv, const Duration(seconds: 15));
       if (res.code != 0) return;
       final caps = await rcDecodeCapabilities(stdout: res.stdout);
@@ -249,7 +251,7 @@ class MachineFeed {
   /// Run one command on the machine over SSH — the one-shot path, distinct from
   /// the hub tunnel. Used for capabilities and for `kill`, which the hub does
   /// not serve (it observes and steers; it does not remove).
-  Future<SshResult> _ssh(List<String> argv, Duration timeout) {
+  Future<SshResult> _ssh(List<String> argv, Duration timeout, {String? stdin}) {
     final runner = SshRunner(
       host: machine.host,
       port: machine.sshPort,
@@ -257,7 +259,7 @@ class MachineFeed {
       identities: identities,
       hostKeys: hostKeys,
     );
-    return runner.run(argv, timeout: timeout);
+    return runner.run(argv, stdin: stdin, timeout: timeout);
   }
 
   // -------------------------------------------------------------------------
@@ -291,6 +293,66 @@ class MachineFeed {
     );
   }
 
+  /// The engine binary to invoke on the far side. `sx` is the shipped name;
+  /// a machine entry may pin another path.
+  String get _rcBin => machine.rcBin ?? 'sx';
+
+  /// Create a session on this machine.
+  ///
+  /// The SSH one-shot path, like `kill` and the capability probe — not the hub,
+  /// which observes and steers but does not create. The invocation comes from
+  /// the shared builder (`machineCreateInvocation`), so the flags, the mode
+  /// validation, and how the kickoff prompt is delivered are identical to a
+  /// shed create; only argv[0] differs.
+  ///
+  /// Returns the created session's slug. `--wait` blocks up to ~20s on the far
+  /// side, so the SSH timeout gives it headroom.
+  Future<String> create({
+    required BridgeRcKind kind,
+    String? displayName,
+    String? workdir,
+    String? prompt,
+    String? permissionMode,
+  }) async {
+    final slug = genSlug();
+    // A machine has no shed to namespace a default name against, so the
+    // `<machine>/<slug>` default is built here, where the slug exists.
+    final name = (displayName == null || displayName.isEmpty)
+        ? '${machine.name}/$slug'
+        : displayName;
+    // Blank → null here, so an empty prompt never becomes a `--prompt-stdin`
+    // with empty stdin: the Rust builder does not trim.
+    final trimmed = prompt?.trim();
+    final BridgeRcInvocation inv;
+    try {
+      inv = await machineCreateInvocation(
+        rcBin: _rcBin,
+        kind: kind.wire,
+        name: name,
+        slug: slug,
+        target: machine.origin,
+        createdBy: rcCreatedBy,
+        workdir: (workdir == null || workdir.isEmpty) ? null : workdir,
+        permissionMode: permissionMode,
+        prompt: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+      );
+    } on BridgeError catch (e) {
+      throw appErrorFromBridge(e);
+    }
+    final res = await _ssh(
+      inv.argv,
+      const Duration(seconds: 30),
+      stdin: inv.stdin,
+    );
+    if (res.code != 0) {
+      final err = res.stderr.trim();
+      throw StateError(err.isEmpty ? 'create failed' : err);
+    }
+    // The hub's next reconcile brings the row in on its own; refreshing the
+    // capability probe is not needed for a create.
+    return slug;
+  }
+
   /// Kill a session.
   ///
   /// Over SSH rather than the hub: the hub observes and steers, it does not
@@ -299,10 +361,7 @@ class MachineFeed {
   /// seconds reads as "the kill didn't work"; the next snapshot is
   /// authoritative and restores it if the kill somehow failed.
   Future<void> kill(String slug) async {
-    final argv = await machineKillArgv(
-      rcBin: machine.rcBin ?? 'sx',
-      slug: slug,
-    );
+    final argv = await machineKillArgv(rcBin: _rcBin, slug: slug);
     final res = await _ssh(argv, const Duration(seconds: 15));
     if (res.code != 0) {
       throw StateError(

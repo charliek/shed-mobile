@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/rc/all_sessions_view.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
+import 'package:shed_mobile/widgets/card_shell.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
@@ -57,17 +58,19 @@ final _caps = BridgeRcCapabilities(
   },
 );
 
-BridgeRcSession _session(String slug, BridgeRcKind kind) => BridgeRcSession(
-  // A hub read directly reports an EMPTY shed and host on every session.
-  host: '',
-  shed: '',
-  slug: slug,
-  tmuxSession: 'rc-$slug',
-  displayName: slug,
-  kind: kind,
-  state: BridgeRcState.ready,
-  managed: true,
-);
+BridgeRcSession _session(String slug, BridgeRcKind kind, {String? url}) =>
+    BridgeRcSession(
+      url: url,
+      // A hub read directly reports an EMPTY shed and host on every session.
+      host: '',
+      shed: '',
+      slug: slug,
+      tmuxSession: 'rc-$slug',
+      displayName: slug,
+      kind: kind,
+      state: BridgeRcState.ready,
+      managed: true,
+    );
 
 Widget _app(MachineFeedState state) => ProviderScope(
   retry: (_, _) => null,
@@ -140,6 +143,80 @@ void main() {
     expect(find.byKey(const ValueKey('machine-watch-oc1')), findsNothing);
     expect(find.byKey(const ValueKey('machine-kill-oc1')), findsOneWidget);
   });
+
+  testWidgets('the action row weights Watch over the terminal over delete', (
+    tester,
+  ) async {
+    // The shipped row drifted from the reviewed design: an unlabelled eye in a
+    // plain box, a terminal pill EXPANDED to fill the row (which reads as the
+    // primary action), and a filled red delete box (the loudest thing on a card
+    // you are usually only reading). This pins the intended weighting.
+    await tester.pumpWidget(
+      _app(
+        _live([_session('oc1', const BridgeRcKind.opencode())], caps: _caps),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Watch is LABELLED — an unlabelled eye is a guess.
+    expect(find.text('Watch'), findsOneWidget);
+    expect(find.byKey(const ValueKey('machine-watch-oc1')), findsOneWidget);
+    // The terminal is present on a machine card too, which is how a kind with
+    // no feed has any way in at all.
+    expect(find.byKey(const ValueKey('machine-open-oc1')), findsOneWidget);
+
+    final watch = tester.getRect(
+      find.byKey(const ValueKey('machine-watch-oc1')),
+    );
+    final open = tester.getRect(find.byKey(const ValueKey('machine-open-oc1')));
+    final del = tester.getRect(find.byKey(const ValueKey('machine-kill-oc1')));
+
+    // Reading order: Watch, then terminal, then delete at the far edge.
+    expect(watch.left, lessThan(open.left));
+    expect(open.right, lessThan(del.left));
+    // The terminal does NOT fill the row — a full-width button reads as the
+    // primary one, and Watch is.
+    final card = tester.getRect(find.byType(CardShell).first);
+    expect(
+      open.width,
+      lessThan(card.width * 0.5),
+      reason: 'the terminal pill expanded to fill the row again',
+    );
+    // Delete is a bare glyph: no wider than a tap target.
+    expect(del.width, lessThanOrEqualTo(48));
+  });
+
+  testWidgets(
+    'a claude session on a machine offers its link, like a shed one',
+    (tester) async {
+      // The shipped machine row dropped the copy/open pair entirely, so the ONE
+      // kind whose session is also reachable from a browser had no way to get
+      // there — the same session in a shed offered both.
+      await tester.pumpWidget(
+        _app(
+          _live([
+            _session(
+              'cl1',
+              const BridgeRcKind.claudeRc(),
+              url: 'https://claude.ai/code/session_x',
+            ),
+          ], caps: _caps),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('machine-url-copy-cl1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('machine-url-open-cl1')),
+        findsOneWidget,
+      );
+      // And a kind with no URL is not given empty buttons.
+      expect(find.byKey(const ValueKey('machine-url-copy-oc1')), findsNothing);
+    },
+  );
 
   testWidgets('the list offers nothing that steers a session', (tester) async {
     // The regression this guards is the shipped-then-reverted design: Steer and

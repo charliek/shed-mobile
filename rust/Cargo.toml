@@ -55,3 +55,11 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# The release half of the same standard (`shed/crates/Cargo.toml`). On a phone
+# the payoff is the shipped `.so`: `strip` alone takes the bridge library from
+# tens of MB to a few, and it ships once per ABI in the APK.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

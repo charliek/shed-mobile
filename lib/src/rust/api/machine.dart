@@ -5,8 +5,10 @@
 
 import '../frb_generated.dart';
 import 'dto_rc.dart';
+import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'rc_runner.dart';
 part 'machine.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `client`, `forward_loop`, `machine_argv`, `teardown`
@@ -117,6 +119,36 @@ Future<List<String>> machineKillArgv({
 }) => RustLib.instance.api.crateApiMachineMachineKillArgv(
   rcBin: rcBin,
   slug: slug,
+);
+
+/// `<rc_bin> rc create …` on a machine, with its stdin.
+///
+/// The SAME validated builder the shed path uses (`create_invocation`, which
+/// runs `permission_mode` through `validate_permission_mode` and decides how the
+/// prompt is delivered) — only argv[0] differs. Sharing it is the point: a
+/// session created on a machine and one created in a shed should differ in
+/// where they run and in nothing else, and a second builder here would be two
+/// places for the flag set to drift.
+Future<BridgeRcInvocation> machineCreateInvocation({
+  required String rcBin,
+  required String kind,
+  required String name,
+  required String slug,
+  required String target,
+  required String createdBy,
+  String? workdir,
+  String? permissionMode,
+  String? prompt,
+}) => RustLib.instance.api.crateApiMachineMachineCreateInvocation(
+  rcBin: rcBin,
+  kind: kind,
+  name: name,
+  slug: slug,
+  target: target,
+  createdBy: createdBy,
+  workdir: workdir,
+  permissionMode: permissionMode,
+  prompt: prompt,
 );
 
 /// `<rc_bin> rc list` on a machine — the CAPABILITY probe.

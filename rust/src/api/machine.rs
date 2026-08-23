@@ -311,6 +311,65 @@ pub fn machine_kill_argv(rc_bin: String, slug: String) -> Vec<String> {
     machine_argv(rc_bin, |bin| shed_core::rc::kill_argv(bin, &slug))
 }
 
+/// `<rc_bin> rc create …` on a machine, with its stdin.
+///
+/// The SAME validated builder the shed path uses (`create_invocation`, which
+/// runs `permission_mode` through `validate_permission_mode` and decides how the
+/// prompt is delivered) — only argv[0] differs. Sharing it is the point: a
+/// session created on a machine and one created in a shed should differ in
+/// where they run and in nothing else, and a second builder here would be two
+/// places for the flag set to drift.
+// The bridge takes flat arguments on purpose: every field is independently
+// nullable on the Dart side, and a wrapper struct would have to be mirrored in
+// generated Dart for no gain.
+#[allow(clippy::too_many_arguments)]
+pub fn machine_create_invocation(
+    rc_bin: String,
+    kind: String,
+    name: String,
+    slug: String,
+    target: String,
+    created_by: String,
+    workdir: Option<String>,
+    permission_mode: Option<String>,
+    prompt: Option<String>,
+) -> Result<super::rc_runner::BridgeRcInvocation, super::error::BridgeError> {
+    let rc_kind = shed_core::rc::RcKind::from_wire(&kind);
+    let entry = shed_core::config::MachineEntry {
+        rc_bin: Some(rc_bin),
+        ..Default::default()
+    };
+    let prefix = shed_core::machine::rc_prefix(&entry);
+    // `interactive_shell: true` is the MACHINE posture, and it is load-bearing:
+    // the pane command is wrapped in `bash -ic`, so a tool installed by a shell
+    // rc-file (mise, nvm, bun, a ~/.local/bin) is on PATH. Without it the pane
+    // inherits the bare ssh-exec PATH, the agent binary is not found, and the
+    // session comes up `dead` while the create still exits 0 — observed live
+    // before this was set. A SHED must leave it OFF: there the sshd's own
+    // `bash -lc` wrap already supplies a login PATH, and `-ic` would source an
+    // interactive rc-file the guest does not have. Same rule sx applies
+    // (`sx/src/target.rs:interactive_shell`).
+    let (mut argv, stdin) =
+        shed_core::rc::create_invocation_v2(&shed_core::rc::CreateSpec {
+            bin: prefix.last().expect("prefix is never empty"),
+            kind: &rc_kind,
+            name: &name,
+            slug: &slug,
+            workdir: workdir.as_deref(),
+            created_by: &created_by,
+            target: &target,
+            permission_mode: permission_mode.as_deref(),
+            wait: true,
+            interactive_shell: true,
+            payload: match prompt.as_deref() {
+                Some(p) => shed_core::rc::CreatePayload::Prompt(p),
+                None => shed_core::rc::CreatePayload::None,
+            },
+        })?;
+    argv.splice(0..1, prefix.iter().cloned());
+    Ok(super::rc_runner::BridgeRcInvocation { argv, stdin })
+}
+
 /// `<rc_bin> rc list` on a machine — the CAPABILITY probe.
 ///
 /// The list response carries the engine's capability envelope, and those
@@ -351,6 +410,77 @@ mod tests {
         assert_eq!(&kill[..2], &[bin, "rc".to_string()]);
         assert!(kill.iter().any(|a| a == "kill"));
         assert!(kill.iter().any(|a| a == "abc123"));
+    }
+
+    /// Create takes the same splice, and its flags come from the SHARED builder —
+    /// so a session created on a machine differs from one created in a shed only
+    /// in where it runs.
+    #[test]
+    fn create_uses_the_machine_engine_and_the_shared_flag_set() {
+        let inv = machine_create_invocation(
+            "/home/charliek/.local/bin/sx".to_string(),
+            "opencode".to_string(),
+            "prox".to_string(),
+            "abc123".to_string(),
+            "machine:mini3".to_string(),
+            "shed-mobile".to_string(),
+            Some("/home/charliek/projects/prox".to_string()),
+            None,
+            Some("describe this project".to_string()),
+        )
+        .expect("builds");
+        assert_eq!(&inv.argv[..2], &["/home/charliek/.local/bin/sx", "rc"]);
+        assert!(inv.argv.iter().any(|a| a == "create"));
+        assert!(inv.argv.iter().any(|a| a == "--wait"));
+        assert!(inv.argv.iter().any(|a| a == "opencode"));
+        assert!(inv.argv.iter().any(|a| a == "/home/charliek/projects/prox"));
+        assert!(!inv.argv.iter().any(|a| a.contains("shed-ext-rc")));
+        // The prompt rides stdin, not argv — it can contain anything.
+        assert_eq!(inv.stdin.as_deref(), Some("describe this project"));
+    }
+
+    #[test]
+    fn a_machine_create_wraps_the_pane_in_an_interactive_shell() {
+        // Observed live, and silent: without `--interactive-shell` the pane
+        // inherits the bare ssh-exec PATH, the agent binary is not found, the
+        // session comes up `dead` — and the create still exits 0, so the app
+        // reported success for a session that never ran. The flag is the whole
+        // difference, which is why it is asserted on its own.
+        let inv = machine_create_invocation(
+            "sx".to_string(),
+            "opencode".to_string(),
+            "prox".to_string(),
+            "abc123".to_string(),
+            "machine:mini3".to_string(),
+            "shed-mobile".to_string(),
+            None,
+            None,
+            None,
+        )
+        .expect("builds");
+        assert!(
+            inv.argv.iter().any(|a| a == "--interactive-shell"),
+            "a machine pane needs the rc-file PATH: {:?}",
+            inv.argv
+        );
+    }
+
+    /// An invalid permission mode is rejected by the shared validator, so the
+    /// machine path cannot accept one the shed path would refuse.
+    #[test]
+    fn an_invalid_permission_mode_is_refused() {
+        assert!(machine_create_invocation(
+            "sx".to_string(),
+            "claude-rc".to_string(),
+            "x".to_string(),
+            "abc123".to_string(),
+            "machine:m".to_string(),
+            "t".to_string(),
+            None,
+            Some("not-a-mode".to_string()),
+            None,
+        )
+        .is_err());
     }
 
     /// Spliced, not joined. A joined prefix would split a path containing a

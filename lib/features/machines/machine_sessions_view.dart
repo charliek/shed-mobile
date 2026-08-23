@@ -15,6 +15,10 @@ import '../../theme/shed_theme.dart';
 import '../../widgets/card_shell.dart';
 import '../../widgets/kind_chip.dart';
 import '../../widgets/host_groups.dart';
+import '../../widgets/session_actions.dart';
+import '../../widgets/open_pill.dart';
+import '../terminal/terminal_screen.dart';
+import '../terminal/terminal_target.dart';
 import '../../widgets/status_badge.dart';
 
 /// **Machine sessions, beside shed sessions** (plan 012, roadmap R4).
@@ -318,6 +322,19 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
     ),
   );
 
+  /// Attach to the session's tmux pane over SSH to the machine.
+  void _openTerminal() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TerminalScreen(
+        target: MachineTerminalTarget(
+          machineName: widget.machineName,
+          slug: widget.session.slug,
+          title: '${widget.machineName}/${widget.session.slug}',
+        ),
+      ),
+    ),
+  );
+
   Future<void> _end() async {
     if (_busy) return;
     setState(() {
@@ -347,23 +364,46 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
+        // The SAME row a shed card renders — see `session_actions.dart`. Watch
+        // primary and labelled, the terminal secondary and compact, delete a
+        // bare glyph at the far edge.
         Row(
           children: [
-            if (canWatch)
-              TextButton.icon(
+            if (canWatch) ...[
+              AccentPill(
                 key: ValueKey('machine-watch-$slug'),
-                onPressed: _busy ? null : _watch,
-                icon: const Icon(Icons.visibility_outlined, size: 16),
-                label: const Text('Watch'),
+                icon: Icons.visibility_outlined,
+                label: 'Watch',
+                onTap: _watch,
               ),
+              const SizedBox(width: 8),
+            ],
+            // Every RC session lives in a tmux pane, so the terminal is the one
+            // way in that is always available — including for a kind with no
+            // feed at all, which would otherwise have no way in from here.
+            OpenPill(
+              key: ValueKey('machine-open-$slug'),
+              onTap: _openTerminal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+            ),
+            // A claude session advertises a claude.ai URL; the same pair the
+            // shed row offers, because it is the same session.
+            if (widget.session.url != null) ...[
+              const SizedBox(width: 8),
+              SessionUrlActions(
+                url: widget.session.url,
+                keyPrefix: 'machine',
+                keySuffix: slug,
+              ),
+            ],
             const Spacer(),
-            TextButton.icon(
+            GhostIconButton(
               key: ValueKey('machine-kill-$slug'),
-              onPressed: _busy ? null : _end,
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('End'),
-              style: TextButton.styleFrom(foregroundColor: context.shed.errFg),
+              icon: Icons.delete_outline,
+              tooltip: 'End session',
+              busy: _busy,
+              onPressed: _end,
             ),
           ],
         ),

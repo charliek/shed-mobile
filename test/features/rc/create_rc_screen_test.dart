@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/features/create/create_rc_target.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/src/rust/api/dto.dart';
@@ -91,7 +92,9 @@ Future<void> _pump(
       overrides: [overviewProvider.overrideWith((ref, name) async => build())],
       child: MaterialApp(
         theme: shedLightTheme,
-        home: const CreateRcScreen(serverName: 'h', shedName: 'proj'),
+        home: const CreateRcScreen(
+          target: ShedRcTarget(serverName: 'h', shedName: 'proj'),
+        ),
       ),
     ),
   );
