@@ -37,29 +37,41 @@ StatusDisplay shedStatusTone(String status) => switch (status) {
 /// the activity badge sits beside the lifecycle badge in the same visual
 /// language) with an activity-specific mapping: `working` pulses in the ok tone
 /// (actively producing), `needs_input` is a steady warn (waiting on the
-/// operator), `idle` is the quiet neutral tone, and `unknown`/absent show no
-/// badge at all (indeterminate — the client never invents one).
+/// operator), `needs_approval` is likewise a steady warn (blocked on a decision
+/// rather than on text), `idle` is the quiet neutral tone, and `unknown`/absent
+/// show no badge at all (indeterminate — the client never invents one).
 typedef ActivityDisplay = ({ShedStatusTone tone, bool pulse, String label});
 
-ActivityDisplay? rcActivityDisplay(BridgeRcActivity? activity) =>
-    switch (activity) {
-      BridgeRcActivity.working => (
-        tone: ShedStatusTone.ok,
-        pulse: true,
-        label: 'working',
-      ),
-      BridgeRcActivity.needsInput => (
-        tone: ShedStatusTone.warn,
-        pulse: false,
-        label: 'needs input',
-      ),
-      BridgeRcActivity.idle => (
-        tone: ShedStatusTone.idle,
-        pulse: false,
-        label: 'idle',
-      ),
-      BridgeRcActivity.unknown || null => null,
-    };
+ActivityDisplay? rcActivityDisplay(
+  BridgeRcActivity? activity,
+) => switch (activity) {
+  BridgeRcActivity.working => (
+    tone: ShedStatusTone.ok,
+    pulse: true,
+    label: 'working',
+  ),
+  BridgeRcActivity.needsInput => (
+    tone: ShedStatusTone.warn,
+    pulse: false,
+    label: 'needs input',
+  ),
+  // Blocked on an APPROVAL, not on a prompt (contract v2). Rendered in the
+  // warn tone like needs-input because both mean "stopped, waiting for you",
+  // but labelled distinctly: whether this phone can actually decide depends
+  // on the kind's `approvals` capability, and calling it "needs input" would
+  // promise a text box that may not be the answer.
+  BridgeRcActivity.needsApproval => (
+    tone: ShedStatusTone.warn,
+    pulse: false,
+    label: 'needs approval',
+  ),
+  BridgeRcActivity.idle => (
+    tone: ShedStatusTone.idle,
+    pulse: false,
+    label: 'idle',
+  ),
+  BridgeRcActivity.unknown || null => null,
+};
 
 /// The activity badge to render for a session, honoring the "lifecycle trumps
 /// activity" gate: null when [state] suppresses activity (needs-*/dead) or the
@@ -69,6 +81,44 @@ ActivityDisplay? rcActivityBadge(
   BridgeRcState state,
   BridgeRcActivity? activity,
 ) => rcStatePermitsActivity(state) ? rcActivityDisplay(activity) : null;
+
+/// The colour of a session card's left edge — what most wants your attention.
+///
+/// Precedence: a `dead` lifecycle is red; ANY lifecycle the badge renders as a
+/// warning is amber, whether or not it suppresses activity — otherwise the edge
+/// can contradict the badge sitting next to it. Only once the lifecycle is
+/// unremarkable does activity decide: asking for a person outranks merely being
+/// busy, and idle says nothing at all. Nothing worth saying returns null, and
+/// the card renders without an edge.
+///
+/// One rule, shared by every card: the point of the edge is a COLUMN that reads
+/// at a glance, and a column whose colours mean different things per row would
+/// be worse than no colour at all.
+Color? sessionRailColor(
+  ShedColors shed,
+  BridgeRcState state,
+  BridgeRcActivity? activity, {
+  bool stale = false,
+}) {
+  // A row we can no longer reach says so by being dimmed; colouring its edge
+  // would assert something current about a machine we cannot see.
+  if (stale) return null;
+  if (state == BridgeRcState.dead) return shed.dotErr;
+  // EVERY lifecycle the badge renders as a warning gets the warning edge, not
+  // just the ones that suppress activity. `starting` and `reconnecting` permit
+  // activity, so gating on `rcStatePermitsActivity` alone let a reconnecting
+  // session show a GREEN edge beside an amber `reconnecting` badge — the card
+  // contradicting itself, which is worse than either colour alone.
+  if (shedStatusTone(state.wire).tone == ShedStatusTone.warn) {
+    return shed.dotWarn;
+  }
+  return switch (activity) {
+    BridgeRcActivity.needsInput ||
+    BridgeRcActivity.needsApproval => shed.dotWarn,
+    BridgeRcActivity.working => shed.dotOk,
+    _ => null,
+  };
+}
 
 /// Agent-kind wire string → accent color (the kind chip's colored left border and
 /// the terminal `[kind]` label). Mirrors the design's `agent()` map. Reads raw

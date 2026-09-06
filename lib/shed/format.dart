@@ -75,11 +75,22 @@ String sessionMetaLine(
   String tmuxSession,
   String? createdAtIso, {
   DateTime? now,
+  String? workdir,
+  bool originIsImplied = false,
 }) {
   final age = ageLabel(parseServerTime(createdAtIso), now: now);
   return [
-    shedName,
-    'tmux $tmuxSession',
+    // The shed is NAMED unless the caller says its view already does. A
+    // cross-host list groups by SERVER, not by shed, so two sheds on one server
+    // would otherwise leave their sessions with nothing on the card saying
+    // which is which — the exact confusion the workdir was meant to resolve.
+    if (!originIsImplied) shedName,
+    // Workdir next: on a narrow phone this line truncates, and the working
+    // directory is what tells two sessions in the same place apart. The slug is
+    // recoverable from `sx ls`; the directory is recoverable from nowhere else
+    // on screen.
+    if (workdir != null && workdir.isNotEmpty) workdir,
+    tmuxSession,
     if (age != null) 'made $age ago',
   ].join(' · ');
 }

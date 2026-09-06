@@ -55,7 +55,7 @@ extension BridgeErrorPatterns on BridgeError {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeError_BadStatus value)?  badStatus,TResult Function( BridgeError_Transport value)?  transport,TResult Function( BridgeError_Decode value)?  decode,TResult Function( BridgeError_Create value)?  create,TResult Function( BridgeError_Config value)?  config,TResult Function( BridgeError_RcSlugTaken value)?  rcSlugTaken,TResult Function( BridgeError_RcNotFound value)?  rcNotFound,TResult Function( BridgeError_RcBadRequest value)?  rcBadRequest,TResult Function( BridgeError_RcMissingBinary value)?  rcMissingBinary,TResult Function( BridgeError_RcFailed value)?  rcFailed,TResult Function( BridgeError_TokenAuthExpired value)?  tokenAuthExpired,TResult Function( BridgeError_TokenPinMismatch value)?  tokenPinMismatch,TResult Function( BridgeError_TokenPinMissing value)?  tokenPinMissing,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeError_BadStatus value)?  badStatus,TResult Function( BridgeError_Transport value)?  transport,TResult Function( BridgeError_Decode value)?  decode,TResult Function( BridgeError_Create value)?  create,TResult Function( BridgeError_Config value)?  config,TResult Function( BridgeError_RcSlugTaken value)?  rcSlugTaken,TResult Function( BridgeError_RcNotFound value)?  rcNotFound,TResult Function( BridgeError_RcBadRequest value)?  rcBadRequest,TResult Function( BridgeError_RcMissingBinary value)?  rcMissingBinary,TResult Function( BridgeError_RcFailed value)?  rcFailed,TResult Function( BridgeError_TokenAuthExpired value)?  tokenAuthExpired,TResult Function( BridgeError_TokenPinMismatch value)?  tokenPinMismatch,TResult Function( BridgeError_TokenPinMissing value)?  tokenPinMissing,TResult Function( BridgeError_AgentUpgradeRequired value)?  agentUpgradeRequired,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case BridgeError_BadStatus() when badStatus != null:
@@ -71,7 +71,8 @@ return rcMissingBinary(_that);case BridgeError_RcFailed() when rcFailed != null:
 return rcFailed(_that);case BridgeError_TokenAuthExpired() when tokenAuthExpired != null:
 return tokenAuthExpired(_that);case BridgeError_TokenPinMismatch() when tokenPinMismatch != null:
 return tokenPinMismatch(_that);case BridgeError_TokenPinMissing() when tokenPinMissing != null:
-return tokenPinMissing(_that);case _:
+return tokenPinMissing(_that);case BridgeError_AgentUpgradeRequired() when agentUpgradeRequired != null:
+return agentUpgradeRequired(_that);case _:
   return orElse();
 
 }
@@ -89,7 +90,7 @@ return tokenPinMissing(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeError_BadStatus value)  badStatus,required TResult Function( BridgeError_Transport value)  transport,required TResult Function( BridgeError_Decode value)  decode,required TResult Function( BridgeError_Create value)  create,required TResult Function( BridgeError_Config value)  config,required TResult Function( BridgeError_RcSlugTaken value)  rcSlugTaken,required TResult Function( BridgeError_RcNotFound value)  rcNotFound,required TResult Function( BridgeError_RcBadRequest value)  rcBadRequest,required TResult Function( BridgeError_RcMissingBinary value)  rcMissingBinary,required TResult Function( BridgeError_RcFailed value)  rcFailed,required TResult Function( BridgeError_TokenAuthExpired value)  tokenAuthExpired,required TResult Function( BridgeError_TokenPinMismatch value)  tokenPinMismatch,required TResult Function( BridgeError_TokenPinMissing value)  tokenPinMissing,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeError_BadStatus value)  badStatus,required TResult Function( BridgeError_Transport value)  transport,required TResult Function( BridgeError_Decode value)  decode,required TResult Function( BridgeError_Create value)  create,required TResult Function( BridgeError_Config value)  config,required TResult Function( BridgeError_RcSlugTaken value)  rcSlugTaken,required TResult Function( BridgeError_RcNotFound value)  rcNotFound,required TResult Function( BridgeError_RcBadRequest value)  rcBadRequest,required TResult Function( BridgeError_RcMissingBinary value)  rcMissingBinary,required TResult Function( BridgeError_RcFailed value)  rcFailed,required TResult Function( BridgeError_TokenAuthExpired value)  tokenAuthExpired,required TResult Function( BridgeError_TokenPinMismatch value)  tokenPinMismatch,required TResult Function( BridgeError_TokenPinMissing value)  tokenPinMissing,required TResult Function( BridgeError_AgentUpgradeRequired value)  agentUpgradeRequired,}){
 final _that = this;
 switch (_that) {
 case BridgeError_BadStatus():
@@ -105,7 +106,8 @@ return rcMissingBinary(_that);case BridgeError_RcFailed():
 return rcFailed(_that);case BridgeError_TokenAuthExpired():
 return tokenAuthExpired(_that);case BridgeError_TokenPinMismatch():
 return tokenPinMismatch(_that);case BridgeError_TokenPinMissing():
-return tokenPinMissing(_that);}
+return tokenPinMissing(_that);case BridgeError_AgentUpgradeRequired():
+return agentUpgradeRequired(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -119,7 +121,7 @@ return tokenPinMissing(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeError_BadStatus value)?  badStatus,TResult? Function( BridgeError_Transport value)?  transport,TResult? Function( BridgeError_Decode value)?  decode,TResult? Function( BridgeError_Create value)?  create,TResult? Function( BridgeError_Config value)?  config,TResult? Function( BridgeError_RcSlugTaken value)?  rcSlugTaken,TResult? Function( BridgeError_RcNotFound value)?  rcNotFound,TResult? Function( BridgeError_RcBadRequest value)?  rcBadRequest,TResult? Function( BridgeError_RcMissingBinary value)?  rcMissingBinary,TResult? Function( BridgeError_RcFailed value)?  rcFailed,TResult? Function( BridgeError_TokenAuthExpired value)?  tokenAuthExpired,TResult? Function( BridgeError_TokenPinMismatch value)?  tokenPinMismatch,TResult? Function( BridgeError_TokenPinMissing value)?  tokenPinMissing,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeError_BadStatus value)?  badStatus,TResult? Function( BridgeError_Transport value)?  transport,TResult? Function( BridgeError_Decode value)?  decode,TResult? Function( BridgeError_Create value)?  create,TResult? Function( BridgeError_Config value)?  config,TResult? Function( BridgeError_RcSlugTaken value)?  rcSlugTaken,TResult? Function( BridgeError_RcNotFound value)?  rcNotFound,TResult? Function( BridgeError_RcBadRequest value)?  rcBadRequest,TResult? Function( BridgeError_RcMissingBinary value)?  rcMissingBinary,TResult? Function( BridgeError_RcFailed value)?  rcFailed,TResult? Function( BridgeError_TokenAuthExpired value)?  tokenAuthExpired,TResult? Function( BridgeError_TokenPinMismatch value)?  tokenPinMismatch,TResult? Function( BridgeError_TokenPinMissing value)?  tokenPinMissing,TResult? Function( BridgeError_AgentUpgradeRequired value)?  agentUpgradeRequired,}){
 final _that = this;
 switch (_that) {
 case BridgeError_BadStatus() when badStatus != null:
@@ -135,7 +137,8 @@ return rcMissingBinary(_that);case BridgeError_RcFailed() when rcFailed != null:
 return rcFailed(_that);case BridgeError_TokenAuthExpired() when tokenAuthExpired != null:
 return tokenAuthExpired(_that);case BridgeError_TokenPinMismatch() when tokenPinMismatch != null:
 return tokenPinMismatch(_that);case BridgeError_TokenPinMissing() when tokenPinMissing != null:
-return tokenPinMissing(_that);case _:
+return tokenPinMissing(_that);case BridgeError_AgentUpgradeRequired() when agentUpgradeRequired != null:
+return agentUpgradeRequired(_that);case _:
   return null;
 
 }
@@ -152,7 +155,7 @@ return tokenPinMissing(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int code)?  badStatus,TResult Function( String msg)?  transport,TResult Function( String msg)?  decode,TResult Function( String msg)?  create,TResult Function( String msg)?  config,TResult Function( String detail)?  rcSlugTaken,TResult Function( String detail)?  rcNotFound,TResult Function( String detail)?  rcBadRequest,TResult Function()?  rcMissingBinary,TResult Function( String detail)?  rcFailed,TResult Function()?  tokenAuthExpired,TResult Function()?  tokenPinMismatch,TResult Function()?  tokenPinMissing,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int code)?  badStatus,TResult Function( String msg)?  transport,TResult Function( String msg)?  decode,TResult Function( String msg)?  create,TResult Function( String msg)?  config,TResult Function( String detail)?  rcSlugTaken,TResult Function( String detail)?  rcNotFound,TResult Function( String detail)?  rcBadRequest,TResult Function()?  rcMissingBinary,TResult Function( String detail)?  rcFailed,TResult Function()?  tokenAuthExpired,TResult Function()?  tokenPinMismatch,TResult Function()?  tokenPinMissing,TResult Function( String server,  String detail)?  agentUpgradeRequired,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeError_BadStatus() when badStatus != null:
 return badStatus(_that.code);case BridgeError_Transport() when transport != null:
@@ -167,7 +170,8 @@ return rcMissingBinary();case BridgeError_RcFailed() when rcFailed != null:
 return rcFailed(_that.detail);case BridgeError_TokenAuthExpired() when tokenAuthExpired != null:
 return tokenAuthExpired();case BridgeError_TokenPinMismatch() when tokenPinMismatch != null:
 return tokenPinMismatch();case BridgeError_TokenPinMissing() when tokenPinMissing != null:
-return tokenPinMissing();case _:
+return tokenPinMissing();case BridgeError_AgentUpgradeRequired() when agentUpgradeRequired != null:
+return agentUpgradeRequired(_that.server,_that.detail);case _:
   return orElse();
 
 }
@@ -185,7 +189,7 @@ return tokenPinMissing();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int code)  badStatus,required TResult Function( String msg)  transport,required TResult Function( String msg)  decode,required TResult Function( String msg)  create,required TResult Function( String msg)  config,required TResult Function( String detail)  rcSlugTaken,required TResult Function( String detail)  rcNotFound,required TResult Function( String detail)  rcBadRequest,required TResult Function()  rcMissingBinary,required TResult Function( String detail)  rcFailed,required TResult Function()  tokenAuthExpired,required TResult Function()  tokenPinMismatch,required TResult Function()  tokenPinMissing,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int code)  badStatus,required TResult Function( String msg)  transport,required TResult Function( String msg)  decode,required TResult Function( String msg)  create,required TResult Function( String msg)  config,required TResult Function( String detail)  rcSlugTaken,required TResult Function( String detail)  rcNotFound,required TResult Function( String detail)  rcBadRequest,required TResult Function()  rcMissingBinary,required TResult Function( String detail)  rcFailed,required TResult Function()  tokenAuthExpired,required TResult Function()  tokenPinMismatch,required TResult Function()  tokenPinMissing,required TResult Function( String server,  String detail)  agentUpgradeRequired,}) {final _that = this;
 switch (_that) {
 case BridgeError_BadStatus():
 return badStatus(_that.code);case BridgeError_Transport():
@@ -200,7 +204,8 @@ return rcMissingBinary();case BridgeError_RcFailed():
 return rcFailed(_that.detail);case BridgeError_TokenAuthExpired():
 return tokenAuthExpired();case BridgeError_TokenPinMismatch():
 return tokenPinMismatch();case BridgeError_TokenPinMissing():
-return tokenPinMissing();}
+return tokenPinMissing();case BridgeError_AgentUpgradeRequired():
+return agentUpgradeRequired(_that.server,_that.detail);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -214,7 +219,7 @@ return tokenPinMissing();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int code)?  badStatus,TResult? Function( String msg)?  transport,TResult? Function( String msg)?  decode,TResult? Function( String msg)?  create,TResult? Function( String msg)?  config,TResult? Function( String detail)?  rcSlugTaken,TResult? Function( String detail)?  rcNotFound,TResult? Function( String detail)?  rcBadRequest,TResult? Function()?  rcMissingBinary,TResult? Function( String detail)?  rcFailed,TResult? Function()?  tokenAuthExpired,TResult? Function()?  tokenPinMismatch,TResult? Function()?  tokenPinMissing,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int code)?  badStatus,TResult? Function( String msg)?  transport,TResult? Function( String msg)?  decode,TResult? Function( String msg)?  create,TResult? Function( String msg)?  config,TResult? Function( String detail)?  rcSlugTaken,TResult? Function( String detail)?  rcNotFound,TResult? Function( String detail)?  rcBadRequest,TResult? Function()?  rcMissingBinary,TResult? Function( String detail)?  rcFailed,TResult? Function()?  tokenAuthExpired,TResult? Function()?  tokenPinMismatch,TResult? Function()?  tokenPinMissing,TResult? Function( String server,  String detail)?  agentUpgradeRequired,}) {final _that = this;
 switch (_that) {
 case BridgeError_BadStatus() when badStatus != null:
 return badStatus(_that.code);case BridgeError_Transport() when transport != null:
@@ -229,7 +234,8 @@ return rcMissingBinary();case BridgeError_RcFailed() when rcFailed != null:
 return rcFailed(_that.detail);case BridgeError_TokenAuthExpired() when tokenAuthExpired != null:
 return tokenAuthExpired();case BridgeError_TokenPinMismatch() when tokenPinMismatch != null:
 return tokenPinMismatch();case BridgeError_TokenPinMissing() when tokenPinMissing != null:
-return tokenPinMissing();case _:
+return tokenPinMissing();case BridgeError_AgentUpgradeRequired() when agentUpgradeRequired != null:
+return agentUpgradeRequired(_that.server,_that.detail);case _:
   return null;
 
 }
@@ -958,5 +964,73 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class BridgeError_AgentUpgradeRequired extends BridgeError {
+  const BridgeError_AgentUpgradeRequired({required this.server, required this.detail}): super._();
+  
+
+ final  String server;
+ final  String detail;
+
+/// Create a copy of BridgeError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeError_AgentUpgradeRequiredCopyWith<BridgeError_AgentUpgradeRequired> get copyWith => _$BridgeError_AgentUpgradeRequiredCopyWithImpl<BridgeError_AgentUpgradeRequired>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeError_AgentUpgradeRequired&&(identical(other.server, server) || other.server == server)&&(identical(other.detail, detail) || other.detail == detail));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,server,detail);
+
+@override
+String toString() {
+  return 'BridgeError.agentUpgradeRequired(server: $server, detail: $detail)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeError_AgentUpgradeRequiredCopyWith<$Res> implements $BridgeErrorCopyWith<$Res> {
+  factory $BridgeError_AgentUpgradeRequiredCopyWith(BridgeError_AgentUpgradeRequired value, $Res Function(BridgeError_AgentUpgradeRequired) _then) = _$BridgeError_AgentUpgradeRequiredCopyWithImpl;
+@useResult
+$Res call({
+ String server, String detail
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeError_AgentUpgradeRequiredCopyWithImpl<$Res>
+    implements $BridgeError_AgentUpgradeRequiredCopyWith<$Res> {
+  _$BridgeError_AgentUpgradeRequiredCopyWithImpl(this._self, this._then);
+
+  final BridgeError_AgentUpgradeRequired _self;
+  final $Res Function(BridgeError_AgentUpgradeRequired) _then;
+
+/// Create a copy of BridgeError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? server = null,Object? detail = null,}) {
+  return _then(BridgeError_AgentUpgradeRequired(
+server: null == server ? _self.server : server // ignore: cast_nullable_to_non_nullable
+as String,detail: null == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
 
 // dart format on

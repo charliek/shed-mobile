@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../providers.dart';
 import '../../widgets/host_groups.dart';
+import '../machines/machines_section.dart';
 import 'host_card.dart';
 
 /// The desktop Hosts pane body: one merged [HostCard] per saved host (status +
@@ -13,11 +14,21 @@ class HostsView extends StatelessWidget {
   const HostsView({super.key});
 
   @override
-  Widget build(BuildContext context) => HostGroups(
-    section: 'hosts',
-    header: false,
-    emptyMessage: 'Add a host to get started.',
-    onRefresh: invalidateHosts,
-    hostBuilder: (s) => HostCard(record: s, mobile: false),
+  Widget build(BuildContext context) => Column(
+    children: [
+      Expanded(
+        child: HostGroups(
+          section: 'hosts',
+          header: false,
+          emptyMessage: 'Add a host to get started.',
+          onRefresh: invalidateHosts,
+          hostBuilder: (s) => HostCard(record: s, mobile: false),
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: MachinesSection(),
+      ),
+    ],
   );
 }

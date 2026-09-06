@@ -102,49 +102,50 @@ void main() {
     expect(result, 'b');
   });
 
-  testWidgets('pickShed: only running sheds are offered, grouped by host', (
-    tester,
-  ) async {
-    await _run(
-      tester,
-      pickShed,
-      hosts: [_rec('h1'), _rec('h2')],
-      sheds: (name) async => name == 'h1'
-          ? const [
-              BridgeShed(
-                host: 'h',
-                name: 'run',
-                status: BridgeShedStatus.running,
-                activeNamespaces: [],
-              ),
-              BridgeShed(
-                host: 'h',
-                name: 'stop',
-                status: BridgeShedStatus.stopped,
-                activeNamespaces: [],
-              ),
-            ]
-          : const [
-              BridgeShed(
-                host: 'h',
-                name: 'run2',
-                status: BridgeShedStatus.running,
-                activeNamespaces: [],
-              ),
-            ],
-    );
-    expect(find.byKey(const ValueKey('pick-shed-h1-run')), findsOneWidget);
-    expect(find.byKey(const ValueKey('pick-shed-h2-run2')), findsOneWidget);
-    // Stopped sheds are not selectable targets.
-    expect(find.byKey(const ValueKey('pick-shed-h1-stop')), findsNothing);
-  });
+  testWidgets(
+    'pickRunTarget: only running sheds are offered, grouped by host',
+    (tester) async {
+      await _run(
+        tester,
+        pickRunTarget,
+        hosts: [_rec('h1'), _rec('h2')],
+        sheds: (name) async => name == 'h1'
+            ? const [
+                BridgeShed(
+                  host: 'h',
+                  name: 'run',
+                  status: BridgeShedStatus.running,
+                  activeNamespaces: [],
+                ),
+                BridgeShed(
+                  host: 'h',
+                  name: 'stop',
+                  status: BridgeShedStatus.stopped,
+                  activeNamespaces: [],
+                ),
+              ]
+            : const [
+                BridgeShed(
+                  host: 'h',
+                  name: 'run2',
+                  status: BridgeShedStatus.running,
+                  activeNamespaces: [],
+                ),
+              ],
+      );
+      expect(find.byKey(const ValueKey('pick-shed-h1-run')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-shed-h2-run2')), findsOneWidget);
+      // Stopped sheds are not selectable targets.
+      expect(find.byKey(const ValueKey('pick-shed-h1-stop')), findsNothing);
+    },
+  );
 
-  testWidgets('pickShed: one unreachable host does not hide the others', (
+  testWidgets('pickRunTarget: one unreachable host does not hide the others', (
     tester,
   ) async {
     await _run(
       tester,
-      pickShed,
+      pickRunTarget,
       hosts: [_rec('down'), _rec('up')],
       sheds: (name) async {
         if (name == 'down') throw StateError('offline');
@@ -161,12 +162,12 @@ void main() {
     expect(find.byKey(const ValueKey('pick-shed-up-ok')), findsOneWidget);
   });
 
-  testWidgets('pickShed: no running sheds shows the "start a shed" hint', (
+  testWidgets('pickRunTarget: no running sheds shows the "start a shed" hint', (
     tester,
   ) async {
     await _run(
       tester,
-      pickShed,
+      pickRunTarget,
       hosts: [_rec('h')],
       sheds: (name) async => const [
         BridgeShed(

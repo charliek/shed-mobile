@@ -81,6 +81,12 @@ pub enum BridgeError {
     TokenPinMismatch,
     /// The bundle omits a required TLS fingerprint (`SHED_TLS_PIN_MISSING`).
     TokenPinMissing,
+    /// The server needs a newer `shed-host-agent` before this client can reach
+    /// it (mtls enrollment, plan 002). A distinct variant rather than a generic
+    /// transport error because the REMEDY is specific — upgrade the agent on
+    /// that host — and a phone cannot do it, so the message has to name the
+    /// server rather than read as a network blip.
+    AgentUpgradeRequired { server: String, detail: String },
 }
 
 impl From<ShedError> for BridgeError {
@@ -99,6 +105,9 @@ impl From<ShedError> for BridgeError {
             ShedError::Decode(msg) => BridgeError::Decode { msg },
             ShedError::Create(msg) => BridgeError::Create { msg },
             ShedError::Config(msg) => BridgeError::Config { msg },
+            ShedError::AgentUpgradeRequired { server, detail } => {
+                BridgeError::AgentUpgradeRequired { server, detail }
+            }
         }
     }
 }
@@ -148,6 +157,12 @@ impl std::fmt::Display for BridgeError {
             }
             BridgeError::TokenPinMissing => {
                 write!(f, "control token bundle omits a valid tls_cert_fingerprint")
+            }
+            // Names the server, because the remedy is on THAT host and the phone
+            // cannot perform it — "upgrade shed-host-agent" with no host is not
+            // actionable when several servers are configured.
+            BridgeError::AgentUpgradeRequired { server, detail } => {
+                write!(f, "{server} needs a newer shed-host-agent: {detail}")
             }
         }
     }

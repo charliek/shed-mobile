@@ -12,8 +12,8 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "861fedae296bc6d0ac7d8bc81852b3c04297400b" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "861fedae296bc6d0ac7d8bc81852b3c04297400b" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
 # Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
 # registry, local SSE test servers (net/io-util), and time-bounded awaits.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
@@ -37,3 +37,29 @@ base64 = "0.22"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+# **Tuned dev profile** (plan 012), matching `shed/crates/Cargo.toml` — see its
+# profile comment for the measurements. Repeated rather than inherited because
+# this is a separate workspace.
+#
+# It matters more here than anywhere: cargokit builds this crate once PER
+# ANDROID ABI (arm64, x86_64, …), so the debug-info cost is multiplied by the
+# ABI count on every `flutter run`, and it lands in `build/` rather than a
+# shared target dir.
+#
+# `line-tables-only` keeps `file:line` in panics, which is what an FRB bridge is
+# debugged with — a Rust panic surfaces to Dart as an error string, so a
+# debugger stepping into Rust was never the workflow anyway.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# The release half of the same standard (`shed/crates/Cargo.toml`). On a phone
+# the payoff is the shipped `.so`: `strip` alone takes the bridge library from
+# tens of MB to a few, and it ships once per ABI in the APK.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

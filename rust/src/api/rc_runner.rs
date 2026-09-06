@@ -12,11 +12,11 @@
 
 use serde_json::Value;
 use shed_core::rc::{
-    create_invocation, decode_list, decode_session, error_from_exit, kill_argv, list_argv,
-    prompt_argv, RcKind, RcSession, RcSessionDto, RcState,
+    create_invocation, decode_list, decode_list_response, decode_session, error_from_exit,
+    kill_argv, list_argv, prompt_argv, RcKind, RcSession, RcSessionDto, RcState,
 };
 
-use super::dto_rc::BridgeRcSession;
+use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
 use super::error::BridgeError;
 
 /// The rc binary name on the shed. Mobile owns this (not `RcService`'s hard-coded
@@ -386,4 +386,25 @@ mod tests {
         .unwrap();
         assert_eq!(with.workdir.as_deref(), Some("/home/shed/proj"));
     }
+}
+
+/// Decode the CAPABILITIES block from a `list` stdout (plan 012 S5b).
+///
+/// Capabilities ride in the `list` envelope rather than needing their own call,
+/// so one round trip yields both the sessions and the per-kind affordances a
+/// client must gate its controls on.
+///
+/// **This is what makes a control surface honest.** A client renders off
+/// `kind_features[kind]` — never off the kind itself — so a session whose
+/// `approvals` is `"tui"` never gets an approve button (its approvals are
+/// informational; they are answered in the terminal), and only an `input:
+/// "turn"` kind gets a steer box. Offering a control the far side will refuse
+/// with `409 not_supported` is a bug the contract exists to prevent.
+///
+/// `None` means the binary predates capability discovery — an ABSENT block, not
+/// an empty one, and a caller must degrade rather than assume nothing is
+/// supported.
+pub fn rc_decode_capabilities(stdout: String) -> Result<Option<BridgeRcCapabilities>, BridgeError> {
+    let env = decode_list_response(&prenormalize_list_states(&stdout))?;
+    Ok(env.capabilities.map(Into::into))
 }

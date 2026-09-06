@@ -1,0 +1,96 @@
+/// A configured machine — a native host (not a shed VM) reached over SSH, with
+/// the RC activity hub on its loopback `1029` (plan 012, roadmap R4).
+///
+/// Deliberately NOT a [ServerRecord]: a shed server is an HTTP API with a TLS
+/// pin, a control token, and an auth mode; a machine is only ever SSH. Modelling
+/// them together would mean a record where half the fields are meaningless for
+/// half the rows, and a UI that has to keep asking which kind it is holding.
+///
+/// Mirrors `shed_core::config::MachineEntry` field-for-field, so a machine
+/// configured on the phone and one in `~/.shed/config.yaml` describe the same
+/// thing — the desktop and the phone must agree about what "mini3" means.
+class MachineRecord {
+  const MachineRecord({
+    required this.name,
+    required this.host,
+    this.user,
+    this.sshPort = 22,
+    this.rcBin,
+  });
+
+  /// The handle the user types and the UI labels rows with (`machine:<name>`).
+  final String name;
+
+  /// Where to dial. Defaults to [name] upstream when absent; here it is
+  /// required, because a phone has no `~/.ssh/config` to fall back on and a
+  /// silent "the name is the host" would fail as an opaque DNS error.
+  final String host;
+
+  /// SSH login user. `null` lets the far side decide — which on a phone means
+  /// dartssh2's default, so the add-machine form asks for it.
+  final String? user;
+
+  final int sshPort;
+
+  /// Where the `sx` binary lives on the machine.
+  ///
+  /// `null` → `sx` on the PATH an `ssh <host> <cmd>` exec sees, which is the
+  /// NON-login PATH and routinely omits `~/.local/bin` and `/opt/homebrew/bin`.
+  /// An absolute path here is the normal case for anything not installed under
+  /// `/usr/bin`, not an exotic override.
+  final String? rcBin;
+
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'host': host,
+    if (user != null) 'user': user,
+    'ssh_port': sshPort,
+    if (rcBin != null) 'rc_bin': rcBin,
+  };
+
+  static MachineRecord fromJson(Map<String, Object?> j) => MachineRecord(
+    name: (j['name'] as String?) ?? '',
+    host: (j['host'] as String?) ?? '',
+    user: j['user'] as String?,
+    rcBin: j['rc_bin'] as String?,
+    // Tolerant of a stored string (an older write, or a hand-edited blob):
+    // a bad port must not make the whole machine list undecodable.
+    sshPort: switch (j['ssh_port']) {
+      final int p => p,
+      final String s => int.tryParse(s) ?? 22,
+      _ => 22,
+    },
+  );
+
+  MachineRecord copyWith({
+    String? host,
+    String? user,
+    int? sshPort,
+    String? rcBin,
+  }) => MachineRecord(
+    name: name,
+    host: host ?? this.host,
+    user: user ?? this.user,
+    sshPort: sshPort ?? this.sshPort,
+    rcBin: rcBin ?? this.rcBin,
+  );
+
+  /// The origin handle a session row is keyed and labelled by.
+  ///
+  /// **Rows must key on this, never on a session's `shed`.** A hub read directly
+  /// reports an EMPTY shed on every session (it has no shed to name), so two
+  /// machines that happen to share a slug would collide into one row.
+  String get origin => 'machine:$name';
+
+  @override
+  bool operator ==(Object other) =>
+      other is MachineRecord &&
+      other.name == name &&
+      other.host == host &&
+      other.user == user &&
+      other.sshPort == sshPort &&
+      other.rcBin == rcBin;
+
+  @override
+  int get hashCode => Object.hash(name, host, user, sshPort, rcBin);
+}

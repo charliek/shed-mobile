@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../app/app_section.dart';
 import '../../core/url_launch.dart';
@@ -15,11 +13,13 @@ import '../../theme/shed_theme.dart';
 import '../../widgets/card_shell.dart';
 import '../../widgets/kind_chip.dart';
 import '../../widgets/open_pill.dart';
-import '../../widgets/square_icon_button.dart';
+import '../../widgets/session_actions.dart';
 import '../../widgets/status_badge.dart';
 import '../sheds/shed_actions.dart';
 import '../terminal/terminal_screen.dart';
-import 'codex_watch_screen.dart';
+import '../terminal/terminal_target.dart';
+import 'session_watch_screen.dart';
+import 'session_watch_source.dart';
 
 /// A cross-host rc-session card: lifecycle badge, a live activity badge (when the
 /// hub reports one and lifecycle permits it), kind chip, a meta line
@@ -37,6 +37,7 @@ class SessionCard extends ConsumerStatefulWidget {
     required this.shedName,
     required this.session,
     this.live = false,
+    this.originIsImplied = false,
     this.urlLauncher,
     super.key,
   });
@@ -45,6 +46,14 @@ class SessionCard extends ConsumerStatefulWidget {
   final String shedName;
   final BridgeRcSession session;
   final bool live;
+
+  /// Whether the surrounding view already says which shed this session is in.
+  ///
+  /// True on a shed's own detail screen, whose app bar names it — repeating it
+  /// on every card wastes a line that truncates. FALSE in the cross-host list,
+  /// which groups by SERVER: two sheds on one server would otherwise leave
+  /// their sessions with nothing on the card saying which is which.
+  final bool originIsImplied;
 
   /// Test seam for the URL "open" action: an injected launcher passed straight
   /// through to [launchExternalUrl]. Production leaves this null (the real
@@ -68,20 +77,24 @@ class _SessionCardState extends ConsumerState<SessionCard> {
   void _open() => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => TerminalScreen(
-        serverName: widget.serverName,
-        shedName: widget.shedName,
-        slug: widget.session.slug,
-        title: '${widget.shedName}/${widget.session.slug}',
+        target: ShedTerminalTarget(
+          serverName: widget.serverName,
+          shedName: widget.shedName,
+          slug: widget.session.slug,
+          title: '${widget.shedName}/${widget.session.slug}',
+        ),
       ),
     ),
   );
 
   void _watch() => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => CodexWatchScreen(
-        serverName: widget.serverName,
-        shedName: widget.shedName,
-        session: widget.session,
+      builder: (_) => SessionWatchScreen(
+        source: ShedWatchSource(
+          serverName: widget.serverName,
+          shedName: widget.shedName,
+          session: widget.session,
+        ),
       ),
     ),
   );
@@ -114,40 +127,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
 
   /// Copy the session's claude.ai URL to the clipboard (the login/console link a
   /// claude-rc session advertises). Shown only when the session carries a URL.
-  Future<void> _copyUrl(String url) async {
-    // Match _openUrl: a platform-channel failure snackbars instead of escaping
-    // the button callback as an unhandled async error.
-    try {
-      await Clipboard.setData(ClipboardData(text: url));
-    } catch (e) {
-      logDriveResult('session-url-copy', ok: false, error: e);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not copy URL')));
-      }
-      return;
-    }
-    logDriveResult('session-url-copy', ok: true);
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('URL copied')));
-    }
-  }
-
-  /// Open the session's URL in an external browser via the shared safe-launch
-  /// helper (http/https only; a rejected/failed launch snackbars instead of
-  /// throwing).
-  Future<void> _openUrl(String url) async {
-    final outcome = await launchExternalUrl(url, launcher: widget.urlLauncher);
-    logDriveResult('session-url-open', ok: outcome == UrlLaunchOutcome.success);
-    if (!mounted || outcome == UrlLaunchOutcome.success) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Could not open URL')));
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.shed;
@@ -210,7 +189,13 @@ class _SessionCardState extends ConsumerState<SessionCard> {
       ),
     );
     final metaText = Text(
-      sessionMetaLine(widget.shedName, s.tmuxSession, s.createdAt),
+      sessionMetaLine(
+        widget.shedName,
+        s.tmuxSession,
+        s.createdAt,
+        workdir: s.workdir,
+        originIsImplied: widget.originIsImplied,
+      ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: monoStyle(fontSize: 11.5, color: c.fg3),
@@ -256,12 +241,21 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                 ),
               ),
               const SizedBox(width: 12),
-              ..._leadingActions(c, canWatch, url),
+              ..._leadingActions(c, canWatch),
               OpenPill(
                 key: ValueKey('all-session-open-$_base'),
                 onTap: _open,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
+              if (url != null) ...[
+                const SizedBox(width: 8),
+                SessionUrlActions(
+                  url: url,
+                  keyPrefix: 'all-session',
+                  keySuffix: _base,
+                  launcher: widget.urlLauncher,
+                ),
+              ],
               const SizedBox(width: 8),
               _deleteButton(c),
             ],
@@ -270,11 +264,17 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Both badges beside the name: lifecycle and activity are read
+              // together, in one glance, instead of on separate lines.
               Row(
                 children: [
                   Expanded(child: nameText),
                   const SizedBox(width: 10),
                   badge,
+                  if (activityBadge != null) ...[
+                    const SizedBox(width: 6),
+                    activityBadge,
+                  ],
                 ],
               ),
               const SizedBox(height: 9),
@@ -283,10 +283,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                   kindChip,
                   const SizedBox(width: 9),
                   Flexible(child: metaText),
-                  if (activityBadge != null) ...[
-                    const SizedBox(width: 9),
-                    activityBadge,
-                  ],
                 ],
               ),
               if (lastMessageText != null) ...[
@@ -296,83 +292,59 @@ class _SessionCardState extends ConsumerState<SessionCard> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  ..._leadingActions(c, canWatch, url),
-                  Expanded(
-                    child: OpenPill(
-                      key: ValueKey('all-session-open-$_base'),
-                      onTap: _open,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
+                  ..._leadingActions(c, canWatch),
+                  OpenPill(
+                    key: ValueKey('all-session-open-$_base'),
+                    onTap: _open,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),
-                  const SizedBox(width: 8),
+                  // The terminal first, then the link pair: `>_ open` is how
+                  // you reach the session itself, and the URL is a second way
+                  // in to the same one.
+                  if (url != null) ...[
+                    const SizedBox(width: 8),
+                    SessionUrlActions(
+                      url: url,
+                      keyPrefix: 'all-session',
+                      keySuffix: _base,
+                      launcher: widget.urlLauncher,
+                    ),
+                  ],
+                  // Delete sits at the far edge, away from everything you might
+                  // actually be reaching for.
+                  const Spacer(),
                   _deleteButton(c),
                 ],
               ),
             ],
           );
 
-    return CardShell(child: body);
+    return CardShell(rail: sessionRailColor(c, state, activity), child: body);
   }
 
-  /// The watch/copy/open action buttons shown ahead of the terminal pill —
-  /// shared by the desktop and mobile layouts so the `canWatch`/`url` gating
-  /// lives in one place instead of two hand-kept copies.
-  List<Widget> _leadingActions(ShedColors c, bool canWatch, String? url) => [
+  /// What leads the action row: Watch, when the kind has a feed to watch.
+  /// Shared by the desktop and mobile layouts so the gate lives in one place.
+  ///
+  /// Everything else follows the terminal — `>_ open` reaches the session
+  /// itself, and the claude.ai link pair is a second way in to the same one.
+  List<Widget> _leadingActions(ShedColors c, bool canWatch) => [
     if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
-    if (url != null) ...[
-      _urlCopyButton(url),
-      const SizedBox(width: 8),
-      _urlOpenButton(url),
-      const SizedBox(width: 8),
-    ],
   ];
 
-  Widget _watchButton(ShedColors c) => SquareIconButton(
+  /// The PRIMARY action, and labelled: an unlabelled eye is a guess, and this is
+  /// the one thing on the card most people want.
+  Widget _watchButton(ShedColors c) => AccentPill(
     key: ValueKey('all-session-watch-$_base'),
     icon: Icons.visibility_outlined,
-    size: 40,
-    tooltip: 'Watch',
-    onPressed: _watch,
+    label: 'Watch',
+    onTap: _watch,
   );
 
-  Widget _urlCopyButton(String url) => SquareIconButton(
-    key: ValueKey('all-session-url-copy-$_base'),
-    icon: Icons.copy,
-    size: 40,
-    tooltip: 'Copy URL',
-    onPressed: () => _copyUrl(url),
+  Widget _deleteButton(ShedColors c) => GhostIconButton(
+    key: ValueKey('all-session-delete-$_base'),
+    icon: Icons.delete_outline,
+    tooltip: 'Delete',
+    busy: _busy,
+    onPressed: _delete,
   );
-
-  Widget _urlOpenButton(String url) => SquareIconButton(
-    key: ValueKey('all-session-url-open-$_base'),
-    icon: Icons.open_in_new,
-    size: 40,
-    tooltip: 'Open in browser',
-    onPressed: () => _openUrl(url),
-  );
-
-  Widget _deleteButton(ShedColors c) {
-    if (_busy) {
-      return const SizedBox(
-        width: 40,
-        height: 40,
-        child: Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    return SquareIconButton(
-      key: ValueKey('all-session-delete-$_base'),
-      icon: Icons.delete_outline,
-      size: 40,
-      background: c.errBg,
-      iconColor: c.errFg,
-      tooltip: 'Delete',
-      onPressed: _delete,
-    );
-  }
 }

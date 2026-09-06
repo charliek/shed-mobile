@@ -13,39 +13,43 @@ import '../../core/url_scan.dart';
 import '../../providers.dart';
 import '../../services/foreground_service.dart';
 import '../../ssh/pty_session.dart';
+import 'terminal_target.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import 'terminal_keys.dart';
 
-/// Signature of [buildPtySession] — the production factory that assembles a
-/// (still-unstarted) [PtySession]. A test injects a fake here to exercise the
-/// terminal without a real SSH PTY; null in production (see [buildPtySession]).
+/// Signature of the factory that assembles a (still-unstarted) [PtySession] for
+/// a [TerminalTarget]. A test injects a fake here to exercise the terminal
+/// without a real SSH PTY; null in production (see [_defaultPtyBuilder]).
 typedef PtyBuilder =
-    Future<PtySession> Function(
-      WidgetRef ref, {
-      required String serverName,
-      required String shedName,
-      required String slug,
-    });
+    Future<PtySession> Function(WidgetRef ref, TerminalTarget target);
 
-/// In-app terminal: an xterm view wired to a [PtySession] that attaches to a
-/// shed RC session's tmux pane (`tmux attach -t rc-<slug>`) over pinned SSH.
-/// Detaching (leaving the screen) keeps the rc session running.
+/// The production builder — the target resolves its own coordinates. A test
+/// injects a fake in its place (see [TerminalScreen.ptyBuilder]).
+Future<PtySession> _defaultPtyBuilder(WidgetRef ref, TerminalTarget target) =>
+    target.connect(ref);
+
+/// In-app terminal: an xterm view wired to a [PtySession] that attaches to an
+/// RC session's tmux pane (`tmux attach -t rc-<slug>`) over SSH. Detaching
+/// (leaving the screen) keeps the rc session running.
+///
+/// Works against a shed OR a machine — [TerminalTarget] is the whole of the
+/// difference, because once a connection exists the remote command is the same.
 class TerminalScreen extends ConsumerStatefulWidget {
   const TerminalScreen({
-    required this.serverName,
-    required this.shedName,
-    required this.slug,
-    required this.title,
+    required this.target,
     this.ptyBuilder,
     this.urlLauncher,
     super.key,
   });
 
-  final String serverName;
-  final String shedName;
-  final String slug;
-  final String title;
+  /// Where to attach — a shed or a machine. The screen itself is transport-
+  /// agnostic: once a [PtySession] exists, `tmux attach -t rc-<slug>` is the
+  /// same command either way.
+  final TerminalTarget target;
+
+  String get slug => target.slug;
+  String get title => target.title;
 
   /// Test-only seam: overrides the [buildPtySession] factory so the screen's
   /// lifecycle (connect/reconnect/dispose) can be driven with a fake PTY. Always
@@ -224,12 +228,8 @@ class _TerminalScreenState extends ConsumerState<TerminalScreen> {
     });
     PtySession? pty;
     try {
-      pty = await (widget.ptyBuilder ?? buildPtySession)(
-        ref,
-        serverName: widget.serverName,
-        shedName: widget.shedName,
-        slug: widget.slug,
-      );
+      final PtyBuilder build = widget.ptyBuilder ?? _defaultPtyBuilder;
+      pty = await build(ref, widget.target);
       // Disposed — or superseded by a newer connect — while resolving connect
       // params? The session is unstarted (no connection opened yet), so just drop
       // it. `_pty` is still null here, so teardown couldn't have closed it.

@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../bridge/bridge_adapters.dart';
+import '../../machines/machine_record.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/create_rc_screen.dart';
+import 'create_rc_target.dart';
 import '../servers/add_server_screen.dart';
 import '../sheds/create_shed_screen.dart';
 
@@ -63,25 +65,30 @@ Future<void> newShedFromTab(BuildContext context, WidgetRef ref) async {
   );
 }
 
-/// New session: pick a running shed across hosts, then CreateRcScreen. The picker
-/// only offers running sheds (a session needs one). On a created session,
-/// invalidate the host's sessions — CreateRcScreen pops the session but does not
-/// self-invalidate overviewProvider, so this refresh is load-bearing.
+/// New session: pick where it runs — a running shed on any host, or a machine —
+/// then CreateRcScreen. A machine is offered on exactly the same footing as a
+/// shed: an agent on a machine is a session like any other, and making it a
+/// separate flow would be the first place that stopped being true.
+///
+/// On a created session, refresh what lists it. CreateRcScreen pops the created
+/// session but self-invalidates nothing, so this is load-bearing for a shed; a
+/// machine's hub reconcile brings its own row in, but invalidating is still what
+/// makes it appear at once rather than at the next tick.
 Future<void> newSessionFromTab(BuildContext context, WidgetRef ref) async {
-  final target = await pickShed(context, ref);
+  final target = await pickRunTarget(context, ref);
   if (target == null || !context.mounted) return;
-  final (serverName, shedName) = target;
   final created = await Navigator.of(context).push<Object?>(
-    MaterialPageRoute<Object?>(
-      builder: (_) =>
-          CreateRcScreen(serverName: serverName, shedName: shedName),
-    ),
+    MaterialPageRoute<Object?>(builder: (_) => CreateRcScreen(target: target)),
   );
-  if (created != null) {
-    ref.invalidate(overviewProvider(serverName));
-    ref.invalidate(
-      rcSessionsProvider((serverName: serverName, shedName: shedName)),
-    );
+  if (created == null) return;
+  switch (target) {
+    case ShedRcTarget(:final serverName, :final shedName):
+      ref.invalidate(overviewProvider(serverName));
+      ref.invalidate(
+        rcSessionsProvider((serverName: serverName, shedName: shedName)),
+      );
+    case MachineRcTarget(:final machineName):
+      ref.invalidate(machineFeedProvider(machineName));
   }
 }
 
@@ -120,17 +127,26 @@ Future<String?> pickHost(BuildContext context, WidgetRef ref) async {
   return chosen;
 }
 
-/// Pick a running shed across all hosts. Opens immediately and loads each host's
-/// sheds progressively (one slow/offline host never stalls it); only running
-/// sheds are offered. Rows keyed `pick-shed-<server>-<shed>`. Null on cancel /
-/// none.
-Future<(String, String)?> pickShed(BuildContext context, WidgetRef ref) async {
-  final result = await showModalBottomSheet<(String, String)>(
+/// Pick where a new session runs: a running shed on any host, or a machine.
+/// Opens immediately and loads each host's sheds progressively (one slow or
+/// offline host never stalls it); only running sheds are offered, because a
+/// session needs one. Machines are offered unconditionally — a machine has no
+/// lifecycle to be in the wrong part of, and whether it is reachable right now
+/// is a question the create screen answers honestly rather than one the picker
+/// silently pre-empts by hiding the row.
+///
+/// Rows keyed `pick-shed-<server>-<shed>` and `pick-machine-<name>`. Null on
+/// cancel / none.
+Future<CreateRcTarget?> pickRunTarget(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final result = await showModalBottomSheet<CreateRcTarget>(
     context: context,
     backgroundColor: context.shed.surface,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => const _ShedPickerSheet(),
+    builder: (_) => const _RunTargetPickerSheet(),
   );
   logDriveResult('pick-shed', ok: result != null);
   return result;
@@ -144,13 +160,13 @@ void _toast(BuildContext context, String message) {
   }
 }
 
-const _shedPickerTitle = 'Pick a shed';
+const _shedPickerTitle = 'Where should it run?';
 
-/// The running-shed picker body: one section per host, each loading its running
-/// sheds independently. Shows "Start a shed first" only once every host has
-/// resolved with no running shed.
-class _ShedPickerSheet extends ConsumerWidget {
-  const _ShedPickerSheet();
+/// The picker body: running sheds (one section per host, each loading its own
+/// sheds independently), then machines. Shows the "nothing to run on" hint only
+/// once every host has resolved with no running shed AND there are no machines.
+class _RunTargetPickerSheet extends ConsumerWidget {
+  const _RunTargetPickerSheet();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -170,19 +186,21 @@ class _ShedPickerSheet extends ConsumerWidget {
         children: [_Note('Could not load hosts: $e')],
       ),
       data: (hosts) {
-        final rows = <Widget>[];
+        final shedRows = <Widget>[];
         var allResolved = true;
         for (final h in hosts) {
           final sheds = ref.watch(shedsProvider(h.name));
           sheds.when(
             data: (list) {
               for (final s in list.where(bridgeShedIsRunning)) {
-                rows.add(
+                shedRows.add(
                   _PickRow(
                     key: ValueKey('pick-shed-${h.name}-${s.name}'),
                     label: s.name,
                     sub: h.name,
-                    onTap: () => Navigator.of(context).pop((h.name, s.name)),
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pop(ShedRcTarget(serverName: h.name, shedName: s.name)),
                   ),
                 );
               }
@@ -191,18 +209,36 @@ class _ShedPickerSheet extends ConsumerWidget {
             error: (_, _) {},
           );
         }
-        if (allResolved && rows.isEmpty) {
+        final machines =
+            ref.watch(machinesProvider).value ?? const <MachineRecord>[];
+        final machineRows = [
+          for (final m in machines)
+            _PickRow(
+              key: ValueKey('pick-machine-${m.name}'),
+              label: m.name,
+              sub: m.host,
+              onTap: () => Navigator.of(
+                context,
+              ).pop(MachineRcTarget(machineName: m.name)),
+            ),
+        ];
+        if (allResolved && shedRows.isEmpty && machineRows.isEmpty) {
           return const _Sheet(
             title: _shedPickerTitle,
             children: [
-              _Note('Start a shed first — a session needs a running shed.'),
+              _Note('Nothing to run on yet — start a shed, or add a machine.'),
             ],
           );
         }
+        // Headers earn their place only when there is more than one kind of
+        // place to run: a list of sheds under a "Sheds" header, with no
+        // machines anywhere, is a label explaining itself.
+        final headed = shedRows.isNotEmpty && machineRows.isNotEmpty;
         return _Sheet(
           title: _shedPickerTitle,
           children: [
-            ...rows,
+            if (headed && shedRows.isNotEmpty) const _GroupLabel('Sheds'),
+            ...shedRows,
             if (!allResolved)
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -214,11 +250,33 @@ class _ShedPickerSheet extends ConsumerWidget {
                   ),
                 ),
               ),
+            if (headed && machineRows.isNotEmpty) const _GroupLabel('Machines'),
+            ...machineRows,
           ],
         );
       },
     );
   }
+}
+
+/// A section label inside the sheet — same treatment as a list header
+/// elsewhere, quieter than the sheet title.
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 10, 20, 2),
+    child: Text(
+      text.toUpperCase(),
+      style: monoStyle(
+        fontSize: 10.5,
+        color: context.shed.fg3,
+      ).copyWith(letterSpacing: 1.1),
+    ),
+  );
 }
 
 /// The shared sheet chrome: a title over a scrollable child list (safe-area

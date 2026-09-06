@@ -13,7 +13,20 @@ part 'dto_rc.freezed.dart';
 
 /// A session's live work dimension (mirrors `rc::RcActivity`). Plain enum;
 /// an unknown wire token folds to `Unknown` (no `Other` arm, by design).
-enum BridgeRcActivity { working, needsInput, idle, unknown }
+enum BridgeRcActivity {
+  working,
+  needsInput,
+
+  /// The session is blocked on an approval (contract v2). Distinct from
+  /// `NeedsInput`: the agent is not waiting for a prompt, it is waiting for a
+  /// DECISION — and whether the phone can make that decision depends on the
+  /// kind's `approvals` capability (`remote` = steerable here, `tui` =
+  /// informational, open the TUI). Rendering must key on `kind_features`,
+  /// never on the kind.
+  needsApproval,
+  idle,
+  unknown,
+}
 
 /// One agent's install-probe result (mirrors `rc::RcAgentInfo`).
 class BridgeRcAgentInfo {
@@ -88,6 +101,11 @@ sealed class BridgeRcEvent with _$BridgeRcEvent {
     BridgeRcActivity? activity,
     BridgeRcState? state,
     String? lastMessage,
+
+    /// The session's lane (contract v2), carried verbatim when the hub sends
+    /// one. `None` on a removal, and on a hub that predates the field.
+    /// Additive: a consumer that ignores it behaves exactly as before.
+    String? lane,
     required bool removed,
   }) = BridgeRcEvent_SessionUpdated;
   const factory BridgeRcEvent.messageAppended({
@@ -179,20 +197,47 @@ sealed class BridgeRcKind with _$BridgeRcKind {
 /// Per-kind UI hints (mirrors `rc::RcKindFeatures`).
 class BridgeRcKindFeatures {
   final bool postInput;
+
+  /// `"remote"` = the hub can RESOLVE an approval from here; `"tui"` = the
+  /// rows are informational and the decision must be made in the session's
+  /// terminal. A client that offers an approve button for a `"tui"` kind
+  /// produces a `409 not_supported` the user cannot act on — this field is
+  /// the whole reason the contract carries capabilities.
   final String approvals;
   final bool watch;
+
+  /// `"turn"` = accepts a structured turn; `"gated"`/`"line"` = keystrokes
+  /// only.
   final String input;
+
+  /// contract v2: which feed this kind carries (`"messages"`/`"activity"`).
+  final String feed;
+
+  /// contract v2: whether a running turn can be interrupted.
+  final bool interrupt;
+
+  /// contract v2: how the session is attachable (`"tmux"`).
+  final String attach;
 
   const BridgeRcKindFeatures({
     required this.postInput,
     required this.approvals,
     required this.watch,
     required this.input,
+    required this.feed,
+    required this.interrupt,
+    required this.attach,
   });
 
   @override
   int get hashCode =>
-      postInput.hashCode ^ approvals.hashCode ^ watch.hashCode ^ input.hashCode;
+      postInput.hashCode ^
+      approvals.hashCode ^
+      watch.hashCode ^
+      input.hashCode ^
+      feed.hashCode ^
+      interrupt.hashCode ^
+      attach.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -202,7 +247,10 @@ class BridgeRcKindFeatures {
           postInput == other.postInput &&
           approvals == other.approvals &&
           watch == other.watch &&
-          input == other.input;
+          input == other.input &&
+          feed == other.feed &&
+          interrupt == other.interrupt &&
+          attach == other.attach;
 }
 
 /// A page of the feed (mirrors `rc::RcMessagesPage`).

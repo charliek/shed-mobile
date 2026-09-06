@@ -159,11 +159,11 @@ return shedStopped(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)?  activityChanged,TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  bool removed)?  sessionUpdated,TResult Function( String shed,  String slug,  BigInt seq)?  messageAppended,TResult Function( String shed)?  hubUnavailable,TResult Function( String shed)?  shedStopped,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)?  activityChanged,TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  String? lane,  bool removed)?  sessionUpdated,TResult Function( String shed,  String slug,  BigInt seq)?  messageAppended,TResult Function( String shed)?  hubUnavailable,TResult Function( String shed)?  shedStopped,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeRcEvent_ActivityChanged() when activityChanged != null:
 return activityChanged(_that.shed,_that.slug,_that.activity,_that.activityAt,_that.state,_that.lastMessage);case BridgeRcEvent_SessionUpdated() when sessionUpdated != null:
-return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.removed);case BridgeRcEvent_MessageAppended() when messageAppended != null:
+return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.lane,_that.removed);case BridgeRcEvent_MessageAppended() when messageAppended != null:
 return messageAppended(_that.shed,_that.slug,_that.seq);case BridgeRcEvent_HubUnavailable() when hubUnavailable != null:
 return hubUnavailable(_that.shed);case BridgeRcEvent_ShedStopped() when shedStopped != null:
 return shedStopped(_that.shed);case _:
@@ -184,11 +184,11 @@ return shedStopped(_that.shed);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)  activityChanged,required TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  bool removed)  sessionUpdated,required TResult Function( String shed,  String slug,  BigInt seq)  messageAppended,required TResult Function( String shed)  hubUnavailable,required TResult Function( String shed)  shedStopped,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)  activityChanged,required TResult Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  String? lane,  bool removed)  sessionUpdated,required TResult Function( String shed,  String slug,  BigInt seq)  messageAppended,required TResult Function( String shed)  hubUnavailable,required TResult Function( String shed)  shedStopped,}) {final _that = this;
 switch (_that) {
 case BridgeRcEvent_ActivityChanged():
 return activityChanged(_that.shed,_that.slug,_that.activity,_that.activityAt,_that.state,_that.lastMessage);case BridgeRcEvent_SessionUpdated():
-return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.removed);case BridgeRcEvent_MessageAppended():
+return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.lane,_that.removed);case BridgeRcEvent_MessageAppended():
 return messageAppended(_that.shed,_that.slug,_that.seq);case BridgeRcEvent_HubUnavailable():
 return hubUnavailable(_that.shed);case BridgeRcEvent_ShedStopped():
 return shedStopped(_that.shed);}
@@ -205,11 +205,11 @@ return shedStopped(_that.shed);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)?  activityChanged,TResult? Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  bool removed)?  sessionUpdated,TResult? Function( String shed,  String slug,  BigInt seq)?  messageAppended,TResult? Function( String shed)?  hubUnavailable,TResult? Function( String shed)?  shedStopped,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String shed,  String slug,  BridgeRcActivity? activity,  String? activityAt,  BridgeRcState? state,  String? lastMessage)?  activityChanged,TResult? Function( String shed,  String slug,  BridgeRcActivity? activity,  BridgeRcState? state,  String? lastMessage,  String? lane,  bool removed)?  sessionUpdated,TResult? Function( String shed,  String slug,  BigInt seq)?  messageAppended,TResult? Function( String shed)?  hubUnavailable,TResult? Function( String shed)?  shedStopped,}) {final _that = this;
 switch (_that) {
 case BridgeRcEvent_ActivityChanged() when activityChanged != null:
 return activityChanged(_that.shed,_that.slug,_that.activity,_that.activityAt,_that.state,_that.lastMessage);case BridgeRcEvent_SessionUpdated() when sessionUpdated != null:
-return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.removed);case BridgeRcEvent_MessageAppended() when messageAppended != null:
+return sessionUpdated(_that.shed,_that.slug,_that.activity,_that.state,_that.lastMessage,_that.lane,_that.removed);case BridgeRcEvent_MessageAppended() when messageAppended != null:
 return messageAppended(_that.shed,_that.slug,_that.seq);case BridgeRcEvent_HubUnavailable() when hubUnavailable != null:
 return hubUnavailable(_that.shed);case BridgeRcEvent_ShedStopped() when shedStopped != null:
 return shedStopped(_that.shed);case _:
@@ -300,7 +300,7 @@ as String?,
 
 
 class BridgeRcEvent_SessionUpdated extends BridgeRcEvent {
-  const BridgeRcEvent_SessionUpdated({required this.shed, required this.slug, this.activity, this.state, this.lastMessage, required this.removed}): super._();
+  const BridgeRcEvent_SessionUpdated({required this.shed, required this.slug, this.activity, this.state, this.lastMessage, this.lane, required this.removed}): super._();
   
 
 @override final  String shed;
@@ -308,6 +308,10 @@ class BridgeRcEvent_SessionUpdated extends BridgeRcEvent {
  final  BridgeRcActivity? activity;
  final  BridgeRcState? state;
  final  String? lastMessage;
+/// The session's lane (contract v2), carried verbatim when the hub sends
+/// one. `None` on a removal, and on a hub that predates the field.
+/// Additive: a consumer that ignores it behaves exactly as before.
+ final  String? lane;
  final  bool removed;
 
 /// Create a copy of BridgeRcEvent
@@ -320,16 +324,16 @@ $BridgeRcEvent_SessionUpdatedCopyWith<BridgeRcEvent_SessionUpdated> get copyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRcEvent_SessionUpdated&&(identical(other.shed, shed) || other.shed == shed)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.activity, activity) || other.activity == activity)&&(identical(other.state, state) || other.state == state)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.removed, removed) || other.removed == removed));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRcEvent_SessionUpdated&&(identical(other.shed, shed) || other.shed == shed)&&(identical(other.slug, slug) || other.slug == slug)&&(identical(other.activity, activity) || other.activity == activity)&&(identical(other.state, state) || other.state == state)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.lane, lane) || other.lane == lane)&&(identical(other.removed, removed) || other.removed == removed));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,shed,slug,activity,state,lastMessage,removed);
+int get hashCode => Object.hash(runtimeType,shed,slug,activity,state,lastMessage,lane,removed);
 
 @override
 String toString() {
-  return 'BridgeRcEvent.sessionUpdated(shed: $shed, slug: $slug, activity: $activity, state: $state, lastMessage: $lastMessage, removed: $removed)';
+  return 'BridgeRcEvent.sessionUpdated(shed: $shed, slug: $slug, activity: $activity, state: $state, lastMessage: $lastMessage, lane: $lane, removed: $removed)';
 }
 
 
@@ -340,7 +344,7 @@ abstract mixin class $BridgeRcEvent_SessionUpdatedCopyWith<$Res> implements $Bri
   factory $BridgeRcEvent_SessionUpdatedCopyWith(BridgeRcEvent_SessionUpdated value, $Res Function(BridgeRcEvent_SessionUpdated) _then) = _$BridgeRcEvent_SessionUpdatedCopyWithImpl;
 @override @useResult
 $Res call({
- String shed, String slug, BridgeRcActivity? activity, BridgeRcState? state, String? lastMessage, bool removed
+ String shed, String slug, BridgeRcActivity? activity, BridgeRcState? state, String? lastMessage, String? lane, bool removed
 });
 
 
@@ -357,13 +361,14 @@ class _$BridgeRcEvent_SessionUpdatedCopyWithImpl<$Res>
 
 /// Create a copy of BridgeRcEvent
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? shed = null,Object? slug = null,Object? activity = freezed,Object? state = freezed,Object? lastMessage = freezed,Object? removed = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? shed = null,Object? slug = null,Object? activity = freezed,Object? state = freezed,Object? lastMessage = freezed,Object? lane = freezed,Object? removed = null,}) {
   return _then(BridgeRcEvent_SessionUpdated(
 shed: null == shed ? _self.shed : shed // ignore: cast_nullable_to_non_nullable
 as String,slug: null == slug ? _self.slug : slug // ignore: cast_nullable_to_non_nullable
 as String,activity: freezed == activity ? _self.activity : activity // ignore: cast_nullable_to_non_nullable
 as BridgeRcActivity?,state: freezed == state ? _self.state : state // ignore: cast_nullable_to_non_nullable
 as BridgeRcState?,lastMessage: freezed == lastMessage ? _self.lastMessage : lastMessage // ignore: cast_nullable_to_non_nullable
+as String?,lane: freezed == lane ? _self.lane : lane // ignore: cast_nullable_to_non_nullable
 as String?,removed: null == removed ? _self.removed : removed // ignore: cast_nullable_to_non_nullable
 as bool,
   ));

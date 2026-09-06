@@ -102,11 +102,24 @@ abstract class BridgeClient implements RustOpaqueInterface {
     required String text,
   });
 
+  /// Interrupt the running turn. `false` = nothing was running, which is an
+  /// answer rather than a failure.
+  Future<bool> rcInterrupt({required String shed, required String slug});
+
   Future<BridgeRcMessagesPage> rcMessages({
     required String shed,
     required String slug,
     required BigInt since,
     int? limit,
+  });
+
+  /// Start a structured turn on a shed session — the `input: "turn"`
+  /// counterpart to [`Self::rc_input`]'s `"gated"` keystroke path. Which one
+  /// applies is the kind's business (`kind_features.input`), never a guess.
+  Future<String> rcTurn({
+    required String shed,
+    required String slug,
+    required String text,
   });
 
   Future<void> reset({required String name});

@@ -62,4 +62,14 @@ sealed class BridgeError with _$BridgeError implements FrbException {
 
   /// The bundle omits a required TLS fingerprint (`SHED_TLS_PIN_MISSING`).
   const factory BridgeError.tokenPinMissing() = BridgeError_TokenPinMissing;
+
+  /// The server needs a newer `shed-host-agent` before this client can reach
+  /// it (mtls enrollment, plan 002). A distinct variant rather than a generic
+  /// transport error because the REMEDY is specific — upgrade the agent on
+  /// that host — and a phone cannot do it, so the message has to name the
+  /// server rather than read as a network blip.
+  const factory BridgeError.agentUpgradeRequired({
+    required String server,
+    required String detail,
+  }) = BridgeError_AgentUpgradeRequired;
 }

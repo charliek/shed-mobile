@@ -19,7 +19,7 @@ class OpenPill extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        height: 40,
+        height: 34,
         alignment: Alignment.center,
         padding: padding,
         decoration: BoxDecoration(
@@ -29,7 +29,7 @@ class OpenPill extends StatelessWidget {
         child: Text(
           '›_ open',
           style: monoStyle(
-            fontSize: 12.5,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             color: c.btnDarkFg,
           ),

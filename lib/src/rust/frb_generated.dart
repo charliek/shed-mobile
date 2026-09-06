@@ -10,6 +10,7 @@ import 'api/dto.dart';
 import 'api/dto_rc.dart';
 import 'api/error.dart';
 import 'api/local_sse.dart';
+import 'api/machine.dart';
 import 'api/mint.dart';
 import 'api/preview.dart';
 import 'api/rc_runner.dart';
@@ -78,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0-beta.5';
 
   @override
-  int get rustContentHash => 1581507483;
+  int get rustContentHash => -2010882195;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -141,12 +142,25 @@ abstract class RustLibApi extends BaseApi {
     required String text,
   });
 
+  Future<bool> crateApiClientBridgeClientRcInterrupt({
+    required BridgeClient that,
+    required String shed,
+    required String slug,
+  });
+
   Future<BridgeRcMessagesPage> crateApiClientBridgeClientRcMessages({
     required BridgeClient that,
     required String shed,
     required String slug,
     required BigInt since,
     int? limit,
+  });
+
+  Future<String> crateApiClientBridgeClientRcTurn({
+    required BridgeClient that,
+    required String shed,
+    required String slug,
+    required String text,
   });
 
   Future<void> crateApiClientBridgeClientReset({
@@ -173,6 +187,11 @@ abstract class RustLibApi extends BaseApi {
   void crateApiLocalSseBridgeTestSseStop({required BridgeTestSse that});
 
   void crateApiCreateStreamCancelCreate({required BridgeCreateHandle handle});
+
+  Future<BridgeMachineWatcher> crateApiMachineCreateMachineWatcher({
+    required String machine,
+    required int localPort,
+  });
 
   Future<BridgeWatcherHandle> crateApiWatcherCreateRcWatcher({
     required BridgeClient client,
@@ -202,6 +221,59 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BridgeLiveCounters> crateApiBridgeRtLiveCounters();
 
+  Future<String> crateApiMachineMachineApprove({
+    required int localPort,
+    required String slug,
+    required String id,
+    required String decision,
+  });
+
+  Future<BridgeRcInvocation> crateApiMachineMachineCreateInvocation({
+    required String rcBin,
+    required String kind,
+    required String name,
+    required String slug,
+    required String target,
+    required String createdBy,
+    String? workdir,
+    String? permissionMode,
+    String? prompt,
+  });
+
+  Future<void> crateApiMachineMachineInput({
+    required int localPort,
+    required String slug,
+    required String text,
+  });
+
+  Future<bool> crateApiMachineMachineInterrupt({
+    required int localPort,
+    required String slug,
+  });
+
+  Future<List<String>> crateApiMachineMachineKillArgv({
+    required String rcBin,
+    required String slug,
+  });
+
+  Future<List<String>> crateApiMachineMachineListArgv({required String rcBin});
+
+  Future<BridgeRcMessagesPage> crateApiMachineMachineMessages({
+    required int localPort,
+    required String slug,
+    required BigInt since,
+  });
+
+  Future<String> crateApiMachineMachineTurn({
+    required int localPort,
+    required String slug,
+    required String text,
+  });
+
+  Stream<BridgeMachineUpdate> crateApiMachineMachineWatcherEvents({
+    required BridgeMachineWatcher handle,
+  });
+
   bool crateApiMintMintRequestIsTokenFree({required BridgeMintRequest req});
 
   Future<BridgeAddServerPreview> crateApiPreviewPreviewAddServer({
@@ -219,6 +291,10 @@ abstract class RustLibApi extends BaseApi {
     String? workdir,
     String? permissionMode,
     String? prompt,
+  });
+
+  Future<BridgeRcCapabilities?> crateApiRcRunnerRcDecodeCapabilities({
+    required String stdout,
   });
 
   Future<BridgeRcSession> crateApiRcRunnerRcDecodeSession({
@@ -272,6 +348,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BridgeTestSse> crateApiLocalSseSpawnWatcherTestSse();
 
+  Future<void> crateApiMachineStopMachineWatcher({
+    required BridgeMachineWatcher handle,
+  });
+
   void crateApiWatcherStopRcEvents({required BridgeWatcherHandle handle});
 
   Future<String> crateApiMintSubmitMintResult({
@@ -295,6 +375,15 @@ abstract class RustLibApi extends BaseApi {
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeCreateHandlePtr;
+
+  RustArcIncrementStrongCountFnType
+  get rust_arc_increment_strong_count_BridgeMachineWatcher;
+
+  RustArcDecrementStrongCountFnType
+  get rust_arc_decrement_strong_count_BridgeMachineWatcher;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_BridgeMachineWatcherPtr;
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_BridgeTestSse;
@@ -692,6 +781,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<bool> crateApiClientBridgeClientRcInterrupt({
+    required BridgeClient that,
+    required String shed,
+    required String slug,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+            that,
+            serializer,
+          );
+          sse_encode_String(shed, serializer);
+          sse_encode_String(slug, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiClientBridgeClientRcInterruptConstMeta,
+        argValues: [that, shed, slug],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientBridgeClientRcInterruptConstMeta =>
+      const TaskConstMeta(
+        debugName: 'BridgeClient_rc_interrupt',
+        argNames: ['that', 'shed', 'slug'],
+      );
+
+  @override
   Future<BridgeRcMessagesPage> crateApiClientBridgeClientRcMessages({
     required BridgeClient that,
     required String shed,
@@ -714,7 +843,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -736,6 +865,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String> crateApiClientBridgeClientRcTurn({
+    required BridgeClient that,
+    required String shed,
+    required String slug,
+    required String text,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+            that,
+            serializer,
+          );
+          sse_encode_String(shed, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_String(text, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiClientBridgeClientRcTurnConstMeta,
+        argValues: [that, shed, slug, text],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClientBridgeClientRcTurnConstMeta =>
+      const TaskConstMeta(
+        debugName: 'BridgeClient_rc_turn',
+        argNames: ['that', 'shed', 'slug', 'text'],
+      );
+
+  @override
   Future<void> crateApiClientBridgeClientReset({
     required BridgeClient that,
     required String name,
@@ -752,7 +923,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 13,
             port: port_,
           );
         },
@@ -790,7 +961,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 14,
             port: port_,
           );
         },
@@ -828,7 +999,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 15,
             port: port_,
           );
         },
@@ -864,7 +1035,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 16,
             port: port_,
           );
         },
@@ -895,7 +1066,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -924,7 +1095,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -950,7 +1121,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             handle,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -965,6 +1136,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiCreateStreamCancelCreateConstMeta =>
       const TaskConstMeta(debugName: 'cancel_create', argNames: ['handle']);
+
+  @override
+  Future<BridgeMachineWatcher> crateApiMachineCreateMachineWatcher({
+    required String machine,
+    required int localPort,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(machine, serializer);
+          sse_encode_u_16(localPort, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 20,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMachineCreateMachineWatcherConstMeta,
+        argValues: [machine, localPort],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineCreateMachineWatcherConstMeta =>
+      const TaskConstMeta(
+        debugName: 'create_machine_watcher',
+        argNames: ['machine', 'localPort'],
+      );
 
   @override
   Future<BridgeWatcherHandle> crateApiWatcherCreateRcWatcher({
@@ -983,7 +1190,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 21,
             port: port_,
           );
         },
@@ -1023,7 +1230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 19,
+              funcId: 22,
               port: port_,
             );
           },
@@ -1063,7 +1270,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 23,
             port: port_,
           );
         },
@@ -1105,7 +1312,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 24,
             port: port_,
           );
         },
@@ -1132,7 +1339,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1157,7 +1364,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1184,7 +1391,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1203,13 +1410,370 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'live_counters', argNames: []);
 
   @override
+  Future<String> crateApiMachineMachineApprove({
+    required int localPort,
+    required String slug,
+    required String id,
+    required String decision,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_16(localPort, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_String(id, serializer);
+          sse_encode_String(decision, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 28,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMachineMachineApproveConstMeta,
+        argValues: [localPort, slug, id, decision],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineApproveConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_approve',
+        argNames: ['localPort', 'slug', 'id', 'decision'],
+      );
+
+  @override
+  Future<BridgeRcInvocation> crateApiMachineMachineCreateInvocation({
+    required String rcBin,
+    required String kind,
+    required String name,
+    required String slug,
+    required String target,
+    required String createdBy,
+    String? workdir,
+    String? permissionMode,
+    String? prompt,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rcBin, serializer);
+          sse_encode_String(kind, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_String(target, serializer);
+          sse_encode_String(createdBy, serializer);
+          sse_encode_opt_String(workdir, serializer);
+          sse_encode_opt_String(permissionMode, serializer);
+          sse_encode_opt_String(prompt, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 29,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_rc_invocation,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiMachineMachineCreateInvocationConstMeta,
+        argValues: [
+          rcBin,
+          kind,
+          name,
+          slug,
+          target,
+          createdBy,
+          workdir,
+          permissionMode,
+          prompt,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineCreateInvocationConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_create_invocation',
+        argNames: [
+          'rcBin',
+          'kind',
+          'name',
+          'slug',
+          'target',
+          'createdBy',
+          'workdir',
+          'permissionMode',
+          'prompt',
+        ],
+      );
+
+  @override
+  Future<void> crateApiMachineMachineInput({
+    required int localPort,
+    required String slug,
+    required String text,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_16(localPort, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_String(text, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 30,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMachineMachineInputConstMeta,
+        argValues: [localPort, slug, text],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineInputConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_input',
+        argNames: ['localPort', 'slug', 'text'],
+      );
+
+  @override
+  Future<bool> crateApiMachineMachineInterrupt({
+    required int localPort,
+    required String slug,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_16(localPort, serializer);
+          sse_encode_String(slug, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 31,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMachineMachineInterruptConstMeta,
+        argValues: [localPort, slug],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineInterruptConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_interrupt',
+        argNames: ['localPort', 'slug'],
+      );
+
+  @override
+  Future<List<String>> crateApiMachineMachineKillArgv({
+    required String rcBin,
+    required String slug,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rcBin, serializer);
+          sse_encode_String(slug, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 32,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMachineMachineKillArgvConstMeta,
+        argValues: [rcBin, slug],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineKillArgvConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_kill_argv',
+        argNames: ['rcBin', 'slug'],
+      );
+
+  @override
+  Future<List<String>> crateApiMachineMachineListArgv({required String rcBin}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rcBin, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 33,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMachineMachineListArgvConstMeta,
+        argValues: [rcBin],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineListArgvConstMeta =>
+      const TaskConstMeta(debugName: 'machine_list_argv', argNames: ['rcBin']);
+
+  @override
+  Future<BridgeRcMessagesPage> crateApiMachineMachineMessages({
+    required int localPort,
+    required String slug,
+    required BigInt since,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_16(localPort, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_u_64(since, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 34,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_rc_messages_page,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMachineMachineMessagesConstMeta,
+        argValues: [localPort, slug, since],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineMessagesConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_messages',
+        argNames: ['localPort', 'slug', 'since'],
+      );
+
+  @override
+  Future<String> crateApiMachineMachineTurn({
+    required int localPort,
+    required String slug,
+    required String text,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_16(localPort, serializer);
+          sse_encode_String(slug, serializer);
+          sse_encode_String(text, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 35,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMachineMachineTurnConstMeta,
+        argValues: [localPort, slug, text],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineTurnConstMeta => const TaskConstMeta(
+    debugName: 'machine_turn',
+    argNames: ['localPort', 'slug', 'text'],
+  );
+
+  @override
+  Stream<BridgeMachineUpdate> crateApiMachineMachineWatcherEvents({
+    required BridgeMachineWatcher handle,
+  }) {
+    final sink = RustStreamSink<BridgeMachineUpdate>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+              handle,
+              serializer,
+            );
+            sse_encode_StreamSink_bridge_machine_update_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 36,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiMachineMachineWatcherEventsConstMeta,
+          argValues: [handle, sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiMachineMachineWatcherEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: 'machine_watcher_events',
+        argNames: ['handle', 'sink'],
+      );
+
+  @override
   bool crateApiMintMintRequestIsTokenFree({required BridgeMintRequest req}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_bridge_mint_request(req, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -1244,7 +1808,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1291,7 +1855,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1331,6 +1895,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<BridgeRcCapabilities?> crateApiRcRunnerRcDecodeCapabilities({
+    required String stdout,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(stdout, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 40,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_bridge_rc_capabilities,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiRcRunnerRcDecodeCapabilitiesConstMeta,
+        argValues: [stdout],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRcRunnerRcDecodeCapabilitiesConstMeta =>
+      const TaskConstMeta(
+        debugName: 'rc_decode_capabilities',
+        argNames: ['stdout'],
+      );
+
+  @override
   Future<BridgeRcSession> crateApiRcRunnerRcDecodeSession({
     required String stdout,
     required String host,
@@ -1346,7 +1943,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1383,7 +1980,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1420,7 +2017,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 43,
             port: port_,
           );
         },
@@ -1451,7 +2048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1478,7 +2075,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1510,7 +2107,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1549,7 +2146,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 34,
+              funcId: 47,
               port: port_,
             );
           },
@@ -1584,7 +2181,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 35,
+              funcId: 48,
               port: port_,
             );
           },
@@ -1619,7 +2216,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 36,
+              funcId: 49,
               port: port_,
             );
           },
@@ -1648,7 +2245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 50,
             port: port_,
           );
         },
@@ -1676,7 +2273,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 51,
             port: port_,
           );
         },
@@ -1700,7 +2297,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1725,7 +2322,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1750,7 +2347,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 54,
             port: port_,
           );
         },
@@ -1781,7 +2378,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 55,
             port: port_,
           );
         },
@@ -1812,7 +2409,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 56,
             port: port_,
           );
         },
@@ -1832,6 +2429,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'spawn_watcher_test_sse', argNames: []);
 
   @override
+  Future<void> crateApiMachineStopMachineWatcher({
+    required BridgeMachineWatcher handle,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+            handle,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 57,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMachineStopMachineWatcherConstMeta,
+        argValues: [handle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMachineStopMachineWatcherConstMeta =>
+      const TaskConstMeta(
+        debugName: 'stop_machine_watcher',
+        argNames: ['handle'],
+      );
+
+  @override
   void crateApiWatcherStopRcEvents({required BridgeWatcherHandle handle}) {
     return handler.executeSync(
       SyncTask(
@@ -1841,7 +2474,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             handle,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1871,7 +2504,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 59,
             port: port_,
           );
         },
@@ -1907,6 +2540,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RustArcDecrementStrongCountFnType
   get rust_arc_decrement_strong_count_BridgeCreateHandle => wire
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCreateHandle;
+
+  RustArcIncrementStrongCountFnType
+  get rust_arc_increment_strong_count_BridgeMachineWatcher => wire
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher;
+
+  RustArcDecrementStrongCountFnType
+  get rust_arc_decrement_strong_count_BridgeMachineWatcher => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher;
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_BridgeTestSse => wire
@@ -1949,6 +2590,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMachineWatcher
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
   BridgeTestSse
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     dynamic raw,
@@ -1982,6 +2632,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return BridgeCreateHandleImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  BridgeMachineWatcher
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -2043,6 +2702,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMachineWatcher
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
   BridgeTestSse
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     dynamic raw,
@@ -2070,6 +2738,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   RustStreamSink<BridgeCredentialEvent>
   dco_decode_StreamSink_bridge_credential_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<BridgeMachineUpdate>
+  dco_decode_StreamSink_bridge_machine_update_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -2351,6 +3026,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return BridgeError_TokenPinMismatch();
       case 12:
         return BridgeError_TokenPinMissing();
+      case 13:
+        return BridgeError_AgentUpgradeRequired(
+          server: dco_decode_String(raw[1]),
+          detail: dco_decode_String(raw[2]),
+        );
       default:
         throw Exception('unreachable');
     }
@@ -2370,6 +3050,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       activeSseServers: dco_decode_u_64(arr[4]),
       pendingPreviewCredentials: dco_decode_u_64(arr[5]),
     );
+  }
+
+  @protected
+  BridgeMachineUpdate dco_decode_bridge_machine_update(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return BridgeMachineUpdate_Snapshot(
+          sessions: dco_decode_list_bridge_rc_session(raw[1]),
+        );
+      case 1:
+        return BridgeMachineUpdate_Event(
+          event: dco_decode_box_autoadd_bridge_rc_event(raw[1]),
+        );
+      case 2:
+        return BridgeMachineUpdate_Down(reason: dco_decode_String(raw[1]));
+      default:
+        throw Exception('unreachable');
+    }
   }
 
   @protected
@@ -2516,7 +3215,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           activity: dco_decode_opt_box_autoadd_bridge_rc_activity(raw[3]),
           state: dco_decode_opt_box_autoadd_bridge_rc_state(raw[4]),
           lastMessage: dco_decode_opt_String(raw[5]),
-          removed: dco_decode_bool(raw[6]),
+          lane: dco_decode_opt_String(raw[6]),
+          removed: dco_decode_bool(raw[7]),
         );
       case 2:
         return BridgeRcEvent_MessageAppended(
@@ -2600,13 +3300,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BridgeRcKindFeatures dco_decode_bridge_rc_kind_features(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return BridgeRcKindFeatures(
       postInput: dco_decode_bool(arr[0]),
       approvals: dco_decode_String(arr[1]),
       watch: dco_decode_bool(arr[2]),
       input: dco_decode_String(arr[3]),
+      feed: dco_decode_String(arr[4]),
+      interrupt: dco_decode_bool(arr[5]),
+      attach: dco_decode_String(arr[6]),
     );
   }
 
@@ -3043,6 +3746,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMachineWatcher
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   BridgeTestSse
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     SseDeserializer deserializer,
@@ -3085,6 +3800,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return BridgeCreateHandleImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
+  BridgeMachineWatcher
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -3163,6 +3890,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeMachineWatcher
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return BridgeMachineWatcherImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   BridgeTestSse
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     SseDeserializer deserializer,
@@ -3196,6 +3935,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   RustStreamSink<BridgeCredentialEvent>
   sse_decode_StreamSink_bridge_credential_event_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<BridgeMachineUpdate>
+  sse_decode_StreamSink_bridge_machine_update_Sse(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3537,6 +4285,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return BridgeError_TokenPinMismatch();
       case 12:
         return BridgeError_TokenPinMissing();
+      case 13:
+        var var_server = sse_decode_String(deserializer);
+        var var_detail = sse_decode_String(deserializer);
+        return BridgeError_AgentUpgradeRequired(
+          server: var_server,
+          detail: var_detail,
+        );
       default:
         throw UnimplementedError('');
     }
@@ -3561,6 +4316,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       activeSseServers: var_activeSseServers,
       pendingPreviewCredentials: var_pendingPreviewCredentials,
     );
+  }
+
+  @protected
+  BridgeMachineUpdate sse_decode_bridge_machine_update(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_sessions = sse_decode_list_bridge_rc_session(deserializer);
+        return BridgeMachineUpdate_Snapshot(sessions: var_sessions);
+      case 1:
+        var var_event = sse_decode_box_autoadd_bridge_rc_event(deserializer);
+        return BridgeMachineUpdate_Event(event: var_event);
+      case 2:
+        var var_reason = sse_decode_String(deserializer);
+        return BridgeMachineUpdate_Down(reason: var_reason);
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -3756,6 +4533,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           deserializer,
         );
         var var_lastMessage = sse_decode_opt_String(deserializer);
+        var var_lane = sse_decode_opt_String(deserializer);
         var var_removed = sse_decode_bool(deserializer);
         return BridgeRcEvent_SessionUpdated(
           shed: var_shed,
@@ -3763,6 +4541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           activity: var_activity,
           state: var_state,
           lastMessage: var_lastMessage,
+          lane: var_lane,
           removed: var_removed,
         );
       case 2:
@@ -3861,11 +4640,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_approvals = sse_decode_String(deserializer);
     var var_watch = sse_decode_bool(deserializer);
     var var_input = sse_decode_String(deserializer);
+    var var_feed = sse_decode_String(deserializer);
+    var var_interrupt = sse_decode_bool(deserializer);
+    var var_attach = sse_decode_String(deserializer);
     return BridgeRcKindFeatures(
       postInput: var_postInput,
       approvals: var_approvals,
       watch: var_watch,
       input: var_input,
+      feed: var_feed,
+      interrupt: var_interrupt,
+      attach: var_attach,
     );
   }
 
@@ -4502,6 +5287,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    BridgeMachineWatcher self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as BridgeMachineWatcherImpl).frbInternalSseEncode(move: true),
+      serializer,
+    );
+  }
+
+  @protected
+  void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     BridgeTestSse self,
     SseSerializer serializer,
@@ -4548,6 +5346,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
       (self as BridgeCreateHandleImpl).frbInternalSseEncode(move: false),
+      serializer,
+    );
+  }
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    BridgeMachineWatcher self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as BridgeMachineWatcherImpl).frbInternalSseEncode(move: false),
       serializer,
     );
   }
@@ -4630,6 +5441,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+    BridgeMachineWatcher self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as BridgeMachineWatcherImpl).frbInternalSseEncode(move: null),
+      serializer,
+    );
+  }
+
+  @protected
+  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse(
     BridgeTestSse self,
     SseSerializer serializer,
@@ -4681,6 +5505,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.setupAndSerialize(
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_credential_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_bridge_machine_update_Sse(
+    RustStreamSink<BridgeMachineUpdate> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bridge_machine_update,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -5020,6 +5861,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(11, serializer);
       case BridgeError_TokenPinMissing():
         sse_encode_i_32(12, serializer);
+      case BridgeError_AgentUpgradeRequired(
+        server: final server,
+        detail: final detail,
+      ):
+        sse_encode_i_32(13, serializer);
+        sse_encode_String(server, serializer);
+        sse_encode_String(detail, serializer);
     }
   }
 
@@ -5035,6 +5883,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.pendingMints, serializer);
     sse_encode_u_64(self.activeSseServers, serializer);
     sse_encode_u_64(self.pendingPreviewCredentials, serializer);
+  }
+
+  @protected
+  void sse_encode_bridge_machine_update(
+    BridgeMachineUpdate self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case BridgeMachineUpdate_Snapshot(sessions: final sessions):
+        sse_encode_i_32(0, serializer);
+        sse_encode_list_bridge_rc_session(sessions, serializer);
+      case BridgeMachineUpdate_Event(event: final event):
+        sse_encode_i_32(1, serializer);
+        sse_encode_box_autoadd_bridge_rc_event(event, serializer);
+      case BridgeMachineUpdate_Down(reason: final reason):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(reason, serializer);
+    }
   }
 
   @protected
@@ -5190,6 +6057,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         activity: final activity,
         state: final state,
         lastMessage: final lastMessage,
+        lane: final lane,
         removed: final removed,
       ):
         sse_encode_i_32(1, serializer);
@@ -5198,6 +6066,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_opt_box_autoadd_bridge_rc_activity(activity, serializer);
         sse_encode_opt_box_autoadd_bridge_rc_state(state, serializer);
         sse_encode_opt_String(lastMessage, serializer);
+        sse_encode_opt_String(lane, serializer);
         sse_encode_bool(removed, serializer);
       case BridgeRcEvent_MessageAppended(
         shed: final shed,
@@ -5283,6 +6152,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.approvals, serializer);
     sse_encode_bool(self.watch, serializer);
     sse_encode_String(self.input, serializer);
+    sse_encode_String(self.feed, serializer);
+    sse_encode_bool(self.interrupt, serializer);
+    sse_encode_String(self.attach, serializer);
   }
 
   @protected
@@ -5843,6 +6715,15 @@ class BridgeClientImpl extends RustOpaque implements BridgeClient {
     text: text,
   );
 
+  /// Interrupt the running turn. `false` = nothing was running, which is an
+  /// answer rather than a failure.
+  Future<bool> rcInterrupt({required String shed, required String slug}) =>
+      RustLib.instance.api.crateApiClientBridgeClientRcInterrupt(
+        that: this,
+        shed: shed,
+        slug: slug,
+      );
+
   Future<BridgeRcMessagesPage> rcMessages({
     required String shed,
     required String slug,
@@ -5854,6 +6735,20 @@ class BridgeClientImpl extends RustOpaque implements BridgeClient {
     slug: slug,
     since: since,
     limit: limit,
+  );
+
+  /// Start a structured turn on a shed session — the `input: "turn"`
+  /// counterpart to [`Self::rc_input`]'s `"gated"` keystroke path. Which one
+  /// applies is the kind's business (`kind_features.input`), never a guess.
+  Future<String> rcTurn({
+    required String shed,
+    required String slug,
+    required String text,
+  }) => RustLib.instance.api.crateApiClientBridgeClientRcTurn(
+    that: this,
+    shed: shed,
+    slug: slug,
+    text: text,
   );
 
   Future<void> reset({required String name}) => RustLib.instance.api
@@ -5890,6 +6785,35 @@ class BridgeCreateHandleImpl extends RustOpaque implements BridgeCreateHandle {
         .instance
         .api
         .rust_arc_decrement_strong_count_BridgeCreateHandlePtr,
+  );
+}
+
+@sealed
+class BridgeMachineWatcherImpl extends RustOpaque
+    implements BridgeMachineWatcher {
+  // Not to be used by end users
+  BridgeMachineWatcherImpl.frbInternalDcoDecode(List<dynamic> wire)
+    : super.frbInternalDcoDecode(wire, _kStaticData);
+
+  // Not to be used by end users
+  BridgeMachineWatcherImpl.frbInternalSseDecode(
+    BigInt ptr,
+    int externalSizeOnNative,
+  ) : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
+
+  static final _kStaticData = RustArcStaticData(
+    rustArcIncrementStrongCount: RustLib
+        .instance
+        .api
+        .rust_arc_increment_strong_count_BridgeMachineWatcher,
+    rustArcDecrementStrongCount: RustLib
+        .instance
+        .api
+        .rust_arc_decrement_strong_count_BridgeMachineWatcher,
+    rustArcDecrementStrongCountPtr: RustLib
+        .instance
+        .api
+        .rust_arc_decrement_strong_count_BridgeMachineWatcherPtr,
   );
 }
 

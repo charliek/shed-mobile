@@ -12,6 +12,9 @@ import 'rc/activity_overlay.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
+import 'machines/machine_feed.dart';
+import 'machines/machine_record.dart';
+import 'machines/machine_store.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
@@ -650,3 +653,83 @@ Future<PtySession> buildPtySession(
     slug: slug,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Machines (plan 012, roadmap R4)
+// ---------------------------------------------------------------------------
+
+/// The device's configured machines — native hosts reached over SSH, each
+/// running the RC activity hub on its loopback 1029.
+final machineStoreProvider = Provider<MachineStore>(
+  (ref) => MachineStore(ref.watch(secretStoreProvider)),
+);
+
+final machinesProvider = FutureProvider<List<MachineRecord>>(
+  (ref) async => ref.watch(machineStoreProvider).list(),
+);
+
+/// The ONE trust-on-first-use host-key store every machine connection shares —
+/// the feed's tunnel, its one-shot execs, and the terminal's PTY.
+///
+/// A machine is an ordinary SSH host with no endpoint that publishes a
+/// fingerprint (a shed server has `/api/ssh-host-key`; a machine has nothing),
+/// so first use is the only moment a key can be learned. Sharing ONE store is
+/// what makes that mean anything: a per-connection store starts empty every
+/// time, accepts whatever answers, and pins it somewhere nobody reads — TOFU
+/// with no memory, which is just "trust anything" wearing a better name.
+///
+/// Not `autoDispose`, for the same reason. Still in-memory only, so the trust
+/// resets when the app does; persisting it is a separate change (it wants a
+/// user-visible "this machine's key changed" story, not a silent upgrade).
+final machineHostKeysProvider = Provider<HostKeyStore>(
+  (ref) => HostKeyStore(tofu: true),
+);
+
+/// One machine's live feed — the SSH tunnel plus the shared Rust hub watcher.
+///
+/// Split in two on purpose: this provider owns the FEED OBJECT (so the control
+/// verbs have something to call), and [machineFeedProvider] exposes its state
+/// stream (so the UI rebuilds). One provider returning a stream could not offer
+/// `steer`/`interrupt`/`kill` without the UI reaching around it.
+///
+/// `autoDispose` with an explicit `onDispose` teardown, deliberately: the feed
+/// owns an SSH connection and an SSE stream, and leaving those alive behind a
+/// screen the user has left is what drains a phone's battery. Losing them costs
+/// nothing — the hub's snapshot is authoritative, so re-subscribing is a
+/// complete resync.
+final machineFeedControllerProvider = Provider.autoDispose
+    .family<MachineFeed, String>((ref, name) {
+      // Read the already-resolved values: this provider is only reached from a
+      // widget that has a live feed, which means both futures have completed.
+      final machines =
+          ref.watch(machinesProvider).value ?? const <MachineRecord>[];
+      final machine = machines.firstWhere(
+        (m) => m.name == name,
+        orElse: () => MachineRecord(name: name, host: name),
+      );
+      final identities =
+          ref.watch(identitiesProvider).value ?? const <SSHKeyPair>[];
+      final feed = MachineFeed(
+        machine: machine,
+        identities: identities,
+        // Shared across every connection to every machine — see
+        // [machineHostKeysProvider] for why a per-feed store would be TOFU in
+        // name only.
+        hostKeys: ref.watch(machineHostKeysProvider),
+      );
+      ref.onDispose(feed.dispose);
+      return feed;
+    });
+
+/// One machine's live state stream.
+final machineFeedProvider = StreamProvider.autoDispose
+    .family<MachineFeedState, String>((ref, name) async* {
+      // Ensure the machine list + identity are loaded before building the feed,
+      // so the controller reads resolved values rather than empty defaults.
+      await ref.watch(machinesProvider.future);
+      await ref.watch(identitiesProvider.future);
+      final feed = ref.watch(machineFeedControllerProvider(name));
+      unawaited(feed.start());
+      yield feed.state;
+      yield* feed.updates;
+    });

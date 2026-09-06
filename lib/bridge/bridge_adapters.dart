@@ -48,6 +48,14 @@ AppError appErrorFromBridge(BridgeError e) => switch (e) {
   BridgeError_Decode(:final msg) => AppError('SHED_PARSE_ERROR', msg),
   BridgeError_Create(:final msg) => AppError('SHED_CREATE_FAILED', msg),
   BridgeError_Config(:final msg) => AppError('SHED_CONFIG', msg),
+  // 426 Upgrade Required: the remedy is on the SERVER (a newer
+  // shed-host-agent), not something the phone can retry into success, so it
+  // must not read as a transient transport error.
+  BridgeError_AgentUpgradeRequired(:final server, :final detail) => AppError(
+    'SHED_AGENT_UPGRADE_REQUIRED',
+    '$server needs a newer shed-host-agent: $detail',
+    426,
+  ),
   BridgeError_RcSlugTaken(:final detail) => AppError(
     'RC_SLUG_TAKEN',
     detail,

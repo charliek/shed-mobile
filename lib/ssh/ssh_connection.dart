@@ -22,23 +22,49 @@ Future<T> withSshClient<T>({
   required Duration timeout,
   required Future<T> Function(SSHClient client) body,
 }) async {
-  final socket = await SSHSocket.connect(host, port, timeout: timeout);
-  SSHClient? client;
+  final client = await openSshClient(
+    host: host,
+    port: port,
+    user: user,
+    identities: identities,
+    hostKeys: hostKeys,
+    timeout: timeout,
+  );
   try {
-    client = SSHClient(
+    return await body(client);
+  } finally {
+    client.close();
+  }
+}
+
+/// Open a host-key-pinned SSH client the CALLER owns and must close.
+///
+/// [withSshClient] is the right shape for a one-shot command; a long-lived
+/// consumer (the machine hub tunnel, which serves many forwarded connections
+/// over one link) needs the client to outlive any single body, so it takes this
+/// and closes it itself. Both go through this one function, so connect / auth /
+/// host-key verification are defined exactly once.
+Future<SSHClient> openSshClient({
+  required String host,
+  required int port,
+  required String user,
+  required List<SSHKeyPair> identities,
+  required HostKeyStore hostKeys,
+  Duration timeout = const Duration(seconds: 15),
+}) async {
+  final socket = await SSHSocket.connect(host, port, timeout: timeout);
+  try {
+    return SSHClient(
       socket,
       username: user,
       identities: identities,
       onVerifyHostKey: hostKeys.verifier('$host:$port'),
     );
-    return await body(client);
-  } finally {
-    // SSHClient.close() owns the socket; if construction threw, close it directly.
-    if (client != null) {
-      client.close();
-    } else {
-      socket.destroy();
-    }
+  } catch (_) {
+    // SSHClient.close() owns the socket once constructed; if construction threw,
+    // nothing owns it yet.
+    socket.destroy();
+    rethrow;
   }
 }
 
