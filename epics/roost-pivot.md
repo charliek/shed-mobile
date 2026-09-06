@@ -39,7 +39,10 @@ live push follows roost's R1; terminal attach follows roost's R3.
 - **The terminal stays, demoted.** Read-only peek via `tab.dump` now;
   interactive attach waits on roost's `vt` payload kind (R3). Do not
   invest in the in-app xterm beyond that.
-- **The two `tmux_session` DTO fields go**, with their render sites;
+- **Both `tmux_session` fields go.** `BridgeRcSessionDto.tmux_session`
+  (the pre-enrichment Rust DTO FRB ignores) and
+  `BridgeRcSession.tmux_session` (FRB-exported) — only the exported one
+  reaches Dart, and it is that one's render sites that change.
   `kind_features.attach == native-remote` drives the attach affordance —
   every client already handles that value.
 - **Card layout from plan 012 is the spec.** Name + badges, kind chip +
