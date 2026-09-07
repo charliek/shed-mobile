@@ -8,6 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_rc.freezed.dart';
 
+// These functions are ignored because they are not marked as `pub`: `from_roost_dto`, `from_roost`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeRcSessionDto`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
@@ -273,11 +274,23 @@ class BridgeRcMessagesPage {
 }
 
 /// The enriched session the app renders (mirrors `rc::RcSession`).
+///
+/// **No `tmux_session`** (plan 013 S3m). It was the pane handle the terminal
+/// attached to, and roost owns the terminal now: a roost row has no tmux session
+/// to name, and the attach affordance is gated on `kind_features.attach`
+/// (`native-remote` → the read-only `tab.dump` peek) rather than on the presence
+/// of a tmux name. The field still exists on the WIRE — `shed-ext-rc list` emits
+/// it unconditionally and shed-core's `RcSessionDto` still parses it — it simply
+/// stops crossing into Dart.
+///
+/// The two roost-only fields ([`attention`](Self::attention),
+/// [`tab_id`](Self::tab_id)) do not exist on `RcSessionDto` and are stamped here
+/// instead: the shared wire DTO gains no field for roost (plan 013 §3.2), so the
+/// ~11 struct-literal sites and the Go↔Rust parity goldens stay untouched.
 class BridgeRcSession {
   final String host;
   final String shed;
   final String slug;
-  final String tmuxSession;
   final String displayName;
   final String? workdir;
   final BridgeRcKind kind;
@@ -292,11 +305,27 @@ class BridgeRcSession {
   final String? lastMessage;
   final bool managed;
 
+  /// roost's `has_notification`, for a roost-sourced row; `false` for every
+  /// shed row.
+  ///
+  /// **Sticky, and therefore its own affordance** — roost clears it on UI
+  /// focus or an explicit `tab.clear_notification`, and shed never clears it.
+  /// It is an attention *dot* on the card, NOT an activity state: folding it
+  /// into "needs you" would leave a card asking for attention long after the
+  /// thing that asked for it was dealt with.
+  final bool attention;
+
+  /// roost's tab id, for a roost-sourced row; `None` for every shed row.
+  ///
+  /// The handle `tab.close` / `tab.dump` address the tab by. It is also the
+  /// row's [`slug`](Self::slug) rendered as a string — carried separately and
+  /// typed so a caller never has to parse one back out.
+  final PlatformInt64? tabId;
+
   const BridgeRcSession({
     required this.host,
     required this.shed,
     required this.slug,
-    required this.tmuxSession,
     required this.displayName,
     this.workdir,
     required this.kind,
@@ -310,6 +339,8 @@ class BridgeRcSession {
     this.activityAt,
     this.lastMessage,
     required this.managed,
+    required this.attention,
+    this.tabId,
   });
 
   @override
@@ -317,7 +348,6 @@ class BridgeRcSession {
       host.hashCode ^
       shed.hashCode ^
       slug.hashCode ^
-      tmuxSession.hashCode ^
       displayName.hashCode ^
       workdir.hashCode ^
       kind.hashCode ^
@@ -330,7 +360,9 @@ class BridgeRcSession {
       activity.hashCode ^
       activityAt.hashCode ^
       lastMessage.hashCode ^
-      managed.hashCode;
+      managed.hashCode ^
+      attention.hashCode ^
+      tabId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -340,7 +372,6 @@ class BridgeRcSession {
           host == other.host &&
           shed == other.shed &&
           slug == other.slug &&
-          tmuxSession == other.tmuxSession &&
           displayName == other.displayName &&
           workdir == other.workdir &&
           kind == other.kind &&
@@ -353,7 +384,9 @@ class BridgeRcSession {
           activity == other.activity &&
           activityAt == other.activityAt &&
           lastMessage == other.lastMessage &&
-          managed == other.managed;
+          managed == other.managed &&
+          attention == other.attention &&
+          tabId == other.tabId;
 }
 
 /// A pane-derived lifecycle state (mirrors `rc::RcState`). Plain enum.

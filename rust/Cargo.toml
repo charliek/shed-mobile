@@ -14,6 +14,17 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
 shed-core = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
 shed-app  = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f" }
+# roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
+# reached through shed-app, for two things shed-app does not re-export: the
+# `TabOpenParams` a `tab.open` takes, and `ssh::remote_command()` — the opaque
+# remote command string `RoostTunnel` execs on the far side.
+#
+# **The rev is the one `shed-core`'s own manifest pins**, so cargo unifies the
+# two into ONE source and mobile can never end up talking a different wire than
+# the core it links. A bump is therefore a two-file edit in lockstep with shed's
+# `crates/Cargo.toml`; roost publishes no Rust-API stability promise, which is
+# what the pin absorbs (roost `docs/reference/ipc-compatibility.md`).
+roost-ipc = { git = "https://github.com/charliek/roost", rev = "61d8713bcd0378971ad8490fe89b8dbef4e49fac" }
 # Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
 # registry, local SSE test servers (net/io-util), and time-bounded awaits.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
@@ -34,6 +45,13 @@ rcgen = { version = "0.13", default-features = false, features = ["ring"] }
 # Standard-alphabet base64 for those test fixtures (decode a `csr=` value, encode
 # a leaf PEM). Already in the tree via shed-core/reqwest.
 base64 = "0.22"
+# shed-core's in-process fake `roost-session` (`roost::testing::FakeRoost`),
+# behind its non-default `test-support` feature, so the roost watcher test drives
+# the REAL watcher against a REAL socket instead of a re-implementation of one.
+# A dev-dependency (resolver v2) so the feature is enabled for `cargo test` and
+# NEVER for a shipped build — the same shape shed-app uses for the same fake.
+# Same git+rev as the [dependencies] entry above; cargo unifies them.
+shed-core = { git = "https://github.com/charliek/shed", rev = "4fe0b299f1604ad8dd107e955c35feaf5491688f", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

@@ -14,6 +14,7 @@ use shed_core::rc::{
     RcSession, RcSessionDto, RcState,
 };
 use shed_core::rc_events::RcEvent;
+use shed_core::roost::RoostSession;
 
 /// The kind of agent a session runs (mirrors `rc::RcKind`, unknown-kind policy
 /// preserved via `Other`). A fielded enum → a Dart sealed class.
@@ -175,12 +176,24 @@ impl From<RcCapabilities> for BridgeRcCapabilities {
 }
 
 /// The enriched session the app renders (mirrors `rc::RcSession`).
+///
+/// **No `tmux_session`** (plan 013 S3m). It was the pane handle the terminal
+/// attached to, and roost owns the terminal now: a roost row has no tmux session
+/// to name, and the attach affordance is gated on `kind_features.attach`
+/// (`native-remote` → the read-only `tab.dump` peek) rather than on the presence
+/// of a tmux name. The field still exists on the WIRE — `shed-ext-rc list` emits
+/// it unconditionally and shed-core's `RcSessionDto` still parses it — it simply
+/// stops crossing into Dart.
+///
+/// The two roost-only fields ([`attention`](Self::attention),
+/// [`tab_id`](Self::tab_id)) do not exist on `RcSessionDto` and are stamped here
+/// instead: the shared wire DTO gains no field for roost (plan 013 §3.2), so the
+/// ~11 struct-literal sites and the Go↔Rust parity goldens stay untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcSession {
     pub host: String,
     pub shed: String,
     pub slug: String,
-    pub tmux_session: String,
     pub display_name: String,
     pub workdir: Option<String>,
     pub kind: BridgeRcKind,
@@ -194,15 +207,32 @@ pub struct BridgeRcSession {
     pub activity_at: Option<String>,
     pub last_message: Option<String>,
     pub managed: bool,
+    /// roost's `has_notification`, for a roost-sourced row; `false` for every
+    /// shed row.
+    ///
+    /// **Sticky, and therefore its own affordance** — roost clears it on UI
+    /// focus or an explicit `tab.clear_notification`, and shed never clears it.
+    /// It is an attention *dot* on the card, NOT an activity state: folding it
+    /// into "needs you" would leave a card asking for attention long after the
+    /// thing that asked for it was dealt with.
+    pub attention: bool,
+    /// roost's tab id, for a roost-sourced row; `None` for every shed row.
+    ///
+    /// The handle `tab.close` / `tab.dump` address the tab by. It is also the
+    /// row's [`slug`](Self::slug) rendered as a string — carried separately and
+    /// typed so a caller never has to parse one back out.
+    pub tab_id: Option<i64>,
 }
 
 impl From<RcSession> for BridgeRcSession {
+    /// The SHED path: `attention` and `tab_id` are absent, because a
+    /// `shed-ext-rc` row has neither. A roost row goes through
+    /// [`BridgeRcSession::from_roost`], which stamps both.
     fn from(s: RcSession) -> Self {
         BridgeRcSession {
             host: s.host,
             shed: s.shed,
             slug: s.slug,
-            tmux_session: s.tmux_session,
             display_name: s.display_name,
             workdir: s.workdir,
             kind: s.kind.into(),
@@ -216,17 +246,51 @@ impl From<RcSession> for BridgeRcSession {
             activity_at: s.activity_at,
             last_message: s.last_message,
             managed: s.managed,
+            attention: false,
+            tab_id: None,
         }
+    }
+}
+
+impl BridgeRcSession {
+    /// The ROOST path: one agent-owned roost tab, as the card the app already
+    /// renders.
+    ///
+    /// The body of the row comes from [`RoostSession::to_rc_dto`] — the ONE
+    /// mapping, in `shed-core`, that every shed client shares — so a roost row
+    /// and a shed row differ in where they came from and in nothing else.
+    /// `attention` and `tab_id` are then stamped from the `RoostSession`,
+    /// because they have no place on the shared DTO.
+    pub(crate) fn from_roost(session: &RoostSession) -> BridgeRcSession {
+        BridgeRcSession::from_roost_dto(session, session.to_rc_dto())
+    }
+
+    /// [`from_roost`](Self::from_roost) with the DTO supplied, for the one
+    /// caller that must adjust a cell before enrichment (`roost_tab_open`, which
+    /// substitutes the kind it just launched — see its doc).
+    pub(crate) fn from_roost_dto(session: &RoostSession, dto: RcSessionDto) -> BridgeRcSession {
+        // Empty host AND empty shed, exactly as the retired machine path did: a
+        // roost row belongs to no shed and no shed-server, and Dart keys and
+        // labels it by the MACHINE's own `origin` (`machine:<name>`), which it
+        // already holds. Putting the machine name in `host` here would invent a
+        // second, divergent identity for the same row.
+        let mut row = BridgeRcSession::from(RcSession::from_dto(dto, "", ""));
+        row.attention = session.attention;
+        row.tab_id = Some(session.tab_id);
+        row
     }
 }
 
 /// The neutral `shed-ext-rc list` row (mirrors `rc::RcSessionDto`). Distinct
 /// from [`BridgeRcSession`] — this is the pre-enrichment binary output the Dart
 /// runner captures then hands back to the bridge decoder.
+///
+/// `tmux_session` is dropped here for the same reason it is dropped from
+/// [`BridgeRcSession`] (plan 013 S3m): the wire still carries it and shed-core
+/// still parses it, it simply stops crossing into Dart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcSessionDto {
     pub slug: String,
-    pub tmux_session: String,
     pub kind: BridgeRcKind,
     pub state: BridgeRcState,
     pub managed: bool,
@@ -246,7 +310,6 @@ impl From<RcSessionDto> for BridgeRcSessionDto {
     fn from(d: RcSessionDto) -> Self {
         BridgeRcSessionDto {
             slug: d.slug,
-            tmux_session: d.tmux_session,
             kind: d.kind.into(),
             state: d.state.into(),
             managed: d.managed,
@@ -536,6 +599,70 @@ mod tests {
         assert!(b.managed);
         // display_name fallback = "<shed>/<slug>".
         assert_eq!(b.display_name, "proj/cdx");
+        // A SHED row carries neither roost field — they are stamped only by
+        // `from_roost`, and a card must not show an attention dot for a session
+        // that has no notion of one.
+        assert!(!b.attention);
+        assert_eq!(b.tab_id, None);
+    }
+
+    /// A roost row is the shared `to_rc_dto()` mapping plus exactly two stamps.
+    ///
+    /// The assertions that matter are the ones a shed row cannot make:
+    /// `attention` crosses (it is the whole attention affordance), `tab_id`
+    /// crosses typed (it is what `tab.close`/`tab.dump` address), and
+    /// `host`/`shed` stay EMPTY — Dart keys a machine row by the machine's own
+    /// `origin`, so anything here would be a second identity for the same row.
+    #[test]
+    fn a_roost_row_carries_attention_and_the_tab_id() {
+        use shed_core::roost::RoostSession;
+
+        let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
+            "id": "4",
+            "project_id": "2",
+            "title": "OC | Pong reply request",
+            "cwd": "/home/shed/oc-work",
+            "state": "idle",
+            "has_notification": true,
+            "is_active": true,
+            "user_titled": false,
+            "position": 1,
+            "created_at": 1788769906_i64,
+            "last_active": 1788769906_i64,
+            "hook_active": true,
+            "shell_state": "unknown",
+            "agent_lifecycle": "finished",
+            "ownership": {
+                "source": "opencode",
+                "session_id": "ses_f85010d7effexVvTJ1mRHZkDqL",
+                "last_event_at": 1788769939_i64,
+                "detail": "session_idle",
+                "metadata": {}
+            }
+        }))
+        .expect("the shed-recorded opencode tab decodes");
+        let project = roost_ipc::messages::Project {
+            id: 2,
+            name: "Roost".into(),
+            cwd: "/home/shed".into(),
+            position: 0,
+            created_at: 1788769854,
+            tabs: Vec::new(),
+        };
+        let session = RoostSession::from_tab("mini3", &project, &tab);
+
+        let row = BridgeRcSession::from_roost(&session);
+        assert!(row.attention, "has_notification must reach the card");
+        assert_eq!(row.tab_id, Some(4));
+        assert_eq!(row.slug, "4");
+        assert_eq!(row.kind, BridgeRcKind::Opencode);
+        assert_eq!(row.activity, Some(BridgeRcActivity::Idle));
+        assert_eq!(row.display_name, "OC | Pong reply request");
+        assert_eq!(row.workdir.as_deref(), Some("/home/shed/oc-work"));
+        // The agent's OWN session id, not roost's tab id.
+        assert_eq!(row.rc_id.as_deref(), Some("ses_f85010d7effexVvTJ1mRHZkDqL"));
+        assert_eq!(row.host, "");
+        assert_eq!(row.shed, "");
     }
 
     #[test]

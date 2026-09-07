@@ -1241,16 +1241,6 @@ mod tests {
             "BridgeError_TokenPinMismatch",
             "BridgeError_TokenPinMissing",
             "BridgeError_Transport",
-            // Plan 012 S5 — the machine hub feed. All five carry SESSION
-            // metadata only (slug, kind, state, activity, display text) plus a
-            // human reason string; the watcher handle is opaque and holds a
-            // channel, not credentials. The SSH identity never crosses this
-            // surface: Dart owns the transport and hands Rust a loopback PORT.
-            "BridgeMachineUpdate",
-            "BridgeMachineUpdate_Down",
-            "BridgeMachineUpdate_Event",
-            "BridgeMachineUpdate_Snapshot",
-            "BridgeMachineWatcher",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
@@ -1285,12 +1275,26 @@ mod tests {
             "BridgeRcMessagesPage",
             "BridgeRcSession",
             "BridgeRcState",
+            // Plan 013 S3m — the roost feed, replacing the machine hub's. Every
+            // one carries TAB metadata only (roost's tab id, title, cwd, the
+            // four agent axes, a viewport of text) plus a human reason string;
+            // both handles are opaque and hold a channel or a socket, never
+            // credentials. The SSH identity still never crosses this surface:
+            // Dart owns the transport and hands Rust a loopback PORT.
+            "BridgeRoostPeek",
+            "BridgeRoostUpdate",
+            "BridgeRoostUpdate_Down",
+            "BridgeRoostUpdate_Snapshot",
+            "BridgeRoostWatcher",
             "BridgeSession",
             "BridgeSessionRc",
             "BridgeShed",
             "BridgeShedImage",
             "BridgeShedStatus",
             "BridgeSystemDiskUsage",
+            // One `tab.dump` frame: geometry, an optional cursor position, and
+            // the visible rows as text. Read-only, and terminal text only.
+            "BridgeTabDump",
             "BridgeTestSse",
             "BridgeWatcherHandle",
             "BridgeWatcherUpdate",

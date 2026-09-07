@@ -11,6 +11,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'watcher.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `event_session_key`, `forward_loop`, `from_live`, `teardown`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `WatcherInner`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `drop`, `eq`, `fmt`
 
 /// Step 1: spawn a real `RcEventsWatcher` against `client` on `bridge_rt`,
