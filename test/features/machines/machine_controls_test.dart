@@ -9,6 +9,7 @@ import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
+import 'package:shed_mobile/widgets/open_pill.dart';
 
 /// **What a machine's session LIST offers, and what it deliberately does not.**
 ///
@@ -67,23 +68,51 @@ final _roostCaps = BridgeRcCapabilities(
   },
 );
 
-BridgeRcSession _session(String slug, BridgeRcKind kind, {String? url}) =>
-    BridgeRcSession(
-      url: url,
-      // A machine's rows carry no shed and no host: they are keyed and
-      // labelled by the MACHINE (`machine:<name>`).
-      host: '',
-      shed: '',
-      slug: slug,
-      displayName: 'row$slug',
-      kind: kind,
-      state: BridgeRcState.ready,
-      managed: true,
-      attention: false,
-      // The slug IS roost's tab id; the typed id travels beside it so nothing
-      // has to parse one back out to close a tab.
-      tabId: int.tryParse(slug),
-    );
+/// A `tmux`-attach entry — never actually advertised for a roost row, but
+/// exactly what an old shed row's capabilities looked like pre-plan-013, and
+/// what a `kindFeatures` entry with no `attach` field falls back to
+/// (`attachKind`'s `null`/empty → `'tmux'` fallback). Used to pin the OTHER
+/// half of the attach gate: a machine row is never offered an in-app attach
+/// unless it is specifically `native-remote`.
+const _tmuxFeatures = BridgeRcKindFeatures(
+  postInput: false,
+  approvals: 'none',
+  watch: false,
+  input: '',
+  feed: '',
+  interrupt: false,
+  attach: 'tmux',
+);
+
+final _tmuxCaps = BridgeRcCapabilities(
+  rcVersion: 2,
+  kinds: const [BridgeRcKind.opencode()],
+  agents: const {},
+  features: const [],
+  kindFeatures: const {'opencode': _tmuxFeatures},
+);
+
+BridgeRcSession _session(
+  String slug,
+  BridgeRcKind kind, {
+  String? url,
+  bool attention = false,
+}) => BridgeRcSession(
+  url: url,
+  // A machine's rows carry no shed and no host: they are keyed and
+  // labelled by the MACHINE (`machine:<name>`).
+  host: '',
+  shed: '',
+  slug: slug,
+  displayName: 'row$slug',
+  kind: kind,
+  state: BridgeRcState.ready,
+  managed: true,
+  attention: attention,
+  // The slug IS roost's tab id; the typed id travels beside it so nothing
+  // has to parse one back out to close a tab.
+  tabId: int.tryParse(slug),
+);
 
 Widget _app(MachineFeedState state) => ProviderScope(
   retry: (_, _) => null,
@@ -130,10 +159,38 @@ void main() {
       expect(find.byKey(ValueKey('machine-watch-$slug')), findsNothing);
       // The negative control: the rows DID render, so the absences above are
       // about the affordance and not about an empty screen.
-      expect(find.byKey(ValueKey('machine-kill-$slug')), findsOneWidget);
+      expect(find.byKey(ValueKey('machine-kill-mini3-$slug')), findsOneWidget);
     }
     expect(find.text('Watch'), findsNothing);
   });
+
+  testWidgets(
+    'attach != native-remote offers no peek button (negative control)',
+    (tester) async {
+      // Plan 013 M3: the peek button is gated on `attachKind`, not on the
+      // session's kind or on reachability alone. `_tmuxCaps` advertises
+      // `attach: 'tmux'` for opencode — a shape a machine row never actually
+      // ships, but exactly what proves the OTHER half of the gate: a machine
+      // session offers no in-app attach at all unless it is specifically
+      // `native-remote`.
+      await tester.pumpWidget(
+        _app(
+          _live([
+            _session('1', const BridgeRcKind.opencode()),
+          ], caps: _tmuxCaps),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('machine-open-mini3-1')), findsNothing);
+      // The negative control: the row DID render (End is still there), so the
+      // absence above is about the attach gate and not an empty screen.
+      expect(
+        find.byKey(const ValueKey('machine-kill-mini3-1')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('with capabilities unknown, nothing is watchable either', (
     tester,
@@ -147,7 +204,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('machine-watch-1')), findsNothing);
-    expect(find.byKey(const ValueKey('machine-kill-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsOneWidget);
   });
 
   testWidgets('the action row weights the terminal over delete', (
@@ -164,10 +221,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('machine-open-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('machine-open-mini3-1')), findsOneWidget);
 
-    final open = tester.getRect(find.byKey(const ValueKey('machine-open-1')));
-    final del = tester.getRect(find.byKey(const ValueKey('machine-kill-1')));
+    final open = tester.getRect(
+      find.byKey(const ValueKey('machine-open-mini3-1')),
+    );
+    final del = tester.getRect(
+      find.byKey(const ValueKey('machine-kill-mini3-1')),
+    );
 
     // Reading order: the terminal, then delete at the far edge.
     expect(open.right, lessThan(del.left));
@@ -206,13 +267,25 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('machine-url-copy-1')), findsOneWidget);
-      expect(find.byKey(const ValueKey('machine-url-open-1')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('machine-url-copy-mini3-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('machine-url-open-mini3-1')),
+        findsOneWidget,
+      );
       // And a kind with no URL is not given empty buttons.
-      expect(find.byKey(const ValueKey('machine-url-copy-2')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('machine-url-copy-mini3-2')),
+        findsNothing,
+      );
       // The negative control: row 2 DID render, so the absence above is about
       // the missing URL and not about an empty screen.
-      expect(find.byKey(const ValueKey('machine-kill-2')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('machine-kill-mini3-2')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -238,7 +311,7 @@ void main() {
     }
     // The negative control again: End is still there, so this is a card with
     // controls on it and not a card that failed to build.
-    expect(find.byKey(const ValueKey('machine-kill-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsOneWidget);
   });
 
   testWidgets('an unreachable machine offers no actions on its stale rows', (
@@ -263,7 +336,113 @@ void main() {
       findsOneWidget,
       reason: 'the row is still listed',
     );
-    expect(find.byKey(const ValueKey('machine-open-1')), findsNothing);
-    expect(find.byKey(const ValueKey('machine-kill-1')), findsNothing);
+    expect(find.byKey(const ValueKey('machine-open-mini3-1')), findsNothing);
+    expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsNothing);
   });
+
+  testWidgets('attention dot present when a machine session carries it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _live([
+          _session('1', const BridgeRcKind.opencode(), attention: true),
+        ], caps: _roostCaps),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('machine-attention-mini3-1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('attention dot absent when a machine session carries none '
+      '(negative control against the row rendering at all)', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _live([_session('1', const BridgeRcKind.opencode())], caps: _roostCaps),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('machine-attention-mini3-1')),
+      findsNothing,
+    );
+    // The row DID render — the absence above is about `attention`, not an
+    // empty screen.
+    expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsOneWidget);
+  });
+
+  testWidgets(
+    'two machines with the same tab slug get distinct, non-colliding keys',
+    (tester) async {
+      // A slug is a roost tab id, scoped to ONE machine's daemon — two
+      // different machines can both hand back a tab "4". Before this fix
+      // every per-row key was `machine-<action>-4`, so the second machine's
+      // row silently overwrote the first's in the widget tree instead of
+      // rendering beside it.
+      const machineA = MachineRecord(name: 'mini3', host: 'mini3.example');
+      const machineB = MachineRecord(name: 'mini4', host: 'mini4.example');
+
+      await tester.pumpWidget(
+        ProviderScope(
+          retry: (_, _) => null,
+          overrides: [
+            serversProvider.overrideWith((ref) => <ServerRecord>[]),
+            machinesProvider.overrideWith((ref) async => [machineA, machineB]),
+            machineFeedProvider('mini3').overrideWith(
+              (ref) => Stream.value(
+                MachineFeedState(
+                  machine: machineA,
+                  sessions: [_session('4', const BridgeRcKind.opencode())],
+                  reachable: true,
+                  connectedOnce: true,
+                  capabilities: _roostCaps,
+                ),
+              ),
+            ),
+            machineFeedProvider('mini4').overrideWith(
+              (ref) => Stream.value(
+                MachineFeedState(
+                  machine: machineB,
+                  sessions: [_session('4', const BridgeRcKind.opencode())],
+                  reachable: true,
+                  connectedOnce: true,
+                  capabilities: _roostCaps,
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: shedLightTheme,
+            home: const Scaffold(body: AllSessionsView()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Both rows rendered — not one clobbering the other in the tree.
+      expect(find.text('row4'), findsNWidgets(2));
+
+      final openA = find.byKey(const ValueKey('machine-open-mini3-4'));
+      final openB = find.byKey(const ValueKey('machine-open-mini4-4'));
+      final killA = find.byKey(const ValueKey('machine-kill-mini3-4'));
+      final killB = find.byKey(const ValueKey('machine-kill-mini4-4'));
+
+      expect(openA, findsOneWidget);
+      expect(openB, findsOneWidget);
+      expect(killA, findsOneWidget);
+      expect(killB, findsOneWidget);
+      // The two machines' keys are genuinely distinct GlobalKey-equivalent
+      // identities, not the same key rendered twice.
+      expect(
+        tester.widget<OpenPill>(openA).key,
+        isNot(equals(tester.widget<OpenPill>(openB).key)),
+      );
+      expect(tester.widget(killA).key, isNot(equals(tester.widget(killB).key)));
+    },
+  );
 }

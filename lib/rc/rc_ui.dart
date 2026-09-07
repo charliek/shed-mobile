@@ -168,6 +168,16 @@ extension BridgeRcKindFeaturesUi on BridgeRcKindFeatures {
   bool get inputGated => input == 'gated';
 }
 
+/// The wire attach string for [f]'s attach affordance, or the pre-v2 fallback
+/// `'tmux'` when [f] is null or carries an empty `attach` (mirrors
+/// `RcKindFeatures::attach_kind` in `shed-core`).
+///
+/// The single discriminator every attach affordance reads: `'tmux'` → the
+/// existing xterm attach (`ShedTerminalTarget`), `'native-remote'` → the roost
+/// peek, anything else → no affordance.
+String attachKind(BridgeRcKindFeatures? f) =>
+    (f != null && f.attach.isNotEmpty) ? f.attach : 'tmux';
+
 // ---- permission modes -----------------------------------------------------
 
 /// The generic permission tri-state accepted by EVERY kind and mapped per agent

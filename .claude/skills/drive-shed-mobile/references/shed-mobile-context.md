@@ -195,7 +195,8 @@ so both surfaces expose the identical `all-session-*` keys.
 
 | Key | What |
 |---|---|
-| `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI) |
+| `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI); present only when `attachKind(kind_features[kind]) == 'tmux'` (plan 013 — every shed row today; see the Machines section below for the `native-remote` peek) |
+| `all-session-attention-<base>` | attention dot (roost's sticky `has_notification`, tooltip "roost notification"); present iff `session.attention` (always false for a shed row today) |
 | `all-session-watch-<base>` | "watch" (eye) → CodexWatchScreen; **only** when caps `kind_features[kind].watch` |
 | `all-session-url-copy-<base>` | copy the claude.ai URL to the clipboard (MRESULT `session-url-copy ok`); **only** when the session carries a non-empty `url` (claude-rc/claude-broker) |
 | `all-session-url-open-<base>` | open that URL in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `session-url-open ok\|error`; same `url`-present gate |
@@ -259,3 +260,60 @@ inset=N font=N` (`state=ready` while live, `state=exited` after the pane closes)
 `terminal-url detected=t` when a URL banner is raised — the **URL itself is never
 logged**. MRESULT: `terminal-connect ok|error=…`, `terminal-copy ok`,
 `terminal-url-copy ok`, `terminal-url-open ok|error`.
+
+### Machines (roost) — Hosts tab section + Sessions tab group (plan 013 S3m)
+
+A machine is a native host reached over SSH, running a `roost-session` directly
+— no shed server in the path. It is configured on the Hosts tab (below the shed
+hosts) and its sessions appear grouped, beside shed sessions, on the Sessions
+tab. Every attach affordance on a machine row is gated by `attachKind`
+(`lib/rc/rc_ui.dart`): a roost row is `native-remote`, so the terminal
+affordance is the read-only **peek** below, never the xterm attach a shed
+session offers.
+
+**Hosts tab — `MachinesSection`**
+
+| Key | What |
+|---|---|
+| `machines-add` | → AddMachineScreen |
+| `machines-empty` | empty-state note (no machines configured) |
+| `machine-card-status-<name>` | reachability + session-count badge (`N sessions` / `unreachable` / `connecting`) |
+| `machine-remove-<name>` | remove the machine (MRESULT `machine-remove ok`) |
+
+MSTATE: `machines-section count=N`.
+
+**Sessions tab — `MachineSessionsView`, grouped by machine**
+
+| Key | What |
+|---|---|
+| `machine-unreachable-<name>` | group-header badge when the machine isn't currently reachable (`unreachable` / `connecting`) |
+| `machine-empty-<name>` | note shown in place of rows — "connecting…" / "No sessions" / the last-known unreachable reason |
+| `machine-open-<machine>-<slug>` | the "›_ open" pill → `RoostPeekScreen` (tooltip "Peek"); present **only** when `attachKind(featuresFor(session)) == 'native-remote'` — a machine session offers no other in-app attach |
+| `machine-attention-<machine>-<slug>` | attention dot (roost's sticky `has_notification`; tooltip "roost notification"); present iff `session.attention` |
+| `machine-kill-<machine>-<slug>` | end the session — roost's `tab.close` (MRESULT via `machine-control-error-<machine>-<slug>` on failure) |
+| `machine-url-copy-<machine>-<slug>` / `machine-url-open-<machine>-<slug>` | claude.ai link pair — same gate as the shed card (`session.url` present) |
+| `machine-control-error-<machine>-<slug>` | inline error text after a failed kill |
+
+Every per-row key is scoped by the MACHINE NAME, not just the slug: a slug is
+a roost tab id, per-daemon, so two machines can both hand back a tab "4" —
+an unscoped key would collide their controls.
+
+MSTATE: `machine-sessions machine=<name> reachable=t|f count=N` (one line per
+machine group, on every rebuild of that group).
+
+**Peek screen — `RoostPeekScreen` (Scaffold `roost-peek-screen`)**
+
+Reached from `machine-open-<machine>-<slug>`. Read-only: `tab.dump`'s rendered rows,
+polled every 2 s over one held connection — there is no keystroke path here at
+all (roost owns the terminal). App-bar title is the session's display name.
+
+| Key | What |
+|---|---|
+| `roost-peek-loading` | initial connect spinner |
+| `roost-peek-open-error` | error text when the peek itself failed to open |
+| `roost-peek-retry` | retry button, shown only after an open failure; re-opens from scratch |
+| `roost-peek-error` | inline error line for a failed poll tick — the last-good frame stays visible underneath and polling continues at the same cadence |
+| `roost-peek-cursor` | wraps the cursor's row when roost reports it visible (absent otherwise) |
+
+MSTATE: `screen=peek machine=<name> tab=<id> rows=N` (logged once per poll tick
+whose row count or error-state actually changed).
