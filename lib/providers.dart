@@ -659,7 +659,7 @@ Future<PtySession> buildPtySession(
 // ---------------------------------------------------------------------------
 
 /// The device's configured machines — native hosts reached over SSH, each
-/// running the RC activity hub on its loopback 1029.
+/// running a `roost-session` the phone reads through the shared Rust client.
 final machineStoreProvider = Provider<MachineStore>(
   (ref) => MachineStore(ref.watch(secretStoreProvider)),
 );
@@ -685,18 +685,18 @@ final machineHostKeysProvider = Provider<HostKeyStore>(
   (ref) => HostKeyStore(tofu: true),
 );
 
-/// One machine's live feed — the SSH tunnel plus the shared Rust hub watcher.
+/// One machine's live feed — the SSH tunnel plus the shared Rust roost watcher.
 ///
-/// Split in two on purpose: this provider owns the FEED OBJECT (so the control
-/// verbs have something to call), and [machineFeedProvider] exposes its state
+/// Split in two on purpose: this provider owns the FEED OBJECT (so `create` and
+/// `kill` have something to call), and [machineFeedProvider] exposes its state
 /// stream (so the UI rebuilds). One provider returning a stream could not offer
-/// `steer`/`interrupt`/`kill` without the UI reaching around it.
+/// those verbs without the UI reaching around it.
 ///
 /// `autoDispose` with an explicit `onDispose` teardown, deliberately: the feed
-/// owns an SSH connection and an SSE stream, and leaving those alive behind a
+/// owns an SSH connection and a poll loop, and leaving those alive behind a
 /// screen the user has left is what drains a phone's battery. Losing them costs
-/// nothing — the hub's snapshot is authoritative, so re-subscribing is a
-/// complete resync.
+/// nothing — roost's `tab.list` is authoritative, so reconnecting is a complete
+/// resync.
 final machineFeedControllerProvider = Provider.autoDispose
     .family<MachineFeed, String>((ref, name) {
       // Read the already-resolved values: this provider is only reached from a

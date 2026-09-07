@@ -111,7 +111,7 @@ const _overviewWithKnown = OverviewData(
             host: 'h',
             shed: 'web',
             slug: 'known',
-            tmuxSession: 't',
+            attention: false,
             displayName: 'known',
             kind: BridgeRcKind.shell(),
             state: BridgeRcState.ready,

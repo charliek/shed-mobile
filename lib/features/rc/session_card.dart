@@ -191,7 +191,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     final metaText = Text(
       sessionMetaLine(
         widget.shedName,
-        s.tmuxSession,
         s.createdAt,
         workdir: s.workdir,
         originIsImplied: widget.originIsImplied,

@@ -46,13 +46,18 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
     super.dispose();
   }
 
-  /// The permission mode to send for [kind]: the (already capability-gated)
-  /// claude dropdown value for a claude kind (nullable → claude's own default);
-  /// a fixed autonomous `auto` for the other agent kinds (codex/cursor/
-  /// opencode), which have no dropdown and are only offered when capabilities
-  /// are present; null for shell (no posture). The service re-drops it for a
-  /// posture-less kind.
+  /// The permission mode to send for [kind]: null outright for a target that
+  /// does not accept kickoff at all ([CreateRcTarget.acceptsKickoff] — a
+  /// machine's `tab.open` has no posture to carry, and the form hides the
+  /// dropdown accordingly, but this is the seam that actually keeps a stale
+  /// [_permissionMode] from riding along to it); otherwise the
+  /// (already capability-gated) claude dropdown value for a claude kind
+  /// (nullable → claude's own default); a fixed autonomous `auto` for the
+  /// other agent kinds (codex/cursor/opencode), which have no dropdown and are
+  /// only offered when capabilities are present; null for shell (no posture).
+  /// The service re-drops it for a posture-less kind.
   String? _modeFor(BridgeRcKind kind, String? claudeMode) {
+    if (!widget.target.acceptsKickoff) return null;
     if (kind.runsClaude) return claudeMode;
     if (kind.hasPermissionMode) return defaultRcPermissionMode;
     return null;
@@ -218,15 +223,21 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             ],
             const SizedBox(height: 16),
-            TextField(
-              key: const ValueKey('createrc-name'),
-              controller: _name,
-              enabled: !_busy,
-              decoration: InputDecoration(
-                labelText: widget.target.nameFieldLabel,
+            // The optional detail fields, offered only where the target can
+            // actually carry them: a roost-backed machine titles its own tab
+            // and takes no kickoff prompt or posture, and a field whose
+            // contents would be dropped is worse than no field at all.
+            if (widget.target.acceptsKickoff) ...[
+              TextField(
+                key: const ValueKey('createrc-name'),
+                controller: _name,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: widget.target.nameFieldLabel,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
             TextField(
               key: const ValueKey('createrc-workdir'),
               controller: _workdir,
@@ -236,7 +247,9 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            if (selected != null && selected.acceptsPrompt)
+            if (widget.target.acceptsKickoff &&
+                selected != null &&
+                selected.acceptsPrompt)
               TextField(
                 key: const ValueKey('createrc-prompt'),
                 controller: _prompt,
@@ -249,7 +262,9 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             // The full permission-mode picker is claude-only; the other agent
             // kinds run under an autonomous `auto` default (no dropdown).
-            if (selected != null && selected.runsClaude) ...[
+            if (widget.target.acceptsKickoff &&
+                selected != null &&
+                selected.runsClaude) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<String?>(
                 key: const ValueKey('createrc-permission-mode'),

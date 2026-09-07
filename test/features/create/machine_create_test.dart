@@ -54,6 +54,33 @@ MachineFeedState _state({BridgeRcCapabilities? caps, bool reachable = true}) =>
       capabilities: caps,
     );
 
+/// A [MachineRcTarget] that records what it was called with instead of
+/// touching the real [MachineFeed] — the seam the "never send a permission
+/// mode" test below needs. `MachineRcTarget` is a concrete, non-`final`
+/// subclass of the sealed `CreateRcTarget`, so extending it from outside
+/// `create_rc_target.dart` is fine; only extending the sealed class itself
+/// would not be.
+class _RecordingMachineTarget extends MachineRcTarget {
+  _RecordingMachineTarget({required super.machineName});
+
+  BridgeRcKind? lastKind;
+  String? lastPermissionMode;
+
+  @override
+  Future<RcCreated> create(
+    WidgetRef ref, {
+    required BridgeRcKind kind,
+    String? displayName,
+    String? workdir,
+    String? prompt,
+    String? permissionMode,
+  }) async {
+    lastKind = kind;
+    lastPermissionMode = permissionMode;
+    return (slug: 'rec', state: 'created', url: null, result: 'rec');
+  }
+}
+
 /// Pump a screen for [target], with the machine feed overridden to [state].
 Future<void> _pumpCreate(
   WidgetTester tester,
@@ -183,4 +210,78 @@ void main() {
     expect(find.text('claude-rc'), findsOneWidget);
     expect(find.text('shell'), findsOneWidget);
   });
+
+  testWidgets(
+    'a machine target never sends a permission mode, even for a kind that '
+    'has one',
+    (tester) async {
+      // `_permissionMode` starts non-null (`auto`) regardless of the target,
+      // and opencode `hasPermissionMode` (it isn't shell) while NOT being
+      // claude — exactly the kind `_modeFor` used to leak `auto` through for
+      // on a machine target (acceptsKickoff == false), which has no posture
+      // to carry at all.
+      final target = _RecordingMachineTarget(machineName: 'mini3');
+      await tester.binding.setSurfaceSize(const Size(500, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            machinesProvider.overrideWith((ref) async => const [_mini3]),
+            machineFeedProvider('mini3').overrideWith(
+              (ref) => Stream.value(
+                _state(
+                  caps: _caps(const [
+                    BridgeRcKind.opencode(),
+                    BridgeRcKind.shell(),
+                  ]),
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: shedLightTheme,
+            // A real pushed route (not `home:` directly) so the screen's own
+            // `Navigator.pop()` on a successful create has something below it
+            // to land on.
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    key: const ValueKey('go'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CreateRcScreen(target: target),
+                      ),
+                    ),
+                    child: const Text('go'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('go')));
+      await tester.pumpAndSettle();
+
+      // No claude-rc offered → the fallback selection lands on opencode, the
+      // offered kind list's first entry.
+      expect(find.text('opencode'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('createrc-submit')));
+      await tester.pumpAndSettle();
+
+      expect(
+        target.lastKind,
+        const BridgeRcKind.opencode(),
+        reason: 'the negative control — create really was called',
+      );
+      expect(
+        target.lastPermissionMode,
+        isNull,
+        reason:
+            'MachineRcTarget.acceptsKickoff is false — a permission mode '
+            'must never reach create(), even for a kind that has one',
+      );
+    },
+  );
 }

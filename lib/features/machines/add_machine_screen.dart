@@ -6,8 +6,8 @@ import '../../machines/machine_record.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
 
-/// Add a machine — a native host reached over SSH, running the RC activity hub
-/// (plan 012, roadmap R4).
+/// Add a machine — a native host reached over SSH, running a `roost-session`
+/// (plan 012, roadmap R4; re-sourced onto roost by plan 013 S3m).
 ///
 /// Deliberately separate from the add-SERVER flow, which is a multi-step
 /// ceremony: a shed server needs its TLS pin fetched and confirmed, a control
@@ -32,7 +32,6 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
   final _host = TextEditingController();
   final _user = TextEditingController();
   final _port = TextEditingController(text: '22');
-  final _rcBin = TextEditingController();
   String? _error;
   bool _saving = false;
 
@@ -42,7 +41,6 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
     _host.dispose();
     _user.dispose();
     _port.dispose();
-    _rcBin.dispose();
     super.dispose();
   }
 
@@ -50,7 +48,6 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
     final name = _name.text.trim();
     final host = _host.text.trim();
     final user = _user.text.trim();
-    final rcBin = _rcBin.text.trim();
     final port = int.tryParse(_port.text.trim());
 
     if (name.isEmpty || host.isEmpty) {
@@ -75,7 +72,6 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
               host: host,
               user: user.isEmpty ? null : user,
               sshPort: port,
-              rcBin: rcBin.isEmpty ? null : rcBin,
             ),
           );
       ref.invalidate(machinesProvider);
@@ -100,8 +96,8 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'A machine is a computer you reach over SSH that runs the shed '
-              'activity hub — not a shed VM. Its sessions appear beside your '
+              'A machine is a computer you reach over SSH that runs a '
+              'roost-session — not a shed VM. Its sessions appear beside your '
               'shed sessions.',
               style: Theme.of(
                 context,
@@ -146,18 +142,6 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
               controller: _port,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'SSH port'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              key: const ValueKey('add-machine-rcbin'),
-              controller: _rcBin,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'sx path (optional)',
-                helperText:
-                    'Where sx lives, if not on the PATH an ssh command sees — '
-                    '~/.local/bin is usually NOT',
-              ),
             ),
             const SizedBox(height: 20),
             Container(

@@ -45,9 +45,7 @@ Future<void> main(List<String> args) async {
 
   print('Creating a shell session (--wait) ...');
   final shell = await rc.create(kind: const BridgeRcKind.shell());
-  print(
-    '  created slug=${shell.slug} state=${shell.state.wire} tmux=${shell.tmuxSession}',
-  );
+  print('  created slug=${shell.slug} state=${shell.state.wire}');
 
   final afterCreate = await rc.list();
   show('  after create', afterCreate);

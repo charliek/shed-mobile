@@ -382,7 +382,8 @@ impl Drop for BridgeRoostPeek {
 /// whether it exists — so opening a peek costs exactly one round trip.
 pub async fn roost_peek_open(local_port: u16, tab_id: i64) -> Result<BridgeRoostPeek, String> {
     let peek =
-        on_bridge_rt(async move { RoostPeek::open(&FixedPort(local_port), tab_id).await }).await?;
+        on_bridge_rt(async move { RoostPeek::open(Arc::new(FixedPort(local_port)), tab_id).await })
+            .await?;
     Ok(BridgeRoostPeek {
         inner: Arc::new(tokio::sync::Mutex::new(Some(peek))),
     })

@@ -40,9 +40,9 @@ Future<T> withSshClient<T>({
 /// Open a host-key-pinned SSH client the CALLER owns and must close.
 ///
 /// [withSshClient] is the right shape for a one-shot command; a long-lived
-/// consumer (the machine hub tunnel, which serves many forwarded connections
-/// over one link) needs the client to outlive any single body, so it takes this
-/// and closes it itself. Both go through this one function, so connect / auth /
+/// consumer (the machine's roost tunnel, which execs once per accepted
+/// connection over one link) needs the client to outlive any single body, so it
+/// takes this and closes it itself. Both go through this one function, so connect / auth /
 /// host-key verification are defined exactly once.
 Future<SSHClient> openSshClient({
   required String host,
