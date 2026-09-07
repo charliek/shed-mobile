@@ -1,5 +1,6 @@
-/// A configured machine — a native host (not a shed VM) reached over SSH, with
-/// the RC activity hub on its loopback `1029` (plan 012, roadmap R4).
+/// A configured machine — a native host (not a shed VM) reached over SSH,
+/// running a `roost-session` (plan 012, roadmap R4; re-sourced onto roost by
+/// plan 013 S3m).
 ///
 /// Deliberately NOT a [ServerRecord]: a shed server is an HTTP API with a TLS
 /// pin, a control token, and an auth mode; a machine is only ever SSH. Modelling
@@ -34,10 +35,13 @@ class MachineRecord {
 
   /// Where the `sx` binary lives on the machine.
   ///
-  /// `null` → `sx` on the PATH an `ssh <host> <cmd>` exec sees, which is the
-  /// NON-login PATH and routinely omits `~/.local/bin` and `/opt/homebrew/bin`.
-  /// An absolute path here is the normal case for anything not installed under
-  /// `/usr/bin`, not an exotic override.
+  /// **Dead since plan 013 S3m — nothing reads it.** It existed for the `sx rc
+  /// …` one-shots the RC-hub machine path ran over SSH; a machine's sessions
+  /// now come from its `roost-session`, whose remote command roost composes
+  /// itself (`roostRemoteCommand`), so there is no engine path for the phone to
+  /// pin. The field survives only so a record stored by an older build still
+  /// decodes and round-trips unchanged — it goes with the rest of the hub path
+  /// in S6, along with the form field that used to set it.
   final String? rcBin;
 
   Map<String, Object?> toJson() => {
@@ -77,9 +81,9 @@ class MachineRecord {
 
   /// The origin handle a session row is keyed and labelled by.
   ///
-  /// **Rows must key on this, never on a session's `shed`.** A hub read directly
-  /// reports an EMPTY shed on every session (it has no shed to name), so two
-  /// machines that happen to share a slug would collide into one row.
+  /// **Rows must key on this, never on a session's `shed`.** A machine's rows
+  /// carry an EMPTY shed (there is no shed to name), so two machines that happen
+  /// to share a slug would collide into one row.
   String get origin => 'machine:$name';
 
   @override

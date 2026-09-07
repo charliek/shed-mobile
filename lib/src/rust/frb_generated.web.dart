@@ -13,10 +13,10 @@ import 'api/dto.dart';
 import 'api/dto_rc.dart';
 import 'api/error.dart';
 import 'api/local_sse.dart';
-import 'api/machine.dart';
 import 'api/mint.dart';
 import 'api/preview.dart';
 import 'api/rc_runner.dart';
+import 'api/roost.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
 import 'api/watcher.dart';
@@ -42,8 +42,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCreateHandle;
 
   CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_BridgeMachineWatcherPtr => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher;
+  get rust_arc_decrement_strong_count_BridgeRoostPeekPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_BridgeRoostWatcherPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher;
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeTestSsePtr => wire
@@ -69,8 +73,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     dynamic raw,
   );
 
@@ -99,8 +109,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     dynamic raw,
   );
 
@@ -137,8 +153,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     dynamic raw,
   );
 
@@ -163,12 +185,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_bridge_credential_event_Sse(dynamic raw);
 
   @protected
-  RustStreamSink<BridgeMachineUpdate>
-  dco_decode_StreamSink_bridge_machine_update_Sse(dynamic raw);
-
-  @protected
   RustStreamSink<BridgeMintRequest>
   dco_decode_StreamSink_bridge_mint_request_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<BridgeRoostUpdate>
+  dco_decode_StreamSink_bridge_roost_update_Sse(dynamic raw);
 
   @protected
   RustStreamSink<BridgeWatcherUpdate>
@@ -262,9 +284,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLiveCounters dco_decode_bridge_live_counters(dynamic raw);
 
   @protected
-  BridgeMachineUpdate dco_decode_bridge_machine_update(dynamic raw);
-
-  @protected
   BridgeMintOutcome dco_decode_bridge_mint_outcome(dynamic raw);
 
   @protected
@@ -322,6 +341,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRcState dco_decode_bridge_rc_state(dynamic raw);
 
   @protected
+  BridgeRoostUpdate dco_decode_bridge_roost_update(dynamic raw);
+
+  @protected
   BridgeSession dco_decode_bridge_session(dynamic raw);
 
   @protected
@@ -338,6 +360,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeSystemDiskUsage dco_decode_bridge_system_disk_usage(dynamic raw);
+
+  @protected
+  BridgeTabDump dco_decode_bridge_tab_dump(dynamic raw);
 
   @protected
   BridgeWatcherUpdate dco_decode_bridge_watcher_update(dynamic raw);
@@ -469,8 +494,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     SseDeserializer deserializer,
   );
 
@@ -499,8 +530,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     SseDeserializer deserializer,
   );
 
@@ -539,8 +576,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineWatcher
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  BridgeRoostPeek
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostWatcher
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     SseDeserializer deserializer,
   );
 
@@ -567,12 +610,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  RustStreamSink<BridgeMachineUpdate>
-  sse_decode_StreamSink_bridge_machine_update_Sse(SseDeserializer deserializer);
-
-  @protected
   RustStreamSink<BridgeMintRequest>
   sse_decode_StreamSink_bridge_mint_request_Sse(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<BridgeRoostUpdate>
+  sse_decode_StreamSink_bridge_roost_update_Sse(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<BridgeWatcherUpdate>
@@ -692,11 +735,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeMachineUpdate sse_decode_bridge_machine_update(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   BridgeMintOutcome sse_decode_bridge_mint_outcome(
     SseDeserializer deserializer,
   );
@@ -778,6 +816,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRcState sse_decode_bridge_rc_state(SseDeserializer deserializer);
 
   @protected
+  BridgeRoostUpdate sse_decode_bridge_roost_update(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSession sse_decode_bridge_session(SseDeserializer deserializer);
 
   @protected
@@ -796,6 +839,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeSystemDiskUsage sse_decode_bridge_system_disk_usage(
     SseDeserializer deserializer,
   );
+
+  @protected
+  BridgeTabDump sse_decode_bridge_tab_dump(SseDeserializer deserializer);
 
   @protected
   BridgeWatcherUpdate sse_decode_bridge_watcher_update(
@@ -965,8 +1011,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
-    BridgeMachineWatcher self,
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    BridgeRoostPeek self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    BridgeRoostWatcher self,
     SseSerializer serializer,
   );
 
@@ -1000,8 +1053,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
-    BridgeMachineWatcher self,
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    BridgeRoostPeek self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    BridgeRoostWatcher self,
     SseSerializer serializer,
   );
 
@@ -1047,8 +1107,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
-    BridgeMachineWatcher self,
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    BridgeRoostPeek self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    BridgeRoostWatcher self,
     SseSerializer serializer,
   );
 
@@ -1079,14 +1146,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_bridge_machine_update_Sse(
-    RustStreamSink<BridgeMachineUpdate> self,
+  void sse_encode_StreamSink_bridge_mint_request_Sse(
+    RustStreamSink<BridgeMintRequest> self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_StreamSink_bridge_mint_request_Sse(
-    RustStreamSink<BridgeMintRequest> self,
+  void sse_encode_StreamSink_bridge_roost_update_Sse(
+    RustStreamSink<BridgeRoostUpdate> self,
     SseSerializer serializer,
   );
 
@@ -1241,12 +1308,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_bridge_machine_update(
-    BridgeMachineUpdate self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_bridge_mint_outcome(
     BridgeMintOutcome self,
     SseSerializer serializer,
@@ -1352,6 +1413,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bridge_rc_state(BridgeRcState self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bridge_roost_update(
+    BridgeRoostUpdate self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_session(BridgeSession self, SseSerializer serializer);
 
   @protected
@@ -1380,6 +1447,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     BridgeSystemDiskUsage self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_bridge_tab_dump(BridgeTabDump self, SseSerializer serializer);
 
   @protected
   void sse_encode_bridge_watcher_update(
@@ -1591,18 +1661,34 @@ class RustLibWire implements BaseWire {
       );
 
   void
-  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
     int ptr,
   ) => wasmModule
-      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
         ptr,
       );
 
   void
-  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
     int ptr,
   ) => wasmModule
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+        ptr,
+      );
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
         ptr,
       );
 
@@ -1666,12 +1752,22 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   );
 
   external void
-  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
     int ptr,
   );
 
   external void
-  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeMachineWatcher(
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostPeek(
+    int ptr,
+  );
+
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostWatcher(
     int ptr,
   );
 

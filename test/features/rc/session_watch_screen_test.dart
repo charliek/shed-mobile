@@ -49,8 +49,9 @@ class _FakeSource extends SessionWatchSource {
   String get title => 'mini3/abc123';
 
   @override
-  TerminalTarget get terminalTarget => const MachineTerminalTarget(
-    machineName: 'mini3',
+  TerminalTarget get terminalTarget => const ShedTerminalTarget(
+    serverName: 'h',
+    shedName: 'mini3',
     slug: 'abc123',
     title: 't',
   );

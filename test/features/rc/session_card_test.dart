@@ -15,7 +15,7 @@ const _session = BridgeRcSession(
   host: 'h',
   shed: 'web',
   slug: 'abc123',
-  tmuxSession: 'rc-abc123',
+  attention: false,
   displayName: 'frontend',
   kind: BridgeRcKind.claudeRc(),
   state: BridgeRcState.ready,
@@ -146,7 +146,7 @@ void main() {
         host: 'h',
         shed: 'web',
         slug: 'abc123',
-        tmuxSession: 'rc-abc123',
+        attention: false,
         displayName: 'frontend',
         kind: BridgeRcKind.codex(),
         state: BridgeRcState.ready,
@@ -178,7 +178,7 @@ void main() {
         host: 'h',
         shed: 'web',
         slug: 'abc123',
-        tmuxSession: 'rc-abc123',
+        attention: false,
         displayName: 'frontend',
         kind: BridgeRcKind.codex(),
         state: BridgeRcState.needsAuth,
@@ -203,7 +203,7 @@ void main() {
     host: 'h',
     shed: 'web',
     slug: 'abc123',
-    tmuxSession: 'rc-abc123',
+    attention: false,
     displayName: 'frontend',
     kind: BridgeRcKind.codex(),
     state: BridgeRcState.ready,
@@ -247,7 +247,7 @@ void main() {
         host: 'h',
         shed: 'web',
         slug: 'abc123',
-        tmuxSession: 'rc-abc123',
+        attention: false,
         displayName: 'frontend',
         kind: BridgeRcKind.codex(),
         state: BridgeRcState.ready,
@@ -262,6 +262,84 @@ void main() {
     expect(find.text('stale overview preview'), findsNothing);
   });
 
+  // ---- attach gating + attention dot -----------------------------------------
+
+  BridgeRcCapabilities capsWithAttach(String attach) => BridgeRcCapabilities(
+    rcVersion: 3,
+    kinds: const [],
+    agents: const {},
+    features: const [],
+    kindFeatures: {
+      'claude-rc': BridgeRcKindFeatures(
+        postInput: false,
+        approvals: 'none',
+        watch: false,
+        input: '',
+        feed: '',
+        interrupt: false,
+        attach: attach,
+      ),
+    },
+  );
+
+  const attentionSession = BridgeRcSession(
+    host: 'h',
+    shed: 'web',
+    slug: 'abc123',
+    attention: true,
+    displayName: 'frontend',
+    kind: BridgeRcKind.claudeRc(),
+    state: BridgeRcState.ready,
+    managed: true,
+  );
+
+  testWidgets('attention dot present when the session carries attention', (
+    tester,
+  ) async {
+    await _pump(tester, 400, session: attentionSession);
+    expect(
+      find.byKey(const ValueKey('all-session-attention-h-web-abc123')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('attention dot absent when the session carries none '
+      '(negative control against the row rendering at all)', (tester) async {
+    await _pump(tester, 400); // _session has attention: false
+    expect(
+      find.byKey(const ValueKey('all-session-attention-h-web-abc123')),
+      findsNothing,
+    );
+    // The row DID render — the absence above is about `attention`, not an
+    // empty screen.
+    expect(
+      find.byKey(const ValueKey('all-session-open-h-web-abc123')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'the open pill is absent when attachKind is native-remote (a shed row '
+    'never actually ships this, but the gate must hold both ways)',
+    (tester) async {
+      await _pump(
+        tester,
+        400,
+        session: attentionSession, // kind: claude-rc, matches the caps below
+        caps: capsWithAttach('native-remote'),
+      );
+      expect(
+        find.byKey(const ValueKey('all-session-open-h-web-abc123')),
+        findsNothing,
+      );
+      // Negative control: the row still rendered — delete is still there.
+      expect(
+        find.byKey(const ValueKey('all-session-delete-h-web-abc123')),
+        findsOneWidget,
+      );
+    },
+  );
+
   // ---- claude URL actions ----------------------------------------------------
 
   const sessionUrl = 'https://claude.ai/login/xyz';
@@ -269,7 +347,7 @@ void main() {
     host: 'h',
     shed: 'web',
     slug: 'abc123',
-    tmuxSession: 'rc-abc123',
+    attention: false,
     displayName: 'frontend',
     kind: BridgeRcKind.claudeRc(),
     state: BridgeRcState.ready,

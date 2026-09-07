@@ -5,10 +5,10 @@ pub mod dto;
 pub mod dto_rc;
 pub mod error;
 pub mod local_sse;
-pub mod machine;
 pub mod mint;
 pub mod preview;
 pub mod rc_runner;
+pub mod roost;
 pub mod shed;
 pub mod simple;
 #[cfg(test)]

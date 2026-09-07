@@ -1,16 +1,14 @@
 import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../rc/rc_ui.dart';
-import '../bridge/bridge_adapters.dart';
 import '../src/rust/api/dto_rc.dart';
-import '../src/rust/api/error.dart';
-import '../src/rust/api/rc_runner.dart';
-import '../ssh/ssh_runner.dart';
-import '../src/rust/api/machine.dart';
+import '../src/rust/api/roost.dart';
 import '../ssh/host_key_store.dart';
-import '../ssh/hub_tunnel.dart';
+import '../ssh/roost_tunnel.dart';
+import '../ssh/ssh_connection.dart';
 import 'machine_record.dart';
 
 /// One machine's live view, as the UI renders it.
@@ -27,42 +25,43 @@ class MachineFeedState {
 
   final MachineRecord machine;
 
-  /// The last snapshot the hub reported. Kept across a disconnect on purpose:
-  /// the UI shows the last known sessions (dimmed, with a reason) rather than
-  /// blanking the machine, which is what a brief network blip deserves.
+  /// The last snapshot the machine's `roost-session` reported. Kept across a
+  /// disconnect on purpose: the UI shows the last known sessions (dimmed, with
+  /// a reason) rather than blanking the machine, which is what a brief network
+  /// blip deserves.
   final List<BridgeRcSession> sessions;
 
   /// Live patches from the feed, keyed by SLUG, applied over [sessions] at
   /// render time.
   ///
-  /// An overlay rather than mutated rows, for two reasons: the FRB-generated
-  /// DTO has no `copyWith` (rebuilding it field-by-field would silently drop a
-  /// field the day the contract grows one), and it mirrors the shape the app
-  /// already uses for the shed feed — one overlay per feed, never merged across
-  /// machines, since a directly-read hub reports an EMPTY shed and `(shed,slug)`
-  /// would collide.
+  /// **Empty on the roost path**, and kept anyway: roost's inventory is read
+  /// whole on every poll, so there is no patch stream to fold — a `Snapshot` is
+  /// the entire truth about a machine. The overlay stays because it is what the
+  /// render sites read through ([activityOf] / [stateOf]), and because roost's
+  /// R1 live push lands events again; deleting it would mean re-deriving the
+  /// same seam a milestone later.
   final Map<String, MachinePatch> overlay;
 
   final bool reachable;
 
   /// Why it is unreachable, verbatim. Shown to the user because "no route to
-  /// host" and "nothing is listening on 1029" are different problems with
-  /// different fixes, and flattening them to "offline" throws away the only
-  /// actionable part.
+  /// host" and "nothing is listening on that socket" are different problems
+  /// with different fixes, and flattening them to "offline" throws away the
+  /// only actionable part.
   final String? detail;
 
   /// Whether a snapshot has EVER arrived — distinguishes "still connecting"
   /// from "connected, and this machine genuinely has no sessions".
   final bool connectedOnce;
 
-  /// The machine's per-kind affordances, from the one-shot `rc list` envelope.
+  /// The machine's per-kind affordances.
   ///
-  /// **Controls render off THIS, never off the kind.** A session whose
-  /// `approvals` is `"tui"` reports approvals for information only — they are
-  /// answered in its terminal — so offering an approve button would produce a
-  /// `409 not_supported` the user cannot act on. `null` means the machine's
-  /// binary predates capability discovery: degrade to observe-only rather than
-  /// guessing.
+  /// **Controls render off THIS, never off the kind.** On the roost path they
+  /// are [roostCapabilities] — synthesized, not probed, because roost is a
+  /// terminal multiplexer with agent adapters rather than shed's guest agent,
+  /// so there is nothing to ask. Every steering feature the RC hub used to
+  /// advertise for a machine reads `false`/empty there, which is what makes the
+  /// existing per-feature gates hide those controls with no new conditionals.
   final BridgeRcCapabilities? capabilities;
 
   MachineFeedState copyWith({
@@ -89,6 +88,10 @@ class MachineFeedState {
 
   /// Whether this session can be STEERED from here — a structured turn.
   /// `input: "turn"` is the only mode that accepts one.
+  ///
+  /// False for every roost row (`input` is empty there): a roost tab is a
+  /// terminal, and typing into one is roost's `tab.write`, which the phone does
+  /// not offer in this milestone.
   bool canSteer(BridgeRcSession s) => featuresFor(s)?.input == 'turn';
 
   /// Whether a running turn can be interrupted from here.
@@ -96,8 +99,9 @@ class MachineFeedState {
 
   /// Whether an approval can be ANSWERED from here.
   ///
-  /// `"remote"` means the hub can resolve it; `"tui"` means the rows are
+  /// `"remote"` means the far side can resolve it; `"tui"` means the rows are
   /// informational and the decision must be made in the session's terminal.
+  /// roost advertises `"none"`.
   bool canApprove(BridgeRcSession s) => featuresFor(s)?.approvals == 'remote';
 
   /// A session's activity, with the live patch applied.
@@ -115,16 +119,15 @@ class MachinePatch {
   final BridgeRcActivity? activity;
   final BridgeRcState? state;
 
-  /// The feed's high-water mark for this session, from `message.appended`.
+  /// A feed's high-water mark for this session.
   ///
   /// A NOTIFICATION, not content: the event says "there is something new past
-  /// seq N", and the body comes from a follow-up `/messages` fetch. A watcher
-  /// keyed on this is what makes the rich view live without polling.
+  /// seq N", and the body comes from a follow-up fetch.
   final BigInt? lastSeq;
 
-  /// Later wins per FIELD, so an `activity.changed` cannot erase a seq bump
-  /// that arrived first (and vice versa) — the two dimensions travel on
-  /// separate events and must not clobber each other.
+  /// Later wins per FIELD, so one dimension cannot erase another that arrived
+  /// first — the dimensions travel on separate events and must not clobber
+  /// each other.
   MachinePatch merge(MachinePatch other) => MachinePatch(
     activity: other.activity ?? activity,
     state: other.state ?? state,
@@ -132,29 +135,189 @@ class MachinePatch {
   );
 }
 
+/// Fold one roost update into the feed's state — **the whole reconciliation,
+/// as a pure function** (plan 013 S3m).
+///
+/// Pure so it can be tested without a bridge, a socket, or a machine: the two
+/// rules below are the entire contract between roost and what the cards show,
+/// and they are exactly the rules that break silently in production.
+///
+/// * A `Snapshot` **replaces** the row set — it is roost's whole agent-owned
+///   tab list as of that poll, so merging would resurrect tabs that were
+///   closed. It also clears the overlay, because the snapshot already carries
+///   every dimension a patch could hold.
+/// * A `Down` **keeps** the rows and marks them stale with a reason. Blanking
+///   the machine would throw away the best available answer to "what is
+///   running on mini3?" every time a phone changes networks.
+///
+/// [dialDetail] is the SSH dial's own failure, when there was one. It wins over
+/// roost's reason because they describe the same outage at different distances:
+/// the watcher can only report "connection refused" against the local port,
+/// while the tunnel underneath knows the connection was refused *because this
+/// device's key is not authorized*. Losing that was the transport swap's one
+/// real regression, and this is where it is not lost.
+@visibleForTesting
+MachineFeedState foldRoostUpdate(
+  MachineFeedState state,
+  BridgeRoostUpdate update, {
+  String? dialDetail,
+}) => switch (update) {
+  BridgeRoostUpdate_Snapshot(:final sessions) => state.copyWith(
+    sessions: sessions,
+    overlay: const {},
+    reachable: true,
+    connectedOnce: true,
+    clearDetail: true,
+  ),
+  BridgeRoostUpdate_Down(:final reason) => state.copyWith(
+    reachable: false,
+    detail: dialDetail ?? reason,
+  ),
+};
+
+/// Apply the row a `tab.open` returned, optimistically.
+///
+/// Keyed on the slug (roost's tab id as a string), so a re-open of a row the
+/// last snapshot already carried replaces it rather than doubling it. The next
+/// poll is authoritative either way — this only exists so the card appears in
+/// the two seconds before that poll, which is the difference between "it
+/// worked" and "did that button do anything?".
+@visibleForTesting
+MachineFeedState foldOpenedRow(MachineFeedState state, BridgeRcSession row) =>
+    state.copyWith(
+      sessions: [...state.sessions.where((s) => s.slug != row.slug), row],
+    );
+
+/// Drop a row that has just been closed, optimistically.
+///
+/// Same reasoning inverted: `tab.close` removes the tab from `tab.list`
+/// entirely, so the next poll agrees — but a killed session lingering for a
+/// poll interval reads as "the kill didn't work".
+@visibleForTesting
+MachineFeedState foldClosedRow(MachineFeedState state, String slug) =>
+    state.copyWith(
+      sessions: state.sessions.where((s) => s.slug != slug).toList(),
+      overlay: {...state.overlay}..remove(slug),
+    );
+
+/// The in-flight-dial bookkeeping [MachineFeed._connect] uses to dedupe
+/// concurrent connects within one generation, without adopting a pending dial
+/// that belongs to an earlier one.
+///
+/// Generation-agnostic over the dialed type on purpose: [MachineFeed._connect]
+/// dials a real [SSHClient], which needs a live socket to construct and so
+/// cannot be unit tested directly, but the bookkeeping bug this fixes (a
+/// stop/start cycle adopting the previous generation's dial) has nothing to do
+/// with what is being dialed. Pulling it out lets the decision be tested with a
+/// dummy type instead — see `test/machines/machine_feed_test.dart`.
+@visibleForTesting
+class DialDedupe<T> {
+  Future<T>? _pending;
+  int? _pendingGeneration;
+
+  /// The pending dial for [generation], or null when there is none — either
+  /// nothing is in flight, or what's in flight belongs to an earlier
+  /// generation and must not be adopted: it is left alone, not awaited, because
+  /// its own completion handler already closes what it produces once it
+  /// notices the generation has moved on (see [MachineFeed._connect]).
+  Future<T>? pendingFor(int generation) {
+    final pending = _pending;
+    return (pending != null && _pendingGeneration == generation)
+        ? pending
+        : null;
+  }
+
+  /// Record [future] as the pending dial for [generation].
+  void start(int generation, Future<T> future) {
+    _pending = future;
+    _pendingGeneration = generation;
+  }
+
+  /// Clear the pending dial if it is still [future] — a later [start] may
+  /// already have replaced it (the stale-generation case above), and that
+  /// newer entry must survive this call's `finally`.
+  void clear(Future<T> future) {
+    if (identical(_pending, future)) {
+      _pending = null;
+      _pendingGeneration = null;
+    }
+  }
+}
+
+/// The fence [MachineFeed.start] puts after each of its awaits: did a
+/// [MachineFeed.stop] land while this resource was being built?
+///
+/// If it did, the resource belongs to nobody — [MachineFeed._teardown] has
+/// already nulled and released whatever it could see — so it is released HERE
+/// and the caller is told to give up rather than install it behind the feed's
+/// back. Returns true when it was released (caller must return), false when the
+/// generation still holds and the caller may install it.
+///
+/// Extracted, generic, and `@visibleForTesting` for exactly the reasons
+/// [DialDedupe] is: `start()` builds a real [RoostTunnel] (a live
+/// `ServerSocket`) and a real [BridgeRoostWatcher] (an FRB opaque handle, not
+/// constructible in a unit test at all), but the decision has nothing to do
+/// with what was built. With a dummy resource the race is testable — see
+/// `test/machines/machine_feed_test.dart`.
+@visibleForTesting
+Future<bool> releaseIfStopped<T>({
+  required int startedAt,
+  required int current,
+  required T resource,
+  required Future<void> Function(T) release,
+}) async {
+  if (startedAt == current) return false;
+  await release(resource);
+  return true;
+}
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
-/// port is shared Rust (see `rust/src/api/machine.dart` and
-/// `shed_app::machine`), so what lives here is exactly what a phone must decide:
-/// when to hold an SSH connection open, and when to let it go.
+/// port is shared Rust (see `rust/src/api/roost.rs` and `shed_app::roost`), so
+/// what lives here is exactly what a phone must decide: when to hold an SSH
+/// connection open, and when to let it go.
+///
+/// ## What changed under it, and what did not
+///
+/// The machine's sessions come from its `roost-session` now, not from the RC
+/// activity hub (plan 013, the Roost Pivot's first milestone). That is a
+/// re-point of the transport, not a re-architecture: the tunnel still publishes
+/// one stable loopback port, Rust is still handed nothing but an `int`, and the
+/// state this class produces has the same shape the cards already render.
+///
+/// Two consequences worth naming:
+///
+/// * **The SSH connection is this class's to own.** [RoostTunnel] execs on it
+///   per accepted connection but never closes it — a PTY may be sharing it —
+///   so [_teardown] is the one place it dies.
+/// * **Capabilities are synthesized, not probed.** There is no second SSH exec
+///   at start-up any more; [roostCapabilities] is a constant, so the controls
+///   are gated correctly from the very first frame rather than after a round
+///   trip that could fail.
 ///
 /// ## Backgrounding is a STOP, not a stall
 ///
 /// [stop] tears the tunnel and the watcher down; [start] rebuilds both. That is
-/// deliberate rather than lazy: holding an SSH connection and an SSE stream open
+/// deliberate rather than lazy: holding an SSH connection and a poll loop open
 /// behind a backgrounded phone is what drains a battery and gets an app killed
 /// by the OS.
 ///
 /// Resuming loses nothing, and that falls out of the WIRE rather than needing a
-/// replay protocol: `/v1/sessions` is an authoritative snapshot, so a fresh
+/// replay protocol: `tab.list` is an authoritative snapshot, so a fresh
 /// connection is a complete resync by construction.
 class MachineFeed {
   MachineFeed({
     required this.machine,
     required this.identities,
     required this.hostKeys,
-  }) : _state = MachineFeedState(machine: machine);
+  }) : _state = MachineFeedState(
+         machine: machine,
+         // Synchronous, and therefore present on the FIRST state the UI sees:
+         // there is no host to ask, and making the gates wait on a round trip
+         // that does not exist would leave the controls guessing.
+         capabilities: roostCapabilities(),
+       );
 
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
@@ -163,10 +326,25 @@ class MachineFeed {
   final _controller = StreamController<MachineFeedState>.broadcast();
   MachineFeedState _state;
 
-  HubTunnel? _tunnel;
-  BridgeMachineWatcher? _watcher;
-  StreamSubscription<BridgeMachineUpdate>? _sub;
+  RoostTunnel? _tunnel;
+  BridgeRoostWatcher? _watcher;
+  StreamSubscription<BridgeRoostUpdate>? _sub;
   bool _starting = false;
+
+  /// The SSH connection every exec on this machine rides. Owned HERE, because
+  /// [RoostTunnel] deliberately does not close what it did not open.
+  SSHClient? _client;
+
+  /// The dial in flight, so two connections accepted at once do not open two
+  /// SSH links and leak one — deduped per [_generation]. See [DialDedupe].
+  final _dialDedupe = DialDedupe<SSHClient>();
+
+  /// Bumped by every [_teardown], so a dial that completes after a stop closes
+  /// its client instead of installing it behind the feed's back.
+  int _generation = 0;
+
+  /// Why the last SSH dial failed, if it did. See [foldRoostUpdate].
+  String? _dialDetail;
 
   /// The current view. Always available — a machine that has never connected
   /// still has a row, because "mini3 is asleep" IS the information.
@@ -176,11 +354,12 @@ class MachineFeed {
 
   bool get isRunning => _watcher != null;
 
-  /// The local port the hub is forwarded to, or null when the tunnel is down.
+  /// The local port the machine's `roost-session` is reachable on, or null when
+  /// the tunnel is down.
   ///
-  /// Exposed so the rich session view can read the message cursor and post
-  /// control verbs over the SAME tunnel the feed holds — a second connection
-  /// per screen would double the SSH cost of simply looking at a session.
+  /// Exposed so a screen can address the same session over the SAME tunnel the
+  /// feed holds — a second connection per screen would double the SSH cost of
+  /// simply looking at a session.
   int? get tunnelPort => _tunnel?.port;
 
   /// Open the tunnel and start watching. Idempotent, and safe to call on every
@@ -188,37 +367,56 @@ class MachineFeed {
   Future<void> start() async {
     if (_watcher != null || _starting) return;
     _starting = true;
+    // The same fence `_connect` uses: a `stop()` during either await below has
+    // already run `_teardown()`, so installing what this call built would put a
+    // tunnel or a watcher back behind the feed's back. Nothing owns them at that
+    // point, so this call closes what it made rather than leaking it.
+    final generation = _generation;
     try {
-      final tunnel = await HubTunnel.open(
+      final tunnel = await RoostTunnel.open(
+        connect: _connect,
+        // Opaque, and composed by roost itself — the phone is out of the
+        // argv business entirely (see `roostRemoteCommand`).
+        remoteCommand: roostRemoteCommand(),
         machine: machine.name,
-        host: machine.host,
-        sshPort: machine.sshPort,
-        user: machine.user ?? 'root',
-        identities: identities,
-        hostKeys: hostKeys,
       );
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: tunnel,
+        release: (t) => t.close(),
+      )) {
+        return;
+      }
       _tunnel = tunnel;
 
       // Rust is handed the PORT and nothing else — no host, no key, no SSH.
-      final watcher = await createMachineWatcher(
+      final watcher = await createRoostWatcher(
         machine: machine.name,
         localPort: tunnel.port,
       );
+      // The worst of the two: `_watcher` non-null with `_tunnel` already nulled
+      // by the teardown makes `isRunning` true and `tunnelPort` null, and every
+      // later `start()` then returns early on that stale `_watcher` — the feed
+      // never comes back.
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: watcher,
+        release: (w) => stopRoostWatcher(handle: w),
+      )) {
+        return;
+      }
       _watcher = watcher;
-      _sub = machineWatcherEvents(handle: watcher).listen(
+      _sub = roostWatcherEvents(handle: watcher).listen(
         _apply,
         onError: (Object e) =>
             _emit(_state.copyWith(reachable: false, detail: 'feed error: $e')),
       );
-      // Capabilities ride in the one-shot `list` envelope, not on the hub wire,
-      // so this is a separate SSH round trip — done ONCE per start and not
-      // awaited, because the feed must not be held up by it. Until it lands the
-      // UI offers no controls, which is the correct degraded posture.
-      unawaited(_loadCapabilities());
     } catch (e) {
-      // Opening the tunnel failed (no route, auth refused). That is the
-      // everyday asleep/unauthorized case, so it becomes a REASON on the row
-      // rather than an exception the caller has to handle.
+      // Binding the port failed — the machine itself is not dialled here at
+      // all (the tunnel execs per accepted connection), so an asleep or
+      // unauthorized machine arrives as the watcher's `Down` instead.
       await _teardown();
       _emit(_state.copyWith(reachable: false, detail: _describe(e)));
     } finally {
@@ -226,153 +424,94 @@ class MachineFeed {
     }
   }
 
-  /// Fetch the machine's per-kind affordances.
-  ///
-  /// A failure is deliberately SILENT: capabilities are what gate the controls,
-  /// so not having them means observe-only — a correct, safe degradation that
-  /// does not deserve an error banner on top of a working feed.
-  Future<void> _loadCapabilities() async {
-    try {
-      // The MACHINE argv (`<rc_bin> rc list`), not the guest builder: a machine
-      // has no `shed-ext-rc`, so the bare builder exits non-zero and this method
-      // degrades to observe-only — silently, since a failed probe is not an
-      // error. That silence hid the mistake until a live machine had a
-      // steerable session on it.
-      final argv = await machineListArgv(rcBin: _rcBin);
-      final res = await _ssh(argv, const Duration(seconds: 15));
-      if (res.code != 0) return;
-      final caps = await rcDecodeCapabilities(stdout: res.stdout);
-      if (caps != null) _emit(_state.copyWith(capabilities: caps));
-    } catch (_) {
-      // observe-only
-    }
-  }
-
-  /// Run one command on the machine over SSH — the one-shot path, distinct from
-  /// the hub tunnel. Used for capabilities and for `kill`, which the hub does
-  /// not serve (it observes and steers; it does not remove).
-  Future<SshResult> _ssh(List<String> argv, Duration timeout, {String? stdin}) {
-    final runner = SshRunner(
+  /// Open (or reuse) the machine's SSH connection. Handed to [RoostTunnel],
+  /// which calls it once per accepted connection so a dropped link is
+  /// re-established on the next use rather than tearing the tunnel down.
+  Future<SSHClient> _connect() async {
+    final existing = _client;
+    if (existing != null && !existing.isClosed) return existing;
+    final generation = _generation;
+    // Only adopt a pending dial from THIS generation — see [DialDedupe].
+    final pending = _dialDedupe.pendingFor(generation);
+    if (pending != null) return pending;
+    final future = openSshClient(
       host: machine.host,
       port: machine.sshPort,
       user: machine.user ?? 'root',
       identities: identities,
       hostKeys: hostKeys,
     );
-    return runner.run(argv, stdin: stdin, timeout: timeout);
-  }
-
-  // -------------------------------------------------------------------------
-  // Control verbs — every one gated by the CALLER on `kind_features`
-  // -------------------------------------------------------------------------
-
-  /// Start a turn. Only for a kind whose `input` is `turn`
-  /// ([MachineFeedState.canSteer]).
-  Future<void> steer(String slug, String text) async {
-    final port = _tunnel?.port;
-    if (port == null) throw StateError('the machine is not connected');
-    await machineTurn(localPort: port, slug: slug, text: text);
-  }
-
-  /// Interrupt a running turn ([MachineFeedState.canInterrupt]).
-  Future<bool> interrupt(String slug) async {
-    final port = _tunnel?.port;
-    if (port == null) throw StateError('the machine is not connected');
-    return machineInterrupt(localPort: port, slug: slug);
-  }
-
-  /// Answer a pending approval ([MachineFeedState.canApprove]).
-  Future<String> approve(String slug, String id, String decision) async {
-    final port = _tunnel?.port;
-    if (port == null) throw StateError('the machine is not connected');
-    return machineApprove(
-      localPort: port,
-      slug: slug,
-      id: id,
-      decision: decision,
-    );
-  }
-
-  /// The engine binary to invoke on the far side. `sx` is the shipped name;
-  /// a machine entry may pin another path.
-  String get _rcBin => machine.rcBin ?? 'sx';
-
-  /// Create a session on this machine.
-  ///
-  /// The SSH one-shot path, like `kill` and the capability probe — not the hub,
-  /// which observes and steers but does not create. The invocation comes from
-  /// the shared builder (`machineCreateInvocation`), so the flags, the mode
-  /// validation, and how the kickoff prompt is delivered are identical to a
-  /// shed create; only argv[0] differs.
-  ///
-  /// Returns the created session's slug. `--wait` blocks up to ~20s on the far
-  /// side, so the SSH timeout gives it headroom.
-  Future<String> create({
-    required BridgeRcKind kind,
-    String? displayName,
-    String? workdir,
-    String? prompt,
-    String? permissionMode,
-  }) async {
-    final slug = genSlug();
-    // A machine has no shed to namespace a default name against, so the
-    // `<machine>/<slug>` default is built here, where the slug exists.
-    final name = (displayName == null || displayName.isEmpty)
-        ? '${machine.name}/$slug'
-        : displayName;
-    // Blank → null here, so an empty prompt never becomes a `--prompt-stdin`
-    // with empty stdin: the Rust builder does not trim.
-    final trimmed = prompt?.trim();
-    final BridgeRcInvocation inv;
+    _dialDedupe.start(generation, future);
     try {
-      inv = await machineCreateInvocation(
-        rcBin: _rcBin,
-        kind: kind.wire,
-        name: name,
-        slug: slug,
-        target: machine.origin,
-        createdBy: rcCreatedBy,
-        workdir: (workdir == null || workdir.isEmpty) ? null : workdir,
-        permissionMode: permissionMode,
-        prompt: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
-      );
-    } on BridgeError catch (e) {
-      throw appErrorFromBridge(e);
+      final client = await future;
+      if (generation != _generation) {
+        // A stop won the race. Nothing owns this client, so close it here or
+        // it outlives the feed that asked for it.
+        client.close();
+        throw StateError('the machine feed was stopped');
+      }
+      _client = client;
+      _dialDetail = null;
+      return client;
+    } catch (e) {
+      // Record WHY: the watcher only ever sees "the local port refused", and
+      // "this device's key is not authorized" is the one thing the user can
+      // actually act on. See [foldRoostUpdate].
+      if (generation == _generation) _dialDetail = _describe(e);
+      rethrow;
+    } finally {
+      _dialDedupe.clear(future);
     }
-    final res = await _ssh(
-      inv.argv,
-      const Duration(seconds: 30),
-      stdin: inv.stdin,
-    );
-    if (res.code != 0) {
-      final err = res.stderr.trim();
-      throw StateError(err.isEmpty ? 'create failed' : err);
-    }
-    // The hub's next reconcile brings the row in on its own; refreshing the
-    // capability probe is not needed for a create.
-    return slug;
   }
 
-  /// Kill a session.
+  /// Start a session on this machine — roost's `tab.open`.
   ///
-  /// Over SSH rather than the hub: the hub observes and steers, it does not
-  /// remove. The row is dropped optimistically because the hub reconciles on a
-  /// 2s active / 10s idle cadence, and a killed session lingering for ten
-  /// seconds reads as "the kill didn't work"; the next snapshot is
-  /// authoritative and restores it if the kill somehow failed.
-  Future<void> kill(String slug) async {
-    final argv = await machineKillArgv(rcBin: _rcBin, slug: slug);
-    final res = await _ssh(argv, const Duration(seconds: 15));
-    if (res.code != 0) {
-      throw StateError(
-        res.stderr.trim().isEmpty ? 'kill failed' : res.stderr.trim(),
-      );
-    }
-    _emit(
-      _state.copyWith(
-        sessions: _state.sessions.where((s) => s.slug != slug).toList(),
-      ),
+  /// Minimal by design (plan 013 §4): the agent's binary and a working
+  /// directory, nothing else. A kickoff prompt and a permission mode need a
+  /// provider script on the far side, which is a later slice; the create form
+  /// therefore does not offer them for a machine rather than dropping them
+  /// silently here.
+  ///
+  /// A blank [workdir] is passed through as empty, which is roost's own "use
+  /// the project's directory, else `$HOME`" default — the same thing the form's
+  /// helper text promises.
+  ///
+  /// Returns the created session's slug (roost's tab id, as a string).
+  Future<String> create({required BridgeRcKind kind, String? workdir}) async {
+    final port = _tunnel?.port;
+    if (port == null) throw StateError('the machine is not connected');
+    final row = await roostTabOpen(
+      localPort: port,
+      machine: machine.name,
+      kind: kind.wire,
+      workdir: workdir ?? '',
     );
+    _emit(foldOpenedRow(_state, row));
+    return row.slug;
+  }
+
+  /// End a session — roost's `tab.close`.
+  ///
+  /// [slug] is the row's slug, which IS roost's tab id rendered as a string;
+  /// the typed id travels on the row so nothing has to parse one back out.
+  Future<void> kill(String slug) async {
+    final port = _tunnel?.port;
+    if (port == null) throw StateError('the machine is not connected');
+    final tabId = _rowFor(slug)?.tabId;
+    if (tabId == null) {
+      // Not a roost row (or a row this feed no longer holds): closing the wrong
+      // tab id is worse than refusing.
+      throw StateError('no roost tab for $slug');
+    }
+    await roostTabClose(localPort: port, tabId: tabId);
+    _emit(foldClosedRow(_state, slug));
+  }
+
+  BridgeRcSession? _rowFor(String slug) {
+    for (final s in _state.sessions) {
+      if (s.slug == slug) return s;
+    }
+    return null;
   }
 
   /// Stop watching and close the tunnel. Called on background and on dispose.
@@ -387,104 +526,27 @@ class MachineFeed {
   }
 
   Future<void> _teardown() async {
+    _generation++;
     await _sub?.cancel();
     _sub = null;
     final watcher = _watcher;
     _watcher = null;
     if (watcher != null) {
-      // The SYNCHRONOUS stop, not just a drop: it aborts the forwarder even
-      // while it is parked waiting for the next update.
-      await stopMachineWatcher(handle: watcher);
+      // The SYNCHRONOUS stop, not just a drop: it aborts the poll loop and the
+      // forwarder even while they are parked.
+      await stopRoostWatcher(handle: watcher);
     }
     await _tunnel?.close();
     _tunnel = null;
+    // The tunnel frees its port and its execs but never the connection — this
+    // is the one place it dies.
+    _client?.close();
+    _client = null;
+    _dialDetail = null;
   }
 
-  void _apply(BridgeMachineUpdate update) {
-    switch (update) {
-      case BridgeMachineUpdate_Snapshot(:final sessions):
-        // Authoritative: REPLACES rather than merges, and clears the overlay —
-        // the snapshot already carries the activity dimension, so keeping old
-        // patches would let a stale one win over fresh truth. This is what makes
-        // a reconnect a complete resync.
-        _emit(
-          _state.copyWith(
-            sessions: sessions,
-            overlay: const {},
-            reachable: true,
-            connectedOnce: true,
-            clearDetail: true,
-          ),
-        );
-      case BridgeMachineUpdate_Event(:final event):
-        _applyEvent(event);
-      case BridgeMachineUpdate_Down(:final reason):
-        // Sessions are deliberately NOT cleared — the last snapshot stays on
-        // screen, marked stale, until the next connect resyncs it.
-        _emit(_state.copyWith(reachable: false, detail: reason));
-    }
-  }
-
-  /// Apply one feed event.
-  ///
-  /// Narrow on purpose: the activity dimension only. A session the snapshot does
-  /// not know is left alone — the Rust watcher re-snapshots on an unknown slug,
-  /// so the full row arrives that way rather than being synthesized from an
-  /// event body that carries only a display subset.
-  void _applyEvent(BridgeRcEvent event) {
-    switch (event) {
-      case BridgeRcEvent_ActivityChanged(
-        :final slug,
-        :final activity,
-        :final state,
-      ):
-        _emit(
-          _state.copyWith(
-            overlay: _withPatch(
-              slug,
-              MachinePatch(activity: activity, state: state),
-            ),
-          ),
-        );
-      case BridgeRcEvent_SessionUpdated(
-        :final slug,
-        :final removed,
-        :final state,
-      ):
-        if (removed) {
-          _emit(
-            _state.copyWith(
-              sessions: _state.sessions.where((s) => s.slug != slug).toList(),
-              overlay: {..._state.overlay}..remove(slug),
-            ),
-          );
-          return;
-        }
-        _emit(
-          _state.copyWith(
-            overlay: _withPatch(slug, MachinePatch(state: state)),
-          ),
-        );
-      case BridgeRcEvent_MessageAppended(:final slug, :final seq):
-        // The seq only ever moves FORWARD within a hub run. A lower value means
-        // the hub restarted (seq resets to 1), and the reader treats that as
-        // "refetch from scratch" rather than a targeted drain — so it is passed
-        // through unfiltered and interpreted there, where the cursor lives.
-        _emit(
-          _state.copyWith(
-            overlay: _withPatch(slug, MachinePatch(lastSeq: seq)),
-          ),
-        );
-      default:
-        break;
-    }
-  }
-
-  Map<String, MachinePatch> _withPatch(String slug, MachinePatch patch) {
-    final next = {..._state.overlay};
-    next[slug] = next[slug]?.merge(patch) ?? patch;
-    return next;
-  }
+  void _apply(BridgeRoostUpdate update) =>
+      _emit(foldRoostUpdate(_state, update, dialDetail: _dialDetail));
 
   void _emit(MachineFeedState next) {
     _state = next;
@@ -495,7 +557,7 @@ class MachineFeed {
   /// which can carry detail not worth putting on a card.
   static String _describe(Object e) {
     if (e is SSHAuthAbortError || e is SSHAuthFailError) {
-      return 'this device\'s key is not authorized on ${'the machine'}';
+      return 'this device\'s key is not authorized on the machine';
     }
     if (e is SSHStateError) return 'the SSH connection failed';
     return 'cannot reach the machine';

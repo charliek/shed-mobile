@@ -16,7 +16,7 @@ import 'add_machine_screen.dart';
 /// your sessions run — so they are configured in the same place and rendered
 /// with the same card vocabulary. What differs is only how they are reached: a
 /// host is an HTTP API with a TLS pin and a control token; a machine is an
-/// ordinary SSH host with an activity hub on loopback. That difference belongs
+/// ordinary SSH host running a `roost-session`. That difference belongs
 /// in the plumbing, not in the navigation.
 class MachinesSection extends ConsumerWidget {
   const MachinesSection({super.key});
@@ -45,8 +45,8 @@ class MachinesSection extends ConsumerWidget {
         if (list.isEmpty)
           const HostNote(
             key: ValueKey('machines-empty'),
-            'A machine is a computer you reach over SSH that runs the shed '
-            'activity hub.',
+            'A machine is a computer you reach over SSH that runs a '
+            'roost-session.',
           )
         else
           for (final m in _healthyFirst(ref, list)) _MachineCard(machine: m),

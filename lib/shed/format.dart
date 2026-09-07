@@ -68,11 +68,16 @@ String shedMetaLine(BridgeShed s, {DateTime? now}) => [
   ?uptimeLabel(parseServerTime(s.startedAt), now: now),
 ].join(' · ');
 
-/// The cross-host session card's mono meta line — `shed · tmux rc-… · made N ago`,
+/// The cross-host session card's mono meta line — `shed · workdir · made N ago`,
 /// dropping the age for a missing/zero/unparseable created_at. Pure.
+///
+/// **No tmux pane name** (plan 013 S3m). It used to sit between the workdir and
+/// the age, and it was only ever the handle the terminal attached to — a fact
+/// about the transport, not about the session. A roost-backed row has no tmux
+/// session to name at all, and the attach affordance is gated on
+/// `kind_features.attach` rather than on the presence of a name here.
 String sessionMetaLine(
   String shedName,
-  String tmuxSession,
   String? createdAtIso, {
   DateTime? now,
   String? workdir,
@@ -90,7 +95,6 @@ String sessionMetaLine(
     // recoverable from `sx ls`; the directory is recoverable from nowhere else
     // on screen.
     if (workdir != null && workdir.isNotEmpty) workdir,
-    tmuxSession,
     if (age != null) 'made $age ago',
   ].join(' · ');
 }

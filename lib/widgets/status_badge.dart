@@ -124,3 +124,31 @@ class StatusBadge extends StatelessWidget {
     );
   }
 }
+
+/// The "roost notification" indicator — a small dot shown beside a session's
+/// name when its `attention` bit is set (roost's sticky `has_notification`,
+/// plan 013 S3m/§3.5).
+///
+/// **Not an activity state.** `attention` survives until roost itself clears
+/// it (a focus event or `tab.clear_notification`), so folding it into the
+/// activity badge or the rail — both derived from `activity`/lifecycle only —
+/// would leave a card asking for attention long after the thing that asked for
+/// it was dealt with. It gets its own small dot instead, in the theme's accent
+/// (the same brand color the primary action uses), distinct from the
+/// tone-mapped `dotOk`/`dotWarn`/`dotErr` family [StatusDot] draws from.
+class AttentionDot extends StatelessWidget {
+  const AttentionDot({super.key});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'roost notification',
+    child: Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: context.shed.accent,
+        shape: BoxShape.circle,
+      ),
+    ),
+  );
+}

@@ -5,8 +5,6 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 import '../../machines/machine_feed.dart';
 import '../../machines/machine_record.dart';
 import '../../providers.dart';
-import '../rc/session_watch_screen.dart';
-import '../rc/session_watch_source.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
 import '../../src/rust/api/dto_rc.dart';
@@ -17,13 +15,13 @@ import '../../widgets/kind_chip.dart';
 import '../../widgets/host_groups.dart';
 import '../../widgets/session_actions.dart';
 import '../../widgets/open_pill.dart';
-import '../terminal/terminal_screen.dart';
-import '../terminal/terminal_target.dart';
+import '../terminal/roost_peek_screen.dart';
 import '../../widgets/status_badge.dart';
 
-/// **Machine sessions, beside shed sessions** (plan 012, roadmap R4).
+/// **Machine sessions, beside shed sessions** (plan 012, roadmap R4; re-sourced
+/// onto roost by plan 013 S3m).
 ///
-/// A machine is a native host reached over SSH, running the RC activity hub
+/// A machine is a native host reached over SSH, running a `roost-session`
 /// directly — no shed server in the path. The rows look like shed rows on
 /// purpose: a session is a session, and the only thing a person needs to know is
 /// WHERE it is running, which the group header says once.
@@ -33,9 +31,9 @@ import '../../widgets/status_badge.dart';
 /// * **Unreachable is a normal state.** A machine that is asleep or off-network
 ///   keeps its last-known rows, dimmed, with the reason shown — never an error,
 ///   and never a silently empty list.
-/// * **Rows key on the MACHINE, not on a shed.** A directly-read hub reports an
-///   empty `shed` for every session, so keying on it would collide two machines
-///   that happen to share a slug.
+/// * **Rows key on the MACHINE, not on a shed.** A directly-read session
+///   reports an empty `shed` for every row, so keying on it would collide two
+///   machines that happen to share a slug.
 class MachineSessionsView extends ConsumerWidget {
   const MachineSessionsView({super.key});
 
@@ -245,6 +243,17 @@ class _MachineSessionCard extends StatelessWidget {
                     pulse: display.pulse,
                   ),
                 ],
+                if (session.attention) ...[
+                  const SizedBox(width: 6),
+                  AttentionDot(
+                    // Scoped by MACHINE, not slug alone: a slug is a roost
+                    // tab id, per-daemon, so two machines can both have a
+                    // tab "4" — an unscoped key would collide their rows.
+                    key: ValueKey(
+                      'machine-attention-${machine.name}-${session.slug}',
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 9),
@@ -258,7 +267,6 @@ class _MachineSessionCard extends StatelessWidget {
                     // repeated: the list is grouped by it.
                     [
                       if (session.workdir != null) session.workdir!,
-                      session.tmuxSession,
                       if (!state.reachable) 'last known',
                     ].join(' · '),
                     maxLines: 1,
@@ -268,16 +276,20 @@ class _MachineSessionCard extends StatelessWidget {
                 ),
               ],
             ),
-            // Watch, and end. Steering and interrupting live INSIDE the watch
-            // view, beside the output: nobody directs an agent they cannot see,
-            // and a control on a list row is a decision made blind. What a
-            // session accepts is still gated on `kind_features` — that gate
-            // just belongs where the acting happens.
+            // The terminal, and end. A roost row advertises no feed, so there
+            // is nothing to watch and nothing to steer from here; what a
+            // session accepts is still gated on `kind_features`, and roost's
+            // answer to all of it is no.
             if (state.reachable)
               _MachineActions(
                 machineName: state.machine.name,
                 session: session,
                 state: state,
+                // The single discriminator every attach affordance reads
+                // (`lib/rc/rc_ui.dart`): a roost row is `native-remote`
+                // (→ the read-only peek); nothing else offers an in-app
+                // attach from a machine's session list.
+                attach: attachKind(state.featuresFor(session)),
               ),
           ],
         ),
@@ -286,22 +298,28 @@ class _MachineSessionCard extends StatelessWidget {
   }
 }
 
-/// Watch and End — the two things worth doing from a LIST.
+/// The terminal (or peek) and End — what is worth doing from a LIST.
 ///
-/// Everything that steers a session (a turn, a keystroke, an interrupt) is on
-/// the watch screen instead, because acting on an agent without reading its
-/// output first is guesswork. End stays here because it is not direction: it is
-/// removal, and it needs no context to mean what it says.
+/// The Watch route is gone with the hub (plan 013 S3m): a roost-backed session
+/// reports its status but serves no transcript, so a watch screen there could
+/// only fail. End stays because it is not direction: it is removal, and it
+/// needs no context to mean what it says.
 class _MachineActions extends ConsumerStatefulWidget {
   const _MachineActions({
     required this.machineName,
     required this.session,
     required this.state,
+    required this.attach,
   });
 
   final String machineName;
   final BridgeRcSession session;
   final MachineFeedState state;
+
+  /// This session's `attachKind` — `'native-remote'` offers the read-only
+  /// peek; anything else (a machine never advertises `'tmux'`) offers no
+  /// in-app attach at all.
+  final String attach;
 
   @override
   ConsumerState<_MachineActions> createState() => _MachineActionsState();
@@ -311,26 +329,16 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
   bool _busy = false;
   String? _error;
 
-  void _watch() => Navigator.of(context).push(
+  /// Open the read-only roost peek (`tab.dump`, polled) for this session.
+  /// `session.tabId` is guaranteed non-null here: only present when
+  /// `widget.attach == 'native-remote'` gates this button on (a roost row
+  /// always carries its tab id — see `BridgeRcSession.tabId`).
+  void _openPeek() => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => SessionWatchScreen(
-        source: MachineWatchSource(
-          machineName: widget.machineName,
-          session: widget.session,
-        ),
-      ),
-    ),
-  );
-
-  /// Attach to the session's tmux pane over SSH to the machine.
-  void _openTerminal() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => TerminalScreen(
-        target: MachineTerminalTarget(
-          machineName: widget.machineName,
-          slug: widget.session.slug,
-          title: '${widget.machineName}/${widget.session.slug}',
-        ),
+      builder: (_) => RoostPeekScreen(
+        machineName: widget.machineName,
+        tabId: widget.session.tabId!,
+        title: widget.session.displayName,
       ),
     ),
   );
@@ -355,38 +363,32 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
   @override
   Widget build(BuildContext context) {
     final slug = widget.session.slug;
-    // **Gated on the kind's own capability, exactly as the shed card is.**
-    // A kind with no feed opens a watch screen that can only fail against the
-    // messages endpoint — and a machine session offering Watch where the same
-    // kind in a shed does not is precisely the inconsistency this block exists
-    // to remove. Unknown capabilities mean no, which is the safe direction.
-    final canWatch = widget.state.featuresFor(widget.session)?.watch ?? false;
+    // Scoped by MACHINE, not slug alone: a slug is a roost tab id, per-daemon
+    // — two machines can both have a tab "4", and an unscoped key would
+    // collide their controls. Every per-row key below carries this suffix.
+    final rowKey = '${widget.machineName}-$slug';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        // The SAME row a shed card renders — see `session_actions.dart`. Watch
-        // primary and labelled, the terminal secondary and compact, delete a
-        // bare glyph at the far edge.
+        // The SAME row a shed card renders — see `session_actions.dart`. The
+        // terminal secondary and compact, delete a bare glyph at the far edge.
         Row(
           children: [
-            if (canWatch) ...[
-              AccentPill(
-                key: ValueKey('machine-watch-$slug'),
-                icon: Icons.visibility_outlined,
-                label: 'Watch',
-                onTap: _watch,
+            // Gated on `attachKind`, not on the kind: a `native-remote` row
+            // (every roost row, currently) gets the read-only peek; anything
+            // else offers no in-app attach from a machine's session list at
+            // all (a machine never advertises `tmux`). The key —
+            // `machine-open-<machine>-<slug>` — is scoped by machine name
+            // because `<slug>` alone is a roost tab id, per-daemon, so two
+            // machines can both hand back a tab "4".
+            if (widget.attach == 'native-remote')
+              OpenPill(
+                key: ValueKey('machine-open-$rowKey'),
+                onTap: _openPeek,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                tooltip: 'Peek',
               ),
-              const SizedBox(width: 8),
-            ],
-            // Every RC session lives in a tmux pane, so the terminal is the one
-            // way in that is always available — including for a kind with no
-            // feed at all, which would otherwise have no way in from here.
-            OpenPill(
-              key: ValueKey('machine-open-$slug'),
-              onTap: _openTerminal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-            ),
             // A claude session advertises a claude.ai URL; the same pair the
             // shed row offers, because it is the same session.
             if (widget.session.url != null) ...[
@@ -394,12 +396,12 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
               SessionUrlActions(
                 url: widget.session.url,
                 keyPrefix: 'machine',
-                keySuffix: slug,
+                keySuffix: rowKey,
               ),
             ],
             const Spacer(),
             GhostIconButton(
-              key: ValueKey('machine-kill-$slug'),
+              key: ValueKey('machine-kill-$rowKey'),
               icon: Icons.delete_outline,
               tooltip: 'End session',
               busy: _busy,
@@ -410,7 +412,7 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
         if (_error != null)
           Text(
             _error!,
-            key: ValueKey('machine-control-error-$slug'),
+            key: ValueKey('machine-control-error-$rowKey'),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: context.shed.errFg),

@@ -18,7 +18,7 @@ BridgeRcSession _session({
   host: 'h',
   shed: 'web',
   slug: slug,
-  tmuxSession: 'rc-$slug',
+  attention: false,
   displayName: displayName,
   kind: kind,
   state: state,

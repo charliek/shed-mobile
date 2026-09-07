@@ -132,6 +132,37 @@ void main() {
     });
   });
 
+  group('attachKind', () {
+    BridgeRcKindFeatures features(String attach) => BridgeRcKindFeatures(
+      postInput: false,
+      approvals: 'none',
+      watch: false,
+      input: '',
+      feed: '',
+      interrupt: false,
+      attach: attach,
+    );
+
+    test('null falls back to tmux (the pre-v2 fallback)', () {
+      expect(attachKind(null), 'tmux');
+    });
+
+    test('an empty attach string falls back to tmux', () {
+      expect(attachKind(features('')), 'tmux');
+    });
+
+    test('native-remote passes through verbatim', () {
+      expect(attachKind(features('native-remote')), 'native-remote');
+    });
+
+    test('any other non-empty value passes through verbatim', () {
+      // Negative control alongside the two known values above: an
+      // unrecognized attach string must not be silently coerced to either
+      // known affordance — a caller decides "no affordance" for it.
+      expect(attachKind(features('none')), 'none');
+    });
+  });
+
   group('permission modes', () {
     test('the create-time default is a member of every kind set', () {
       expect(defaultRcPermissionMode, 'auto');

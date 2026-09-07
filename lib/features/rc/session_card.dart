@@ -22,10 +22,12 @@ import 'session_watch_screen.dart';
 import 'session_watch_source.dart';
 
 /// A cross-host rc-session card: lifecycle badge, a live activity badge (when the
-/// hub reports one and lifecycle permits it), kind chip, a meta line
-/// (shed · tmux · age), an optional one-line last-message preview, a "watch"
+/// hub reports one and lifecycle permits it), an attention dot (roost's sticky
+/// notification, plan 013 S3m — see [AttentionDot]), kind chip, a meta line
+/// (shed · workdir · age), an optional one-line last-message preview, a "watch"
 /// affordance (→ the codex message-feed view) for watch-capable kinds, a dark
-/// "›_ open" pill (→ the in-app terminal), and delete.
+/// "›_ open" pill (→ the in-app terminal) shown only when `attachKind ==
+/// 'tmux'` (a shed row, always — see `lib/rc/rc_ui.dart`), and delete.
 ///
 /// When [live] is true the card overlays the host's `GET /api/rc/events` stream
 /// (via [liveActivityProvider]) onto the base overview snapshot, so its activity
@@ -158,7 +160,13 @@ class _SessionCardState extends ConsumerState<SessionCard> {
 
     // Watch affordance: only for a kind whose capabilities advertise the feed.
     final caps = ref.watch(shedCapabilitiesProvider(_key)).value;
-    final canWatch = caps?.kindFeatures[s.kind.wire]?.watch ?? false;
+    final features = caps?.kindFeatures[s.kind.wire];
+    final canWatch = features?.watch ?? false;
+    // A shed row is `tmux` absent capabilities (the pre-v2 fallback) — the
+    // xterm attach. A `native-remote`/other value has no shed-side affordance
+    // (roost owns machine rows, never a shed's); this is the discriminator, so
+    // a shed row can never silently lose its `>_ open` pill on an old server.
+    final canOpen = attachKind(features) == 'tmux';
 
     final badge = StatusBadge(
       tone: shedStatusTone(state.wire).tone,
@@ -191,7 +199,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     final metaText = Text(
       sessionMetaLine(
         widget.shedName,
-        s.tmuxSession,
         s.createdAt,
         workdir: s.workdir,
         originIsImplied: widget.originIsImplied,
@@ -229,6 +236,12 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                           const SizedBox(width: 8),
                           activityBadge,
                         ],
+                        if (s.attention) ...[
+                          const SizedBox(width: 8),
+                          AttentionDot(
+                            key: ValueKey('all-session-attention-$_base'),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -242,11 +255,13 @@ class _SessionCardState extends ConsumerState<SessionCard> {
               ),
               const SizedBox(width: 12),
               ..._leadingActions(c, canWatch),
-              OpenPill(
-                key: ValueKey('all-session-open-$_base'),
-                onTap: _open,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
+              if (canOpen) ...[
+                OpenPill(
+                  key: ValueKey('all-session-open-$_base'),
+                  onTap: _open,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ],
               if (url != null) ...[
                 const SizedBox(width: 8),
                 SessionUrlActions(
@@ -275,6 +290,10 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                     const SizedBox(width: 6),
                     activityBadge,
                   ],
+                  if (s.attention) ...[
+                    const SizedBox(width: 6),
+                    AttentionDot(key: ValueKey('all-session-attention-$_base')),
+                  ],
                 ],
               ),
               const SizedBox(height: 9),
@@ -293,11 +312,13 @@ class _SessionCardState extends ConsumerState<SessionCard> {
               Row(
                 children: [
                   ..._leadingActions(c, canWatch),
-                  OpenPill(
-                    key: ValueKey('all-session-open-$_base'),
-                    onTap: _open,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                  ),
+                  if (canOpen) ...[
+                    OpenPill(
+                      key: ValueKey('all-session-open-$_base'),
+                      onTap: _open,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                  ],
                   // The terminal first, then the link pair: `>_ open` is how
                   // you reach the session itself, and the URL is a second way
                   // in to the same one.

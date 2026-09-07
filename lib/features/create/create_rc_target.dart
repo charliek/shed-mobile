@@ -110,6 +110,22 @@ sealed class CreateRcTarget {
   String get nameFieldLabel;
   String get workdirFieldLabel;
 
+  /// Whether a create HERE can carry the optional detail fields — a session
+  /// name, a kickoff prompt, a permission mode.
+  ///
+  /// The form hides all three when it cannot, AND — separately — never sends a
+  /// permission mode to [create] when it cannot: hiding the dropdown stops a
+  /// new selection, but `_permissionMode` still starts non-null (`auto`), so
+  /// the screen's `_modeFor` gates on this flag too before it ever reaches
+  /// [create]. A machine's sessions are roost tabs now (plan 013 S3m), and
+  /// roost's `tab.open` takes an argv and a directory: it titles the tab
+  /// itself, and a prompt or a posture needs a provider script on the far
+  /// side, which is a later slice. Offering fields whose contents would be
+  /// dropped on the floor is the failure mode this flag exists to prevent —
+  /// the kind and the directory are the whole of what a
+  /// machine create can honestly ask for.
+  bool get acceptsKickoff => true;
+
   /// Reduce this target's capability source into everything the offering +
   /// status area needs.
   RcCapsView caps(WidgetRef ref);
@@ -279,16 +295,21 @@ class MachineRcTarget extends CreateRcTarget {
 
   @override
   String get noKindsHint =>
-      '$machineName has no agents installed that sx can run.';
+      '$machineName has no agents installed that roost can run.';
 
+  /// Never rendered — roost names the tab itself (see [acceptsKickoff]).
   @override
-  String get nameFieldLabel =>
-      'Session name (optional — defaults to $machineName/slug)';
+  String get nameFieldLabel => 'Session name';
 
-  // No $SHED_WORKSPACE on a machine: the engine runs where ssh lands it, which
-  // is the account's home directory.
+  // No $SHED_WORKSPACE on a machine: roost opens the tab in the project's
+  // directory, and with neither that nor a workdir, the account's home.
   @override
   String get workdirFieldLabel => 'Workdir (optional — defaults to \$HOME)';
+
+  /// See [CreateRcTarget.acceptsKickoff]: roost's `tab.open` starts the agent
+  /// and nothing more.
+  @override
+  bool get acceptsKickoff => false;
 
   @override
   void refresh(WidgetRef ref) =>
@@ -331,8 +352,10 @@ class MachineRcTarget extends CreateRcTarget {
       );
     }
     final caps = state.capabilities;
-    // Reachable but the probe found nothing: an old `sx`, or a probe that
-    // failed on its own. Base is honest and a retry can self-heal.
+    // Reachable but no capabilities. Unreachable in practice since plan 013:
+    // a machine's capabilities are SYNTHESIZED (`roostCapabilities`), not
+    // probed, so there is no round trip left to miss. Kept as the honest
+    // degradation for a state built without them.
     if (caps == null) {
       return baseCapsView(
         retry: true,
@@ -343,6 +366,10 @@ class MachineRcTarget extends CreateRcTarget {
     return presentCapsView(caps);
   }
 
+  /// [displayName], [prompt] and [permissionMode] are not plumbed: roost's
+  /// `tab.open` starts the agent in a directory and titles the tab itself. They
+  /// are not silently dropped either — [acceptsKickoff] is false, so the form
+  /// never offers them and they arrive null.
   @override
   Future<RcCreated> create(
     WidgetRef ref, {
@@ -353,17 +380,9 @@ class MachineRcTarget extends CreateRcTarget {
     String? permissionMode,
   }) async {
     final feed = ref.read(machineFeedControllerProvider(machineName));
-    final slug = await feed.create(
-      kind: kind,
-      // Blank → null, so the feed applies its `<machine>/<slug>` default
-      // where the slug actually exists.
-      displayName: displayName,
-      workdir: workdir,
-      prompt: prompt,
-      permissionMode: permissionMode,
-    );
-    // The one-shot create does not report state back the way a shed's
-    // `--wait` does; the hub's next reconcile carries it.
+    final slug = await feed.create(kind: kind, workdir: workdir);
+    // `tab.open` answers with the tab, not with a settled agent; the watcher's
+    // next poll carries the real lifecycle a second or two later.
     return (slug: slug, state: 'created', url: null, result: slug);
   }
 }
