@@ -189,7 +189,7 @@ pub fn roost_watcher_events(handle: &BridgeRoostWatcher, sink: StreamSink<Bridge
         return;
     };
     let state = handle.state.clone();
-    let forwarder = bridge_rt().spawn(forward_loop(rx, sink));
+    let forwarder = bridge_rt().spawn(forward_loop(rx, sink, state.clone()));
     // Re-check `stopped`: if teardown won the race during the spawn, abort the
     // task we just started and do NOT count it — the decrement already happened.
     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -207,7 +207,21 @@ pub fn stop_roost_watcher(handle: &BridgeRoostWatcher) {
     teardown(&handle.state);
 }
 
-async fn forward_loop(mut rx: UnboundedReceiver<RoostUpdate>, sink: StreamSink<BridgeRoostUpdate>) {
+/// Drain `rx`, map each update, push it to the Dart sink — and SELF-TEAR-DOWN
+/// when the loop ends, exactly as [`super::watcher::forward_loop`] does.
+///
+/// That last part is the whole reason `state` is passed in. The loop ends either
+/// because the watcher's channel closed (teardown already ran) or because
+/// `sink.add` failed — and the second case is a Dart consumer that cancelled the
+/// stream WITHOUT calling [`stop_roost_watcher`]. Without the teardown here the
+/// forwarder would exit while the [`RoostWatcher`] kept polling its held
+/// connection forever with nobody reading it. `teardown` is idempotent, so the
+/// later sync stop / `Drop` still costs exactly one decrement of each counter.
+async fn forward_loop(
+    mut rx: UnboundedReceiver<RoostUpdate>,
+    sink: StreamSink<BridgeRoostUpdate>,
+    state: Arc<Mutex<RoostWatcherInner>>,
+) {
     while let Some(update) = rx.recv().await {
         // A failed send means Dart cancelled without calling stop — the backstop
         // for a consumer that vanished.
@@ -215,6 +229,7 @@ async fn forward_loop(mut rx: UnboundedReceiver<RoostUpdate>, sink: StreamSink<B
             break;
         }
     }
+    teardown(&state);
 }
 
 /// The whole Rust→Dart mapping, as a pure function so it is testable without a

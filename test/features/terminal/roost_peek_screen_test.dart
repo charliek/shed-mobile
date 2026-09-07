@@ -25,11 +25,21 @@ class _FakePeekSource implements PeekSource {
   /// dispose-races-open leak.
   Future<void>? openFuture;
 
+  /// Same gate for `dump()` — lets a test hold the FIRST dump pending across a
+  /// `dispose()`, which is the window in which `_open()` used to go on and arm
+  /// a periodic timer nothing would ever cancel.
+  Future<void>? dumpFuture;
+
+  /// And for `close()`, so a test can sit inside the gap `_retry()` awaits and
+  /// tap Retry a second time.
+  Future<void>? closeFuture;
+
   final List<Object> _dumpOutcomes = [];
   Object? _lastOutcome;
 
   int openCalls = 0;
   int closeCalls = 0;
+  int dumpCalls = 0;
 
   void pushDump(BridgeTabDump d) => _dumpOutcomes.add(d);
   void pushError([Object? e]) =>
@@ -49,6 +59,12 @@ class _FakePeekSource implements PeekSource {
 
   @override
   Future<BridgeTabDump> dump() async {
+    dumpCalls += 1;
+    final gate = dumpFuture;
+    if (gate != null) {
+      dumpFuture = null; // only the first dump is held
+      await gate;
+    }
     final outcome = _dumpOutcomes.isNotEmpty
         ? _dumpOutcomes.removeAt(0)
         : (_lastOutcome ?? StateError('no dump queued'));
@@ -60,6 +76,11 @@ class _FakePeekSource implements PeekSource {
   @override
   Future<void> close() async {
     closeCalls += 1;
+    final gate = closeFuture;
+    if (gate != null) {
+      closeFuture = null; // only the first close is held
+      await gate;
+    }
   }
 }
 
@@ -263,6 +284,84 @@ void main() {
       expect(source.closeCalls, 1);
     },
   );
+
+  testWidgets(
+    'disposing while the FIRST dump is in flight arms no periodic timer',
+    (tester) async {
+      // The race `_open()` used to lose: `open()` has already landed and
+      // `_opening` is false, so `dispose()` correctly closes the source — but
+      // the first `await _refresh()` is still parked. `_refresh()` bails on
+      // `!mounted`, `_open()` resumed anyway, and `Timer.periodic` was armed
+      // AFTER `dispose()` had already cancelled `_timer`. Nothing could ever
+      // cancel that one: it polls a closed source every 2 s forever.
+      final dumped = Completer<void>();
+      final source = _FakePeekSource()
+        ..dumpFuture = dumped.future
+        ..pushDump(_dump(['x']));
+
+      await tester.pumpWidget(_app(source));
+      await _settle(tester); // reach the pending dump() await
+      expect(source.dumpCalls, 1);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(
+        source.closeCalls,
+        1,
+        reason: 'open() had settled, so dispose owns the close',
+      );
+
+      // Let the dump land after the widget is gone.
+      dumped.complete();
+      await _settle(tester);
+
+      // Well past two poll intervals. A timer armed after dispose would have
+      // fired here (and flutter_test would additionally fail the test for a
+      // timer still pending at teardown).
+      await tester.pump(const Duration(seconds: 6));
+      expect(
+        source.dumpCalls,
+        1,
+        reason: 'no timer may poll a source the screen has already closed',
+      );
+      expect(source.closeCalls, 1);
+    },
+  );
+
+  testWidgets('two Retry taps inside one close() open exactly one source', (
+    tester,
+  ) async {
+    // `_retry()` awaits `close()` BEFORE `_open()` flips `_opening`, and the
+    // error line (with its button) is still on screen for that whole gap. Two
+    // taps in it used to start two `_open()` calls that raced to assign
+    // `_source` — the loser's handle stayed open with nothing holding it.
+    final closed = Completer<void>();
+    final source = _FakePeekSource()
+      ..openError = StateError('the machine is not connected')
+      ..closeFuture = closed.future
+      ..pushDump(_dump(['back online']));
+
+    await tester.pumpWidget(_app(source));
+    await _settle(tester);
+    expect(source.openCalls, 1);
+    expect(find.byKey(const ValueKey('roost-peek-retry')), findsOneWidget);
+
+    // Both taps land before any pump, so the button is still in the tree for
+    // the second one — exactly the gap a fast double-tap hits.
+    await tester.tap(find.byKey(const ValueKey('roost-peek-retry')));
+    await tester.tap(find.byKey(const ValueKey('roost-peek-retry')));
+
+    closed.complete();
+    await _settle(tester);
+
+    expect(
+      source.openCalls,
+      2,
+      reason: 'the second tap must be ignored while the first retry is opening',
+    );
+    expect(source.closeCalls, 1, reason: 'and it must not close a second time');
+    expect(find.byKey(const ValueKey('roost-peek-retry')), findsNothing);
+    expect(find.text('back online'), findsOneWidget);
+  });
 
   testWidgets(
     'a source-build failure (e.g. no tunnel port) renders the open error, '

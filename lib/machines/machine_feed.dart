@@ -244,6 +244,33 @@ class DialDedupe<T> {
   }
 }
 
+/// The fence [MachineFeed.start] puts after each of its awaits: did a
+/// [MachineFeed.stop] land while this resource was being built?
+///
+/// If it did, the resource belongs to nobody — [MachineFeed._teardown] has
+/// already nulled and released whatever it could see — so it is released HERE
+/// and the caller is told to give up rather than install it behind the feed's
+/// back. Returns true when it was released (caller must return), false when the
+/// generation still holds and the caller may install it.
+///
+/// Extracted, generic, and `@visibleForTesting` for exactly the reasons
+/// [DialDedupe] is: `start()` builds a real [RoostTunnel] (a live
+/// `ServerSocket`) and a real [BridgeRoostWatcher] (an FRB opaque handle, not
+/// constructible in a unit test at all), but the decision has nothing to do
+/// with what was built. With a dummy resource the race is testable — see
+/// `test/machines/machine_feed_test.dart`.
+@visibleForTesting
+Future<bool> releaseIfStopped<T>({
+  required int startedAt,
+  required int current,
+  required T resource,
+  required Future<void> Function(T) release,
+}) async {
+  if (startedAt == current) return false;
+  await release(resource);
+  return true;
+}
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
@@ -340,6 +367,11 @@ class MachineFeed {
   Future<void> start() async {
     if (_watcher != null || _starting) return;
     _starting = true;
+    // The same fence `_connect` uses: a `stop()` during either await below has
+    // already run `_teardown()`, so installing what this call built would put a
+    // tunnel or a watcher back behind the feed's back. Nothing owns them at that
+    // point, so this call closes what it made rather than leaking it.
+    final generation = _generation;
     try {
       final tunnel = await RoostTunnel.open(
         connect: _connect,
@@ -348,6 +380,14 @@ class MachineFeed {
         remoteCommand: roostRemoteCommand(),
         machine: machine.name,
       );
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: tunnel,
+        release: (t) => t.close(),
+      )) {
+        return;
+      }
       _tunnel = tunnel;
 
       // Rust is handed the PORT and nothing else — no host, no key, no SSH.
@@ -355,6 +395,18 @@ class MachineFeed {
         machine: machine.name,
         localPort: tunnel.port,
       );
+      // The worst of the two: `_watcher` non-null with `_tunnel` already nulled
+      // by the teardown makes `isRunning` true and `tunnelPort` null, and every
+      // later `start()` then returns early on that stale `_watcher` — the feed
+      // never comes back.
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: watcher,
+        release: (w) => stopRoostWatcher(handle: w),
+      )) {
+        return;
+      }
       _watcher = watcher;
       _sub = roostWatcherEvents(handle: watcher).listen(
         _apply,

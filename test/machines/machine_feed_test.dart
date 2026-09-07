@@ -64,10 +64,11 @@ void main() {
         BridgeRoostUpdate.snapshot(sessions: [_row('2'), _row('3')]),
       );
 
-      expect(after.sessions.map((s) => s.slug), [
-        '2',
-        '3',
-      ], reason: 'a tab roost no longer lists must not survive the snapshot');
+      expect(
+        after.sessions.map((s) => s.slug),
+        ['2', '3'],
+        reason: 'a tab roost no longer lists must not survive the snapshot',
+      );
       expect(after.reachable, isTrue);
       expect(after.connectedOnce, isTrue);
       expect(after.detail, isNull, reason: 'a snapshot clears the last reason');
@@ -264,5 +265,78 @@ void main() {
 
       expect(dedupe.pendingFor(0), isNull);
     });
+  });
+
+  group('releaseIfStopped', () {
+    // The fence [MachineFeed.start] puts after each of its awaits. `start()`
+    // itself is not reachable from here — it opens a real ServerSocket and
+    // creates an FRB opaque watcher handle — so, exactly as with DialDedupe
+    // above, the decision it delegates to is tested with a dummy resource.
+    //
+    // The bug: `stop()` bumps the generation and tears down, but a `start()`
+    // parked on `RoostTunnel.open` or `createRoostWatcher` woke up afterwards
+    // and installed what it had built anyway. In the watcher case that left
+    // `_watcher` non-null with `_tunnel` already null, so `isRunning` said true,
+    // `tunnelPort` said null, and every later `start()` returned early on the
+    // stale watcher — the feed never came back.
+
+    test('a resource built in the current generation is left for the caller '
+        'to install', () async {
+      var released = false;
+      final stale = await releaseIfStopped<String>(
+        startedAt: 3,
+        current: 3,
+        resource: 'tunnel',
+        release: (_) async => released = true,
+      );
+
+      expect(stale, isFalse, reason: 'no stop happened; install it');
+      expect(released, isFalse, reason: 'and do not release what is now owned');
+    });
+
+    test('a resource that a stop orphaned is released, and the caller is told '
+        'to give up', () async {
+      final releasedNames = <String>[];
+      final stale = await releaseIfStopped<String>(
+        // A stop ran during the await, so _generation moved on.
+        startedAt: 3,
+        current: 4,
+        resource: 'watcher',
+        release: (r) async => releasedNames.add(r),
+      );
+
+      expect(stale, isTrue, reason: 'the caller must return, not install');
+      expect(
+        releasedNames,
+        ['watcher'],
+        reason:
+            'nothing owns it now — _teardown() already ran and could not see '
+            'it, so this is the only place it can be released',
+      );
+    });
+
+    test(
+      'the release is awaited before the caller is told to give up',
+      () async {
+        // start() returns straight after this, so a release that is merely
+        // STARTED would race the next start() — the point of awaiting it here.
+        final gate = Completer<void>();
+        var finished = false;
+
+        final pending = releaseIfStopped<String>(
+          startedAt: 0,
+          current: 1,
+          resource: 'tunnel',
+          release: (_) => gate.future,
+        ).then((_) => finished = true);
+
+        await Future<void>.delayed(Duration.zero);
+        expect(finished, isFalse, reason: 'still awaiting release()');
+
+        gate.complete();
+        await pending;
+        expect(finished, isTrue);
+      },
+    );
   });
 }

@@ -156,7 +156,11 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final slug in ['1', '2', '3']) {
-      expect(find.byKey(ValueKey('machine-watch-$slug')), findsNothing);
+      // MACHINE-SCOPED, like every positive assertion in this file: the render
+      // site keys each control `machine-<control>-${machineName}-${slug}`, so
+      // an unscoped key is one no widget could ever carry and its absence
+      // proves nothing.
+      expect(find.byKey(ValueKey('machine-watch-mini3-$slug')), findsNothing);
       // The negative control: the rows DID render, so the absences above are
       // about the affordance and not about an empty screen.
       expect(find.byKey(ValueKey('machine-kill-mini3-$slug')), findsOneWidget);
@@ -203,7 +207,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('machine-watch-1')), findsNothing);
+    expect(find.byKey(const ValueKey('machine-watch-mini3-1')), findsNothing);
     expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsOneWidget);
   });
 
@@ -304,7 +308,7 @@ void main() {
     await tester.pumpAndSettle();
 
     for (final control in ['steer', 'interrupt', 'approve', 'watch']) {
-      expect(find.byKey(ValueKey('machine-$control-1')), findsNothing);
+      expect(find.byKey(ValueKey('machine-$control-mini3-1')), findsNothing);
     }
     for (final label in ['Steer', 'Interrupt', 'Approve', 'Watch']) {
       expect(find.text(label), findsNothing);

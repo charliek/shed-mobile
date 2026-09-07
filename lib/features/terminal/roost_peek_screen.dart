@@ -168,6 +168,13 @@ class _RoostPeekScreenState extends ConsumerState<RoostPeekScreen> {
       }
       setState(() => _opening = false);
       await _refresh(); // first frame immediately, not after a 2s wait
+      // Disposed while that first `dump()` was in flight: `dispose()` has
+      // already cancelled `_timer` and (seeing `_opening` false) closed the
+      // source. Starting a periodic timer NOW would create one nothing will
+      // ever cancel, polling a closed source every 2 s for the life of the
+      // isolate — so the mounted check has to sit AFTER the await, not only
+      // inside `_refresh()`.
+      if (!mounted) return;
       _timer?.cancel();
       _timer = Timer.periodic(_refreshInterval, (_) => unawaited(_refresh()));
     } catch (e) {
@@ -218,10 +225,26 @@ class _RoostPeekScreenState extends ConsumerState<RoostPeekScreen> {
   /// Retry after an OPEN failure: close whatever partial state exists (a
   /// [PeekSource] that failed `open()` may still hold a live socket) and start
   /// over from scratch.
+  ///
+  /// SERIALIZED on `_opening`. The retry button only renders while `_openError`
+  /// is set, but `close()` is awaited before `_open()` sets `_opening` itself —
+  /// so without this guard a second tap inside that gap starts a second
+  /// `_open()`, and the two race to assign `_source`. The loser's handle is then
+  /// open with nothing holding it. Flipping `_opening` here closes the gap AND
+  /// swaps the error line for the spinner on the first tap.
   Future<void> _retry() async {
+    if (_opening) return;
+    setState(() {
+      _opening = true;
+      _openError = null;
+    });
     _timer?.cancel();
     _timer = null;
     await _source?.close();
+    // Disposed mid-close: `_open()` would `setState` on a dead State. The
+    // source is already closed by the await above, and `dispose()` deliberately
+    // skipped it (`_opening` is true), so there is nothing left to release.
+    if (!mounted) return;
     _source = null;
     await _open();
   }
