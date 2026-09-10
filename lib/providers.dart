@@ -8,6 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app_section.dart';
 import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
+import 'lanes/lane_controller.dart';
+import 'lanes/lane_source.dart';
+import 'lanes/lane_state.dart';
 import 'rc/activity_overlay.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
@@ -18,6 +21,7 @@ import 'machines/machine_store.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
+import 'src/rust/api/dto_lane.dart';
 import 'src/rust/api/dto_rc.dart';
 import 'src/rust/api/error.dart';
 import 'src/rust/api/watcher.dart';
@@ -733,3 +737,126 @@ final machineFeedProvider = StreamProvider.autoDispose
       yield feed.state;
       yield* feed.updates;
     });
+
+// ---------------------------------------------------------------------------
+// Agent lanes (plan 018 §3.11, roost pivot S4m)
+// ---------------------------------------------------------------------------
+
+/// One lane's address: the machine, and the ROW's slug (roost's tab id).
+///
+/// **The slug, not the agent session id.** The session id is part of the stamp
+/// being reconciled — a tab that restarts comes back with a new one — so it
+/// cannot also be the key that has to survive a change to it. A record, so the
+/// family key compares structurally (the [ShedRef] convention).
+typedef LaneRef = ({String machine, String slug});
+
+/// One row's agent-lane stamp, or null when the machine's rows no longer carry
+/// this session at all.
+@visibleForTesting
+BridgeAgentLaneStamp? laneStampFor(MachineFeedState state, String slug) {
+  for (final s in state.sessions) {
+    if (s.slug == slug) return s.agentLane;
+  }
+  return null;
+}
+
+/// The stamp stream [LaneController.reconcile] consumes.
+///
+/// **Only AUTHORITATIVE states count.** A feed that has never connected carries
+/// no rows at all, and mapping that to "the row is gone" would abandon every
+/// lane during the first second of a cold start. `foldRoostUpdate` keeps the
+/// rows across a `Down`, so once `connectedOnce` is true an absent row is a
+/// real absence — which is exactly when a lane should stop retrying.
+@visibleForTesting
+Stream<BridgeAgentLaneStamp?> laneStamps(
+  Stream<MachineFeedState> updates,
+  String slug,
+) => updates
+    .where((s) => s.connectedOnce)
+    .map((s) => laneStampFor(s, slug))
+    .distinct();
+
+/// Whether a machine's agent servers are on THIS device's loopback.
+///
+/// The desktop's implicit-`localhost` reach, derived from the record instead of
+/// a registry: a machine dialled at a loopback address is this device, so its
+/// `127.0.0.1:<port>` IS our `127.0.0.1:<port>` and there is nothing to
+/// forward. Everything else needs the feed's SSH connection.
+@visibleForTesting
+LaneReach laneReachFor(MachineRecord machine) =>
+    const {'localhost', '127.0.0.1', '::1', '[::1]'}.contains(machine.host)
+    ? LaneReach.local
+    : LaneReach.machine;
+
+/// The lane bridge, as one overridable seam.
+///
+/// A provider rather than a bare `const BridgeLaneSource()` inside the
+/// controller provider, for the [rcWatcherBridgeProvider] reason: the whole
+/// point of [LaneSource] is that a widget test can stub the bridge, and it can
+/// only do that if there is somewhere to hand the stub in.
+final laneSourceProvider = Provider<LaneSource>(
+  (ref) => const BridgeLaneSource(),
+);
+
+/// **One lane per row** — the guarantee that lives HERE and nowhere else.
+///
+/// The bridge has no registry: two `lane_open` calls are two lanes, two
+/// subscriptions and two adapters against one agent. So the de-duplication is
+/// the provider's, and `autoDispose.family` is the whole mechanism — two
+/// screens watching one [LaneRef] share one [LaneController], and the last
+/// listener leaving closes it.
+///
+/// It watches [machineFeedControllerProvider] so a live lane keeps the machine's
+/// feed, its one SSH client and its forwards alive, and *listens* to
+/// [machineFeedProvider] rather than watching it: the state stream is what
+/// starts the feed (a lane's forward needs the tunnel up), but watching it would
+/// rebuild this provider — and therefore the controller — on every roost poll,
+/// which is precisely the guarantee above, broken.
+///
+/// Throws when the row carries no lane. Unreachable from the UI, which offers
+/// the transcript affordance only for a row whose `agentLane` is non-null, and
+/// an honest error rather than a controller that silently never opens.
+final laneControllerProvider = Provider.autoDispose
+    .family<LaneController, LaneRef>((ref, key) {
+      final feed = ref.watch(machineFeedControllerProvider(key.machine));
+      ref.listen(machineFeedProvider(key.machine), (_, _) {});
+      final stamp = laneStampFor(feed.state, key.slug);
+      if (stamp == null) {
+        throw StateError('no agent lane on ${key.machine}/${key.slug}');
+      }
+      final controller = LaneController(
+        machine: key.machine,
+        slug: key.slug,
+        stamp: stamp,
+        source: ref.watch(laneSourceProvider),
+        // The feed owns the SSH connection every lane call rides — the probe
+        // and the forward both go through it, so a lane costs no second link.
+        probe: feed.probe,
+        reach: laneReachFor(feed.machine),
+        acquireForward: feed.acquireForward,
+        stamps: laneStamps(feed.updates, key.slug),
+      );
+      ref.onDispose(controller.close);
+      return controller;
+    });
+
+/// One lane's live state stream.
+///
+/// Split from [laneControllerProvider] for the reason
+/// [machineFeedControllerProvider] is split from [machineFeedProvider]: the
+/// verbs need an object to call, the UI needs a stream to rebuild on, and one
+/// provider returning a stream could not offer both without the UI reaching
+/// around it.
+final laneStateProvider = StreamProvider.autoDispose.family<LaneState, LaneRef>(
+  (ref, key) async* {
+    // Resolved before the controller is built, so the feed it reads is
+    // holding the real machine record and identity rather than the empty
+    // defaults.
+    await ref.watch(machinesProvider.future);
+    await ref.watch(identitiesProvider.future);
+    final controller = ref.watch(laneControllerProvider(key));
+    unawaited(controller.open());
+    yield controller.state;
+    yield* controller.updates;
+  },
+);

@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/bridge_adapters.dart';
+import 'package:shed_mobile/core/app_error.dart';
 import 'package:shed_mobile/rc/rc_service.dart';
+import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/error.dart';
 
 /// F1 — the RC-over-SSH AppError contract. `appErrorFromBridge`'s `Rc*` arms map
@@ -104,5 +106,74 @@ void main() {
       expect(e.code, 'RC_NOT_FOUND');
       expect(e.statusCode, 404);
     });
+  });
+
+  group('appErrorFromLane — the agent-lane domain (plan 018 §3.11)', () {
+    // One arm per contract variant. The codes are what the controller and the
+    // screen branch on: `LANE_NOT_ACCEPTING` and the two "already" arms are
+    // rendered INLINE on the control that raised them, `LANE_UNAVAILABLE` is
+    // the quiet one the re-open ladder exists for, and
+    // `LANE_UNSUPPORTED_KIND` is deliberately not `LANE_NONE` — the row does
+    // carry a lane, this build just cannot speak to it.
+    const cases = <(BridgeLaneError, String, int?)>[
+      (BridgeLaneError.unauthorized(), 'LANE_UNAUTHORIZED', 401),
+      (BridgeLaneError.badRequest(msg: 'nope'), 'LANE_BAD_REQUEST', 400),
+      (BridgeLaneError.unknownSession(), 'LANE_UNKNOWN_SESSION', 404),
+      (BridgeLaneError.unknownApproval(), 'LANE_UNKNOWN_APPROVAL', 404),
+      (BridgeLaneError.alreadySubmitted(), 'LANE_ALREADY_SUBMITTED', 409),
+      (BridgeLaneError.alreadyResolved(), 'LANE_ALREADY_RESOLVED', 409),
+      (BridgeLaneError.notAccepting(), 'LANE_NOT_ACCEPTING', 409),
+      (BridgeLaneError.unavailable(msg: 'refused'), 'LANE_UNAVAILABLE', 503),
+      (BridgeLaneError.failed(msg: 'boom'), 'LANE_FAILED', 500),
+      (BridgeLaneError.noLane(msg: 'closed'), 'LANE_NONE', null),
+      (
+        BridgeLaneError.unsupportedLane(kind: 'codex'),
+        'LANE_UNSUPPORTED_KIND',
+        null,
+      ),
+    ];
+
+    for (final (error, code, status) in cases) {
+      test(code, () {
+        final mapped = appErrorFromLane(error);
+        expect(mapped.code, code);
+        expect(mapped.statusCode, status);
+      });
+    }
+
+    test('the msg arms carry the agent\'s own sentence whole', () {
+      expect(
+        appErrorFromLane(
+          const BridgeLaneError.badRequest(msg: 'no option matches'),
+        ).message,
+        'no option matches',
+      );
+      expect(
+        appErrorFromLane(
+          const BridgeLaneError.unavailable(msg: 'nothing on :2421'),
+        ).message,
+        'nothing on :2421',
+      );
+      expect(
+        appErrorFromLane(
+          const BridgeLaneError.unsupportedLane(kind: 'codex'),
+        ).message,
+        contains('codex'),
+      );
+    });
+
+    test(
+      'appErrorFrom routes a lane error, and passes an AppError through',
+      () {
+        expect(
+          appErrorFrom(const BridgeLaneError.notAccepting()).code,
+          'LANE_NOT_ACCEPTING',
+        );
+        // A typed error re-wrapped as SHED_ERROR would bury the code every
+        // branch above reads — `laneRemotePort` throws one of these.
+        final own = AppError('LANE_BAD_SERVER_URL', 'no port', 400);
+        expect(appErrorFrom(own), same(own));
+      },
+    );
   });
 }

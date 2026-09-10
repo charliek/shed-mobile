@@ -82,6 +82,25 @@ class LaneForward {
   Future<void> close() => _listener.close();
 }
 
+/// **The half of a [LaneForwardLease] a lane actually uses** — a local port, a
+/// validity bit, and the give-back.
+///
+/// The seam that keeps `LaneController` (plan 018 §3.11) testable in a plain
+/// `flutter test`: a real lease can only come from a [ForwardRegistry] whose
+/// forward came from a live `SSHClient`, while everything the controller does
+/// with one — hold it across a re-open, release it exactly once on close, swap
+/// it when the row's stamp moves to a new port — has nothing to do with SSH.
+abstract interface class LaneLease {
+  /// The LOCAL port to hand to Rust. Fixed for the forward's life.
+  int get port;
+
+  /// Whether this lease still names a live forward.
+  bool get isValid;
+
+  /// Give the forward back. Idempotent.
+  Future<void> release();
+}
+
 /// A borrowed [LaneForward] — what a lane holds instead of the forward itself.
 ///
 /// The forward is shared: two screens on two sessions of the same agent server
@@ -89,7 +108,7 @@ class LaneForward {
 /// lane is given a lease, and [release] is the only thing it may do with it —
 /// the last release closes the forward, and every early return in the lane's
 /// open path therefore has exactly one obligation.
-class LaneForwardLease {
+class LaneForwardLease implements LaneLease {
   LaneForwardLease._(this._registry, this._slot, this.port);
 
   final ForwardRegistry _registry;
@@ -97,6 +116,7 @@ class LaneForwardLease {
 
   /// The LOCAL port to hand to Rust. Fixed for the forward's life, so it is
   /// safe to keep across a reconnect.
+  @override
   final int port;
 
   bool _released = false;
@@ -109,9 +129,11 @@ class LaneForwardLease {
   /// False once [release] has been called, and also once the machine's feed has
   /// torn down — a lane that finds an invalid lease must re-acquire rather than
   /// keep writing into a port that no longer reaches the machine.
+  @override
   bool get isValid => !_released && !_slot.detached;
 
   /// Give the forward back. Idempotent; the last release closes it.
+  @override
   Future<void> release() async {
     if (_released) return;
     _released = true;

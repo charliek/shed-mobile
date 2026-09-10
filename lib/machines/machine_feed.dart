@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -10,6 +11,7 @@ import '../ssh/host_key_store.dart';
 import '../ssh/lane_forward.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
+import '../ssh/ssh_runner.dart';
 import 'machine_record.dart';
 
 /// One machine's live view, as the UI renders it.
@@ -479,16 +481,53 @@ class MachineFeed {
   /// agent lane reaches a server bound to the machine's own loopback.
   ///
   /// Refcounted per remote port and single-flight, so two lanes against one
-  /// agent server share one forward and one SSH channel; the returned
-  /// [LaneForwardLease] is the caller's whole obligation, and releasing the
-  /// last one closes the forward.
+  /// agent server share one forward and one SSH channel; the returned lease is
+  /// the caller's whole obligation, and releasing the last one closes the
+  /// forward.
+  ///
+  /// Typed as the [LaneLease] INTERFACE rather than the concrete
+  /// [LaneForwardLease] it always is: a lease is all a lane needs (a local
+  /// port, a validity bit and a give-back), and narrowing it here is what lets
+  /// `LaneController`'s whole lifecycle be tested without an sshd.
   ///
   /// Requires a started feed: [dispose] closes every forward and invalidates
   /// every lease, so acquiring against a torn-down feed would hand out a port
   /// that reaches nothing. The same [StateError] [create] and [kill] raise.
-  Future<LaneForwardLease> acquireForward(int remotePort) async {
+  Future<LaneLease> acquireForward(int remotePort) async {
     if (_tunnel == null) throw StateError('the machine is not connected');
     return _forwards.acquire(remotePort);
+  }
+
+  /// **Run one already-composed command on this machine and return its raw
+  /// stdout** — the production [ProbeRunner] for an agent lane's gx credential
+  /// probe (plan 018 §3.11).
+  ///
+  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
+  /// every lane forward use, so a probe costs no second SSH link and inherits
+  /// the dial's dedupe and generation fencing.
+  ///
+  /// **Bytes, never a string.** The gx probe's stdout carries a bearer token.
+  /// It is handed straight across the bridge, parsed by Rust and dropped there;
+  /// nothing here decodes it, logs it, keeps it, or puts any part of it in the
+  /// error below — which is why the failure message is a fixed sentence with
+  /// only the exit code in it, and why stderr is discarded rather than
+  /// surfaced.
+  ///
+  /// A null exit code is "unknown", not "failed": dartssh2 occasionally drops
+  /// the `exit-status` request even on success. So the only refusal is the one
+  /// that is unambiguous — a non-zero status with nothing on stdout, which is a
+  /// probe that did not run (no `gx`, no `$GROK_HOME`) rather than one whose
+  /// output Rust can judge for itself.
+  Future<Uint8List> probe(String wireCommand) async {
+    final client = await _connect();
+    final result = await execOn(client, wireCommand);
+    final code = result.exitCode;
+    if (code != null && code != 0 && result.stdout.isEmpty) {
+      throw StateError(
+        'the discovery probe on ${machine.name} exited $code with no output',
+      );
+    }
+    return result.stdout;
   }
 
   /// Start a session on this machine — roost's `tab.open`.
