@@ -7,6 +7,7 @@ import '../rc/rc_ui.dart';
 import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/roost.dart';
 import '../ssh/host_key_store.dart';
+import '../ssh/lane_forward.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
 import 'machine_record.dart';
@@ -339,6 +340,16 @@ class MachineFeed {
   /// SSH links and leak one — deduped per [_generation]. See [DialDedupe].
   final _dialDedupe = DialDedupe<SSHClient>();
 
+  /// The agent-lane port forwards riding this machine's one SSH connection,
+  /// refcounted per remote port. See [ForwardRegistry] and [acquireForward].
+  late final ForwardRegistry _forwards = ForwardRegistry(
+    // Forwards ride the SAME connection, through the same `_connect` the roost
+    // tunnel uses — so they inherit its dedupe and its generation fencing, and
+    // a lane costs no second SSH link.
+    openForward: (remotePort) =>
+        LaneForward.open(connect: _connect, remotePort: remotePort),
+  );
+
   /// Bumped by every [_teardown], so a dial that completes after a stop closes
   /// its client instead of installing it behind the feed's back.
   int _generation = 0;
@@ -464,6 +475,22 @@ class MachineFeed {
     }
   }
 
+  /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an
+  /// agent lane reaches a server bound to the machine's own loopback.
+  ///
+  /// Refcounted per remote port and single-flight, so two lanes against one
+  /// agent server share one forward and one SSH channel; the returned
+  /// [LaneForwardLease] is the caller's whole obligation, and releasing the
+  /// last one closes the forward.
+  ///
+  /// Requires a started feed: [dispose] closes every forward and invalidates
+  /// every lease, so acquiring against a torn-down feed would hand out a port
+  /// that reaches nothing. The same [StateError] [create] and [kill] raise.
+  Future<LaneForwardLease> acquireForward(int remotePort) async {
+    if (_tunnel == null) throw StateError('the machine is not connected');
+    return _forwards.acquire(remotePort);
+  }
+
   /// Start a session on this machine — roost's `tab.open`.
   ///
   /// Minimal by design (plan 013 §4): the agent's binary and a working
@@ -514,7 +541,15 @@ class MachineFeed {
     return null;
   }
 
-  /// Stop watching and close the tunnel. Called on background and on dispose.
+  /// Stop watching and close the tunnel, leaving the feed restartable.
+  ///
+  /// **Nothing in the app calls this today** — the only thing that reaches the
+  /// teardown is [dispose], from `machineFeedControllerProvider`'s `onDispose`
+  /// (`providers.dart`). Kept because the "backgrounding is a STOP" story above
+  /// is what a foreground/background hook will use, and because it is the
+  /// `_teardown` + "paused" pair every restart path needs. Adding a caller is a
+  /// deliberate decision, not a tidy-up: a lane holding a
+  /// [LaneForwardLease] has its forward closed and its lease invalidated here.
   Future<void> stop() async {
     await _teardown();
     _emit(_state.copyWith(reachable: false, detail: 'paused'));
@@ -538,8 +573,12 @@ class MachineFeed {
     }
     await _tunnel?.close();
     _tunnel = null;
-    // The tunnel frees its port and its execs but never the connection — this
-    // is the one place it dies.
+    // Every lane forward on this connection goes with it, and every lease is
+    // invalidated: a lane holding one must re-acquire rather than keep writing
+    // into a local port that no longer reaches the machine.
+    await _forwards.closeAll();
+    // The tunnel and the forwards free their ports and their channels but never
+    // the connection — this is the one place it dies.
     _client?.close();
     _client = null;
     _dialDetail = null;
