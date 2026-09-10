@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "roost-ipc"
 version = "0.0.19"
-source = "git+https://github.com/charliek/roost?rev=61d8713bcd0378971ad8490fe89b8dbef4e49fac#61d8713bcd0378971ad8490fe89b8dbef4e49fac"
+source = "git+https://github.com/charliek/roost?rev=c67ac27b6a85dbee0871f32d49c1566cc068d1c8#c67ac27b6a85dbee0871f32d49c1566cc068d1c8"
 dependencies = [
  "anyhow",
  "base64",
@@ -1157,6 +1157,8 @@ dependencies = [
  "serde_json",
  "shed-app",
  "shed-core",
+ "shed-gx",
+ "shed-opencode",
  "tokio",
 ]
 
@@ -1294,7 +1296,7 @@ dependencies = [
 [[package]]
 name = "shed-app"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=8af8373513989e6143cc0a8722da125e3cf70318#8af8373513989e6143cc0a8722da125e3cf70318"
+source = "git+https://github.com/charliek/shed?rev=acd41ba8f1dab5dde8899547824c0469d3b273fc#acd41ba8f1dab5dde8899547824c0469d3b273fc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1305,13 +1307,14 @@ dependencies = [
  "serde_json",
  "shed-core",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
 [[package]]
 name = "shed-core"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=8af8373513989e6143cc0a8722da125e3cf70318#8af8373513989e6143cc0a8722da125e3cf70318"
+source = "git+https://github.com/charliek/shed?rev=acd41ba8f1dab5dde8899547824c0469d3b273fc#acd41ba8f1dab5dde8899547824c0469d3b273fc"
 dependencies = [
  "async-trait",
  "base64",
@@ -1328,6 +1331,38 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "shed-gx"
+version = "0.8.1"
+source = "git+https://github.com/charliek/shed?rev=acd41ba8f1dab5dde8899547824c0469d3b273fc#acd41ba8f1dab5dde8899547824c0469d3b273fc"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "shed-core",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "shed-opencode"
+version = "0.8.1"
+source = "git+https://github.com/charliek/shed?rev=acd41ba8f1dab5dde8899547824c0469d3b273fc#acd41ba8f1dab5dde8899547824c0469d3b273fc"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "shed-core",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

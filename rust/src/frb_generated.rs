@@ -3528,9 +3528,15 @@ impl SseDecode for crate::api::dto_rc::BridgeRcKind {
                 return crate::api::dto_rc::BridgeRcKind::Cursor;
             }
             5 => {
-                return crate::api::dto_rc::BridgeRcKind::Shell;
+                return crate::api::dto_rc::BridgeRcKind::Gx;
             }
             6 => {
+                return crate::api::dto_rc::BridgeRcKind::Grok;
+            }
+            7 => {
+                return crate::api::dto_rc::BridgeRcKind::Shell;
+            }
+            8 => {
                 let mut var_raw = <String>::sse_decode(deserializer);
                 return crate::api::dto_rc::BridgeRcKind::Other { raw: var_raw };
             }
@@ -5175,9 +5181,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_rc::BridgeRcKind {
             crate::api::dto_rc::BridgeRcKind::Codex => [2.into_dart()].into_dart(),
             crate::api::dto_rc::BridgeRcKind::Opencode => [3.into_dart()].into_dart(),
             crate::api::dto_rc::BridgeRcKind::Cursor => [4.into_dart()].into_dart(),
-            crate::api::dto_rc::BridgeRcKind::Shell => [5.into_dart()].into_dart(),
+            crate::api::dto_rc::BridgeRcKind::Gx => [5.into_dart()].into_dart(),
+            crate::api::dto_rc::BridgeRcKind::Grok => [6.into_dart()].into_dart(),
+            crate::api::dto_rc::BridgeRcKind::Shell => [7.into_dart()].into_dart(),
             crate::api::dto_rc::BridgeRcKind::Other { raw } => {
-                [6.into_dart(), raw.into_into_dart().into_dart()].into_dart()
+                [8.into_dart(), raw.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -6195,11 +6203,17 @@ impl SseEncode for crate::api::dto_rc::BridgeRcKind {
             crate::api::dto_rc::BridgeRcKind::Cursor => {
                 <i32>::sse_encode(4, serializer);
             }
-            crate::api::dto_rc::BridgeRcKind::Shell => {
+            crate::api::dto_rc::BridgeRcKind::Gx => {
                 <i32>::sse_encode(5, serializer);
             }
-            crate::api::dto_rc::BridgeRcKind::Other { raw } => {
+            crate::api::dto_rc::BridgeRcKind::Grok => {
                 <i32>::sse_encode(6, serializer);
+            }
+            crate::api::dto_rc::BridgeRcKind::Shell => {
+                <i32>::sse_encode(7, serializer);
+            }
+            crate::api::dto_rc::BridgeRcKind::Other { raw } => {
+                <i32>::sse_encode(8, serializer);
                 <String>::sse_encode(raw, serializer);
             }
             _ => {

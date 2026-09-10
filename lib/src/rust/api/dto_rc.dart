@@ -189,6 +189,15 @@ sealed class BridgeRcKind with _$BridgeRcKind {
   const factory BridgeRcKind.codex() = BridgeRcKind_Codex;
   const factory BridgeRcKind.opencode() = BridgeRcKind_Opencode;
   const factory BridgeRcKind.cursor() = BridgeRcKind_Cursor;
+
+  /// grok's `gx` agent **with a remote lane bound** — the row shed promotes
+  /// once a roost tab's `gx.remote` metadata key appears (plan 017). roost
+  /// never says `gx`; its adapter reports `source: "grok"` either way.
+  const factory BridgeRcKind.gx() = BridgeRcKind_Gx;
+
+  /// grok's `gx` agent with **no** lane: status through roost, no transcript.
+  /// Lane-less by design, not a degraded `Gx`.
+  const factory BridgeRcKind.grok() = BridgeRcKind_Grok;
   const factory BridgeRcKind.shell() = BridgeRcKind_Shell;
 
   /// An unrecognized wire kind, raw string preserved.
@@ -201,9 +210,12 @@ class BridgeRcKindFeatures {
 
   /// `"remote"` = the hub can RESOLVE an approval from here; `"tui"` = the
   /// rows are informational and the decision must be made in the session's
-  /// terminal. A client that offers an approve button for a `"tui"` kind
-  /// produces a `409 not_supported` the user cannot act on — this field is
-  /// the whole reason the contract carries capabilities.
+  /// terminal; `"none"` = there is no approval surface a shed client can
+  /// reach at all (every roost kind, which answers approvals inside its own
+  /// tab). A client that offers an approve button for a `"tui"` kind produces
+  /// a `409 not_supported` the user cannot act on — this field is the whole
+  /// reason the contract carries capabilities. Branch on `== "remote"`; the
+  /// other two are equally "don't offer it".
   final String approvals;
   final bool watch;
 
@@ -211,13 +223,24 @@ class BridgeRcKindFeatures {
   /// only.
   final String input;
 
-  /// contract v2: which feed this kind carries (`"messages"`/`"activity"`).
+  /// contract v2: which feed this kind carries — `"messages"` (a normalized
+  /// message feed), `"activity"` (an activity dimension and no message feed:
+  /// every roost kind), or `"none"` (no signal at all: the guest hub's codex
+  /// and cursor rows). Empty means the producer predates v2.
+  ///
+  /// It describes the MESSAGE feed only. No client gates its activity chip on
+  /// it — the chip reads the row's own `activity` — which is why the same two
+  /// kinds answer `"none"` through the guest hub and `"activity"` through
+  /// roost.
   final String feed;
 
   /// contract v2: whether a running turn can be interrupted.
   final bool interrupt;
 
-  /// contract v2: how the session is attachable (`"tmux"`).
+  /// contract v2: how the session is attachable — `"tmux"` (attach a pane) or
+  /// `"native-remote"` (the terminal belongs to roost; a client reaches it
+  /// with its own affordance, here the read-only `tab.dump` peek, or not at
+  /// all). Empty means pre-v2, which means `"tmux"`.
   final String attach;
 
   const BridgeRcKindFeatures({

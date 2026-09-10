@@ -623,7 +623,7 @@ extension BridgeRcKindPatterns on BridgeRcKind {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeRcKind_ClaudeRc value)?  claudeRc,TResult Function( BridgeRcKind_ClaudeBroker value)?  claudeBroker,TResult Function( BridgeRcKind_Codex value)?  codex,TResult Function( BridgeRcKind_Opencode value)?  opencode,TResult Function( BridgeRcKind_Cursor value)?  cursor,TResult Function( BridgeRcKind_Shell value)?  shell,TResult Function( BridgeRcKind_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeRcKind_ClaudeRc value)?  claudeRc,TResult Function( BridgeRcKind_ClaudeBroker value)?  claudeBroker,TResult Function( BridgeRcKind_Codex value)?  codex,TResult Function( BridgeRcKind_Opencode value)?  opencode,TResult Function( BridgeRcKind_Cursor value)?  cursor,TResult Function( BridgeRcKind_Gx value)?  gx,TResult Function( BridgeRcKind_Grok value)?  grok,TResult Function( BridgeRcKind_Shell value)?  shell,TResult Function( BridgeRcKind_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc() when claudeRc != null:
@@ -631,7 +631,9 @@ return claudeRc(_that);case BridgeRcKind_ClaudeBroker() when claudeBroker != nul
 return claudeBroker(_that);case BridgeRcKind_Codex() when codex != null:
 return codex(_that);case BridgeRcKind_Opencode() when opencode != null:
 return opencode(_that);case BridgeRcKind_Cursor() when cursor != null:
-return cursor(_that);case BridgeRcKind_Shell() when shell != null:
+return cursor(_that);case BridgeRcKind_Gx() when gx != null:
+return gx(_that);case BridgeRcKind_Grok() when grok != null:
+return grok(_that);case BridgeRcKind_Shell() when shell != null:
 return shell(_that);case BridgeRcKind_Other() when other != null:
 return other(_that);case _:
   return orElse();
@@ -651,7 +653,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeRcKind_ClaudeRc value)  claudeRc,required TResult Function( BridgeRcKind_ClaudeBroker value)  claudeBroker,required TResult Function( BridgeRcKind_Codex value)  codex,required TResult Function( BridgeRcKind_Opencode value)  opencode,required TResult Function( BridgeRcKind_Cursor value)  cursor,required TResult Function( BridgeRcKind_Shell value)  shell,required TResult Function( BridgeRcKind_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeRcKind_ClaudeRc value)  claudeRc,required TResult Function( BridgeRcKind_ClaudeBroker value)  claudeBroker,required TResult Function( BridgeRcKind_Codex value)  codex,required TResult Function( BridgeRcKind_Opencode value)  opencode,required TResult Function( BridgeRcKind_Cursor value)  cursor,required TResult Function( BridgeRcKind_Gx value)  gx,required TResult Function( BridgeRcKind_Grok value)  grok,required TResult Function( BridgeRcKind_Shell value)  shell,required TResult Function( BridgeRcKind_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc():
@@ -659,7 +661,9 @@ return claudeRc(_that);case BridgeRcKind_ClaudeBroker():
 return claudeBroker(_that);case BridgeRcKind_Codex():
 return codex(_that);case BridgeRcKind_Opencode():
 return opencode(_that);case BridgeRcKind_Cursor():
-return cursor(_that);case BridgeRcKind_Shell():
+return cursor(_that);case BridgeRcKind_Gx():
+return gx(_that);case BridgeRcKind_Grok():
+return grok(_that);case BridgeRcKind_Shell():
 return shell(_that);case BridgeRcKind_Other():
 return other(_that);}
 }
@@ -675,7 +679,7 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeRcKind_ClaudeRc value)?  claudeRc,TResult? Function( BridgeRcKind_ClaudeBroker value)?  claudeBroker,TResult? Function( BridgeRcKind_Codex value)?  codex,TResult? Function( BridgeRcKind_Opencode value)?  opencode,TResult? Function( BridgeRcKind_Cursor value)?  cursor,TResult? Function( BridgeRcKind_Shell value)?  shell,TResult? Function( BridgeRcKind_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeRcKind_ClaudeRc value)?  claudeRc,TResult? Function( BridgeRcKind_ClaudeBroker value)?  claudeBroker,TResult? Function( BridgeRcKind_Codex value)?  codex,TResult? Function( BridgeRcKind_Opencode value)?  opencode,TResult? Function( BridgeRcKind_Cursor value)?  cursor,TResult? Function( BridgeRcKind_Gx value)?  gx,TResult? Function( BridgeRcKind_Grok value)?  grok,TResult? Function( BridgeRcKind_Shell value)?  shell,TResult? Function( BridgeRcKind_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc() when claudeRc != null:
@@ -683,7 +687,9 @@ return claudeRc(_that);case BridgeRcKind_ClaudeBroker() when claudeBroker != nul
 return claudeBroker(_that);case BridgeRcKind_Codex() when codex != null:
 return codex(_that);case BridgeRcKind_Opencode() when opencode != null:
 return opencode(_that);case BridgeRcKind_Cursor() when cursor != null:
-return cursor(_that);case BridgeRcKind_Shell() when shell != null:
+return cursor(_that);case BridgeRcKind_Gx() when gx != null:
+return gx(_that);case BridgeRcKind_Grok() when grok != null:
+return grok(_that);case BridgeRcKind_Shell() when shell != null:
 return shell(_that);case BridgeRcKind_Other() when other != null:
 return other(_that);case _:
   return null;
@@ -702,14 +708,16 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  claudeRc,TResult Function()?  claudeBroker,TResult Function()?  codex,TResult Function()?  opencode,TResult Function()?  cursor,TResult Function()?  shell,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  claudeRc,TResult Function()?  claudeBroker,TResult Function()?  codex,TResult Function()?  opencode,TResult Function()?  cursor,TResult Function()?  gx,TResult Function()?  grok,TResult Function()?  shell,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc() when claudeRc != null:
 return claudeRc();case BridgeRcKind_ClaudeBroker() when claudeBroker != null:
 return claudeBroker();case BridgeRcKind_Codex() when codex != null:
 return codex();case BridgeRcKind_Opencode() when opencode != null:
 return opencode();case BridgeRcKind_Cursor() when cursor != null:
-return cursor();case BridgeRcKind_Shell() when shell != null:
+return cursor();case BridgeRcKind_Gx() when gx != null:
+return gx();case BridgeRcKind_Grok() when grok != null:
+return grok();case BridgeRcKind_Shell() when shell != null:
 return shell();case BridgeRcKind_Other() when other != null:
 return other(_that.raw);case _:
   return orElse();
@@ -729,14 +737,16 @@ return other(_that.raw);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  claudeRc,required TResult Function()  claudeBroker,required TResult Function()  codex,required TResult Function()  opencode,required TResult Function()  cursor,required TResult Function()  shell,required TResult Function( String raw)  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  claudeRc,required TResult Function()  claudeBroker,required TResult Function()  codex,required TResult Function()  opencode,required TResult Function()  cursor,required TResult Function()  gx,required TResult Function()  grok,required TResult Function()  shell,required TResult Function( String raw)  other,}) {final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc():
 return claudeRc();case BridgeRcKind_ClaudeBroker():
 return claudeBroker();case BridgeRcKind_Codex():
 return codex();case BridgeRcKind_Opencode():
 return opencode();case BridgeRcKind_Cursor():
-return cursor();case BridgeRcKind_Shell():
+return cursor();case BridgeRcKind_Gx():
+return gx();case BridgeRcKind_Grok():
+return grok();case BridgeRcKind_Shell():
 return shell();case BridgeRcKind_Other():
 return other(_that.raw);}
 }
@@ -752,14 +762,16 @@ return other(_that.raw);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  claudeRc,TResult? Function()?  claudeBroker,TResult? Function()?  codex,TResult? Function()?  opencode,TResult? Function()?  cursor,TResult? Function()?  shell,TResult? Function( String raw)?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  claudeRc,TResult? Function()?  claudeBroker,TResult? Function()?  codex,TResult? Function()?  opencode,TResult? Function()?  cursor,TResult? Function()?  gx,TResult? Function()?  grok,TResult? Function()?  shell,TResult? Function( String raw)?  other,}) {final _that = this;
 switch (_that) {
 case BridgeRcKind_ClaudeRc() when claudeRc != null:
 return claudeRc();case BridgeRcKind_ClaudeBroker() when claudeBroker != null:
 return claudeBroker();case BridgeRcKind_Codex() when codex != null:
 return codex();case BridgeRcKind_Opencode() when opencode != null:
 return opencode();case BridgeRcKind_Cursor() when cursor != null:
-return cursor();case BridgeRcKind_Shell() when shell != null:
+return cursor();case BridgeRcKind_Gx() when gx != null:
+return gx();case BridgeRcKind_Grok() when grok != null:
+return grok();case BridgeRcKind_Shell() when shell != null:
 return shell();case BridgeRcKind_Other() when other != null:
 return other(_that.raw);case _:
   return null;
@@ -921,6 +933,70 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
   return 'BridgeRcKind.cursor()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeRcKind_Gx extends BridgeRcKind {
+  const BridgeRcKind_Gx(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRcKind_Gx);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeRcKind.gx()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeRcKind_Grok extends BridgeRcKind {
+  const BridgeRcKind_Grok(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRcKind_Grok);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeRcKind.grok()';
 }
 
 

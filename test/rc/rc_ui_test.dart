@@ -50,6 +50,11 @@ void main() {
       expect(const BridgeRcKind.claudeBroker().tool, 'claude');
       expect(const BridgeRcKind.codex().tool, 'codex');
       expect(const BridgeRcKind.cursor().tool, 'cursor');
+      // Two binaries in one family, sharing a $GROK_HOME — so two tools, not
+      // one. `gx` is the row a remote lane bound to; `grok` is the lane-less
+      // one.
+      expect(const BridgeRcKind.gx().tool, 'gx');
+      expect(const BridgeRcKind.grok().tool, 'grok');
       expect(const BridgeRcKind.shell().tool, isNull);
       expect(const BridgeRcKind.other(raw: 'x').tool, isNull);
     });

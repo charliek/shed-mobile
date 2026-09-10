@@ -1268,6 +1268,10 @@ mod tests {
             "BridgeRcKind_ClaudeRc",
             "BridgeRcKind_Codex",
             "BridgeRcKind_Cursor",
+            // Plan 017's two grok kinds. Without them a gx row would cross the
+            // bridge as `BridgeRcKind_Other { raw: "gx" }`.
+            "BridgeRcKind_Grok",
+            "BridgeRcKind_Gx",
             "BridgeRcKind_Opencode",
             "BridgeRcKind_Other",
             "BridgeRcKind_Shell",

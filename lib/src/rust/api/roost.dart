@@ -44,7 +44,7 @@ Future<void> stopRoostWatcher({required BridgeRoostWatcher handle}) =>
     RustLib.instance.api.crateApiRoostStopRoostWatcher(handle: handle);
 
 /// `tab.close` — end a tab. It leaves `tab.list` entirely, so the row
-/// disappears on the next poll rather than turning into a dead card.
+/// disappears on the next publish rather than turning into a dead card.
 Future<void> roostTabClose({
   required int localPort,
   required PlatformInt64 tabId,
@@ -70,9 +70,9 @@ Future<void> roostTabClose({
 /// reports.** A freshly opened tab has no `ownership` yet — the adapter claims
 /// it a moment later, when the agent starts reporting — so
 /// [`RoostSession::to_rc_dto`] would map it to `shell` and the card would render
-/// as a bare terminal until the next poll corrected it. Substituting the
-/// requested kind makes the optimistic card right immediately, and the poll that
-/// follows replaces it with roost's own answer either way.
+/// as a bare terminal until the next publish corrected it. Substituting the
+/// requested kind makes the optimistic card right immediately, and the batch
+/// that follows replaces it with roost's own answer either way.
 Future<BridgeRcSession> roostTabOpen({
   required int localPort,
   required String machine,
@@ -147,7 +147,7 @@ abstract class BridgeRoostWatcher implements RustOpaqueInterface {}
 sealed class BridgeRoostUpdate with _$BridgeRoostUpdate {
   const BridgeRoostUpdate._();
 
-  /// The machine's full agent-owned tab list, as of this poll. Replaces
+  /// The machine's full agent-owned tab list, as of this publish. Replaces
   /// whatever the consumer held.
   ///
   /// `revision` is roost's commit counter — an in-process number that RESETS

@@ -3190,8 +3190,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 4:
         return BridgeRcKind_Cursor();
       case 5:
-        return BridgeRcKind_Shell();
+        return BridgeRcKind_Gx();
       case 6:
+        return BridgeRcKind_Grok();
+      case 7:
+        return BridgeRcKind_Shell();
+      case 8:
         return BridgeRcKind_Other(raw: dco_decode_String(raw[1]));
       default:
         throw Exception('unreachable');
@@ -4569,8 +4573,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 4:
         return BridgeRcKind_Cursor();
       case 5:
-        return BridgeRcKind_Shell();
+        return BridgeRcKind_Gx();
       case 6:
+        return BridgeRcKind_Grok();
+      case 7:
+        return BridgeRcKind_Shell();
+      case 8:
         var var_raw = sse_decode_String(deserializer);
         return BridgeRcKind_Other(raw: var_raw);
       default:
@@ -6145,10 +6153,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(3, serializer);
       case BridgeRcKind_Cursor():
         sse_encode_i_32(4, serializer);
-      case BridgeRcKind_Shell():
+      case BridgeRcKind_Gx():
         sse_encode_i_32(5, serializer);
-      case BridgeRcKind_Other(raw: final raw):
+      case BridgeRcKind_Grok():
         sse_encode_i_32(6, serializer);
+      case BridgeRcKind_Shell():
+        sse_encode_i_32(7, serializer);
+      case BridgeRcKind_Other(raw: final raw):
+        sse_encode_i_32(8, serializer);
         sse_encode_String(raw, serializer);
     }
   }

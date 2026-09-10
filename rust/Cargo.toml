@@ -12,8 +12,19 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "8af8373513989e6143cc0a8722da125e3cf70318" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "8af8373513989e6143cc0a8722da125e3cf70318" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc" }
+# The two agent-lane adapters (plan 015 opencode, plan 017 gx), reached the same
+# way and pinned to the SAME rev as shed-core/shed-app — one shed tree, four
+# crates. They are named here rather than reached through shed-app because
+# shed-app does not depend on either: an adapter is chosen by the client at the
+# point it opens a lane, so the client is what has to name it.
+#
+# Neither has been on a phone before this plan, so `android-build` is the first
+# thing that would notice a dependency they cannot cross-compile; the gate
+# checks both for `aarch64-linux-android` explicitly.
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc" }
+shed-gx       = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc" }
 # roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
 # reached through shed-app, for two things shed-app does not re-export: the
 # `TabOpenParams` a `tab.open` takes, and `ssh::remote_command()` — the opaque
@@ -24,7 +35,13 @@ shed-app  = { git = "https://github.com/charliek/shed", rev = "8af8373513989e614
 # the core it links. A bump is therefore a two-file edit in lockstep with shed's
 # `crates/Cargo.toml`; roost publishes no Rust-API stability promise, which is
 # what the pin absorbs (roost `docs/reference/ipc-compatibility.md`).
-roost-ipc = { git = "https://github.com/charliek/roost", rev = "61d8713bcd0378971ad8490fe89b8dbef4e49fac" }
+#
+# That lockstep is enforced by CARGO, not by a script: git deps unify on
+# `(url, rev)`, so a rev that differs from shed-core's produces TWO `roost-ipc`
+# crates in one graph and `TabOpenParams`/`remote_command` stop type-checking.
+# `scripts/check-lock-rev.sh` also asserts the lock matches this line, which is
+# belt-and-braces — the compile failure is the real gate.
+roost-ipc = { git = "https://github.com/charliek/roost", rev = "c67ac27b6a85dbee0871f32d49c1566cc068d1c8" }
 # Direct tokio use by the bridge slices: the persistent runtime, oneshot mint
 # registry, local SSE test servers (net/io-util), and time-bounded awaits.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
@@ -51,7 +68,7 @@ base64 = "0.22"
 # A dev-dependency (resolver v2) so the feature is enabled for `cargo test` and
 # NEVER for a shipped build — the same shape shed-app uses for the same fake.
 # Same git+rev as the [dependencies] entry above; cargo unifies them.
-shed-core = { git = "https://github.com/charliek/shed", rev = "8af8373513989e6143cc0a8722da125e3cf70318", features = ["test-support"] }
+shed-core = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
