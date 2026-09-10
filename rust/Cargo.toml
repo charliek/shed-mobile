@@ -50,6 +50,19 @@ serde_json = "1"
 # The shed-core `TokenMinter` trait is `#[async_trait]`; the bridge minter impl
 # must use the same macro (same version family as shed's lock).
 async-trait = "0.1"
+# **Types only, never a client this crate builds.** `shed_gx::GxTransport::dial`
+# is declared to answer a `reqwest::Url`, and `OpencodeClient::new` takes one, so
+# `api/lane.rs` cannot implement the transport or dispatch the opencode arm
+# without naming the crate. No HTTP is issued from here — every request belongs
+# to an adapter.
+#
+# `default-features = false` is load-bearing: reqwest's defaults pull
+# `default-tls` (native-tls, and with it an OpenSSL stack), which would ADD
+# packages to the lock. shed-core already pins it as
+# `default-features = false, features = ["rustls-tls", "stream", "json"]`, and
+# cargo unifies features — so declaring nothing here inherits exactly that set
+# and the lock gains one dependency EDGE and no package.
+reqwest = { version = "0.12", default-features = false }
 
 [dev-dependencies]
 # Test-only: signing a certificate for the CSR a `ControlTokenProvider` generated
@@ -69,6 +82,25 @@ base64 = "0.22"
 # NEVER for a shipped build — the same shape shed-app uses for the same fake.
 # Same git+rev as the [dependencies] entry above; cargo unifies them.
 shed-core = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc", features = ["test-support"] }
+# The two agent-lane adapters' in-process doubles (`shed_opencode::testing::
+# FakeOpencode`, `shed_gx::testing::FakeGx`), behind the SAME non-default
+# `test-support` feature and the SAME git+rev as the `[dependencies]` entries
+# above — cargo unifies them, and the feature adds no package to the lock (both
+# declare `test-support = []`).
+#
+# It is what lets `api/lane.rs`'s dispatch tests drive the REAL adapters against
+# a real loopback HTTP server instead of a re-implementation of one, which is
+# the whole point: the thing under test is the bridge's dispatch, its roster GET
+# and its pump, and a hand-rolled fake adapter would test none of them.
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc", features = ["test-support"] }
+shed-gx       = { git = "https://github.com/charliek/shed", rev = "acd41ba8f1dab5dde8899547824c0469d3b273fc", features = ["test-support"] }
+# `test-util` is what `#[tokio::test(start_paused = true)]` needs: the gx
+# credential ask's 30 s bound (`api/lane.rs`'s CREDENTIAL_REFRESH_WAIT) is
+# asserted against a PAUSED clock, so the test proves the REAL constant in
+# milliseconds instead of injecting a shorter one and proving nothing about it.
+# tokio's own feature — no package joins the lock — and it changes nothing
+# unless a test explicitly pauses time.
+tokio = { version = "1", features = ["test-util"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

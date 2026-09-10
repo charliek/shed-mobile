@@ -1152,6 +1152,7 @@ dependencies = [
  "base64",
  "flutter_rust_bridge",
  "rcgen",
+ "reqwest",
  "roost-ipc",
  "serde",
  "serde_json",

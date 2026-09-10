@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bridge_rt`, `next_id`
+// These functions are ignored because they are not marked as `pub`: `bridge_rt`, `joined_on_bridge_rt`, `next_id`
 
 /// Read the current live-resource counters.
 Future<BridgeLiveCounters> liveCounters() =>
@@ -21,6 +21,8 @@ class BridgeLiveCounters {
   final BigInt pendingMints;
   final BigInt activeSseServers;
   final BigInt pendingPreviewCredentials;
+  final BigInt activeLanes;
+  final BigInt activeLaneForwarders;
 
   const BridgeLiveCounters({
     required this.activeWatchers,
@@ -29,6 +31,8 @@ class BridgeLiveCounters {
     required this.pendingMints,
     required this.activeSseServers,
     required this.pendingPreviewCredentials,
+    required this.activeLanes,
+    required this.activeLaneForwarders,
   });
 
   @override
@@ -38,7 +42,9 @@ class BridgeLiveCounters {
       activeCreateStreams.hashCode ^
       pendingMints.hashCode ^
       activeSseServers.hashCode ^
-      pendingPreviewCredentials.hashCode;
+      pendingPreviewCredentials.hashCode ^
+      activeLanes.hashCode ^
+      activeLaneForwarders.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -50,5 +56,7 @@ class BridgeLiveCounters {
           activeCreateStreams == other.activeCreateStreams &&
           pendingMints == other.pendingMints &&
           activeSseServers == other.activeSseServers &&
-          pendingPreviewCredentials == other.pendingPreviewCredentials;
+          pendingPreviewCredentials == other.pendingPreviewCredentials &&
+          activeLanes == other.activeLanes &&
+          activeLaneForwarders == other.activeLaneForwarders;
 }

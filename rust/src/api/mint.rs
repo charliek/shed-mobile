@@ -1241,6 +1241,62 @@ mod tests {
             "BridgeError_TokenPinMismatch",
             "BridgeError_TokenPinMissing",
             "BridgeError_Transport",
+            // Plan 018 §3.9 — the agent-lane bridge. Every one of these is
+            // agent-transcript material: session ids, tab titles, working
+            // directories, an approval's own request JSON, option ids and
+            // labels, feed rows, and free-text answers. **No credential of any
+            // kind crosses.** gx's bearer token is a `shed_gx::GxToken` from the
+            // moment it is parsed (no `Display`, no `Serialize`, a redacting
+            // `Debug`) and it never leaves `api/lane.rs`; the probe's raw stdout
+            // travels the OTHER way as a `Vec<u8>` on `BridgeLaneSpec` /
+            // `lane_refresh_credentials`, is parsed in one function, and is not
+            // stored, logged, or echoed into any error — `api/lane`'s
+            // `every_gx_probe_refusal_echoes_no_byte_of_the_probe` asserts that
+            // against the whole `Debug` rendering of every refusal path through
+            // `discovery_from_probe` — no record, malformed token, truncated, no
+            // token — plus the no-probe-at-all case.
+            // `BridgeLane` is opaque and holds the adapter, the fold and two
+            // abort handles.
+            "BridgeAgentLaneStamp",
+            "BridgeLane",
+            "BridgeLaneAnswer",
+            "BridgeLaneAnswer_Choice",
+            "BridgeLaneAnswer_Permission",
+            "BridgeLaneAnswer_Question",
+            "BridgeLaneAnswer_Raw",
+            "BridgeLaneAnswer_Reject",
+            "BridgeLaneApproval",
+            "BridgeLaneApprovalKind",
+            "BridgeLaneApprovalKind_McpElicitation",
+            "BridgeLaneApprovalKind_Other",
+            "BridgeLaneApprovalKind_Permission",
+            "BridgeLaneApprovalKind_PlanApproval",
+            "BridgeLaneApprovalKind_Question",
+            "BridgeLaneApprovalOption",
+            "BridgeLaneApprovalStatus",
+            "BridgeLaneApprovalStatus_Other",
+            "BridgeLaneApprovalStatus_Pending",
+            "BridgeLaneApprovalStatus_Resolved",
+            "BridgeLaneApprovalStatus_Submitted",
+            "BridgeLaneCapabilities",
+            "BridgeLaneDecision",
+            "BridgeLaneError",
+            "BridgeLaneError_AlreadyResolved",
+            "BridgeLaneError_AlreadySubmitted",
+            "BridgeLaneError_BadRequest",
+            "BridgeLaneError_Failed",
+            "BridgeLaneError_NoLane",
+            "BridgeLaneError_NotAccepting",
+            "BridgeLaneError_Unauthorized",
+            "BridgeLaneError_Unavailable",
+            "BridgeLaneError_UnknownApproval",
+            "BridgeLaneError_UnknownSession",
+            "BridgeLaneError_UnsupportedLane",
+            "BridgeLaneQuestion",
+            "BridgeLaneSession",
+            "BridgeLaneSnapshot",
+            "BridgeLaneSpec",
+            "BridgeSendMode",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
@@ -1441,6 +1497,8 @@ mod tests {
             "pending()",
             "PENDING_MINTS",
             "PENDING_PREVIEW_CREDENTIALS",
+            "ACTIVE_LANES",
+            "ACTIVE_LANE_FORWARDERS",
             "submit_mint_result(",
             "install_sink_hook(",
             "install_mint_emitter(",
@@ -1457,15 +1515,59 @@ mod tests {
         // This test's own body quotes every marker above, so it would flag itself.
         const SELF: &str = "every_test_touching_global_state_takes_the_guard";
 
+        /// Every `#[…test…]`-attributed chunk in `tests`, whatever the
+        /// attribute's shape. Returns the text AFTER each attribute line, so a
+        /// caller reads the fn signature and body exactly as it did when this
+        /// split on the literal `"\n    #[test]\n"`.
+        fn split_on_test_attrs(tests: &str) -> Vec<&str> {
+            let mut out = Vec::new();
+            for (idx, line) in tests.char_indices().fold(
+                Vec::<(usize, &str)>::new(),
+                |mut acc, (i, c)| {
+                    if i == 0 || c == '\n' {
+                        let start = if c == '\n' { i + 1 } else { i };
+                        if let Some(rest) = tests.get(start..) {
+                            let line = rest.split('\n').next().unwrap_or("");
+                            acc.push((start, line));
+                        }
+                    }
+                    acc
+                },
+            ) {
+                let t = line.trim();
+                // `#[test]`, `#[tokio::test]`, `#[tokio::test(flavor = …)]`,
+                // `#[tokio::test(start_paused = true)]`, and any future
+                // `#[foo::test…]` — but NOT `#[cfg(test)]`, which is the module
+                // gate, and not `#[should_panic]`-style siblings.
+                let is_test_attr = t.starts_with("#[test]")
+                    || (t.starts_with("#[") && t.contains("::test") && !t.contains("cfg("));
+                if is_test_attr {
+                    if let Some(after) = tests.get(idx + line.len()..) {
+                        out.push(after.trim_start_matches('\n'));
+                    }
+                }
+            }
+            out
+        }
+
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
         let mut offenders = Vec::new();
         let mut checked = 0usize;
-        for name in ["mint.rs", "preview.rs", "client.rs"] {
+        for name in ["mint.rs", "preview.rs", "client.rs", "lane.rs"] {
             let text = std::fs::read_to_string(src.join(name)).unwrap();
             let tests = text
                 .split_at(text.find("#[cfg(test)]").expect("a test module"))
                 .1;
-            for chunk in tests.split("\n    #[test]\n").skip(1) {
+            // Split on EVERY test attribute, not just `#[test]`. `lane.rs`'s
+            // tests are overwhelmingly `#[tokio::test]` — the pump, the
+            // forwarder and the credential await are all async — so a splitter
+            // that only knew the sync form scanned almost none of the code that
+            // owns the two newest counters. It also has to admit the
+            // parenthesised forms (`#[tokio::test(start_paused = true)]`,
+            // `flavor = "multi_thread"`), which is why this matches a prefix
+            // rather than a whole line.
+            let chunks = split_on_test_attrs(tests);
+            for chunk in chunks {
                 // Stop at the end of the test fn so a helper defined after it is
                 // not attributed to it.
                 let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
@@ -1484,7 +1586,12 @@ mod tests {
                 }
             }
         }
-        assert!(checked > 30, "the scan found almost no tests ({checked})");
+        assert!(
+            checked > 50,
+            "the scan found too few tests ({checked}) — the splitter probably stopped \
+             recognising an attribute shape. It saw 46 when it knew only `#[test]` \
+             and 57 once it knew the async forms too."
+        );
         assert!(
             offenders.is_empty(),
             "these tests touch process-global bridge state without `let _g = test_guard();`: \

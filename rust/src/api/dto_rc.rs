@@ -16,6 +16,8 @@ use shed_core::rc::{
 use shed_core::rc_events::RcEvent;
 use shed_core::roost::RoostSession;
 
+use super::dto_lane::BridgeAgentLaneStamp;
+
 /// The kind of agent a session runs (mirrors `rc::RcKind`, unknown-kind policy
 /// preserved via `Other`). A fielded enum → a Dart sealed class.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +247,23 @@ pub struct BridgeRcSession {
     /// row's [`slug`](Self::slug) rendered as a string — carried separately and
     /// typed so a caller never has to parse one back out.
     pub tab_id: Option<i64>,
+    /// **The agent lane on this row, if it has one** (plan 018 §3.9) — derived
+    /// by `RoostSession::agent_lane()` and stamped here the way
+    /// [`attention`](Self::attention) and [`tab_id`](Self::tab_id) are, for the
+    /// same reason: the shared `RcSessionDto` gains no field for roost.
+    ///
+    /// `Some` requires all three of the stamp's conditions to hold — a kind an
+    /// adapter exists for, a loopback control-surface URL the agent announced,
+    /// and the agent's OWN session id — so a `Some` here is a lane
+    /// [`super::lane::lane_open`] can actually be called with, not merely a
+    /// row that looks agentic. `None` is "there is no transcript to show", and a
+    /// client renders no lane affordance for it at all.
+    ///
+    /// It is the FULL stamp rather than a bare flag because §3.11 reconciles a
+    /// live lane against the whole of it: a tab that restarted as a different
+    /// agent, or the same agent on a new ephemeral port, is a DIFFERENT lane,
+    /// and row-presence alone cannot say so.
+    pub agent_lane: Option<BridgeAgentLaneStamp>,
 }
 
 impl From<RcSession> for BridgeRcSession {
@@ -271,6 +290,7 @@ impl From<RcSession> for BridgeRcSession {
             managed: s.managed,
             attention: false,
             tab_id: None,
+            agent_lane: None,
         }
     }
 }
@@ -282,8 +302,8 @@ impl BridgeRcSession {
     /// The body of the row comes from [`RoostSession::to_rc_dto`] — the ONE
     /// mapping, in `shed-core`, that every shed client shares — so a roost row
     /// and a shed row differ in where they came from and in nothing else.
-    /// `attention` and `tab_id` are then stamped from the `RoostSession`,
-    /// because they have no place on the shared DTO.
+    /// `attention`, `tab_id` and `agent_lane` are then stamped from the
+    /// `RoostSession`, because none of them has a place on the shared DTO.
     pub(crate) fn from_roost(session: &RoostSession) -> BridgeRcSession {
         BridgeRcSession::from_roost_dto(session, session.to_rc_dto())
     }
@@ -300,6 +320,7 @@ impl BridgeRcSession {
         let mut row = BridgeRcSession::from(RcSession::from_dto(dto, "", ""));
         row.attention = session.attention;
         row.tab_id = Some(session.tab_id);
+        row.agent_lane = session.agent_lane().map(Into::into);
         row
     }
 }
@@ -639,6 +660,7 @@ mod tests {
         // that has no notion of one.
         assert!(!b.attention);
         assert_eq!(b.tab_id, None);
+        assert_eq!(b.agent_lane, None);
     }
 
     /// A roost row is the shared `to_rc_dto()` mapping plus exactly two stamps.
@@ -698,6 +720,71 @@ mod tests {
         assert_eq!(row.rc_id.as_deref(), Some("ses_f85010d7effexVvTJ1mRHZkDqL"));
         assert_eq!(row.host, "");
         assert_eq!(row.shed, "");
+        // This tab announced no `server_url`, so there is no lane to open —
+        // NOT merely a lane that is unreachable. The stamp is all-or-nothing.
+        assert_eq!(row.agent_lane, None);
+    }
+
+    /// **The lane stamp crosses whole, and only when it is openable.**
+    ///
+    /// Two rows off the same tab shape: one announcing a loopback
+    /// `server_url` (a lane), one announcing a non-loopback one (no lane, and
+    /// that refusal is `RoostSession::agent_lane`'s — the client DIALS this
+    /// value, so it must not depend on roost's own filtering staying correct).
+    #[test]
+    fn a_roost_row_stamps_an_openable_agent_lane() {
+        use shed_core::roost::RoostSession;
+
+        fn row_with(server_url: &str) -> BridgeRcSession {
+            let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
+                "id": "7",
+                "project_id": "2",
+                "title": "OC | lane",
+                "cwd": "/home/shed/oc-work",
+                "state": "idle",
+                "has_notification": false,
+                "is_active": true,
+                "user_titled": false,
+                "position": 1,
+                "created_at": 1788769906_i64,
+                "last_active": 1788769906_i64,
+                "hook_active": true,
+                "shell_state": "unknown",
+                "agent_lifecycle": "working",
+                "ownership": {
+                    "source": "opencode",
+                    "session_id": "ses_abc",
+                    "last_event_at": 1788769939_i64,
+                    "detail": "",
+                    "metadata": {"server_url": server_url}
+                }
+            }))
+            .expect("the tab decodes");
+            let project = roost_ipc::messages::Project {
+                id: 2,
+                name: "Roost".into(),
+                cwd: "/home/shed".into(),
+                position: 0,
+                created_at: 1788769854,
+                tabs: Vec::new(),
+            };
+            BridgeRcSession::from_roost(&RoostSession::from_tab("mini3", &project, &tab))
+        }
+
+        assert_eq!(
+            row_with("http://127.0.0.1:4096").agent_lane,
+            Some(BridgeAgentLaneStamp {
+                kind: "opencode".into(),
+                session_id: "ses_abc".into(),
+                server_url: "http://127.0.0.1:4096".into(),
+            }),
+            "the whole stamp must cross: a bare flag cannot reconcile a \
+             restarted tab onto a new port"
+        );
+        // Negative control: a URL that is not loopback is not a lane. Without
+        // this the phone would happily dial an agent's control surface on
+        // another host.
+        assert_eq!(row_with("http://10.0.0.4:4096").agent_lane, None);
     }
 
     #[test]

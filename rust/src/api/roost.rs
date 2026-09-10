@@ -61,7 +61,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::frb_generated::StreamSink;
 
-use super::bridge_rt::{bridge_rt, ACTIVE_FORWARDERS, ACTIVE_WATCHERS};
+use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_FORWARDERS, ACTIVE_WATCHERS};
 use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
 
 // ---------------------------------------------------------------------------
@@ -490,20 +490,14 @@ pub fn roost_capabilities() -> BridgeRcCapabilities {
 // the runtime hop
 // ---------------------------------------------------------------------------
 
-/// Run `fut` on the persistent bridge runtime and await its result.
+/// Run `fut` on the persistent bridge runtime and await its result — this
+/// module's error type over [`joined_on_bridge_rt`].
 ///
-/// Lifted from [`super::client`]'s `run`, for its reason plus one of this
-/// module's own:
-///
-/// * **Abort-on-drop.** Dropping a `JoinHandle` DETACHES the task, so an FRB
-///   future dropped mid-await (Dart cancelled the call) would leave a roost
-///   request — and its connection — running to its own timeout. The guard holds
-///   the `AbortHandle` and fires on drop; it is disarmed only after a successful
-///   join.
-/// * **The pump.** A loopback-TCP `Conn` spawns a `copy_bidirectional` task, and
-///   `tokio::spawn` binds it to whatever runtime is current. On FRB's per-call
-///   executor that runtime goes away with the call — so every connection this
-///   module makes is made from `bridge_rt`, whether or not it is held.
+/// That helper carries both of the reasons the hop exists (abort-on-drop, and a
+/// reactor that outlives the FRB call); see its doc. The second one is this
+/// module's in particular: a loopback-TCP `Conn` spawns a `copy_bidirectional`
+/// task, so every connection this module makes is made from `bridge_rt`,
+/// whether or not it is held.
 ///
 /// A join failure (task panic/abort) becomes an ordinary error rather than a
 /// panic propagating across the FFI boundary.
@@ -512,20 +506,7 @@ where
     F: Future<Output = Result<T, String>> + Send + 'static,
     T: Send + 'static,
 {
-    struct AbortOnDrop(Option<tokio::task::AbortHandle>);
-    impl Drop for AbortOnDrop {
-        fn drop(&mut self) {
-            if let Some(a) = self.0.take() {
-                a.abort();
-            }
-        }
-    }
-
-    let handle = bridge_rt().spawn(fut);
-    let mut guard = AbortOnDrop(Some(handle.abort_handle()));
-    let joined = handle.await;
-    guard.0 = None; // successful join — disarm the abort
-    match joined {
+    match joined_on_bridge_rt(fut).await {
         Ok(res) => res,
         Err(e) => Err(format!("bridge task join error: {e}")),
     }

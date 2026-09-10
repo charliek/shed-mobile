@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'dto_lane.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_rc.freezed.dart';
@@ -345,6 +346,24 @@ class BridgeRcSession {
   /// typed so a caller never has to parse one back out.
   final PlatformInt64? tabId;
 
+  /// **The agent lane on this row, if it has one** (plan 018 §3.9) — derived
+  /// by `RoostSession::agent_lane()` and stamped here the way
+  /// [`attention`](Self::attention) and [`tab_id`](Self::tab_id) are, for the
+  /// same reason: the shared `RcSessionDto` gains no field for roost.
+  ///
+  /// `Some` requires all three of the stamp's conditions to hold — a kind an
+  /// adapter exists for, a loopback control-surface URL the agent announced,
+  /// and the agent's OWN session id — so a `Some` here is a lane
+  /// [`super::lane::lane_open`] can actually be called with, not merely a
+  /// row that looks agentic. `None` is "there is no transcript to show", and a
+  /// client renders no lane affordance for it at all.
+  ///
+  /// It is the FULL stamp rather than a bare flag because §3.11 reconciles a
+  /// live lane against the whole of it: a tab that restarted as a different
+  /// agent, or the same agent on a new ephemeral port, is a DIFFERENT lane,
+  /// and row-presence alone cannot say so.
+  final BridgeAgentLaneStamp? agentLane;
+
   const BridgeRcSession({
     required this.host,
     required this.shed,
@@ -364,6 +383,7 @@ class BridgeRcSession {
     required this.managed,
     required this.attention,
     this.tabId,
+    this.agentLane,
   });
 
   @override
@@ -385,7 +405,8 @@ class BridgeRcSession {
       lastMessage.hashCode ^
       managed.hashCode ^
       attention.hashCode ^
-      tabId.hashCode;
+      tabId.hashCode ^
+      agentLane.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -409,7 +430,8 @@ class BridgeRcSession {
           lastMessage == other.lastMessage &&
           managed == other.managed &&
           attention == other.attention &&
-          tabId == other.tabId;
+          tabId == other.tabId &&
+          agentLane == other.agentLane;
 }
 
 /// A pane-derived lifecycle state (mirrors `rc::RcState`). Plain enum.
