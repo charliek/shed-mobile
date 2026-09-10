@@ -288,6 +288,7 @@ MSTATE: `machines-section count=N`.
 |---|---|
 | `machine-unreachable-<name>` | group-header badge when the machine isn't currently reachable (`unreachable` / `connecting`) |
 | `machine-empty-<name>` | note shown in place of rows — "connecting…" / "No sessions" / the last-known unreachable reason |
+| `machine-lane-<machine>-<slug>` | the accent **Transcript** pill → `LaneScreen`; present **only** when the row carries an `agentLane` stamp (plan 018). Gated on the STAMP, never on the kind or on roost's capabilities — `laneControllerProvider` throws for a row with none |
 | `machine-open-<machine>-<slug>` | the "›_ open" pill → `RoostPeekScreen` (tooltip "Peek"); present **only** when `attachKind(featuresFor(session)) == 'native-remote'` — a machine session offers no other in-app attach |
 | `machine-attention-<machine>-<slug>` | attention dot (roost's sticky `has_notification`; tooltip "roost notification"); present iff `session.attention` |
 | `machine-kill-<machine>-<slug>` | end the session — roost's `tab.close` (MRESULT via `machine-control-error-<machine>-<slug>` on failure) |
@@ -300,6 +301,47 @@ an unscoped key would collide their controls.
 
 MSTATE: `machine-sessions machine=<name> reachable=t|f count=N` (one line per
 machine group, on every rebuild of that group).
+
+**Agent lane screen — `LaneScreen` (Scaffold `lane-screen`)**
+
+Reached from `machine-lane-<machine>-<slug>`. The agent's OWN transcript
+(`gx`/`opencode` over the machine's SSH forward), the approvals it is blocked
+on, and a composer. Rows are the shared `RcMessageTile` — the same tile the
+session-watch feed uses, because a lane's rows *are* `RcFeedMessage`s.
+
+| Key | What |
+|---|---|
+| `lane-loading` | the lane is opening (probe → forward → `lane_open`) |
+| `lane-unavailable` | the lane's provider failed — centred text before the first snapshot, an error banner above the (now last-known) transcript afterwards |
+| `lane-activity` | activity chip, in the shared `rcActivityDisplay` colours (absent for `unknown`) |
+| `lane-activity-unknown` | the placeholder shown instead of the chip when activity is `unknown` |
+| `lane-stale` | stale banner — carries the transport's OWN reason, never a generic "disconnected" |
+| `lane-note` | lane-level note: a refused open, a failed credential refresh, `Reconnecting…`, or a lane that has been given up on |
+| `lane-list` / `lane-msg-<seq>` | the transcript, newest at the bottom (auto-scrolls only when already at the bottom) |
+| `lane-empty` | "No messages yet" |
+| `lane-approvals` | the scroll container holding the pending approval cards (above the composer) |
+| `lane-approval-<approvalId>` | one approval card |
+| `lane-option-<optionId>` | one offered option on a `permission`/`plan_approval` card — posts `Choice{optionId}`. **Never a decision**: a live gx permission offers five options of which two declare `allow_once`, so no decision names one |
+| `lane-option-<qIndex>-<optionId>` | one option CHIP inside a question form, scoped by question index (two questions in one form can both offer "yes") |
+| `lane-question-header-<i>` | question `i`'s header |
+| `lane-custom-<i>` | question `i`'s free-text field — present only when that question's `custom` is true |
+| `lane-question-send` | "Send answer" → posts `Question{answers, customText}`. Absent only for the one-click shape: a SINGLE non-multiple non-custom question, where the chip tap is the whole answer (gx questions advertise `custom: true`, so gx never gets one-click) |
+| `lane-waiting-<approvalId>` | the raw card's sentence — "waiting for details" for a placeholder permission (gx announces every approval twice, the first time with no options), or "no form for a …" for an unknown kind |
+| `lane-raw-<approvalId>` / `lane-raw-body-<approvalId>` | the collapsed `requestJson` expander, and its body once expanded |
+| `lane-reject-<approvalId>` | the raw card's Reject → posts `Reject`. **A placeholder permission has no allow button at all** — only this |
+| `lane-approval-error-<approvalId>` | a refused answer, on the card that raised it |
+| `lane-input` | the composer's text field |
+| `lane-interject` | the Interject toggle — rendered **only** when `capabilities.interject` (opencode: absent), enabled **only** while activity is `working`. The mode is recomputed at SEND time, so a turn that ended between render and tap sends `Queue` |
+| `lane-cancel` | Cancel — rendered **only** while activity is `working` |
+| `lane-send` | Send |
+| `lane-composer-error` | a refused send or cancel, inline under the composer |
+
+MSTATE: `screen=lane machine=<name> session=<agent session id> generation=N
+stale=<reason|-> approvals=N activity=<wire>`.
+MRESULT: `lane-send ok|error=…`, `lane-cancel ok|error=…`, `lane-answer
+ok|error=…`. A refusal is STATE, not an exception — every `error=` above was
+read back off `LaneState.composerError` / `LaneState.approvalErrors[id]` after
+the verb returned.
 
 **Peek screen — `RoostPeekScreen` (Scaffold `roost-peek-screen`)**
 

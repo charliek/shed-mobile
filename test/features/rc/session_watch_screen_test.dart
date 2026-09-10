@@ -30,12 +30,16 @@ class _FakeSource extends SessionWatchSource {
     this.state = BridgeRcState.ready,
     this.activity,
     this.messages_ = const [],
+    this.truncated = false,
   });
 
   final BridgeRcKindFeatures? features;
   final BridgeRcState state;
   final BridgeRcActivity? activity;
   final List<BridgeRcFeedMessage> messages_;
+
+  /// The hub's ring dropped messages older than the earliest retained one.
+  final bool truncated;
 
   final sentInputs = <String>[];
   final sentTurns = <String>[];
@@ -65,7 +69,7 @@ class _FakeSource extends SessionWatchSource {
     WidgetRef ref, {
     required BigInt since,
     required int limit,
-  }) async => BridgeRcMessagesPage(messages: messages_, truncated: false);
+  }) async => BridgeRcMessagesPage(messages: messages_, truncated: truncated);
 
   @override
   Future<void> sendInput(WidgetRef ref, String text) async =>
@@ -301,6 +305,36 @@ void main() {
 
     expect(find.text('describe this project'), findsOneWidget);
     expect(find.text('It is a reverse proxy.'), findsOneWidget);
+  });
+
+  testWidgets('the truncation divider still marks a dropped history', (
+    tester,
+  ) async {
+    // The transcript's row widgets moved out to the shared `feed_rows.dart`
+    // (plan 018 §3.12) so the lane screen can render the same rows. This is
+    // the pin on the move: the divider and the message tiles still render, and
+    // still carry the `session-watch-*` keys the drive harness reaches them by.
+    final s = _FakeSource(
+      features: _opencode,
+      truncated: true,
+      messages_: [
+        BridgeRcFeedMessage(
+          seq: BigInt.one,
+          role: 'assistant',
+          msgType: 'text',
+          text: 'the oldest thing still in the ring',
+        ),
+      ],
+    );
+    await _pump(tester, s);
+
+    expect(
+      find.byKey(const ValueKey('session-watch-truncated')),
+      findsOneWidget,
+    );
+    expect(find.text('earlier history truncated'), findsOneWidget);
+    expect(find.byKey(const ValueKey('session-watch-msg-1')), findsOneWidget);
+    expect(find.text('the oldest thing still in the ring'), findsOneWidget);
   });
 
   testWidgets('the status strip carries lifecycle AND activity, unsqueezed', (

@@ -12,6 +12,7 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../terminal/terminal_screen.dart';
+import 'feed_rows.dart';
 import 'session_watch_source.dart';
 
 /// **Watching one session**: its message feed, its live status, and the one
@@ -562,9 +563,13 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
       // Leading extra slot for the truncation divider when applicable.
       itemCount: _messages.length + (_historyTruncated ? 1 : 0),
       itemBuilder: (context, i) {
-        if (_historyTruncated && i == 0) return const _TruncatedDivider();
+        if (_historyTruncated && i == 0) {
+          return const RcTruncatedDivider(
+            key: ValueKey('session-watch-truncated'),
+          );
+        }
         final msg = _messages[i - (_historyTruncated ? 1 : 0)];
-        return _MessageTile(
+        return RcMessageTile(
           key: ValueKey('session-watch-msg-${msg.seq}'),
           msg: msg,
         );
@@ -664,100 +669,6 @@ class _SessionWatchScreenState extends ConsumerState<SessionWatchScreen> {
                     tooltip: 'Send',
                   ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The "history truncated" marker shown at the top of the feed when the hub ring
-/// dropped messages older than the earliest retained one.
-class _TruncatedDivider extends StatelessWidget {
-  const _TruncatedDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.shed;
-    return Padding(
-      key: const ValueKey('session-watch-truncated'),
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: c.line)),
-          const SizedBox(width: 10),
-          Text(
-            'earlier history truncated',
-            style: monoStyle(fontSize: 10.5, color: c.fg3),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Divider(color: c.line)),
-        ],
-      ),
-    );
-  }
-}
-
-/// One feed message, rendered as plain text with role/type styling: user
-/// right-aligned, assistant plain, tool blocks collapsed to a single mono line,
-/// reasoning/status dimmed. No markdown — the hub already stripped ANSI/control.
-class _MessageTile extends StatelessWidget {
-  const _MessageTile({required this.msg, super.key});
-
-  final BridgeRcFeedMessage msg;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.shed;
-    final pad = const EdgeInsets.fromLTRB(16, 5, 16, 5);
-
-    if (msg.msgType == 'tool_use' || msg.msgType == 'tool_result') {
-      final tool = msg.tool;
-      final name = tool?.name ?? msg.msgType;
-      final detail = tool?.detail;
-      return Padding(
-        padding: pad,
-        child: Text(
-          detail == null ? '⚙ $name' : '⚙ $name — $detail',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: monoStyle(fontSize: 11.5, color: c.fg3),
-        ),
-      );
-    }
-
-    if (msg.msgType == 'reasoning' ||
-        msg.msgType == 'status' ||
-        msg.role == 'system') {
-      return Padding(
-        padding: pad,
-        child: Text(
-          msg.text ?? '',
-          style: sansStyle(fontSize: 12.5, color: c.fg3),
-        ),
-      );
-    }
-
-    final isUser = msg.role == 'user';
-    return Padding(
-      padding: pad,
-      child: Align(
-        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isUser ? c.toneBg(ShedStatusTone.ok) : c.surface2,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            msg.text ?? '',
-            style: sansStyle(
-              fontSize: 13.5,
-              color: isUser ? c.toneFg(ShedStatusTone.ok) : c.fg,
-            ),
-          ),
         ),
       ),
     );
