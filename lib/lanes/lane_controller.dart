@@ -585,14 +585,31 @@ class LaneController {
     _staleHandled = null;
     final nudges = _nudges;
     _nudges = null;
-    await nudges?.cancel();
     final handle = _handle;
     _handle = null;
     _cursor = null;
-    // AFTER the subscription is cancelled: `lane_close` ends the nudge stream,
-    // and a cancel racing that end is the one ordering that can drop a
-    // teardown on the floor.
+    // **`lane_close` FIRST, and the cancel awaited after it.**
+    //
+    // The reverse order — which this had, on the theory that a cancel racing
+    // `lane_close`'s end of the stream could drop a teardown on the floor —
+    // DEADLOCKS. Rust's `lane_nudges` sits parked on its wake notify for the
+    // life of the lane, and a `StreamSubscription.cancel()` on an FRB stream
+    // does not complete until that function returns. So awaiting the cancel
+    // first meant `lane_close` was never reached, `close()` never completed,
+    // and every teardown path — `close`, `_reopen`, `_reopenNow`, `_abandon` —
+    // hung with the adapter, its pump and its HTTP connections still live.
+    //
+    // The race it was guarding against cannot happen in this order either:
+    // `_generation` was bumped at the top of this method, so any nudge the
+    // closing stream still delivers is dropped by [_onNudge]'s fence, and
+    // `lane_close` is idempotent.
+    //
+    // Found by `integration_test/lane_test.dart`'s
+    // `close_ends_the_pump_and_one_row_is_one_controller` — with a stubbed
+    // `LaneSource` the cancel returns Dart's already-completed null future, so
+    // no unit test could have seen it.
     if (handle != null) source.close(handle);
+    await nudges?.cancel();
     if (releaseLease) await _releaseLease();
   }
 
