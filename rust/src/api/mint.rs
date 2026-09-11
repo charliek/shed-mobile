@@ -1490,6 +1490,73 @@ mod tests {
     /// So: any `#[test]` whose body mentions the shared state must also mention
     /// `test_guard()`. Cheap, mechanical, and it fails on the commit that
     /// introduces the omission rather than three CI runs later.
+    /// The test's own name out of a signature line, however it is
+    /// qualified — `fn`, `async fn`, `pub fn`, `pub(crate) async fn`,
+    /// `pub(in crate::x) fn`.
+    ///
+    /// This is the DIAGNOSTIC half of the guard, and it has been wrong
+    /// twice, so it is a named function with a test rather than a closure:
+    ///
+    /// 1. Matching the prefix `fn ` alone skipped every `async fn`, and the
+    ///    scanner then found the NESTED helper inside the test body and
+    ///    reported IT. `lane.rs` is overwhelmingly `#[tokio::test]`, so
+    ///    that was the common case for the file the guard exists to cover.
+    /// 2. Splitting on `(` first to find the name broke the parenthesised
+    ///    visibilities — `pub(crate)`'s own `(` comes before the keyword —
+    ///    and let a block comment containing `fn` be selected instead of
+    ///    the real signature.
+    ///
+    /// So: reject the lines that cannot be a signature, then find `fn` as a
+    /// TOKEN (line start, or preceded by a space) and take the identifier
+    /// after it. `fn(i32)` has no space, `Fn(i32)` differs in case, and an
+    /// identifier merely ending in `fn` is not preceded by one.
+    fn test_fn_name(line: &str) -> Option<String> {
+        let t = line.trim();
+        // A comment or an attribute is never a signature. `#[doc = "fn x"]`
+        // and `/* fn x() {} */` both reach here otherwise.
+        if t.starts_with("//") || t.starts_with("/*") || t.starts_with('*') || t.starts_with("#[") {
+            return None;
+        }
+        let at = t
+            .match_indices("fn ")
+            .find(|(i, _)| *i == 0 || t.as_bytes()[i - 1] == b' ')?
+            .0;
+        let name: String = t[at + 3..]
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// The diagnostic half of the guard above, which has been wrong twice.
+    /// Every case here is one a reviewer actually raised.
+    #[test]
+    fn test_fn_name_reads_a_signature_however_it_is_qualified() {
+        for (line, want) in [
+            ("fn f() {", Some("f")),
+            ("    async fn f() {", Some("f")),
+            ("pub fn f() {", Some("f")),
+            // The parenthesised visibilities: `pub(crate)`'s own `(` comes
+            // BEFORE the keyword, which is what broke the previous attempt.
+            ("pub(crate) async fn f() {", Some("f")),
+            ("pub(in crate::x) fn f() {", Some("f")),
+            ("pub(super) fn f_2() {", Some("f_2")),
+            // Not signatures, and each one was selected by an earlier attempt.
+            ("// fn decoy() {}", None),
+            ("/* fn decoy() {} */", None),
+            ("/// fn decoy", None),
+            ("#[doc = \"fn decoy\"]", None),
+            // `fn(` has no space; `Fn(` differs in case.
+            ("let g: fn(i32) -> i32 = h;", None),
+            ("where F: Fn(i32) -> i32,", None),
+            ("#[tokio::test(start_paused = true)]", None),
+            ("", None),
+        ] {
+            assert_eq!(test_fn_name(line).as_deref(), want, "line {line:?}");
+        }
+    }
+
     #[test]
     fn every_test_touching_global_state_takes_the_guard() {
         /// Touching any of these means touching state another test can see.
@@ -1521,19 +1588,20 @@ mod tests {
         /// split on the literal `"\n    #[test]\n"`.
         fn split_on_test_attrs(tests: &str) -> Vec<&str> {
             let mut out = Vec::new();
-            for (idx, line) in tests.char_indices().fold(
-                Vec::<(usize, &str)>::new(),
-                |mut acc, (i, c)| {
-                    if i == 0 || c == '\n' {
-                        let start = if c == '\n' { i + 1 } else { i };
-                        if let Some(rest) = tests.get(start..) {
-                            let line = rest.split('\n').next().unwrap_or("");
-                            acc.push((start, line));
+            for (idx, line) in
+                tests
+                    .char_indices()
+                    .fold(Vec::<(usize, &str)>::new(), |mut acc, (i, c)| {
+                        if i == 0 || c == '\n' {
+                            let start = if c == '\n' { i + 1 } else { i };
+                            if let Some(rest) = tests.get(start..) {
+                                let line = rest.split('\n').next().unwrap_or("");
+                                acc.push((start, line));
+                            }
                         }
-                    }
-                    acc
-                },
-            ) {
+                        acc
+                    })
+            {
                 let t = line.trim();
                 // `#[test]`, `#[tokio::test]`, `#[tokio::test(flavor = …)]`,
                 // `#[tokio::test(start_paused = true)]`, and any future
@@ -1571,31 +1639,9 @@ mod tests {
                 // Stop at the end of the test fn so a helper defined after it is
                 // not attributed to it.
                 let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
-                // The signature line HOWEVER it is qualified — `fn`,
-                // `async fn`, `pub fn`, `pub(crate) async fn`, … Taking the
-                // text between the last `fn ` token and the parameter list
-                // matches all of them, where a prefix match does not.
-                //
-                // This matters because the predicate admits `#[tokio::test]`
-                // and an async test's signature is `async fn foo() {`. Matching
-                // only `fn ` skipped the signature and then found the NESTED
-                // helper inside the test body, so the report named the WRONG
-                // offender (or `"?"` with no helper present) for exactly the
-                // file this guard was widened to cover — `lane.rs`, which is
-                // overwhelmingly `#[tokio::test]`. Detection was never
-                // affected; the diagnostic was, and the report is all a CI
-                // failure hands you.
                 let fn_name = body
                     .lines()
-                    .find_map(|l| {
-                        let t = l.trim();
-                        if t.starts_with("//") {
-                            return None;
-                        }
-                        let head = t.split('(').next()?;
-                        let name = head.rsplit_once("fn ")?.1.trim();
-                        (!name.is_empty()).then(|| name.to_string())
-                    })
+                    .find_map(test_fn_name)
                     .unwrap_or_else(|| "?".into());
                 if fn_name == SELF {
                     continue;
