@@ -872,8 +872,26 @@ final laneStateProvider = StreamProvider.autoDispose.family<LaneState, LaneRef>(
     await ref.watch(machinesProvider.future);
     await ref.watch(identitiesProvider.future);
     final controller = ref.watch(laneControllerProvider(key));
+    // **Subscribed before `open()` can emit.** `controller.updates` is a
+    // BROADCAST stream and buffers nothing, and an `async*` body pauses at
+    // `yield controller.state` before it ever reaches `yield*`'s own subscribe
+    // — so an emission landing in that gap was dropped and the screen kept the
+    // pre-open state until something else changed. This relay is a
+    // single-subscription controller, which DOES buffer before its listener
+    // attaches, so the window closes with nothing but `dart:async`.
+    final relay = StreamController<LaneState>();
+    final sub = controller.updates.listen(
+      relay.add,
+      onError: relay.addError,
+      onDone: relay.close,
+      cancelOnError: false,
+    );
+    ref.onDispose(() {
+      sub.cancel();
+      relay.close();
+    });
     unawaited(controller.open());
     yield controller.state;
-    yield* controller.updates;
+    yield* relay.stream;
   },
 );

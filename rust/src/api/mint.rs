@@ -1571,9 +1571,21 @@ mod tests {
                 // Stop at the end of the test fn so a helper defined after it is
                 // not attributed to it.
                 let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
+                // `async fn` FIRST, because the predicate admits
+                // `#[tokio::test]` and an async test's signature line is
+                // `async fn foo() {`. Matching only `fn ` fell through to a
+                // nested helper inside the body, or to `"?"` — so the offender
+                // report named no test for exactly the file this guard was
+                // widened to cover, `lane.rs`, which is overwhelmingly
+                // `#[tokio::test]`. Detection was never affected; the
+                // diagnostic was, which is worse than it sounds when the
+                // report is all you get on a CI failure.
                 let fn_name = body
                     .lines()
-                    .find_map(|l| l.trim().strip_prefix("fn "))
+                    .find_map(|l| {
+                        let t = l.trim();
+                        t.strip_prefix("async fn ").or_else(|| t.strip_prefix("fn "))
+                    })
                     .map(|l| l.split('(').next().unwrap_or("?").to_string())
                     .unwrap_or_else(|| "?".into());
                 if fn_name == SELF {

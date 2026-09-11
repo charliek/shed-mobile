@@ -120,6 +120,14 @@ Future<SshExecResult> execOn(
     ok = true;
   } finally {
     if (!ok) {
+      // Whichever band did NOT throw may still complete with an error, and an
+      // error delivered to a `Completer` whose future nobody awaits is
+      // reported to the zone as UNHANDLED — which fails the enclosing
+      // `flutter_test` case and raises a spurious crash report in the app.
+      // Cancelling the subscription does not retract an error already handed
+      // to the completer, so both futures are explicitly ignored here.
+      outDone.future.ignore();
+      errDone.future.ignore();
       await outSub.cancel();
       await errSub.cancel();
       session.close();
