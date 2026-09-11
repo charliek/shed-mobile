@@ -11,6 +11,10 @@ analyzer:
     # by the actual builds (every platform job compiles through it), not by
     # this app's analyzer.
     - rust_builder/cargokit/**
+    - build/**
+    - android/**
+    - macos/**
+    - linux/**
   language:
     strict-casts: true
     strict-raw-types: true

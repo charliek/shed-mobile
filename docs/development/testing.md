@@ -54,8 +54,12 @@ both run every file even after one fails.
 `desktop/tools/shedtest/fake_lane_server.py`, spawned per cell over a loopback
 control port. So it needs a **shed checkout** and `python3` — and nothing else:
 
-- **No sshd, no forward, no network.** The reach is `LaneReach.local`, so
-  `dial_url == reported_url`. The refcounted forward has its own hermetic tests.
+- **No sshd, no forward, no network.** The harness overrides `laneReachProvider`
+  with `LaneReach.local`, so `dial_url == reported_url`. It is an explicit
+  override, never inferred from the fake's loopback host — production is
+  `LaneReach.machine` for every machine, including `localhost` (a shed VM is
+  dialled at `localhost:2222` and its agent is inside the VM). The refcounted
+  forward has its own hermetic tests.
 - **gx credentials are real.** The fake writes a `$GROK_HOME` (a discovery
   record plus a `0600` token) into a temp dir; the `ProbeRunner` seam's local
   implementation runs `gxProbeRemoteCommand()` verbatim through `sh -c` with

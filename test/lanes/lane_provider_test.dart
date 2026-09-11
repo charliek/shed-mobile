@@ -181,23 +181,80 @@ void main() {
     });
   });
 
-  group('laneReachFor', () {
-    test('a loopback machine is local; anything else needs a forward', () {
-      for (final host in ['localhost', '127.0.0.1', '::1', '[::1]']) {
-        expect(
-          laneReachFor(MachineRecord(name: 'm', host: host)),
-          LaneReach.local,
-          reason: host,
-        );
-      }
+  group('laneReachProvider', () {
+    test('production is machine reach, unconditionally', () {
+      final container = _container(_FakeFeed());
+      addTearDown(container.dispose);
+
+      expect(container.read(laneReachProvider), LaneReach.machine);
+    });
+
+    test('a lane on a LOOPBACK host still forwards', () async {
+      // THE LIVE BUG, as a regression guard. This seam used to infer the reach
+      // from the host and answer `local` for `localhost`/`127.0.0.1`, but a
+      // shed VM is dialled at `localhost:2222` — the shed *server's* sshd,
+      // which routes into a microVM whose `127.0.0.1:2421` is not this
+      // device's. Registered as `localhost` the lane made no forward and sat at
+      // `generation=0` forever; registered by LAN address, the same VM worked.
+      // So a loopback host must change nothing here.
+      final feed = _FakeFeed(
+        machine: const MachineRecord(name: 'mini3', host: 'localhost'),
+      );
+      final source = _FakeSource();
+      final container = _container(feed, source: source);
+      addTearDown(container.dispose);
+
+      final sub = container.listen(
+        laneStateProvider(_seven),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      await pumpEventQueue();
+
       expect(
-        laneReachFor(const MachineRecord(name: 'mini3', host: 'mini3')),
+        container.read(laneControllerProvider(_seven)).reach,
         LaneReach.machine,
       );
+      expect(feed.acquired, [2421], reason: 'a forward, despite the host');
       expect(
-        laneReachFor(const MachineRecord(name: 'm', host: '10.0.0.4')),
-        LaneReach.machine,
+        source.specs.single.dialUrl,
+        'http://127.0.0.1:41000',
+        reason: 'the dial goes to OUR forward, not to the reported port',
       );
+      expect(sub.read().value?.capabilities?.kind, 'gx');
+    });
+
+    test('the override is the seam the hermetic harness relies on', () async {
+      // `integration_test/lane_test.dart` needs a lane with no sshd and no
+      // forward, and this override is the ONLY way it gets one now — which is
+      // why the no-forward path stays covered here rather than only there.
+      final feed = _FakeFeed();
+      final source = _FakeSource();
+      final container = _container(
+        feed,
+        source: source,
+        reach: LaneReach.local,
+      );
+      addTearDown(container.dispose);
+
+      final sub = container.listen(
+        laneStateProvider(_seven),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      await pumpEventQueue();
+
+      expect(
+        container.read(laneControllerProvider(_seven)).reach,
+        LaneReach.local,
+      );
+      expect(feed.acquired, isEmpty, reason: 'nothing to forward');
+      expect(
+        source.specs.single.dialUrl,
+        source.specs.single.reportedUrl,
+        reason: 'the local branch dials the reported url verbatim',
+      );
+      expect(sub.read().value?.capabilities?.kind, 'gx');
     });
   });
 }
@@ -206,18 +263,24 @@ const _seven = (machine: 'mini3', slug: '7');
 const _eight = (machine: 'mini3', slug: '8');
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3');
 
-ProviderContainer _container(_FakeFeed feed, {_FakeSource? source}) =>
-    ProviderContainer(
-      overrides: [
-        machinesProvider.overrideWith((ref) async => const [_mini3]),
-        identitiesProvider.overrideWith((ref) async => []),
-        machineFeedControllerProvider('mini3').overrideWith((ref) => feed),
-        machineFeedProvider(
-          'mini3',
-        ).overrideWith((ref) => Stream.value(feed.state)),
-        if (source != null) laneSourceProvider.overrideWithValue(source),
-      ],
-    );
+ProviderContainer _container(
+  _FakeFeed feed, {
+  _FakeSource? source,
+  LaneReach? reach,
+}) => ProviderContainer(
+  overrides: [
+    machinesProvider.overrideWith((ref) async => const [_mini3]),
+    identitiesProvider.overrideWith((ref) async => []),
+    machineFeedControllerProvider('mini3').overrideWith((ref) => feed),
+    machineFeedProvider(
+      'mini3',
+    ).overrideWith((ref) => Stream.value(feed.state)),
+    if (source != null) laneSourceProvider.overrideWithValue(source),
+    // Left alone unless a test is about the reach: the default IS the
+    // production value, so every other cell exercises the shipped path.
+    if (reach != null) laneReachProvider.overrideWithValue(reach),
+  ],
+);
 
 MachineFeedState _state({List<BridgeRcSession>? sessions}) => MachineFeedState(
   machine: _mini3,
@@ -259,11 +322,15 @@ BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
 /// a unit test at all. `noSuchMethod` guards every member this fake does not
 /// know about.
 class _FakeFeed implements MachineFeed {
+  _FakeFeed({this.machine = _mini3});
+
   final List<String> probes = [];
   final List<int> acquired = [];
 
+  /// Carried because [MachineFeed] declares it, and settable so one test can
+  /// give the machine a LOOPBACK host and prove the reach ignores it.
   @override
-  MachineRecord get machine => _mini3;
+  final MachineRecord machine;
 
   @override
   MachineFeedState get state => _state();

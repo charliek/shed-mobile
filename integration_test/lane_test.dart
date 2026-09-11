@@ -9,13 +9,18 @@
 //
 // ## Why this can be hermetic at all
 //
-// **The reach is LOCAL.** `dial_url == reported_url`, so there is no SSH, no
-// forward and no sshd — the forward has its own hermetic tests (§3.10) and the
-// probe line has a Rust golden against `tests/machine-transport`. gx's bearer
-// token comes from the fake's own `write_home` on a temp `$GROK_HOME`, read
-// through the `ProbeRunner` seam's LOCAL implementation: `sh -c` of exactly
-// `gxProbeRemoteCommand()`, with `GROK_HOME` set. So the wire string, the POSIX
-// script and Rust's `parse_probe` are exercised end to end with no network.
+// **The reach is LOCAL, because this harness SAYS so.** `_rig` overrides
+// `laneReachProvider` with [LaneReach.local] — the one caller that does. It is
+// never inferred from the fake's loopback host: production always forwards (see
+// `laneReachProvider`'s docstring for the shed-VM case that killed the
+// hostname heuristic). With the override, `dial_url == reported_url`, so there
+// is no SSH, no forward and no sshd — the forward has its own hermetic tests
+// (§3.10) and the probe line has a Rust golden against
+// `tests/machine-transport`. gx's bearer token comes from the fake's own
+// `write_home` on a temp `$GROK_HOME`, read through the `ProbeRunner` seam's
+// LOCAL implementation: `sh -c` of exactly `gxProbeRemoteCommand()`, with
+// `GROK_HOME` set. So the wire string, the POSIX script and Rust's
+// `parse_probe` are exercised end to end with no network.
 //
 // ## What it found
 //
@@ -110,8 +115,10 @@ const _ocOther = 'ses_other';
 /// The lane's identity on the phone: the machine, and the ROW's slug.
 const _ref = (machine: 'local', slug: '7');
 
-/// A loopback machine — [laneReachFor] answers [LaneReach.local] for it, which
-/// is what makes the whole harness need no forward.
+/// The machine record the lane's feed is built from. Its host is loopback only
+/// because the fake really is on this device's loopback — it is NOT what makes
+/// the reach local. That comes from `_rig`'s explicit [laneReachProvider]
+/// override; production forwards whatever the host says.
 const _local = MachineRecord(name: 'local', host: '127.0.0.1');
 
 void main() {
@@ -2174,7 +2181,8 @@ Future<_Rig> _rig(
   final feed = _LocalFeed(
     kind: kind,
     sessionId: sessionId,
-    // The REPORTED url — and, because the reach is local, the dial url too.
+    // The REPORTED url — and, because this rig overrides the reach to local,
+    // the dial url too.
     serverUrl: fake.reportedUrl,
     grokHome: grokHome?.path,
     probes: probes,
@@ -2190,6 +2198,11 @@ Future<_Rig> _rig(
       machineFeedProvider(
         'local',
       ).overrideWith((ref) => Stream.value(feed.state)),
+      // **The one override that makes this harness hermetic.** Production is
+      // `LaneReach.machine` unconditionally — the fake's loopback host means
+      // nothing to it — so the no-forward, no-sshd path has to be ASKED for
+      // here rather than fallen into.
+      laneReachProvider.overrideWithValue(LaneReach.local),
       // `laneSourceProvider` is NOT overridden. The real FRB bridge is the
       // whole point of this file.
     ],
@@ -2212,10 +2225,11 @@ Future<_Rig> _rig(
 ///
 /// The real one dials SSH and calls the FRB-sync `roostCapabilities()` in its
 /// constructor. What a lane actually asks of it is four things: the machine
-/// record (which decides the reach), the row that carries the stamp, the probe
-/// runner, and a forward. Its host is loopback, so [laneReachFor] answers
-/// [LaneReach.local] and `acquireForward` is never reached — a call to it is a
-/// bug, so it throws rather than returning something plausible.
+/// record, the row that carries the stamp, the probe runner, and a forward. The
+/// record does NOT decide the reach: nothing on this fake is read for that.
+/// `_rig` overrides [laneReachProvider] to [LaneReach.local], so
+/// `acquireForward` is never reached. A call to it means the override is gone,
+/// so it throws rather than returning something plausible.
 class _LocalFeed implements MachineFeed {
   _LocalFeed({
     required this.kind,

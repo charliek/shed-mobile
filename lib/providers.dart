@@ -776,17 +776,34 @@ Stream<BridgeAgentLaneStamp?> laneStamps(
     .map((s) => laneStampFor(s, slug))
     .distinct();
 
-/// Whether a machine's agent servers are on THIS device's loopback.
+/// How a lane reaches its agent server. **Production is always
+/// [LaneReach.machine]**; [LaneReach.local] exists for one overriding caller,
+/// the hermetic integration harness.
 ///
-/// The desktop's implicit-`localhost` reach, derived from the record instead of
-/// a registry: a machine dialled at a loopback address is this device, so its
-/// `127.0.0.1:<port>` IS our `127.0.0.1:<port>` and there is nothing to
-/// forward. Everything else needs the feed's SSH connection.
-@visibleForTesting
-LaneReach laneReachFor(MachineRecord machine) =>
-    const {'localhost', '127.0.0.1', '::1', '[::1]'}.contains(machine.host)
-    ? LaneReach.local
-    : LaneReach.machine;
+/// **Never infer this from the machine's host.** An earlier version of this
+/// seam was a `laneReachFor(MachineRecord)` that answered [LaneReach.local] for
+/// `localhost`/`127.0.0.1`/`::1`, reasoning that a machine dialled at a
+/// loopback address is this device, so its `127.0.0.1:<port>` IS our
+/// `127.0.0.1:<port>`. That inference is false whenever SSH on loopback leads
+/// somewhere else, and the canonical case is the one a shed developer hits
+/// first: a **shed VM** is reached at `localhost:2222`, which is the shed
+/// *server's* sshd on this host, and it routes into a Firecracker/VZ microVM
+/// that has a loopback of its own. The agent's `127.0.0.1:2421` inside that VM
+/// is emphatically not this device's `127.0.0.1:2421`. A container, a published
+/// Docker port and a jump port all break the same way.
+///
+/// Proven live, not argued: one shed VM — same gx session, same everything —
+/// registered twice under two host spellings. As `localhost` the lane took the
+/// local branch, made no forward, and sat at `generation=0` forever with
+/// "Reconnecting: the gx lane at http://127.0.0.1:2421 is closed". As
+/// `192.168.86.42` — the same sshd, the same VM — it forwarded, reached
+/// `generation=1`, and send/approve/interject/cancel all worked. A hostname
+/// cannot tell those two apart, so nothing here tries.
+///
+/// Defaulting to [LaneReach.machine] is wrong nowhere: a forward to a genuinely
+/// local agent still works, at the cost of one extra hop through the machine's
+/// own SSH connection, which the feed is already holding open.
+final laneReachProvider = Provider<LaneReach>((ref) => LaneReach.machine);
 
 /// The lane bridge, as one overridable seam.
 ///
@@ -832,7 +849,7 @@ final laneControllerProvider = Provider.autoDispose
         // The feed owns the SSH connection every lane call rides — the probe
         // and the forward both go through it, so a lane costs no second link.
         probe: feed.probe,
-        reach: laneReachFor(feed.machine),
+        reach: ref.watch(laneReachProvider),
         acquireForward: feed.acquireForward,
         stamps: laneStamps(feed.updates, key.slug),
       );
