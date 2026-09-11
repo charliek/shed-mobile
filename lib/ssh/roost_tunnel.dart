@@ -48,8 +48,8 @@ typedef RoostExec = Future<RoostExecSession> Function(String command);
 ///
 /// This is the phone's half of the machine transport seam, re-pointed from the
 /// RC hub onto roost. The shared Rust core does everything above the port — the
-/// IPC framing, `tab.list`, the poll cadence, the reconnect/backoff — and is
-/// handed nothing but an `int`:
+/// IPC framing, `tab.list`, the event batching (roost pushes, the watcher does
+/// not poll), the reconnect/backoff — and is handed nothing but an `int`:
 ///
 /// ```text
 ///   Dart: ServerSocket ──execute(remoteCommand)──▶ roost-session client-bridge
@@ -77,9 +77,10 @@ typedef RoostExec = Future<RoostExecSession> Function(String command);
 ///
 /// **Never half-close the exec's stdin early.** `client-bridge` is a pure byte
 /// pump to the far side's session socket, and roost ends a stream when its write
-/// half closes; the Rust watcher holds ONE connection and polls on it for
-/// minutes. So stdin is closed at exactly one place — when the local socket
-/// itself is done — and never as "we finished writing this request".
+/// half closes; the Rust watcher holds ONE connection open and parks on it,
+/// reading pushed events, for minutes. So stdin is closed at exactly one place
+/// — when the local socket itself is done — and never as "we finished writing
+/// this request".
 class RoostTunnel {
   RoostTunnel._(this._listener, this.remoteCommand, this.machine);
 

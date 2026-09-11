@@ -48,7 +48,13 @@ The project is built one phase per commit. Each phase:
 4. **Gate 2** — `/simplify` on the diff (4 reuse/simplify/efficiency/altitude
    agents); apply fixes.
 5. **Gate 3** — `/codex:rescue` on the diff (correctness/security); apply fixes.
-6. **Commit** — Conventional Commit, **no PR**, push to `main`; confirm CI green.
+6. **Commit** — Conventional Commit. A regular phase pushes directly to
+   `main`; confirm CI green. **An epic item is different**: it lands through
+   a PR whose body closes its ticket (`Closes charliek/shed-mobile#<n>`) — see
+   [`../../epics/roost-pivot.md`](../../epics/roost-pivot.md) for the
+   Roost Pivot epic's own rule and tracking link. Each per-phase commit on the
+   epic's feature branch still runs Gates 1–3; the PR is what closes the
+   ticket, not a substitute for the gated loop.
 
 Docs/config-only phases skip Gates 2–3 (no logic to review).
 

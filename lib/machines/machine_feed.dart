@@ -37,12 +37,12 @@ class MachineFeedState {
   /// Live patches from the feed, keyed by SLUG, applied over [sessions] at
   /// render time.
   ///
-  /// **Empty on the roost path**, and kept anyway: roost's inventory is read
-  /// whole on every poll, so there is no patch stream to fold — a `Snapshot` is
-  /// the entire truth about a machine. The overlay stays because it is what the
-  /// render sites read through ([activityOf] / [stateOf]), and because roost's
-  /// R1 live push lands events again; deleting it would mean re-deriving the
-  /// same seam a milestone later.
+  /// **Empty on the roost path**, and kept anyway: roost's watcher folds its
+  /// event batches into a whole inventory before republishing, so there is no
+  /// patch stream to fold — a `Snapshot` is the entire truth about a machine.
+  /// The overlay stays because it is what the render sites read through
+  /// ([activityOf] / [stateOf]), and because roost's R1 live push lands events
+  /// again; deleting it would mean re-deriving the same seam a milestone later.
   final Map<String, MachinePatch> overlay;
 
   final bool reachable;
@@ -146,7 +146,7 @@ class MachinePatch {
 /// and they are exactly the rules that break silently in production.
 ///
 /// * A `Snapshot` **replaces** the row set — it is roost's whole agent-owned
-///   tab list as of that poll, so merging would resurrect tabs that were
+///   tab list as of that push, so merging would resurrect tabs that were
 ///   closed. It also clears the overlay, because the snapshot already carries
 ///   every dimension a patch could hold.
 /// * A `Down` **keeps** the rows and marks them stale with a reason. Blanking
@@ -182,9 +182,9 @@ MachineFeedState foldRoostUpdate(
 ///
 /// Keyed on the slug (roost's tab id as a string), so a re-open of a row the
 /// last snapshot already carried replaces it rather than doubling it. The next
-/// poll is authoritative either way — this only exists so the card appears in
-/// the two seconds before that poll, which is the difference between "it
-/// worked" and "did that button do anything?".
+/// push from the watcher is authoritative either way — this only exists so the
+/// card appears in the gap before that push arrives, which is the difference
+/// between "it worked" and "did that button do anything?".
 @visibleForTesting
 MachineFeedState foldOpenedRow(MachineFeedState state, BridgeRcSession row) =>
     state.copyWith(
@@ -194,8 +194,8 @@ MachineFeedState foldOpenedRow(MachineFeedState state, BridgeRcSession row) =>
 /// Drop a row that has just been closed, optimistically.
 ///
 /// Same reasoning inverted: `tab.close` removes the tab from `tab.list`
-/// entirely, so the next poll agrees — but a killed session lingering for a
-/// poll interval reads as "the kill didn't work".
+/// entirely, so the next push agrees — but a killed session lingering until
+/// that push lands reads as "the kill didn't work".
 @visibleForTesting
 MachineFeedState foldClosedRow(MachineFeedState state, String slug) =>
     state.copyWith(
@@ -302,9 +302,9 @@ Future<bool> releaseIfStopped<T>({
 /// ## Backgrounding is a STOP, not a stall
 ///
 /// [stop] tears the tunnel and the watcher down; [start] rebuilds both. That is
-/// deliberate rather than lazy: holding an SSH connection and a poll loop open
-/// behind a backgrounded phone is what drains a battery and gets an app killed
-/// by the OS.
+/// deliberate rather than lazy: holding an SSH connection and a parked watcher
+/// open behind a backgrounded phone is what drains a battery and gets an app
+/// killed by the OS.
 ///
 /// Resuming loses nothing, and that falls out of the WIRE rather than needing a
 /// replay protocol: `tab.list` is an authoritative snapshot, so a fresh
@@ -606,7 +606,7 @@ class MachineFeed {
     final watcher = _watcher;
     _watcher = null;
     if (watcher != null) {
-      // The SYNCHRONOUS stop, not just a drop: it aborts the poll loop and the
+      // The SYNCHRONOUS stop, not just a drop: it aborts the watcher and the
       // forwarder even while they are parked.
       await stopRoostWatcher(handle: watcher);
     }
