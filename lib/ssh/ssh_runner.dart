@@ -112,22 +112,35 @@ Future<SshExecResult> execOn(
   // runs through here, on the one `SSHClient` a machine feed owns for
   // everything, so a leaked channel is a leak for the whole app rather than
   // for one call. Normal completion still falls through untouched.
+  // **Registered BEFORE the first await, and that ordering is the whole point.**
+  // An error handed to a `Completer` whose future has no listener YET is
+  // reported to the zone as UNHANDLED at that instant — which fails the
+  // enclosing `flutter_test` case and raises a spurious crash report in the
+  // app. While the code below sits on `outDone.future`, the OTHER two futures
+  // have no listener, so an error on either is already reported by the time any
+  // `finally` could run; a handler attached afterwards cannot retract it.
+  //
+  // `ignore()` suppresses only the unhandled-error REPORT, never the value: an
+  // `await` on the same future afterwards still throws, so the primary failure
+  // below still propagates. Verified against the pinned SDK (Dart 3.12):
+  // ignore-then-await throws, and ignore-after-the-fact is still reported.
+  //
+  // dartssh2 2.18.0 as pinned never errors these controllers and completes
+  // `done` only successfully, so this is a latent ordering rather than one seen
+  // today — but it is an ordering its API and its own `onError` branches admit.
+  final done = session.done;
+  outDone.future.ignore();
+  errDone.future.ignore();
+  done.ignore();
+
   var ok = false;
   try {
     await outDone.future;
     await errDone.future;
-    await session.done;
+    await done;
     ok = true;
   } finally {
     if (!ok) {
-      // Whichever band did NOT throw may still complete with an error, and an
-      // error delivered to a `Completer` whose future nobody awaits is
-      // reported to the zone as UNHANDLED — which fails the enclosing
-      // `flutter_test` case and raises a spurious crash report in the app.
-      // Cancelling the subscription does not retract an error already handed
-      // to the completer, so both futures are explicitly ignored here.
-      outDone.future.ignore();
-      errDone.future.ignore();
       await outSub.cancel();
       await errSub.cancel();
       session.close();

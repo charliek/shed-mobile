@@ -1571,22 +1571,31 @@ mod tests {
                 // Stop at the end of the test fn so a helper defined after it is
                 // not attributed to it.
                 let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
-                // `async fn` FIRST, because the predicate admits
-                // `#[tokio::test]` and an async test's signature line is
-                // `async fn foo() {`. Matching only `fn ` fell through to a
-                // nested helper inside the body, or to `"?"` — so the offender
-                // report named no test for exactly the file this guard was
-                // widened to cover, `lane.rs`, which is overwhelmingly
-                // `#[tokio::test]`. Detection was never affected; the
-                // diagnostic was, which is worse than it sounds when the
-                // report is all you get on a CI failure.
+                // The signature line HOWEVER it is qualified — `fn`,
+                // `async fn`, `pub fn`, `pub(crate) async fn`, … Taking the
+                // text between the last `fn ` token and the parameter list
+                // matches all of them, where a prefix match does not.
+                //
+                // This matters because the predicate admits `#[tokio::test]`
+                // and an async test's signature is `async fn foo() {`. Matching
+                // only `fn ` skipped the signature and then found the NESTED
+                // helper inside the test body, so the report named the WRONG
+                // offender (or `"?"` with no helper present) for exactly the
+                // file this guard was widened to cover — `lane.rs`, which is
+                // overwhelmingly `#[tokio::test]`. Detection was never
+                // affected; the diagnostic was, and the report is all a CI
+                // failure hands you.
                 let fn_name = body
                     .lines()
                     .find_map(|l| {
                         let t = l.trim();
-                        t.strip_prefix("async fn ").or_else(|| t.strip_prefix("fn "))
+                        if t.starts_with("//") {
+                            return None;
+                        }
+                        let head = t.split('(').next()?;
+                        let name = head.rsplit_once("fn ")?.1.trim();
+                        (!name.is_empty()).then(|| name.to_string())
                     })
-                    .map(|l| l.split('(').next().unwrap_or("?").to_string())
                     .unwrap_or_else(|| "?".into());
                 if fn_name == SELF {
                     continue;
