@@ -152,9 +152,11 @@ void main() {
         '7',
       );
 
-      expect(await stamps.toList(), [
-        isA<BridgeAgentLaneStamp>(),
-      ], reason: 'only the authoritative state produced a stamp');
+      expect(
+        await stamps.toList(),
+        [isA<BridgeAgentLaneStamp>()],
+        reason: 'only the authoritative state produced a stamp',
+      );
     });
 
     test('emits null once the row is really gone, and dedupes repeats', () async {
