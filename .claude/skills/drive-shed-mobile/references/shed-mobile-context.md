@@ -197,47 +197,54 @@ so both surfaces expose the identical `all-session-*` keys.
 |---|---|
 | `all-session-open-<base>` | "›_ open" pill → in-app terminal (TUI); present only when `attachKind(kind_features[kind]) == 'tmux'` (plan 013 — every shed row today; see the Machines section below for the `native-remote` peek) |
 | `all-session-attention-<base>` | attention dot (roost's sticky `has_notification`, tooltip "roost notification"); present iff `session.attention` (always false for a shed row today) |
-| `all-session-watch-<base>` | "watch" (eye) → CodexWatchScreen; **only** when caps `kind_features[kind].watch` |
+| `all-session-watch-<base>` | "watch" (eye) → SessionWatchScreen; **only** when caps `kind_features[kind].watch` |
 | `all-session-url-copy-<base>` | copy the claude.ai URL to the clipboard (MRESULT `session-url-copy ok`); **only** when the session carries a non-empty `url` (claude-rc/claude-broker) |
 | `all-session-url-open-<base>` | open that URL in an external browser via the safe-launch helper (http/https only; a rejected/failed launch snackbars "Could not open URL"); MRESULT `session-url-open ok\|error`; same `url`-present gate |
 | `all-session-delete-<base>` | delete/kill the session |
 | `all-session-activity-<base>` | live activity badge — present only when lifecycle permits (ready-ish) AND activity is `working` (pulsing) / `needs_input` (steady) / `idle` (quiet); absent for `unknown`, and suppressed for needs-*/dead |
 | `all-session-lastmsg-<base>` | one-line last-message preview (when the hub reports one; suppressed with the activity badge for needs-*/dead — whole-dimension suppression) |
 
-### Codex watch view — `CodexWatchScreen` (Scaffold `codex-watch-screen`)
-The codex-first non-TUI message feed + gated input. Reached from
-`all-session-watch-<base>`. Renders `GET …/rc/v1/sessions/{slug}/messages`
-(plain Text, no markdown), live-appends on `message.appended`, and posts
-`.../input` when gated + waiting. Lifecycle needs-auth/dead or a 503 hands off
-to the TUI terminal.
+### Session watch view — `SessionWatchScreen` (Scaffold `session-watch-screen`)
+The transport-agnostic non-TUI message feed + gated input. A `SessionWatchSource`
+supplies the feed, the input path and the terminal target, so a shed session
+(reached through its server) and a machine session (reached over the machine's
+own hub) render and behave identically — reached from `all-session-watch-<base>`.
+Renders the hub-sanitized feed (plain Text, no markdown), live-appends on a seq
+bump (`message.appended` carries a high-water mark, not content, so a bump
+triggers a targeted fetch), and posts input/turns when gated + waiting.
+Lifecycle needs-auth/dead or a 503 hands off to the TUI terminal.
 
 | Key | What |
 |---|---|
-| `codex-watch-refresh` | app-bar refresh (re-drain the feed) |
-| `codex-watch-activity` | app-bar live activity badge (same rules as the card badge) |
-| `codex-watch-loading` | initial-load spinner |
-| `codex-watch-list` | the message feed ListView |
-| `codex-watch-msg-<seq>` | one feed message (per `seq`) |
-| `codex-watch-truncated` | "earlier history truncated" divider (first page `truncated:true`) |
-| `codex-watch-empty` | "No messages yet" |
-| `codex-watch-input` | reply TextField — enabled only when `kind_features.input=="gated"` AND activity `needs_input` AND lifecycle permits |
-| `codex-watch-send` | send button (`onPressed: null` when input disabled) |
-| `codex-watch-banner` | needs-auth/dead TUI-handoff banner (warn) |
-| `codex-watch-open-tui-banner` | one-tap → in-app terminal (the banner's button) |
-| `codex-watch-open-tui` | one-tap → in-app terminal (the error/unavailable body's button; distinct from the banner key — both can be on screen together) |
-| `codex-watch-unavailable` | "Live view unavailable on this shed" (hub 503 / RC_HUB_UNAVAILABLE) |
-| `codex-watch-error` | generic feed-load error text |
-| `codex-watch-retry` | retry the feed load |
+| `session-watch-interrupt` | app-bar Interrupt (stop-circle) — shown only when the kind's `interrupt` capability is set and the session permits |
+| `session-watch-open-tui-action` | app-bar terminal icon → always-available TUI handoff |
+| `session-watch-refresh` | app-bar refresh (re-drain the feed) |
+| `session-watch-state` | the lifecycle status badge |
+| `session-watch-activity` | the activity badge (same rules as the card badge; absent when there's nothing to show) |
+| `session-watch-loading` | initial-load spinner |
+| `session-watch-list` | the message feed ListView |
+| `session-watch-msg-<seq>` | one feed message (per `seq`) |
+| `session-watch-truncated` | "earlier history truncated" divider (first page `truncated:true`) |
+| `session-watch-empty` | "No messages yet" |
+| `session-watch-input` | reply TextField — enabled for a turn-accepting kind, or when `input=="gated"` AND activity `needs_input` (not `needs_approval`, which answers the dialog on screen instead) AND lifecycle permits |
+| `session-watch-send` | send button (`onPressed: null` when input disabled) |
+| `session-watch-banner` | needs-auth/dead TUI-handoff banner (warn) |
+| `session-watch-open-tui-banner` | one-tap → in-app terminal (the banner's button) |
+| `session-watch-open-tui` | one-tap → in-app terminal (the error/unavailable body's button; distinct from the banner key — both can be on screen together) |
+| `session-watch-unavailable` | "Live view unavailable on this shed" (hub 503 / `RC_HUB_UNAVAILABLE`) |
+| `session-watch-error` | generic feed-load error text |
+| `session-watch-retry` | retry the feed load |
 
-MSTATE: `screen=codex-watch server=<name> shed=<shed> slug=<slug> state=<wire>
-activity=<wire|none> msgs=N truncated=t|f input=enabled|disabled|blocked`.
-MRESULT: `codex-watch-input ok|error=…` (a 409 send → snackbar "Session is no
-longer waiting for input" + a state refresh); `codex-watch-handoff ok` (opened
-the TUI).
+MSTATE: `screen=session-watch title=<source title> slug=<slug> state=<wire>
+activity=<wire|none> msgs=N truncated=t|f verb=turn|input
+input=enabled|disabled|blocked interrupt=offered|hidden`.
+MRESULT: `session-watch-input ok|error=…` (a 409 send → snackbar "Session is no
+longer waiting for input" + a state refresh); `session-watch-interrupt
+ok|error=…`; `session-watch-handoff ok` (opened the TUI).
 
 ### Terminal screen — `TerminalScreen` (Scaffold `terminal-screen`)
 The in-app xterm TUI, attached to a shed rc session's tmux pane over pinned SSH.
-Reached from `all-session-open-<base>` (the "›_ open" pill) and the codex-watch
+Reached from `all-session-open-<base>` (the "›_ open" pill) and the session-watch
 TUI handoff. Always dark chrome (the terminal is dark regardless of app theme).
 
 | Key | What |
@@ -288,6 +295,7 @@ MSTATE: `machines-section count=N`.
 |---|---|
 | `machine-unreachable-<name>` | group-header badge when the machine isn't currently reachable (`unreachable` / `connecting`) |
 | `machine-empty-<name>` | note shown in place of rows — "connecting…" / "No sessions" / the last-known unreachable reason |
+| `machine-lane-<machine>-<slug>` | the accent **Transcript** pill → `LaneScreen`; present **only** when the row carries an `agentLane` stamp (plan 018). Gated on the STAMP, never on the kind or on roost's capabilities — `laneControllerProvider` throws for a row with none |
 | `machine-open-<machine>-<slug>` | the "›_ open" pill → `RoostPeekScreen` (tooltip "Peek"); present **only** when `attachKind(featuresFor(session)) == 'native-remote'` — a machine session offers no other in-app attach |
 | `machine-attention-<machine>-<slug>` | attention dot (roost's sticky `has_notification`; tooltip "roost notification"); present iff `session.attention` |
 | `machine-kill-<machine>-<slug>` | end the session — roost's `tab.close` (MRESULT via `machine-control-error-<machine>-<slug>` on failure) |
@@ -300,6 +308,47 @@ an unscoped key would collide their controls.
 
 MSTATE: `machine-sessions machine=<name> reachable=t|f count=N` (one line per
 machine group, on every rebuild of that group).
+
+**Agent lane screen — `LaneScreen` (Scaffold `lane-screen`)**
+
+Reached from `machine-lane-<machine>-<slug>`. The agent's OWN transcript
+(`gx`/`opencode` over the machine's SSH forward), the approvals it is blocked
+on, and a composer. Rows are the shared `RcMessageTile` — the same tile the
+session-watch feed uses, because a lane's rows *are* `RcFeedMessage`s.
+
+| Key | What |
+|---|---|
+| `lane-loading` | the lane is opening (probe → forward → `lane_open`) |
+| `lane-unavailable` | the lane's provider failed — centred text before the first snapshot, an error banner above the (now last-known) transcript afterwards |
+| `lane-activity` | activity chip, in the shared `rcActivityDisplay` colours (absent for `unknown`) |
+| `lane-activity-unknown` | the placeholder shown instead of the chip when activity is `unknown` |
+| `lane-stale` | stale banner — carries the transport's OWN reason, never a generic "disconnected" |
+| `lane-note` | lane-level note: a refused open, a failed credential refresh, `Reconnecting…`, or a lane that has been given up on |
+| `lane-list` / `lane-msg-<seq>` | the transcript, newest at the bottom (auto-scrolls only when already at the bottom) |
+| `lane-empty` | "No messages yet" |
+| `lane-approvals` | the scroll container holding the pending approval cards (above the composer) |
+| `lane-approval-<approvalId>` | one approval card |
+| `lane-option-<optionId>` | one offered option on a `permission`/`plan_approval` card — posts `Choice{optionId}`. **Never a decision**: a live gx permission offers five options of which two declare `allow_once`, so no decision names one |
+| `lane-option-<qIndex>-<optionId>` | one option CHIP inside a question form, scoped by question index (two questions in one form can both offer "yes") |
+| `lane-question-header-<i>` | question `i`'s header |
+| `lane-custom-<i>` | question `i`'s free-text field — present only when that question's `custom` is true |
+| `lane-question-send` | "Send answer" → posts `Question{answers, customText}`. Absent only for the one-click shape: a SINGLE non-multiple non-custom question, where the chip tap is the whole answer (gx questions advertise `custom: true`, so gx never gets one-click) |
+| `lane-waiting-<approvalId>` | the raw card's sentence — "waiting for details" for a placeholder permission (gx announces every approval twice, the first time with no options), or "no form for a …" for an unknown kind |
+| `lane-raw-<approvalId>` / `lane-raw-body-<approvalId>` | the collapsed `requestJson` expander, and its body once expanded |
+| `lane-reject-<approvalId>` | the raw card's Reject → posts `Reject`. **A placeholder permission has no allow button at all** — only this |
+| `lane-approval-error-<approvalId>` | a refused answer, on the card that raised it |
+| `lane-input` | the composer's text field |
+| `lane-interject` | the Interject toggle — rendered **only** when `capabilities.interject` (opencode: absent), enabled **only** while activity is `working`. The mode is recomputed at SEND time, so a turn that ended between render and tap sends `Queue` |
+| `lane-cancel` | Cancel — rendered **only** while activity is `working` |
+| `lane-send` | Send |
+| `lane-composer-error` | a refused send or cancel, inline under the composer |
+
+MSTATE: `screen=lane machine=<name> session=<agent session id> generation=N
+stale=<reason|-> approvals=N activity=<wire>`.
+MRESULT: `lane-send ok|error=…`, `lane-cancel ok|error=…`, `lane-answer
+ok|error=…`. A refusal is STATE, not an exception — every `error=` above was
+read back off `LaneState.composerError` / `LaneState.approvalErrors[id]` after
+the verb returned.
 
 **Peek screen — `RoostPeekScreen` (Scaffold `roost-peek-screen`)**
 

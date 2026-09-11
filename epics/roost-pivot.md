@@ -21,10 +21,12 @@ merges. Never edit board status by hand.
 | ID | issue | phase | one line |
 |---|---|---|---|
 | S3m | [#15](https://github.com/charliek/shed-mobile/issues/15) | RP/M1 | the phone reads inventory + status from a `roost-session` over the SSH forward — **the priority client** |
+| S4m | [#19](https://github.com/charliek/shed-mobile/issues/19) | RP/M3 | the phone reads and drives a machine's agent lane — transcript, approvals, questions, composer — over shed_core::lane's Rust-owned bridge (plan 018) |
 
-One item, but it is the one that proves M1 on the device that matters.
-Content (transcript, prompt, approve) follows in shed's A4 and gx's A3;
-live push follows roost's R1; terminal attach follows roost's R3.
+S3m proved M1 on the device that matters; S4m delivers M3's content
+(transcript, prompt, approve), mirroring shed's A4 lane DTOs and consuming
+gx's A3 approvals over the same bridge. Live push follows roost's R1;
+terminal attach follows roost's R3.
 
 ## Rules that apply in this repo
 
@@ -58,8 +60,9 @@ live push follows roost's R1; terminal attach follows roost's R3.
 - **S3m ← shed S1.** The roost client in `shed-core` must exist first;
   the FRB surface is regenerated from it.
 - **S3m ← roost R1** for live push (not for M1 — polling is fine).
-- **A4 (shed) → this repo.** The opencode lane crate is FRB-exposed here
-  for the native transcript view.
+- **A4 (shed) → this repo — closed.** A4 landed in shed and merged at
+  `e745d03`; the opencode lane crate it added is FRB-exposed here (S4m,
+  plan 018) for the native transcript view.
 - **A3 (gx) → this repo.** The gx remote API is what the phone's gx
   transcript and approvals consume; it is shaped for a client that
   reconnects (`Last-Event-ID` resume).

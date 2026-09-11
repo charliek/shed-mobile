@@ -61,7 +61,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::frb_generated::StreamSink;
 
-use super::bridge_rt::{bridge_rt, ACTIVE_FORWARDERS, ACTIVE_WATCHERS};
+use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_FORWARDERS, ACTIVE_WATCHERS};
 use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
 
 // ---------------------------------------------------------------------------
@@ -70,15 +70,17 @@ use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
 
 /// One update from a machine's `roost-session`.
 ///
-/// Two members, not three: roost's inventory is read whole on every poll, so
-/// there is no patch stream to fold and no partial update to reconcile. A
-/// `Snapshot` is authoritative for the WHOLE machine — which is what makes a
+/// Two members, not three: every update carries roost's inventory WHOLE, so
+/// there is no patch stream to fold and no partial update to reconcile. The
+/// watcher folds roost's event batches into its held inventory and republishes
+/// the result (plan 014 — it observes a push feed now, it does not poll), so a
+/// `Snapshot` is authoritative for the WHOLE machine. That is what makes a
 /// reconnect a complete resync with no replay protocol to negotiate, and what
 /// lets a phone simply stop the watcher when it backgrounds and restart it on
 /// foreground.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BridgeRoostUpdate {
-    /// The machine's full agent-owned tab list, as of this poll. Replaces
+    /// The machine's full agent-owned tab list, as of this publish. Replaces
     /// whatever the consumer held.
     ///
     /// `revision` is roost's commit counter — an in-process number that RESETS
@@ -123,7 +125,7 @@ impl Drop for BridgeRoostWatcher {
 
 /// The SINGLE teardown/decrement point, idempotent via `stopped`: abort the
 /// forwarder (immediately, even parked on `recv`), drop the watcher (which
-/// aborts its poll loop and closes the held connection), and decrement each
+/// aborts its observe loop and closes the held connection), and decrement each
 /// counter exactly once — only for resources that were actually counted.
 fn teardown(state: &Arc<Mutex<RoostWatcherInner>>) {
     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -214,7 +216,7 @@ pub fn stop_roost_watcher(handle: &BridgeRoostWatcher) {
 /// because the watcher's channel closed (teardown already ran) or because
 /// `sink.add` failed — and the second case is a Dart consumer that cancelled the
 /// stream WITHOUT calling [`stop_roost_watcher`]. Without the teardown here the
-/// forwarder would exit while the [`RoostWatcher`] kept polling its held
+/// forwarder would exit while the [`RoostWatcher`] kept observing its held
 /// connection forever with nobody reading it. `teardown` is idempotent, so the
 /// later sync stop / `Drop` still costs exactly one decrement of each counter.
 async fn forward_loop(
@@ -262,7 +264,7 @@ fn bridge_update(update: RoostUpdate) -> BridgeRoostUpdate {
 // UI conditionals, and nothing here can be called for a thing roost cannot do.
 
 /// `tab.close` — end a tab. It leaves `tab.list` entirely, so the row
-/// disappears on the next poll rather than turning into a dead card.
+/// disappears on the next publish rather than turning into a dead card.
 pub async fn roost_tab_close(local_port: u16, tab_id: i64) -> Result<(), String> {
     on_bridge_rt(async move { shed_app::roost::tab_close(&FixedPort(local_port), tab_id).await })
         .await
@@ -285,9 +287,9 @@ pub async fn roost_tab_close(local_port: u16, tab_id: i64) -> Result<(), String>
 /// reports.** A freshly opened tab has no `ownership` yet — the adapter claims
 /// it a moment later, when the agent starts reporting — so
 /// [`RoostSession::to_rc_dto`] would map it to `shell` and the card would render
-/// as a bare terminal until the next poll corrected it. Substituting the
-/// requested kind makes the optimistic card right immediately, and the poll that
-/// follows replaces it with roost's own answer either way.
+/// as a bare terminal until the next publish corrected it. Substituting the
+/// requested kind makes the optimistic card right immediately, and the batch
+/// that follows replaces it with roost's own answer either way.
 pub async fn roost_tab_open(
     local_port: u16,
     machine: String,
@@ -323,7 +325,7 @@ fn opened_row(machine: &str, kind: &RcKind, tab: &Tab) -> BridgeRcSession {
     // `tab.list` path the nesting is what says which project a tab is in. A
     // `tab.open` reply carries no project at all, so the tab's own `project_id`
     // is the whole of what is known — the name is only a card label and the
-    // next poll supplies it.
+    // next publish supplies it.
     let project = Project {
         id: tab.project_id,
         name: String::new(),
@@ -488,20 +490,14 @@ pub fn roost_capabilities() -> BridgeRcCapabilities {
 // the runtime hop
 // ---------------------------------------------------------------------------
 
-/// Run `fut` on the persistent bridge runtime and await its result.
+/// Run `fut` on the persistent bridge runtime and await its result — this
+/// module's error type over [`joined_on_bridge_rt`].
 ///
-/// Lifted from [`super::client`]'s `run`, for its reason plus one of this
-/// module's own:
-///
-/// * **Abort-on-drop.** Dropping a `JoinHandle` DETACHES the task, so an FRB
-///   future dropped mid-await (Dart cancelled the call) would leave a roost
-///   request — and its connection — running to its own timeout. The guard holds
-///   the `AbortHandle` and fires on drop; it is disarmed only after a successful
-///   join.
-/// * **The pump.** A loopback-TCP `Conn` spawns a `copy_bidirectional` task, and
-///   `tokio::spawn` binds it to whatever runtime is current. On FRB's per-call
-///   executor that runtime goes away with the call — so every connection this
-///   module makes is made from `bridge_rt`, whether or not it is held.
+/// That helper carries both of the reasons the hop exists (abort-on-drop, and a
+/// reactor that outlives the FRB call); see its doc. The second one is this
+/// module's in particular: a loopback-TCP `Conn` spawns a `copy_bidirectional`
+/// task, so every connection this module makes is made from `bridge_rt`,
+/// whether or not it is held.
 ///
 /// A join failure (task panic/abort) becomes an ordinary error rather than a
 /// panic propagating across the FFI boundary.
@@ -510,20 +506,7 @@ where
     F: Future<Output = Result<T, String>> + Send + 'static,
     T: Send + 'static,
 {
-    struct AbortOnDrop(Option<tokio::task::AbortHandle>);
-    impl Drop for AbortOnDrop {
-        fn drop(&mut self) {
-            if let Some(a) = self.0.take() {
-                a.abort();
-            }
-        }
-    }
-
-    let handle = bridge_rt().spawn(fut);
-    let mut guard = AbortOnDrop(Some(handle.abort_handle()));
-    let joined = handle.await;
-    guard.0 = None; // successful join — disarm the abort
-    match joined {
+    match joined_on_bridge_rt(fut).await {
         Ok(res) => res,
         Err(e) => Err(format!("bridge task join error: {e}")),
     }
@@ -533,20 +516,11 @@ where
 mod tests {
     use super::*;
     use shed_core::roost::testing::{ownership, FakeRoost};
-    use std::sync::Once;
     use std::time::Duration;
 
     use crate::api::bridge_rt::live_counters;
     use crate::api::dto_rc::{BridgeRcActivity, BridgeRcKind};
     use crate::api::testsupport::test_guard;
-
-    /// The watcher's poll cadence is 2 s in production and read ONCE per spawn
-    /// from the environment. Set it here — once, never unset — so a test that
-    /// waits for the second snapshot waits milliseconds instead of seconds.
-    fn fast_polling() {
-        static ONCE: Once = Once::new();
-        ONCE.call_once(|| std::env::set_var("SHED_ROOST_POLL_MS", "25"));
-    }
 
     /// Wait for one update, or fail with a message rather than hanging the suite.
     async fn next_update(rx: &mut UnboundedReceiver<RoostUpdate>, what: &str) -> BridgeRoostUpdate {
@@ -566,7 +540,6 @@ mod tests {
     #[test]
     fn creating_and_stopping_a_watcher_leaves_the_counters_where_it_found_them() {
         let _g = test_guard();
-        fast_polling();
         let before = live_counters();
 
         let handle = create_roost_watcher("mini3".into(), 1);
@@ -598,7 +571,6 @@ mod tests {
     #[tokio::test]
     async fn a_claimed_tab_becomes_one_mapped_row_over_the_loopback_port() {
         let _g = test_guard();
-        fast_polling();
         let fake = FakeRoost::start().await;
 
         let handle = create_roost_watcher("mini3".into(), fake.tcp_port());
@@ -632,7 +604,7 @@ mod tests {
             true,
         );
 
-        // The revision changed, so the next poll publishes — and it publishes
+        // The revision changed, so the watcher publishes — and it publishes
         // ONE row, mapped.
         let sessions = loop {
             match next_update(&mut rx, "the claimed snapshot").await {
@@ -666,9 +638,12 @@ mod tests {
     /// A kind roost has no launch recipe for is refused BY NAME, before any
     /// connection is attempted — so the failure names the mistake instead of
     /// timing out against a machine that was never the problem.
+    ///
+    /// `grok` used to sit in this list and does not any more (plan 017): it is a
+    /// launchable kind with its own binary, lane-less by design.
     #[tokio::test]
     async fn opening_a_tab_for_an_unlaunchable_kind_is_refused_by_name() {
-        for kind in ["gpt-next", "shell", "grok", "claude-broker", ""] {
+        for kind in ["gpt-next", "shell", "claude-broker", ""] {
             // Port 1 is deliberately dead: reaching it would mean the kind check
             // did not happen first.
             let err = roost_tab_open(1, "mini3".into(), kind.to_string(), "/home/shed".into())
@@ -685,11 +660,16 @@ mod tests {
         }
 
         // The control: a launchable kind gets PAST the check and fails on the
-        // transport instead, so the test above is not passing vacuously.
-        let err = roost_tab_open(1, "mini3".into(), "opencode".into(), "/home/shed".into())
-            .await
-            .expect_err("nothing is listening on port 1");
-        assert!(!err.starts_with("unknown kind:"), "{err}");
+        // transport instead, so the test above is not passing vacuously. `grok`
+        // and `gx` are in here because they are the two newest recipes — a
+        // client that still carried the old "grok is unlaunchable" belief would
+        // refuse a launch the host would have accepted.
+        for kind in ["opencode", "gx", "grok"] {
+            let err = roost_tab_open(1, "mini3".into(), kind.into(), "/home/shed".into())
+                .await
+                .expect_err("nothing is listening on port 1");
+            assert!(!err.starts_with("unknown kind:"), "kind {kind:?}: {err}");
+        }
     }
 
     /// The remote command is roost's, whole, and it ends where it must.
@@ -706,18 +686,30 @@ mod tests {
     /// The capabilities a roost host advertises, as the app's gates read them:
     /// the attach affordance is `native-remote` (→ the peek, never a tmux
     /// attach) and the steering features every hub kind had are off.
+    ///
+    /// `feed` is the one that reads backwards. It is `"activity"`, not `"none"`
+    /// — a roost row DOES carry a live activity dimension (folded out of
+    /// `agent_lifecycle`), it just carries no MESSAGE feed. `"none"` is what the
+    /// guest hub says for those same kinds, and it briefly said here too.
     #[test]
     fn roost_capabilities_advertise_a_native_remote_attach_and_no_steering() {
         let caps = roost_capabilities();
-        let opencode = caps
-            .kind_features
-            .get("opencode")
-            .expect("opencode is a roost kind");
-        assert_eq!(opencode.attach, "native-remote");
-        assert!(!opencode.post_input);
-        assert!(!opencode.interrupt);
-        assert_eq!(opencode.approvals, "none");
+        for kind in ["opencode", "gx", "grok"] {
+            let f = caps
+                .kind_features
+                .get(kind)
+                .unwrap_or_else(|| panic!("{kind} is a roost kind"));
+            assert_eq!(f.attach, "native-remote", "{kind}");
+            assert!(!f.post_input, "{kind}");
+            assert!(!f.interrupt, "{kind}");
+            assert_eq!(f.approvals, "none", "{kind}");
+            assert_eq!(f.feed, "activity", "{kind}: activity, never messages");
+        }
         assert!(caps.kinds.contains(&BridgeRcKind::Opencode));
+        // The two grok kinds map through the bridge as themselves, not as
+        // `Other { raw: "gx" }` — the gate that would otherwise fail silently.
+        assert!(caps.kinds.contains(&BridgeRcKind::Gx));
+        assert!(caps.kinds.contains(&BridgeRcKind::Grok));
         // contract v2 is what tells a client to READ `attach` rather than assume
         // tmux — without it the gate would fall back to the old behaviour.
         assert_eq!(caps.rc_version, 2);

@@ -8,6 +8,15 @@
 # Assumes shed and shed-mobile are checked out side-by-side under one parent:
 #   <parent>/shed-mobile   <-- this repo
 #   <parent>/shed          <-- sibling core (crates/ workspace)
+# A shed WORKTREE (a feature branch checked out elsewhere) is not side-by-side;
+# use an absolute path for those four entries in your own config.toml.
+#
+# ALL FOUR shed crates are patched together, always. The manifest pins them to
+# one rev, and a patch that covered only some of them would resolve the rest
+# from the git rev — two shed-cores in one graph, and the type mismatches that
+# follow.
 [patch."https://github.com/charliek/shed"]
-shed-core = { path = "../../shed/crates/shed-core" }
-shed-app  = { path = "../../shed/crates/shed-app" }
+shed-core     = { path = "../../shed/crates/shed-core" }
+shed-app      = { path = "../../shed/crates/shed-app" }
+shed-opencode = { path = "../../shed/crates/shed-opencode" }
+shed-gx       = { path = "../../shed/crates/shed-gx" }

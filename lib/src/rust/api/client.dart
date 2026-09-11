@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'dto.dart';
+import 'dto_lane.dart';
 import 'dto_rc.dart';
 import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';

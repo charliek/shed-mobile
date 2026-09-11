@@ -58,6 +58,90 @@ jobs:
       # Native host build: compiles the Rust lib (cargo, via cargokit) + links it.
       - run: flutter build linux --debug
 
+      # ---- the hermetic integration harness (plan 018 §3.13) --------------
+      #
+      # A STEP in this job rather than a job of its own: it reuses the Rust lib
+      # `flutter build linux` above just compiled, this job's exact Flutter pin,
+      # and the ssh-agent the private dep needs. A separate job would pay all
+      # three again.
+      #
+      # It drives the real FRB bridge against shed's OWN gx/opencode fakes
+      # (`desktop/tools/shedtest/fake_lane_server.py`), so it needs a shed
+      # checkout — at the EXACT rev rust/Cargo.toml pins, because the fakes and
+      # the adapters they were recorded from are one tree.
+      - name: Resolve the pinned shed rev
+        id: rev
+        # VALIDATED HERE, at the producer, so every consumer below is handed a
+        # value that cannot be shell. The script reads the rev out of
+        # `rust/Cargo.toml` — a file any pull request can edit — and this job
+        # has an ssh-agent holding the private dep's key by the time the value
+        # is used. An unvalidated output interpolated into a `run:` block is
+        # shell source, so a crafted rev would be code execution against a
+        # credential-holding job. 40 lowercase hex, or the job fails here.
+        run: |
+          set -euo pipefail
+          rev=$(bash scripts/check-lock-rev.sh --print-shed-rev)
+          case "$rev" in
+            *[!0-9a-f]*|"") echo "pinned shed rev is not lowercase hex: '$rev'" >&2; exit 1 ;;
+          esac
+          if [ "${#rev}" -ne 40 ]; then
+            echo "pinned shed rev is ${#rev} chars, not 40: '$rev'" >&2
+            exit 1
+          fi
+          echo "shed=$rev" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          repository: charliek/shed
+          ref: ${{ steps.rev.outputs.shed }}
+          path: shed-sibling
+          # This checkout is read-only — the harness only reads the fakes out
+          # of it — so it has no use for a credential. `actions/checkout`
+          # persists the job token into the clone's git config by default,
+          # which would leave it sitting in a second working tree for the rest
+          # of the job for no reason.
+          persist-credentials: false
+      # A checkout that silently resolved something else (a moved tag, a
+      # default branch) would run the harness against fakes from a different
+      # tree than the adapters under test — which is the one failure mode that
+      # would look like a code bug.
+      - name: Assert the sibling checkout is the pinned rev
+        # Through `env`, never interpolated into the script body: belt to the
+        # producer's braces above, and the form that stays safe if anyone ever
+        # relaxes that validation.
+        env:
+          WANT_SHED_REV: ${{ steps.rev.outputs.shed }}
+        run: |
+          set -euo pipefail
+          got=$(git -C shed-sibling rev-parse HEAD)
+          if [ "$got" != "$WANT_SHED_REV" ]; then
+            echo "shed-sibling is at $got, not the pinned $WANT_SHED_REV" >&2
+            exit 1
+          fi
+          test -f shed-sibling/desktop/tools/shedtest/fake_lane_server.py
+      - name: Install the headless desktop deps
+        run: sudo apt-get install -y xvfb dbus-x11
+      # `dbus-run-session` is UNCONDITIONAL, not a fallback. The cells never
+      # touch flutter_secure_storage (no `main()`, no MachineStore), but plugin
+      # registration at app start may still want a session bus — and a gate
+      # that depends on the environment is not a gate.
+      #
+      # ONE `flutter test` per file: a single invocation naming several files
+      # relaunches the app per file, and on the Linux desktop device the SECOND
+      # launch always fails ("Unable to start the app on the device"). It is
+      # positional rather than file-specific. Mirrors `make
+      # test-integration-linux`; every file runs even after one fails.
+      - name: Integration harness (Linux desktop, hermetic)
+        env:
+          SHED_CHECKOUT: ${{ github.workspace }}/shed-sibling
+        run: |
+          set -uo pipefail
+          failed=""
+          for f in integration_test/*_test.dart; do
+            echo "=== $f"
+            xvfb-run -a dbus-run-session -- flutter test "$f" -d linux || failed="$failed $f"
+          done
+          if [ -n "$failed" ]; then echo "FAILED:$failed" >&2; exit 1; fi
+
   # macOS arm64 native build — so the mac artifact is CI-gated, not dev-only.
   macos-build:
     runs-on: macos-latest

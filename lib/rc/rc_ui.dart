@@ -25,6 +25,8 @@ extension BridgeRcKindUi on BridgeRcKind {
     BridgeRcKind_Codex() => 'codex',
     BridgeRcKind_Opencode() => 'opencode',
     BridgeRcKind_Cursor() => 'cursor',
+    BridgeRcKind_Gx() => 'gx',
+    BridgeRcKind_Grok() => 'grok',
     BridgeRcKind_Shell() => 'shell',
     BridgeRcKind_Other(:final raw) => raw,
   };
@@ -56,6 +58,8 @@ extension BridgeRcKindUi on BridgeRcKind {
     'codex' => 'codex',
     'opencode' => 'opencode',
     'cursor' => 'cursor',
+    'gx' => 'gx',
+    'grok' => 'grok',
     _ => null,
   };
 
@@ -66,6 +70,8 @@ extension BridgeRcKindUi on BridgeRcKind {
     'codex' => 'run `codex` and complete login (`codex login`)',
     'opencode' => 'run `opencode auth login`',
     'cursor' => 'run `cursor-agent login`',
+    'gx' => 'run `gx` and complete login',
+    'grok' => 'run `grok` and complete login',
     _ => 'log in to the agent in a terminal',
   };
 }
@@ -81,17 +87,28 @@ const List<BridgeRcKind> rcKindValues = [
   BridgeRcKind.codex(),
   BridgeRcKind.opencode(),
   BridgeRcKind.cursor(),
+  BridgeRcKind.gx(),
+  BridgeRcKind.grok(),
   BridgeRcKind.shell(),
 ];
 
 /// The kinds a create form can offer for creation, in canonical order.
 /// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind is
 /// never creatable, so both are excluded. Mirrors `RcKind::creatable`.
+///
+/// `grok` is here and is LANE-LESS by design — launching one opens a `grok` tab
+/// whose status shed reads through roost, with no transcript affordance. `gx` is
+/// here too, but a ROW only ever reads as `gx` once its remote lane binds: roost
+/// reports both as `source: "grok"` and shed promotes the row on the `gx.remote`
+/// metadata key, so which kind was launched and which kind the card settles on
+/// are two different questions.
 const List<BridgeRcKind> rcCreatableKinds = [
   BridgeRcKind.claudeRc(),
   BridgeRcKind.codex(),
   BridgeRcKind.opencode(),
   BridgeRcKind.cursor(),
+  BridgeRcKind.gx(),
+  BridgeRcKind.grok(),
   BridgeRcKind.shell(),
 ];
 

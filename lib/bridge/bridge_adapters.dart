@@ -1,5 +1,6 @@
 import '../core/app_error.dart';
 import '../src/rust/api/dto.dart';
+import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/error.dart';
 
 /// Adapters between the FRB bridge and the app's Dart error/status types.
@@ -98,7 +99,83 @@ AppError _fromStatus(int code) => switch (code) {
   _ => AppError('SHED_SERVER_ERROR', 'HTTP $code', code),
 };
 
+/// Map a [BridgeLaneError] into the app's [AppError] (plan 018 §3.11).
+///
+/// One arm per contract variant, because the controller and the screen branch
+/// on genuinely different things and a flattened "lane error" would lose all of
+/// them:
+///
+/// * **`unavailable` is quiet** — nothing to talk to (the agent is not running,
+///   the dial was refused, the tunnel is down). It renders as an unreachable
+///   row with a reason, never as an error dialog, and it is what the re-open
+///   ladder exists for.
+/// * **`notAccepting` / `alreadySubmitted` / `alreadyResolved` are inline** on
+///   the control that raised them. A double-tap is not news; a cancel refused
+///   because the turn just ended is only legible next to the button.
+/// * **`unsupportedLane` is distinct from `noLane`** and deliberately so:
+///   `noLane` means the row carries nothing, while this one means there IS
+///   something here that a NEWER build could speak to. Naming the kind is the
+///   client's obligation under `AgentLaneStamp`'s own doc.
+///
+/// The `msg` arms carry the agent's or the adapter's own sentence whole. None of
+/// them can carry probe bytes: every refusal Rust composes around a probe names
+/// the reported url and nothing from the stdout (`discovery_from_probe`).
+AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
+  BridgeLaneError_Unauthorized() => AppError(
+    'LANE_UNAUTHORIZED',
+    'the agent demanded a credential this build cannot supply',
+    401,
+  ),
+  BridgeLaneError_BadRequest(:final msg) => AppError(
+    'LANE_BAD_REQUEST',
+    msg,
+    400,
+  ),
+  BridgeLaneError_UnknownSession() => AppError(
+    'LANE_UNKNOWN_SESSION',
+    'the agent does not know this session',
+    404,
+  ),
+  BridgeLaneError_UnknownApproval() => AppError(
+    'LANE_UNKNOWN_APPROVAL',
+    'that approval is no longer pending',
+    404,
+  ),
+  BridgeLaneError_AlreadySubmitted() => AppError(
+    'LANE_ALREADY_SUBMITTED',
+    'an answer is already in flight',
+    409,
+  ),
+  BridgeLaneError_AlreadyResolved() => AppError(
+    'LANE_ALREADY_RESOLVED',
+    'that approval has already been answered',
+    409,
+  ),
+  BridgeLaneError_NotAccepting() => AppError(
+    'LANE_NOT_ACCEPTING',
+    'the session is not accepting that right now',
+    409,
+  ),
+  BridgeLaneError_Unavailable(:final msg) => AppError(
+    'LANE_UNAVAILABLE',
+    msg,
+    503,
+  ),
+  BridgeLaneError_Failed(:final msg) => AppError('LANE_FAILED', msg, 500),
+  BridgeLaneError_NoLane(:final msg) => AppError('LANE_NONE', msg),
+  BridgeLaneError_UnsupportedLane(:final kind) => AppError(
+    'LANE_UNSUPPORTED_KIND',
+    'this build has no adapter for a "$kind" lane',
+  ),
+};
+
 /// Coerce any caught object from a bridge call into an [AppError] (bridge calls
-/// throw [BridgeError]; anything else is wrapped).
-AppError appErrorFrom(Object e) =>
-    e is BridgeError ? appErrorFromBridge(e) : AppError('SHED_ERROR', '$e');
+/// throw [BridgeError] or [BridgeLaneError]; anything else is wrapped).
+AppError appErrorFrom(Object e) => switch (e) {
+  // Already typed — re-wrapping would bury the code the UI branches on inside a
+  // `SHED_ERROR` message.
+  final AppError err => err,
+  final BridgeError err => appErrorFromBridge(err),
+  final BridgeLaneError err => appErrorFromLane(err),
+  _ => AppError('SHED_ERROR', '$e'),
+};

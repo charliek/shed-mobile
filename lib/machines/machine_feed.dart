@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -7,8 +8,10 @@ import '../rc/rc_ui.dart';
 import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/roost.dart';
 import '../ssh/host_key_store.dart';
+import '../ssh/lane_forward.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
+import '../ssh/ssh_runner.dart';
 import 'machine_record.dart';
 
 /// One machine's live view, as the UI renders it.
@@ -34,12 +37,12 @@ class MachineFeedState {
   /// Live patches from the feed, keyed by SLUG, applied over [sessions] at
   /// render time.
   ///
-  /// **Empty on the roost path**, and kept anyway: roost's inventory is read
-  /// whole on every poll, so there is no patch stream to fold — a `Snapshot` is
-  /// the entire truth about a machine. The overlay stays because it is what the
-  /// render sites read through ([activityOf] / [stateOf]), and because roost's
-  /// R1 live push lands events again; deleting it would mean re-deriving the
-  /// same seam a milestone later.
+  /// **Empty on the roost path**, and kept anyway: roost's watcher folds its
+  /// event batches into a whole inventory before republishing, so there is no
+  /// patch stream to fold — a `Snapshot` is the entire truth about a machine.
+  /// The overlay stays because it is what the render sites read through
+  /// ([activityOf] / [stateOf]), and because roost's R1 live push lands events
+  /// again; deleting it would mean re-deriving the same seam a milestone later.
   final Map<String, MachinePatch> overlay;
 
   final bool reachable;
@@ -143,7 +146,7 @@ class MachinePatch {
 /// and they are exactly the rules that break silently in production.
 ///
 /// * A `Snapshot` **replaces** the row set — it is roost's whole agent-owned
-///   tab list as of that poll, so merging would resurrect tabs that were
+///   tab list as of that push, so merging would resurrect tabs that were
 ///   closed. It also clears the overlay, because the snapshot already carries
 ///   every dimension a patch could hold.
 /// * A `Down` **keeps** the rows and marks them stale with a reason. Blanking
@@ -179,9 +182,9 @@ MachineFeedState foldRoostUpdate(
 ///
 /// Keyed on the slug (roost's tab id as a string), so a re-open of a row the
 /// last snapshot already carried replaces it rather than doubling it. The next
-/// poll is authoritative either way — this only exists so the card appears in
-/// the two seconds before that poll, which is the difference between "it
-/// worked" and "did that button do anything?".
+/// push from the watcher is authoritative either way — this only exists so the
+/// card appears in the gap before that push arrives, which is the difference
+/// between "it worked" and "did that button do anything?".
 @visibleForTesting
 MachineFeedState foldOpenedRow(MachineFeedState state, BridgeRcSession row) =>
     state.copyWith(
@@ -191,8 +194,8 @@ MachineFeedState foldOpenedRow(MachineFeedState state, BridgeRcSession row) =>
 /// Drop a row that has just been closed, optimistically.
 ///
 /// Same reasoning inverted: `tab.close` removes the tab from `tab.list`
-/// entirely, so the next poll agrees — but a killed session lingering for a
-/// poll interval reads as "the kill didn't work".
+/// entirely, so the next push agrees — but a killed session lingering until
+/// that push lands reads as "the kill didn't work".
 @visibleForTesting
 MachineFeedState foldClosedRow(MachineFeedState state, String slug) =>
     state.copyWith(
@@ -299,9 +302,9 @@ Future<bool> releaseIfStopped<T>({
 /// ## Backgrounding is a STOP, not a stall
 ///
 /// [stop] tears the tunnel and the watcher down; [start] rebuilds both. That is
-/// deliberate rather than lazy: holding an SSH connection and a poll loop open
-/// behind a backgrounded phone is what drains a battery and gets an app killed
-/// by the OS.
+/// deliberate rather than lazy: holding an SSH connection and a parked watcher
+/// open behind a backgrounded phone is what drains a battery and gets an app
+/// killed by the OS.
 ///
 /// Resuming loses nothing, and that falls out of the WIRE rather than needing a
 /// replay protocol: `tab.list` is an authoritative snapshot, so a fresh
@@ -338,6 +341,16 @@ class MachineFeed {
   /// The dial in flight, so two connections accepted at once do not open two
   /// SSH links and leak one — deduped per [_generation]. See [DialDedupe].
   final _dialDedupe = DialDedupe<SSHClient>();
+
+  /// The agent-lane port forwards riding this machine's one SSH connection,
+  /// refcounted per remote port. See [ForwardRegistry] and [acquireForward].
+  late final ForwardRegistry _forwards = ForwardRegistry(
+    // Forwards ride the SAME connection, through the same `_connect` the roost
+    // tunnel uses — so they inherit its dedupe and its generation fencing, and
+    // a lane costs no second SSH link.
+    openForward: (remotePort) =>
+        LaneForward.open(connect: _connect, remotePort: remotePort),
+  );
 
   /// Bumped by every [_teardown], so a dial that completes after a stop closes
   /// its client instead of installing it behind the feed's back.
@@ -464,6 +477,59 @@ class MachineFeed {
     }
   }
 
+  /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an
+  /// agent lane reaches a server bound to the machine's own loopback.
+  ///
+  /// Refcounted per remote port and single-flight, so two lanes against one
+  /// agent server share one forward and one SSH channel; the returned lease is
+  /// the caller's whole obligation, and releasing the last one closes the
+  /// forward.
+  ///
+  /// Typed as the [LaneLease] INTERFACE rather than the concrete
+  /// [LaneForwardLease] it always is: a lease is all a lane needs (a local
+  /// port, a validity bit and a give-back), and narrowing it here is what lets
+  /// `LaneController`'s whole lifecycle be tested without an sshd.
+  ///
+  /// Requires a started feed: [dispose] closes every forward and invalidates
+  /// every lease, so acquiring against a torn-down feed would hand out a port
+  /// that reaches nothing. The same [StateError] [create] and [kill] raise.
+  Future<LaneLease> acquireForward(int remotePort) async {
+    if (_tunnel == null) throw StateError('the machine is not connected');
+    return _forwards.acquire(remotePort);
+  }
+
+  /// **Run one already-composed command on this machine and return its raw
+  /// stdout** — the production [ProbeRunner] for an agent lane's gx credential
+  /// probe (plan 018 §3.11).
+  ///
+  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
+  /// every lane forward use, so a probe costs no second SSH link and inherits
+  /// the dial's dedupe and generation fencing.
+  ///
+  /// **Bytes, never a string.** The gx probe's stdout carries a bearer token.
+  /// It is handed straight across the bridge, parsed by Rust and dropped there;
+  /// nothing here decodes it, logs it, keeps it, or puts any part of it in the
+  /// error below — which is why the failure message is a fixed sentence with
+  /// only the exit code in it, and why stderr is discarded rather than
+  /// surfaced.
+  ///
+  /// A null exit code is "unknown", not "failed": dartssh2 occasionally drops
+  /// the `exit-status` request even on success. So the only refusal is the one
+  /// that is unambiguous — a non-zero status with nothing on stdout, which is a
+  /// probe that did not run (no `gx`, no `$GROK_HOME`) rather than one whose
+  /// output Rust can judge for itself.
+  Future<Uint8List> probe(String wireCommand) async {
+    final client = await _connect();
+    final result = await execOn(client, wireCommand);
+    final code = result.exitCode;
+    if (code != null && code != 0 && result.stdout.isEmpty) {
+      throw StateError(
+        'the discovery probe on ${machine.name} exited $code with no output',
+      );
+    }
+    return result.stdout;
+  }
+
   /// Start a session on this machine — roost's `tab.open`.
   ///
   /// Minimal by design (plan 013 §4): the agent's binary and a working
@@ -514,7 +580,15 @@ class MachineFeed {
     return null;
   }
 
-  /// Stop watching and close the tunnel. Called on background and on dispose.
+  /// Stop watching and close the tunnel, leaving the feed restartable.
+  ///
+  /// **Nothing in the app calls this today** — the only thing that reaches the
+  /// teardown is [dispose], from `machineFeedControllerProvider`'s `onDispose`
+  /// (`providers.dart`). Kept because the "backgrounding is a STOP" story above
+  /// is what a foreground/background hook will use, and because it is the
+  /// `_teardown` + "paused" pair every restart path needs. Adding a caller is a
+  /// deliberate decision, not a tidy-up: a lane holding a
+  /// [LaneForwardLease] has its forward closed and its lease invalidated here.
   Future<void> stop() async {
     await _teardown();
     _emit(_state.copyWith(reachable: false, detail: 'paused'));
@@ -532,14 +606,18 @@ class MachineFeed {
     final watcher = _watcher;
     _watcher = null;
     if (watcher != null) {
-      // The SYNCHRONOUS stop, not just a drop: it aborts the poll loop and the
+      // The SYNCHRONOUS stop, not just a drop: it aborts the watcher and the
       // forwarder even while they are parked.
       await stopRoostWatcher(handle: watcher);
     }
     await _tunnel?.close();
     _tunnel = null;
-    // The tunnel frees its port and its execs but never the connection — this
-    // is the one place it dies.
+    // Every lane forward on this connection goes with it, and every lease is
+    // invalidated: a lane holding one must re-acquire rather than keep writing
+    // into a local port that no longer reaches the machine.
+    await _forwards.closeAll();
+    // The tunnel and the forwards free their ports and their channels but never
+    // the connection — this is the one place it dies.
     _client?.close();
     _client = null;
     _dialDetail = null;

@@ -1,4 +1,9 @@
-.PHONY: get fmt check check-lock analyze test cargo-test build-macos build-linux icons docs docs-serve frb-gen
+.PHONY: get fmt check check-lock analyze test cargo-test build-macos build-linux icons docs docs-serve frb-gen test-integration-linux
+
+# The CI Flutter pin (.github/workflows/ci.yml). `test-integration-linux` warns
+# when the local SDK differs, because that gap is where an integration harness
+# passes locally and fails on the PR.
+CI_FLUTTER_VERSION := 3.44.2
 
 get:
 	flutter pub get
@@ -55,7 +60,7 @@ cargo-test:
 	  root=$$(pwd); \
 	  cp "$$root/rust/Cargo.lock" "$$root/rust/.Cargo.lock.canonical"; \
 	  trap 'mv -f "$$root/rust/.Cargo.lock.canonical" "$$root/rust/Cargo.lock"' EXIT INT TERM; \
-	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app && cargo test ); \
+	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode -p shed-gx && cargo test ); \
 	else \
 	  cd rust && cargo test --locked; \
 	fi
@@ -72,6 +77,66 @@ analyze:
 
 test:
 	flutter test
+
+# The hermetic integration harness on the Flutter LINUX DESKTOP build
+# (integration_test/ — the agent-lane cells plus the two FRB-surface files).
+#
+# It drives the real bridge against shed's own gx/opencode fakes, hosted by
+# $(SHED_CHECKOUT)/desktop/tools/shedtest/fake_lane_server.py — so it needs a
+# shed checkout (a sibling by default) and `python3`, but no sshd, no network
+# and no agent.
+#
+# `dbus-run-session` is unconditional rather than a fallback: the cells never
+# touch flutter_secure_storage (no `main()`, no MachineStore), but plugin
+# registration at app start may still want a session bus, and a gate that
+# depends on the environment is not a gate.
+#
+# **ONE `flutter test` PER FILE, and that is not a preference.** A single
+# invocation naming several files launches the app once per file, and on the
+# Linux desktop device the SECOND launch always fails with "Unable to start the
+# app on the device" / "the log reader stopped unexpectedly". It is positional,
+# not file-specific (either of the two pre-existing files fails when it is
+# second, and passes when it is first), so it is a property of the device
+# runner. The loop runs every file even after one fails — a first failure that
+# hid the rest would make the harness worth less.
+#
+# The two-file restore is the point of the recipe. Local Flutter drifts from the
+# CI pin, and `flutter pub get` (which `flutter test` runs implicitly) rewrites
+# pubspec.lock and analysis_options.yaml on a newer SDK. So: record whether each
+# was clean BEFORE the run, and restore ONLY the ones that were — a developer's
+# own edit to either file is never reverted.
+SHED_CHECKOUT ?= ../shed
+test-integration-linux:
+	@set -u; \
+	if ! command -v xvfb-run >/dev/null 2>&1 || ! command -v dbus-run-session >/dev/null 2>&1; then \
+	  echo "test-integration-linux needs xvfb-run + dbus-run-session (apt install xvfb dbus-x11)" >&2; \
+	  exit 1; \
+	fi; \
+	if [ ! -f "$(SHED_CHECKOUT)/desktop/tools/shedtest/fake_lane_server.py" ]; then \
+	  echo "no shed checkout at $(SHED_CHECKOUT) — set SHED_CHECKOUT=/path/to/shed" >&2; \
+	  exit 1; \
+	fi; \
+	have=$$(flutter --version 2>/dev/null | head -1 | awk '{print $$2}'); \
+	if [ "$$have" != "$(CI_FLUTTER_VERSION)" ]; then \
+	  echo "WARNING: local Flutter $$have != the CI pin $(CI_FLUTTER_VERSION)."; \
+	  echo "         The harness runs on the pin in CI; a green run here is not a green run there."; \
+	fi; \
+	clean_lock=0; clean_opts=0; \
+	git diff --quiet -- pubspec.lock 2>/dev/null && clean_lock=1; \
+	git diff --quiet -- analysis_options.yaml 2>/dev/null && clean_opts=1; \
+	restore() { \
+	  if [ "$$clean_lock" = "1" ]; then git checkout -- pubspec.lock 2>/dev/null || true; fi; \
+	  if [ "$$clean_opts" = "1" ]; then git checkout -- analysis_options.yaml 2>/dev/null || true; fi; \
+	}; \
+	trap restore EXIT INT TERM; \
+	export SHED_CHECKOUT="$$(cd "$(SHED_CHECKOUT)" && pwd)"; \
+	failed=""; \
+	for f in integration_test/*_test.dart; do \
+	  echo "=== $$f"; \
+	  xvfb-run -a dbus-run-session -- flutter test "$$f" -d linux || failed="$$failed $$f"; \
+	done; \
+	if [ -n "$$failed" ]; then echo "FAILED:$$failed" >&2; exit 1; fi; \
+	echo "integration_test: all files green"
 
 build-macos:
 	flutter build macos --debug

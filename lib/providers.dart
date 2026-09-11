@@ -8,6 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app_section.dart';
 import 'keys/identity_store.dart';
 import 'keys/key_manager.dart';
+import 'lanes/lane_controller.dart';
+import 'lanes/lane_source.dart';
+import 'lanes/lane_state.dart';
 import 'rc/activity_overlay.dart';
 import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
@@ -18,6 +21,7 @@ import 'machines/machine_store.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
+import 'src/rust/api/dto_lane.dart';
 import 'src/rust/api/dto_rc.dart';
 import 'src/rust/api/error.dart';
 import 'src/rust/api/watcher.dart';
@@ -733,3 +737,161 @@ final machineFeedProvider = StreamProvider.autoDispose
       yield feed.state;
       yield* feed.updates;
     });
+
+// ---------------------------------------------------------------------------
+// Agent lanes (plan 018 §3.11, roost pivot S4m)
+// ---------------------------------------------------------------------------
+
+/// One lane's address: the machine, and the ROW's slug (roost's tab id).
+///
+/// **The slug, not the agent session id.** The session id is part of the stamp
+/// being reconciled — a tab that restarts comes back with a new one — so it
+/// cannot also be the key that has to survive a change to it. A record, so the
+/// family key compares structurally (the [ShedRef] convention).
+typedef LaneRef = ({String machine, String slug});
+
+/// One row's agent-lane stamp, or null when the machine's rows no longer carry
+/// this session at all.
+@visibleForTesting
+BridgeAgentLaneStamp? laneStampFor(MachineFeedState state, String slug) {
+  for (final s in state.sessions) {
+    if (s.slug == slug) return s.agentLane;
+  }
+  return null;
+}
+
+/// The stamp stream [LaneController.reconcile] consumes.
+///
+/// **Only AUTHORITATIVE states count.** A feed that has never connected carries
+/// no rows at all, and mapping that to "the row is gone" would abandon every
+/// lane during the first second of a cold start. `foldRoostUpdate` keeps the
+/// rows across a `Down`, so once `connectedOnce` is true an absent row is a
+/// real absence — which is exactly when a lane should stop retrying.
+@visibleForTesting
+Stream<BridgeAgentLaneStamp?> laneStamps(
+  Stream<MachineFeedState> updates,
+  String slug,
+) => updates
+    .where((s) => s.connectedOnce)
+    .map((s) => laneStampFor(s, slug))
+    .distinct();
+
+/// How a lane reaches its agent server. **Production is always
+/// [LaneReach.machine]**; [LaneReach.local] exists for one overriding caller,
+/// the hermetic integration harness.
+///
+/// **Never infer this from the machine's host.** An earlier version of this
+/// seam was a `laneReachFor(MachineRecord)` that answered [LaneReach.local] for
+/// `localhost`/`127.0.0.1`/`::1`, reasoning that a machine dialled at a
+/// loopback address is this device, so its `127.0.0.1:<port>` IS our
+/// `127.0.0.1:<port>`. That inference is false whenever SSH on loopback leads
+/// somewhere else, and the canonical case is the one a shed developer hits
+/// first: a **shed VM** is reached at `localhost:2222`, which is the shed
+/// *server's* sshd on this host, and it routes into a Firecracker/VZ microVM
+/// that has a loopback of its own. The agent's `127.0.0.1:2421` inside that VM
+/// is emphatically not this device's `127.0.0.1:2421`. A container, a published
+/// Docker port and a jump port all break the same way.
+///
+/// Proven live, not argued: one shed VM — same gx session, same everything —
+/// registered twice under two host spellings. As `localhost` the lane took the
+/// local branch, made no forward, and sat at `generation=0` forever with
+/// "Reconnecting: the gx lane at http://127.0.0.1:2421 is closed". As
+/// `192.168.86.42` — the same sshd, the same VM — it forwarded, reached
+/// `generation=1`, and send/approve/interject/cancel all worked. A hostname
+/// cannot tell those two apart, so nothing here tries.
+///
+/// Defaulting to [LaneReach.machine] is wrong nowhere: a forward to a genuinely
+/// local agent still works, at the cost of one extra hop through the machine's
+/// own SSH connection, which the feed is already holding open.
+final laneReachProvider = Provider<LaneReach>((ref) => LaneReach.machine);
+
+/// The lane bridge, as one overridable seam.
+///
+/// A provider rather than a bare `const BridgeLaneSource()` inside the
+/// controller provider, for the [rcWatcherBridgeProvider] reason: the whole
+/// point of [LaneSource] is that a widget test can stub the bridge, and it can
+/// only do that if there is somewhere to hand the stub in.
+final laneSourceProvider = Provider<LaneSource>(
+  (ref) => const BridgeLaneSource(),
+);
+
+/// **One lane per row** — the guarantee that lives HERE and nowhere else.
+///
+/// The bridge has no registry: two `lane_open` calls are two lanes, two
+/// subscriptions and two adapters against one agent. So the de-duplication is
+/// the provider's, and `autoDispose.family` is the whole mechanism — two
+/// screens watching one [LaneRef] share one [LaneController], and the last
+/// listener leaving closes it.
+///
+/// It watches [machineFeedControllerProvider] so a live lane keeps the machine's
+/// feed, its one SSH client and its forwards alive, and *listens* to
+/// [machineFeedProvider] rather than watching it: the state stream is what
+/// starts the feed (a lane's forward needs the tunnel up), but watching it would
+/// rebuild this provider — and therefore the controller — on every roost poll,
+/// which is precisely the guarantee above, broken.
+///
+/// Throws when the row carries no lane. Unreachable from the UI, which offers
+/// the transcript affordance only for a row whose `agentLane` is non-null, and
+/// an honest error rather than a controller that silently never opens.
+final laneControllerProvider = Provider.autoDispose
+    .family<LaneController, LaneRef>((ref, key) {
+      final feed = ref.watch(machineFeedControllerProvider(key.machine));
+      ref.listen(machineFeedProvider(key.machine), (_, _) {});
+      final stamp = laneStampFor(feed.state, key.slug);
+      if (stamp == null) {
+        throw StateError('no agent lane on ${key.machine}/${key.slug}');
+      }
+      final controller = LaneController(
+        machine: key.machine,
+        slug: key.slug,
+        stamp: stamp,
+        source: ref.watch(laneSourceProvider),
+        // The feed owns the SSH connection every lane call rides — the probe
+        // and the forward both go through it, so a lane costs no second link.
+        probe: feed.probe,
+        reach: ref.watch(laneReachProvider),
+        acquireForward: feed.acquireForward,
+        stamps: laneStamps(feed.updates, key.slug),
+      );
+      ref.onDispose(controller.close);
+      return controller;
+    });
+
+/// One lane's live state stream.
+///
+/// Split from [laneControllerProvider] for the reason
+/// [machineFeedControllerProvider] is split from [machineFeedProvider]: the
+/// verbs need an object to call, the UI needs a stream to rebuild on, and one
+/// provider returning a stream could not offer both without the UI reaching
+/// around it.
+final laneStateProvider = StreamProvider.autoDispose.family<LaneState, LaneRef>(
+  (ref, key) async* {
+    // Resolved before the controller is built, so the feed it reads is
+    // holding the real machine record and identity rather than the empty
+    // defaults.
+    await ref.watch(machinesProvider.future);
+    await ref.watch(identitiesProvider.future);
+    final controller = ref.watch(laneControllerProvider(key));
+    // **Subscribed before `open()` can emit.** `controller.updates` is a
+    // BROADCAST stream and buffers nothing, and an `async*` body pauses at
+    // `yield controller.state` before it ever reaches `yield*`'s own subscribe
+    // — so an emission landing in that gap was dropped and the screen kept the
+    // pre-open state until something else changed. This relay is a
+    // single-subscription controller, which DOES buffer before its listener
+    // attaches, so the window closes with nothing but `dart:async`.
+    final relay = StreamController<LaneState>();
+    final sub = controller.updates.listen(
+      relay.add,
+      onError: relay.addError,
+      onDone: relay.close,
+      cancelOnError: false,
+    );
+    ref.onDispose(() {
+      sub.cancel();
+      relay.close();
+    });
+    unawaited(controller.open());
+    yield controller.state;
+    yield* relay.stream;
+  },
+);
