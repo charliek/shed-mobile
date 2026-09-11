@@ -75,12 +75,18 @@ Rules that matter when adding a cell:
 - Every cell carries a 60 s timeout, and every fake is stopped from a
   `tearDown` — so a failing cell leaves nothing bound to a loopback port. The
   fake also watches its own stdin, so a killed run leaks nothing either.
-- **Two gx knobs are missing from shed's control-door allowlist** (`GX_METHODS`
-  in `fake_lane_server.py`), and four cells are reduced because of it:
-  `add_approval` (the only producer that writes a gx approval to the fake's
-  STORE, which `answer()` re-reads before it posts) and `body_of` (`requests()`
-  drops each record's body, so no gx POST body is observable). Adding them makes
-  the gx approval-answer and `mode: "interject"` assertions writable.
+- **Both halves of a gx approval are reachable, and so is every gx body.** Two
+  knobs on shed's control-door allowlist (`GX_METHODS` in
+  `fake_lane_server.py`) carry it: `add_approval`, which writes a REAL approval
+  into the fake's store — the copy gx's `answer()` re-reads before it translates
+  a decision, so an approval the rig creates can be answered as well as rendered
+  — and `bodies_to(suffix)`, which returns every recorded body for a path suffix
+  as a LIST (a cell may post to one path twice, and the first body is not always
+  the one it means). So a gx cell presses an option and asserts the posted
+  `optionId`, answers a question and asserts its `annotations` map, and asserts
+  `mode: "interject"` on the wire. `requests()` still carries no body, on
+  purpose: its shape is pinned by a cell, and a body there would put a
+  token-bearing payload into the one ledger a failure prints.
 
 `make test-integration-linux` also warns when the local Flutter differs from the
 CI pin, and restores `pubspec.lock` / `analysis_options.yaml` after the run —

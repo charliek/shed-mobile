@@ -27,38 +27,46 @@
 // stubbed `LaneSource` hands back an already-completed cancel. See
 // `lane_controller.dart:_dropHandle`.
 //
-// ## Two gx knobs the control door does not expose yet
+// ## Both halves of a gx approval, and every gx body, are reachable
 //
-// Four of §3.13's cells are reduced here, and every reason is a shed-side
-// allowlist gap in `fake_lane_server.py` (`GX_METHODS`) — not a weakened claim:
+// Two knobs on shed's control door (`fake_lane_server.py`'s `GX_METHODS`) are
+// what make the gx cells below assert the WIRE and not just the render:
 //
-// * **`add_approval` is missing.** It is the ONLY producer that puts a gx
-//   approval in the fake's STORE, and gx's `answer()` re-reads
-//   `GET /v1/sessions/{id}/approvals/{id}` before it posts.
-//   `push_approval_frame` is broadcast-only by design ("so a cell can make the
-//   frame and the store disagree on purpose"), so an approval pushed as a frame
-//   RENDERS but cannot be answered — the re-read 404s. The render halves are
-//   asserted below; the post halves are left unwritten rather than aimed at a
-//   placeholder whose kind would make the adapter refuse for the wrong reason.
-//   This is what reduces `five_options_render_and_choice_posts_the_pressed_id`
-//   (and its `Permission{AllowOnce}` → `bad_request` half),
-//   `question_with_free_text_posts_annotations`, and — because a gx
-//   `question_request` is the only multi-question ask either fake can build —
-//   `custom_text_round_trips_through_frb`'s pinned two-entry literal.
-// * **`body_of` is missing.** `requests()` deliberately drops each record's
-//   body, so no gx POST body is observable from Dart. gx's send MODE
-//   (`{"text":…,"mode":"interject"}`) is therefore asserted on opencode's side
-//   of the pair (which refuses `Interject` locally, with `post_paths` empty) and
-//   as a widget claim on gx's, not as a gx wire body.
+// * **`add_approval`** writes a real approval into the fake's STORE — a non-null
+//   `method` and `request`, `status: "pending"` — and returns the resource
+//   `push_approval_frame` wants. So [_Rig.pushPermission] and
+//   [_Rig.pushQuestion] deliver every gx approval BOTH ways: stored, because
+//   gx's `answer()` re-reads `GET /v1/sessions/{id}/approvals/{id}` before it
+//   translates a decision (`shed-gx/src/client.rs:answer`), and announced as an
+//   `approval` frame, because that is how a real gx tells a client about one at
+//   all. An approval made that way RENDERS and can be ANSWERED, which is what
+//   lets the five-option cell press a button and read the posted `optionId`
+//   back, and the question cell read its `annotations` map back.
+//   `add_placeholder_approval` is still used where the cell is ABOUT the
+//   placeholder shape (`method` and `request` both null): two cells below need
+//   an approval that offers no options, and filling one in would be testing
+//   something else.
+// * **`bodies_to(suffix)`** hands back every recorded body whose path ends with
+//   `suffix`, in order served — a LIST, not a first match, because the interject
+//   cell posts to `…/messages` twice (a queued send, then the interject) and
+//   asserting the FIRST body there would assert the wrong one and pass. gx's
+//   send MODE is therefore a wire-body assertion here, not a widget claim.
 //
-// The opencode fake needs neither: `post_body`, `snapshot`, `add_permission`,
-// `add_question` and `stream_question_asked` are all allowlisted, so every
-// opencode cell asserts the real wire body. Two cells here are NOT in §3.13 and
-// exist to cover what gx cannot:
-// `a_placeholders_reject_posts_and_a_second_answer_is_refused` (the one gx
-// answer path the control door can reach) and
-// `a_pressed_option_id_posts_its_replys_wire_value` (the screen's own
-// post-the-offered-id path, on opencode).
+// `requests()`'s shape is unchanged and stays that way —
+// `{method, path, query, had_bearer, bearer_ok}`, no body: shed's own
+// `test_fake_lane_server.py` pins that key set exactly, and widening it would
+// put a token-bearing body into the one ledger a failure prints. Bodies come
+// from `bodies_to`, and the `response` a decision produced comes from
+// `answered_with`.
+//
+// The opencode fake has its own pair (`post_body`, `post_paths`), so every
+// opencode cell asserts the real wire body too. Two cells here are NOT in §3.13
+// and exist because the contract's refusals need approvals the §3.13 cells
+// cannot also be: `a_placeholders_reject_posts_and_a_second_answer_is_refused`
+// (`Reject` against a placeholder — the one answer that needs no option list —
+// and then the `409 already_submitted` a second answer earns) and
+// `a_pressed_option_id_posts_its_replys_wire_value` (opencode's id/kind split,
+// where the pressed id and its reply value differ).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -278,16 +286,13 @@ void main() {
     }, timeout: _cell);
 
     testWidgets(
-      'interject_is_offered_only_while_working_and_the_toggle_is_absent_elsewhere',
+      'interject_posts_mode_interject_while_working_and_the_toggle_is_absent_elsewhere',
       (tester) async {
         // gx advertises `interject`, so the chip EXISTS — and is enabled only
         // while a turn is running. Absent (opencode) and present-but-disabled
         // are different facts: collapsing them hides a capability or offers a
-        // refusal.
-        //
-        // The `mode: "interject"` wire body is not asserted here: `requests()`
-        // drops each record's body and `body_of` is not allowlisted, so no gx
-        // POST body is observable from Dart. See this file's header.
+        // refusal. The "absent elsewhere" half is opencode's
+        // `interject_is_absent_and_refused_before_any_request`.
         final rig = await _gx(tester);
         await rig.pumpUntil(
           tester,
@@ -325,6 +330,24 @@ void main() {
               .onSelected,
           isNotNull,
         );
+        // And the affordance a working turn also earns.
+        expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
+
+        // ---- the mode, on the wire ------------------------------------------
+        //
+        // TWO sends, both while the SAME turn is working, with the toggle the
+        // only thing that differs between them. A single interject send would
+        // also pass against a composer that hard-coded the mode, or against one
+        // that read the activity and ignored the chip.
+        await rig.fake.call('clear_requests');
+        await rig.typeInComposer(tester, 'queued first');
+        await tester.tap(find.byKey(const ValueKey('lane-send')));
+        await rig.pumpUntil(
+          tester,
+          () async => (await rig.gxBodiesTo('/messages')).isNotEmpty,
+          what: 'the queued send',
+        );
+
         await tester.tap(find.byKey(const ValueKey('lane-interject')));
         await tester.pump(const Duration(milliseconds: 50));
         expect(
@@ -333,8 +356,27 @@ void main() {
               .selected,
           isTrue,
         );
-        // And the affordance a working turn also earns.
-        expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
+        await rig.typeInComposer(tester, 'and this one interrupts');
+        await tester.tap(find.byKey(const ValueKey('lane-send')));
+        await rig.pumpUntil(
+          tester,
+          () async => (await rig.gxBodiesTo('/messages')).length == 2,
+          what: 'the interject send',
+        );
+
+        // `bodies_to` answers a LIST in the order served, which is why this can
+        // name WHICH send it means: [0] is the queued one that went out before
+        // the toggle, [1] is the interject. gx's body shape is `{text, mode}` —
+        // `shed-gx/src/client.rs:send`, where `SendMode::Interject` spells
+        // itself `"interject"` and the default spells itself `"queue"`.
+        final sends = await rig.gxBodiesTo('/messages');
+        expect(sends, hasLength(2));
+        expect(jsonDecode(sends[0]), {'text': 'queued first', 'mode': 'queue'});
+        expect(jsonDecode(sends[1]), {
+          'text': 'and this one interrupts',
+          'mode': 'interject',
+        });
+        expect(rig.state.composerError, isNull);
       },
       timeout: _cell,
     );
@@ -401,11 +443,9 @@ void main() {
       await rig.fake.call('clear_failures');
     }, timeout: _cell);
 
-    testWidgets('five_options_render_from_the_real_request', (tester) async {
-      // The RENDER half of §3.13's `five_options_render_and_choice_posts_the_
-      // pressed_id`. The post half needs `add_approval` (see the header): an
-      // approval delivered as a frame renders, but gx's `answer()` re-reads it
-      // from the store, which only `add_approval` writes.
+    testWidgets('five_options_render_and_choice_posts_the_pressed_id', (
+      tester,
+    ) async {
       final rig = await _gx(tester);
       await rig.pumpUntil(
         tester,
@@ -459,12 +499,77 @@ void main() {
         )?.kind,
         'allow_always',
       );
+
+      // ---- the post half ---------------------------------------------------
+      //
+      // **The refusal FIRST, and the order is load-bearing.** A
+      // `Permission{AllowOnce}` is refused by the ADAPTER, which will not guess
+      // between two `allow_once` options
+      // (`shed-gx/src/client.rs:unresolvable_decision`). A successful answer
+      // moves the approval to `submitted`, after which every later answer is
+      // `409 already_submitted` — a different refusal, and the one
+      // `a_placeholders_reject_posts_and_a_second_answer_is_refused` covers. Run
+      // the other way round, this cell would pass on the wrong error.
+      await rig.controller.answer(
+        'ap-five',
+        const BridgeLaneAnswer.permission(
+          decision: BridgeLaneDecision.allowOnce,
+        ),
+      );
+      await rig.pumpUntil(
+        tester,
+        () => rig.state.approvalErrors['ap-five'] != null,
+        what: 'the ambiguity refusal',
+      );
+      final refusal = rig.state.approvalErrors['ap-five']!;
+      // The AMBIGUITY one: a `bad_request` the adapter composed, naming the kind
+      // it could not choose within — NOT the already-submitted 409.
+      expect(refusal.code, 'LANE_BAD_REQUEST');
+      expect(refusal.statusCode, 400);
+      expect(refusal.message, contains('allow_once'));
+      expect(
+        refusal.message.toLowerCase(),
+        isNot(contains('already')),
+        reason: 'this must be the ambiguity refusal, not a second answer',
+      );
+      // And it posted NOTHING. Read off the ledger rather than `bodies_to`: the
+      // adapter's answer-time re-read is a GET to this very path and records an
+      // empty body, so `bodies_to` answers `['']` here and an `isEmpty` on it
+      // would be satisfied by no POST AND by a POST of an empty body alike.
+      const approvalPath = '/v1/sessions/$_gxSession/approvals/ap-five';
+      expect(
+        (await rig.gxRequests()).where(
+          (r) => r['path'] == approvalPath && r['method'] == 'POST',
+        ),
+        isEmpty,
+        reason: 'a decision the adapter cannot resolve must not reach the wire',
+      );
+      expect(await rig.answeredWith('ap-five'), isNull);
+
+      // Now the screen's own path, and the option pressed is the FIFTH —
+      // `reject_always`. Neither "it posted the first option" nor "it
+      // re-resolved the press by kind" (a `Reject` resolves to `reject-once`)
+      // could produce this body, so the assertion cannot pass by accident.
+      await rig.tapInPane(tester, 'lane-option-reject-always-command');
+      await rig.pumpUntil(
+        tester,
+        () async => await rig.answeredWith('ap-five') != null,
+        what: 'the choice to reach the fake',
+      );
+      // gx's `response` for a chosen option, from `answer_body`'s
+      // `LaneAnswer::Choice` arm (`shed-gx/src/client.rs`) — the outcome object
+      // nested inside an `outcome` key, which reads like a typo and is not one.
+      expect(await rig.answeredWith('ap-five'), {
+        'outcome': {'outcome': 'selected', 'optionId': 'reject-always-command'},
+      });
+      expect(
+        rig.state.approvalErrors['ap-five'],
+        isNull,
+        reason: 'the accepted answer cleared the refusal off the card',
+      );
     }, timeout: _cell);
 
-    testWidgets('question_with_free_text_renders_its_form', (tester) async {
-      // The RENDER half of §3.13's `question_with_free_text_posts_annotations`.
-      // The post half — `["Other"]` where no label, question 1 omitted, the
-      // `annotations` map — needs `add_approval`; see the header.
+    testWidgets('question_with_free_text_posts_annotations', (tester) async {
       final rig = await _gx(tester);
       await rig.pumpUntil(
         tester,
@@ -472,7 +577,9 @@ void main() {
         what: 'the lane',
       );
 
-      await rig.pushQuestion('ap-q', const [
+      // Hoisted, because the pinned-literal half below answers a SECOND
+      // approval carrying the same two questions.
+      const questions = <Object?>[
         {
           'question': 'Which branch should it push to?',
           'options': [
@@ -486,7 +593,8 @@ void main() {
             {'label': 'no'},
           ],
         },
-      ]);
+      ];
+      await rig.pushQuestion('ap-q', questions);
       await rig.pumpUntil(
         tester,
         () => rig.state.approvals.isNotEmpty,
@@ -520,6 +628,77 @@ void main() {
       expect(find.byKey(const ValueKey('lane-custom-0')), findsOneWidget);
       expect(find.byKey(const ValueKey('lane-custom-1')), findsOneWidget);
       expect(find.byKey(const ValueKey('lane-question-send')), findsOneWidget);
+
+      // ---- the post half: §3.13's three claims, on one wire body -----------
+      //
+      // Question 0 gets TEXT and no chip; question 1 is left entirely alone. So
+      // the body has to show all three of `answer_body`'s question rules
+      // (`shed-gx/src/client.rs`, the `LaneAnswer::Question` arm): an answer of
+      // text alone is filed under gx's own `"Other"` label
+      // (`client.rs:OTHER_LABEL`), the note rides beside it in `annotations`,
+      // and a question answered with NOTHING is OMITTED from the map rather
+      // than filed as an empty list.
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-custom-0')),
+        'a branch I typed',
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await rig.tapInPane(tester, 'lane-question-send');
+      await rig.pumpUntil(
+        tester,
+        () async => await rig.answeredWith('ap-q') != null,
+        what: 'the answer to reach the fake',
+      );
+      expect(rig.state.approvalErrors['ap-q'], isNull);
+      // Whole-map equality, which is how "question 1 is omitted" is an
+      // assertion: a body that filed it as `[]` would not match.
+      expect(await rig.answeredWith('ap-q'), {
+        'outcome': 'accepted',
+        'answers': {
+          'Which branch should it push to?': ['Other'],
+        },
+        'annotations': {
+          'Which branch should it push to?': {'notes': 'a branch I typed'},
+        },
+      });
+
+      // ---- §3.13's pinned literal, on a second approval --------------------
+      //
+      // `answers: [[]], customText: ['x', null]` — a `List<String?>` carrying a
+      // value AND a hole, with `answers` SHORTER than `questions` so the
+      // normalizer's padding runs too (`shed-core/src/lane.rs:
+      // normalize_question_answer`). §3.13 pins that literal for
+      // `custom_text_round_trips_through_frb`, and this is the only rig that can
+      // hold it: a two-question ask exists on gx alone, and it became answerable
+      // only with `add_approval`. See that cell for why opencode's pair stays.
+      await rig.pushQuestion('ap-q2', questions);
+      await rig.pumpUntil(
+        tester,
+        () => rig.state.approvals.any((a) => a.id == 'ap-q2'),
+        what: 'the second question',
+      );
+      await rig.controller.answer(
+        'ap-q2',
+        const BridgeLaneAnswer.question(
+          answers: [<String>[]],
+          customText: ['x', null],
+        ),
+      );
+      await rig.pumpUntil(
+        tester,
+        () async => await rig.answeredWith('ap-q2') != null,
+        what: 'the pinned literal to reach the fake',
+      );
+      expect(rig.state.approvalErrors['ap-q2'], isNull);
+      expect(await rig.answeredWith('ap-q2'), {
+        'outcome': 'accepted',
+        'answers': {
+          'Which branch should it push to?': ['Other'],
+        },
+        'annotations': {
+          'Which branch should it push to?': {'notes': 'x'},
+        },
+      });
     }, timeout: _cell);
 
     testWidgets(
@@ -595,10 +774,10 @@ void main() {
     testWidgets('a_placeholders_reject_posts_and_a_second_answer_is_refused', (
       tester,
     ) async {
-      // The one gx answer path the control door can reach: `Reject` against the
-      // placeholder that `add_placeholder_approval` really does store. It
-      // proves the re-read-then-POST path end to end, and that a double tap is
-      // refused rather than posted twice.
+      // `Reject` against a PLACEHOLDER — the one answer that needs no option
+      // list at all, against the one approval shape that offers none. It proves
+      // the re-read-then-POST path on an ask the adapter cannot describe, and
+      // that a second answer is refused rather than posted twice.
       final rig = await _gx(tester);
       await rig.pumpUntil(
         tester,
@@ -1487,12 +1666,16 @@ void main() {
       // back with `post_body`. That is strictly more than an echo proves,
       // because the decoded value has to survive the adapter too.
       //
-      // The pinned literal (`answers: [[]], customText: ['x', null]`) needs a
-      // TWO-question approval, and neither fake's control door can build one
-      // (`add_question`/`stream_question_asked` each carry exactly one
-      // question, and gx's multi-question `question_request` cannot be stored
-      // without `add_approval`). So the null element is carried at length one,
-      // which still fails loudly on a decoder that cannot represent the hole.
+      // **§3.13's pinned literal (`answers: [[]], customText: ['x', null]`) is
+      // asserted in the gx cell `question_with_free_text_posts_annotations`**,
+      // not here: it needs a TWO-question approval, and only gx's
+      // `question_request` carries more than one
+      // (`add_question`/`stream_question_asked` each carry exactly one). This
+      // pair stays because it proves something that one cannot — the hole and
+      // the value at the SAME length, one answer apart, so a decoder that
+      // DROPPED nulls (rather than mis-aligning them) is caught by the (a)/(b)
+      // contrast, where a single two-entry literal would still have landed `'x'`
+      // in slot 0 and passed.
       final rig = await _oc(tester);
       await rig.pumpUntil(
         tester,
@@ -1744,55 +1927,102 @@ class _Rig {
     await fake.call('push_session_frame', args: [_gxSession]);
   }
 
-  /// The real five-option permission, delivered as an `approval` frame.
+  /// The real five-option permission — STORED, then announced.
   ///
-  /// Both halves come from Python: the resource envelope is the one
-  /// `add_placeholder_approval` returned, and the request payload is the fake's
-  /// own `permission_request` builder. Nothing about either shape is
-  /// re-derived here.
-  Future<void> pushPermission(String id, String command) async {
-    final resource = await _resource(
-      id,
-      'permission',
-      'session/request_permission',
-      await fake.envelope('permission_request', {
-        'session': _gxSession,
-        'command': command,
-      }),
-    );
-    await fake.call('push_approval_frame', args: [_gxSession, resource]);
-  }
+  /// Every shape comes from Python: the resource is the one `add_approval`
+  /// wrote, and the request payload is the fake's own `permission_request`
+  /// builder. Nothing about either is re-derived here.
+  Future<void> pushPermission(String id, String command) async =>
+      _storeAndAnnounce(
+        id,
+        'permission',
+        'session/request_permission',
+        await fake.envelope('permission_request', {
+          'session': _gxSession,
+          'command': command,
+        }),
+      );
 
-  Future<void> pushQuestion(String id, List<Object?> questions) async {
-    final resource = await _resource(
-      id,
-      'question',
-      'x.ai/ask_user_question',
-      await fake.envelope('question_request', {
-        'session': _gxSession,
-        'questions': questions,
-      }),
-    );
-    await fake.call('push_approval_frame', args: [_gxSession, resource]);
-  }
+  Future<void> pushQuestion(String id, List<Object?> questions) async =>
+      _storeAndAnnounce(
+        id,
+        'question',
+        'x.ai/ask_user_question',
+        await fake.envelope('question_request', {
+          'session': _gxSession,
+          'questions': questions,
+        }),
+      );
 
-  /// The fake's OWN approval-resource envelope, with the method and request it
-  /// deliberately leaves null on a placeholder filled in.
+  /// `add_approval`, then `push_approval_frame` with the resource it returned.
   ///
-  /// This exists because `add_approval` is not on the control door's allowlist
-  /// (see this file's header). It reaches only the FRAME, never the store, so
-  /// an approval built this way renders and cannot be answered.
-  Future<Map<String, Object?>> _resource(
+  /// **Both, because a gx approval has two halves and the cells need each.** The
+  /// STORE is what gx's `answer()` re-reads before it translates a decision, so
+  /// without it an approval renders and every answer 404s; the FRAME is how a
+  /// real gx announces the ask, so without it nothing reaches the screen.
+  Future<void> _storeAndAnnounce(
     String id,
     String kind,
     String method,
     Map<String, Object?> request,
   ) async {
-    final placeholder =
-        (await fake.call('add_placeholder_approval', args: [_gxSession, id]))!
+    final resource =
+        (await fake.call(
+              'add_approval',
+              args: [_gxSession, id, kind, method, request],
+            ))!
             as Map<String, Object?>;
-    return {...placeholder, 'kind': kind, 'method': method, 'request': request};
+    await fake.call('push_approval_frame', args: [_gxSession, resource]);
   }
+
+  /// Type into the composer, re-focusing it first, and prove the text landed.
+  ///
+  /// **The tap is load-bearing the SECOND time a cell types.**
+  /// `WidgetTester.enterText` requests the keyboard only for an editable the
+  /// binding has not focused before (`binding.dart:set focusedEditable`), so
+  /// once anything else has taken focus — the interject chip — the engine-side
+  /// connection is closed and the new value is delivered to a client that is no
+  /// longer current (`test_text_input.dart:updateEditingValue` sends
+  /// `_client ?? -1`). It is dropped in SILENCE: the composer stays empty,
+  /// `_send` returns before logging anything, and the cell times out on a send
+  /// that never happened. Tapping the field re-attaches it; the expectation
+  /// below is what makes the next regression legible instead of a timeout.
+  Future<void> typeInComposer(WidgetTester tester, String text) async {
+    final input = find.byKey(const ValueKey('lane-input'));
+    await tester.tap(input);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.enterText(input, text);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      tester.widget<TextField>(input).controller!.text,
+      text,
+      reason: 'the composer never received the text, so no send could follow',
+    );
+  }
+
+  /// Tap a control inside the approvals pane, scrolling it into view first.
+  ///
+  /// The pane is capped at 45% of the screen and scrolls
+  /// (`lane_screen.dart:build`), so a tall ask — five gx options, or a
+  /// two-question form with two text fields — can park its last control below
+  /// the fold, where `findsOneWidget` still passes (the child IS built) and a
+  /// bare `tap` misses the hit test. `ensureVisible` is a no-op when there is no
+  /// scrollable above the target.
+  Future<void> tapInPane(WidgetTester tester, String key) async {
+    final finder = find.byKey(ValueKey(key));
+    await tester.ensureVisible(finder);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(finder);
+  }
+
+  /// Every gx request body posted to a path ending in [suffix], in order served.
+  ///
+  /// A LIST: a cell may post to one path twice (a queued send, then an
+  /// interject), and the first body there is not the one it means to assert.
+  Future<List<String>> gxBodiesTo(String suffix) async =>
+      ((await fake.call('bodies_to', args: [suffix]))! as List)
+          .cast<String>()
+          .toList();
 
   // -- the opencode ledger --------------------------------------------------
 
