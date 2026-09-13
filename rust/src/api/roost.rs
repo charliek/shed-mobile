@@ -54,7 +54,7 @@ use std::sync::{Arc, Mutex};
 use flutter_rust_bridge::frb;
 use roost_ipc::messages::{Project, Tab, TabDumpResult, TabOpenParams};
 use shed_app::machine::FixedPort;
-use shed_app::roost::{LabelledPort, RoostPeek, RoostUpdate, RoostWatcher};
+use shed_app::roost::{LabelledPort, ReachKind, RoostPeek, RoostUpdate, RoostWatcher};
 use shed_core::rc::RcKind;
 use shed_core::roost::RoostSession;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -100,7 +100,51 @@ pub enum BridgeRoostUpdate {
     /// **A normal state, not an error.** A machine that is asleep, off-network,
     /// or simply runs no roost-session is the everyday case; the UI renders its
     /// rows as last-known with a reason rather than failing.
-    Down { reason: String },
+    Down {
+        reason: String,
+        /// What kind of "not readable" this is. [`reason`](Self::Down::reason)
+        /// is the sentence for the user; this is the branch for the client —
+        /// an install is offered for [`BridgeReachKind::NotInstalled`], a start
+        /// for [`BridgeReachKind::NoSession`], and nothing at all for the other
+        /// two.
+        ///
+        /// Carried as its own field rather than recovered by grepping the
+        /// reason, which is what the phone would otherwise have to do: the
+        /// classification exists upstream (roost's own `SshFailure`) and a
+        /// substring search over a user-facing sentence is a translation away
+        /// from being wrong.
+        kind: BridgeReachKind,
+    },
+}
+
+/// Why a session is not readable (mirrors `shed_app::roost::ReachKind`). Plain
+/// enum.
+///
+/// [`Other`](Self::Other) is the honest default and the common one — a stream
+/// that ended, a request that failed, a reach that was never classified. The
+/// two actionable kinds only appear when the transport actually recorded one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeReachKind {
+    /// Nothing on roost's candidate ladder: an install would fix this.
+    NotInstalled,
+    /// A `roost-session` is installed and not serving: a start would fix this.
+    NoSession,
+    /// shed never got as far as asking — the handshake failed, the key did not
+    /// verify, the login was refused, the budget expired.
+    Unreachable,
+    /// Anything else, including a reach that was never mapped.
+    Other,
+}
+
+impl From<ReachKind> for BridgeReachKind {
+    fn from(k: ReachKind) -> Self {
+        match k {
+            ReachKind::NotInstalled => BridgeReachKind::NotInstalled,
+            ReachKind::NoSession => BridgeReachKind::NoSession,
+            ReachKind::Unreachable => BridgeReachKind::Unreachable,
+            ReachKind::Other => BridgeReachKind::Other,
+        }
+    }
 }
 
 struct RoostWatcherInner {
@@ -246,7 +290,10 @@ fn bridge_update(update: RoostUpdate) -> BridgeRoostUpdate {
                 .collect(),
             revision: inventory.revision,
         },
-        RoostUpdate::Down { reason } => BridgeRoostUpdate::Down { reason },
+        RoostUpdate::Down { reason, kind } => BridgeRoostUpdate::Down {
+            reason,
+            kind: kind.into(),
+        },
     }
 }
 
@@ -529,6 +576,40 @@ mod tests {
             .unwrap_or_else(|_| panic!("timed out waiting for {what}"))
             .unwrap_or_else(|| panic!("the watcher ended before {what}"));
         bridge_update(update)
+    }
+
+    /// **Every reach kind survives the crossing**, one for one.
+    ///
+    /// The kind is the phone's branch — an install for `NotInstalled`, a start
+    /// for `NoSession`, nothing at all for the other two — so a mapping that
+    /// collapsed any pair would silently offer the wrong remedy, or none. The
+    /// loop is over every variant rather than a sample for the same reason the
+    /// Dart fold's is: a `_ => Other` arm passes any test that only checks
+    /// `Other`.
+    #[test]
+    fn every_reach_kind_crosses_the_bridge_unchanged() {
+        let cases = [
+            (ReachKind::NotInstalled, BridgeReachKind::NotInstalled),
+            (ReachKind::NoSession, BridgeReachKind::NoSession),
+            (ReachKind::Unreachable, BridgeReachKind::Unreachable),
+            (ReachKind::Other, BridgeReachKind::Other),
+        ];
+
+        for (from, want) in cases {
+            let got = bridge_update(RoostUpdate::Down {
+                reason: "nothing is listening".into(),
+                kind: from,
+            });
+
+            assert_eq!(
+                got,
+                BridgeRoostUpdate::Down {
+                    reason: "nothing is listening".into(),
+                    kind: want,
+                },
+                "{from:?} did not cross as {want:?}"
+            );
+        }
     }
 
     /// **The leak contract**: create bumps both counters, teardown returns both,

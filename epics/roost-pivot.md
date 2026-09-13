@@ -22,11 +22,21 @@ merges. Never edit board status by hand.
 |---|---|---|---|
 | S3m | [#15](https://github.com/charliek/shed-mobile/issues/15) | RP/M1 | the phone reads inventory + status from a `roost-session` over the SSH forward — **the priority client** |
 | S4m | [#19](https://github.com/charliek/shed-mobile/issues/19) | RP/M3 | the phone reads and drives a machine's agent lane — transcript, approvals, questions, composer — over shed_core::lane's Rust-owned bridge (plan 018) |
+| S5m | [#21](https://github.com/charliek/shed-mobile/issues/21) | RP/M5 | the phone can create a `roost-session` it finds missing — the bootstrap the desktop already has (plan 020) |
 
 S3m proved M1 on the device that matters; S4m delivers M3's content
 (transcript, prompt, approve), mirroring shed's A4 lane DTOs and consuming
 gx's A3 approvals over the same bridge. Live push follows roost's R1;
-terminal attach follows roost's R3.
+terminal attach follows roost's R3. S5m closes the last dead end: a machine
+with no `roost-session` is currently a row the phone can only report on.
+
+**S5m ships in two parts.** The protocol re-pin landed first, on its own
+(plan 020 C-M1): roost retired the session lease at protocol 5, so the pin
+had to move or the phone would be refused by every current session. It
+carries the `Down { kind }` classification — install / start / unreachable /
+other — as far as the feed state, which is the datum the affordance needs.
+The bootstrap itself (the FRB handles, the Dart exec transport, the consent
+sheet) is the rest of #21 and is still open.
 
 ## Rules that apply in this repo
 
@@ -60,6 +70,12 @@ terminal attach follows roost's R3.
 - **S3m ← shed S1.** The roost client in `shed-core` must exist first;
   the FRB surface is regenerated from it.
 - **S3m ← roost R1** for live push (not for M1 — polling is fine).
+- **S5m ← roost R5 / shed's protocol-5 bump.** Session protocol 5 retires
+  the lease: a subscribe takes no token and there is no privileged stream to
+  be one of. The phone pins the same `roost-ipc` rev shed does, because two
+  revs of it in one lock resolve to two crates (see the note in
+  `rust/Cargo.toml`), so this repo's pin moves when shed's does — not when
+  it is convenient.
 - **A4 (shed) → this repo — closed.** A4 landed in shed and merged at
   `e745d03`; the opencode lane crate it added is FRB-exposed here (S4m,
   plan 018) for the native transcript view.

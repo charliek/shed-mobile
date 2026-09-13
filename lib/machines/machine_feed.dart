@@ -24,6 +24,7 @@ class MachineFeedState {
     this.detail,
     this.connectedOnce = false,
     this.capabilities,
+    this.downKind,
   });
 
   final MachineRecord machine;
@@ -67,6 +68,23 @@ class MachineFeedState {
   /// existing per-feature gates hide those controls with no new conditionals.
   final BridgeRcCapabilities? capabilities;
 
+  /// What kind of unreachable this is, from the last `Down`.
+  ///
+  /// Null means **unclassified**, not "reachable": a snapshot clears it, but so
+  /// does never having had one — a feed error or a pause marks the machine
+  /// unreachable without any `Down` to classify it. A caller reads this to
+  /// decide what to OFFER, and null is the honest "offer nothing".
+  ///
+  /// The branch a caller acts on; [detail] is the sentence it shows. Only
+  /// [BridgeReachKind.notInstalled] and [BridgeReachKind.noSession] name
+  /// something the phone could offer to do about it — the other two are
+  /// reported and nothing more.
+  ///
+  /// **Cleared by the next `Snapshot`**, which is the whole reason it is on the
+  /// state rather than read off the last update: a machine that came back must
+  /// not keep offering to install roost on it.
+  final BridgeReachKind? downKind;
+
   MachineFeedState copyWith({
     List<BridgeRcSession>? sessions,
     Map<String, MachinePatch>? overlay,
@@ -74,7 +92,9 @@ class MachineFeedState {
     String? detail,
     bool? connectedOnce,
     BridgeRcCapabilities? capabilities,
+    BridgeReachKind? downKind,
     bool clearDetail = false,
+    bool clearDownKind = false,
   }) => MachineFeedState(
     machine: machine,
     sessions: sessions ?? this.sessions,
@@ -83,6 +103,7 @@ class MachineFeedState {
     detail: clearDetail ? null : (detail ?? this.detail),
     connectedOnce: connectedOnce ?? this.connectedOnce,
     capabilities: capabilities ?? this.capabilities,
+    downKind: clearDownKind ? null : (downKind ?? this.downKind),
   );
 
   /// The affordances for a session's kind, or null when unknown.
@@ -151,7 +172,9 @@ class MachinePatch {
 ///   every dimension a patch could hold.
 /// * A `Down` **keeps** the rows and marks them stale with a reason. Blanking
 ///   the machine would throw away the best available answer to "what is
-///   running on mini3?" every time a phone changes networks.
+///   running on mini3?" every time a phone changes networks. It also records
+///   the `kind`, which is the branch a caller acts on — and the next `Snapshot`
+///   clears it, so a machine that came back never keeps offering an install.
 ///
 /// [dialDetail] is the SSH dial's own failure, when there was one. It wins over
 /// roost's reason because they describe the same outage at different distances:
@@ -171,10 +194,12 @@ MachineFeedState foldRoostUpdate(
     reachable: true,
     connectedOnce: true,
     clearDetail: true,
+    clearDownKind: true,
   ),
-  BridgeRoostUpdate_Down(:final reason) => state.copyWith(
+  BridgeRoostUpdate_Down(:final reason, :final kind) => state.copyWith(
     reachable: false,
     detail: dialDetail ?? reason,
+    downKind: kind,
   ),
 };
 

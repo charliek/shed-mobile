@@ -134,6 +134,33 @@ ACCEPT: 25 lane cells + 2 probe + 11 slices green (hermetic, `-d linux`) across 
 
 ---
 
+## S5m — the phone can create a `roost-session` it finds missing  (plan 020; see [epics/roost-pivot.md](epics/roost-pivot.md), shed-mobile#21)
+The epic's S5m item: today a machine with no `roost-session` is a row the phone
+can only report on. The bootstrap the desktop already has — probe, consent,
+install, start — comes to the phone over the same sans-IO choreography, driven
+through dartssh2.
+
+**Shipping in two parts, deliberately.** The protocol re-pin came first and on
+its own, because roost retired the session lease at protocol 5 and a phone
+pinned at 4 is refused by every current session; the bootstrap follows once
+roost's own R9 work settles. This section stays open until it does.
+- [x] **C-M1** (this commit) — re-pin all four shed crates to shed's protocol-5
+      merge (`3170191`) and `roost-ipc` to `c1bfe88`, the one rev shed's own
+      manifest pins. Absorbs the single resulting break: `RoostUpdate::Down`
+      gained a `kind`, mirrored across the bridge as `BridgeReachKind` and
+      carried to `MachineFeedState.downKind`, which the next `Snapshot` clears
+      so a machine that came back never keeps offering an install. No UI branches
+      on it yet — that is C-M4.
+- [ ] **C-M2** — `rust/src/api/roost_bootstrap.rs`: FRB opaque handles on the
+      house lifecycle, the DTOs under the mirror rule, `bootstrap_source_read`.
+- [ ] **C-M3** — the Dart exec transport, covering the whole `Step::Exec`
+      contract, plus the golden cells.
+- [ ] **C-M4** — the Flutter UI: the affordance branching on `downKind`, the
+      consent sheet, the progress states.
+- [ ] **C-M5** — the live leg on the Flutter Linux desktop build.
+
+---
+
 ## Log
 - 2026-06-28: M8 — multi-shed navigation + cross-host views, in 7 gated commits (data layer → desktop shell → mobile shell → Sheds → Sessions → System → polish). New responsive `AppShell` (LayoutBuilder at 900px: desktop sidebar / mobile bottom-tabs; shared `appSectionProvider`) behind the preserved `_Home` onboarding gate; three cross-host sections (Sheds/Sessions/System) rendering one independently-loaded group per host via the shared `HostGroups`. New `lib/app/` (app_section, app_shell, desktop_scaffold, mobile_scaffold), `lib/widgets/` atoms (RuntimeBadge, KindChip, OpenPill, CardShell, ThemeToggleButton, HostGroups/HostBanner), `lib/features/{sheds/all_sheds_view+shed_card+shed_actions, rc/all_sessions_view+session_card, system/system_view+system_card}`. ShedClient.getSystemDf/restartShed; SystemDiskUsage/DiskTotals DTOs; per-host providers (hostSystemDfProvider HTTP; hostSessionsProvider SSH fan-out). **Plan panel-reviewed** (Codex+Kimi+CodeRabbit) in docs/PLAN-m8-multished.md (84a315f); blockers folded in (lazy section render vs IndexedStack, tested rcSlugFromTmux, string kindColor, split P2a/P2b, per-host AsyncValue+timeouts). **Sessions pivoted HTTP→SSH** after discovering `/api/sessions` returns tmux rows without the rc classification (the CLI SSH-enriches via `enrichSessionsRC`) — confirmed live (HTTP=0 rc sessions, SSH shows them); the rich view fans `shed-ext-rc list` over SSH per running shed, matching the desktop reference. API-gap ticket noted (populate rc server-side). Each commit: make check → drive-verified on macOS (light+dark; all sections with real data across 3 hosts — vz/firecracker badges, restart/stop, sessions kind/state, df breakdown) + the breakpoint/card widget tests → /simplify (shared ThemeToggleButton/CardShell/runAction, KindChip dedup, resolve-rec-once, refresh parity) → /codex:rescue (fixed throwing JSON casts, mounted guard, cross-provider invalidation after per-shed kill/create). Release tree-shake = 0. Mobile rich cards are widget-tested (the Pixel-8 emulator's key isn't trusted by the test servers — standing M4 gate — so add-server/real-data there is blocked). Deferred (PROGRESS M8): the desktop Add stays a secure pushed route (not the mock's fingerprint-skipping modal), nav count chips / host-tile badges (lazy-load tension), global-empty owl-ghost.
 - 2026-06-27: M7 — design-system retheme to the imported claude.ai/design "Shed App" mockup, in 5 gated commits (theme foundation → server list → sheds+sessions → forms → terminal+aux). New `lib/theme/` (ShedColors ThemeExtension = single source of truth projected onto the ColorScheme; light/dark ThemeData with IBM Plex via google_fonts; persisted themeModeProvider switcher) + `lib/widgets/` atoms (OwlLogo/OwlGhost via flutter_svg, CountChip, EmptyState, StatusDot/StatusBadge, SquareIconButton, ErrorRetry, AppBarCountTitle, PrimaryButton). Accent flipped indigo→orange `#F2541B`; terminal chrome forced dark to match the untouched xterm view. Each commit: make check (137 tests) → /simplify (4 agents) → /codex:rescue → push → CI green; drive-verified on macOS + the Pixel 8 emulator (toggle flips & persists; the visual pass caught & fixed an illegal non-uniform-Border+borderRadius on the session kind chip that the analyzer missed). Deps added: google_fonts, flutter_svg. Note: marionette can't tap macOS AppBar actions (the OS title-bar dead-zone swallows the top ~28px) — AppBar-action verification done on Android, where there's no title bar.

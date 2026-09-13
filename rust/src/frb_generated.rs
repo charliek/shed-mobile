@@ -4576,6 +4576,20 @@ impl SseDecode for crate::api::dto_rc::BridgeRcState {
     }
 }
 
+impl SseDecode for crate::api::roost::BridgeReachKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::roost::BridgeReachKind::NotInstalled,
+            1 => crate::api::roost::BridgeReachKind::NoSession,
+            2 => crate::api::roost::BridgeReachKind::Unreachable,
+            3 => crate::api::roost::BridgeReachKind::Other,
+            _ => unreachable!("Invalid variant for BridgeReachKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::roost::BridgeRoostUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4592,7 +4606,11 @@ impl SseDecode for crate::api::roost::BridgeRoostUpdate {
             }
             1 => {
                 let mut var_reason = <String>::sse_decode(deserializer);
-                return crate::api::roost::BridgeRoostUpdate::Down { reason: var_reason };
+                let mut var_kind = <crate::api::roost::BridgeReachKind>::sse_decode(deserializer);
+                return crate::api::roost::BridgeRoostUpdate::Down {
+                    reason: var_reason,
+                    kind: var_kind,
+                };
             }
             _ => {
                 unimplemented!("");
@@ -6758,6 +6776,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::dto_rc::BridgeRcState>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost::BridgeReachKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NotInstalled => 0.into_dart(),
+            Self::NoSession => 1.into_dart(),
+            Self::Unreachable => 2.into_dart(),
+            Self::Other => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost::BridgeReachKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost::BridgeReachKind>
+    for crate::api::roost::BridgeReachKind
+{
+    fn into_into_dart(self) -> crate::api::roost::BridgeReachKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::roost::BridgeRoostUpdate {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -6767,9 +6808,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::roost::BridgeRoostUpdate {
                 revision.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::roost::BridgeRoostUpdate::Down { reason } => {
-                [1.into_dart(), reason.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::roost::BridgeRoostUpdate::Down { reason, kind } => [
+                1.into_dart(),
+                reason.into_into_dart().into_dart(),
+                kind.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -8032,6 +8076,24 @@ impl SseEncode for crate::api::dto_rc::BridgeRcState {
     }
 }
 
+impl SseEncode for crate::api::roost::BridgeReachKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::roost::BridgeReachKind::NotInstalled => 0,
+                crate::api::roost::BridgeReachKind::NoSession => 1,
+                crate::api::roost::BridgeReachKind::Unreachable => 2,
+                crate::api::roost::BridgeReachKind::Other => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::roost::BridgeRoostUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8041,9 +8103,10 @@ impl SseEncode for crate::api::roost::BridgeRoostUpdate {
                 <Vec<crate::api::dto_rc::BridgeRcSession>>::sse_encode(sessions, serializer);
                 <Option<u64>>::sse_encode(revision, serializer);
             }
-            crate::api::roost::BridgeRoostUpdate::Down { reason } => {
+            crate::api::roost::BridgeRoostUpdate::Down { reason, kind } => {
                 <i32>::sse_encode(1, serializer);
                 <String>::sse_encode(reason, serializer);
+                <crate::api::roost::BridgeReachKind>::sse_encode(kind, serializer);
             }
             _ => {
                 unimplemented!("");
