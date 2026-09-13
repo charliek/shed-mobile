@@ -119,11 +119,11 @@ return down(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<BridgeRcSession> sessions,  BigInt? revision)?  snapshot,TResult Function( String reason)?  down,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<BridgeRcSession> sessions,  BigInt? revision)?  snapshot,TResult Function( String reason,  BridgeReachKind kind)?  down,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeRoostUpdate_Snapshot() when snapshot != null:
 return snapshot(_that.sessions,_that.revision);case BridgeRoostUpdate_Down() when down != null:
-return down(_that.reason);case _:
+return down(_that.reason,_that.kind);case _:
   return orElse();
 
 }
@@ -141,11 +141,11 @@ return down(_that.reason);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<BridgeRcSession> sessions,  BigInt? revision)  snapshot,required TResult Function( String reason)  down,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<BridgeRcSession> sessions,  BigInt? revision)  snapshot,required TResult Function( String reason,  BridgeReachKind kind)  down,}) {final _that = this;
 switch (_that) {
 case BridgeRoostUpdate_Snapshot():
 return snapshot(_that.sessions,_that.revision);case BridgeRoostUpdate_Down():
-return down(_that.reason);}
+return down(_that.reason,_that.kind);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -159,11 +159,11 @@ return down(_that.reason);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<BridgeRcSession> sessions,  BigInt? revision)?  snapshot,TResult? Function( String reason)?  down,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<BridgeRcSession> sessions,  BigInt? revision)?  snapshot,TResult? Function( String reason,  BridgeReachKind kind)?  down,}) {final _that = this;
 switch (_that) {
 case BridgeRoostUpdate_Snapshot() when snapshot != null:
 return snapshot(_that.sessions,_that.revision);case BridgeRoostUpdate_Down() when down != null:
-return down(_that.reason);case _:
+return down(_that.reason,_that.kind);case _:
   return null;
 
 }
@@ -249,10 +249,22 @@ as BigInt?,
 
 
 class BridgeRoostUpdate_Down extends BridgeRoostUpdate {
-  const BridgeRoostUpdate_Down({required this.reason}): super._();
+  const BridgeRoostUpdate_Down({required this.reason, required this.kind}): super._();
   
 
  final  String reason;
+/// What kind of "not readable" this is. [`reason`](Self::Down::reason)
+/// is the sentence for the user; this is the branch for the client —
+/// an install is offered for [`BridgeReachKind::NotInstalled`], a start
+/// for [`BridgeReachKind::NoSession`], and nothing at all for the other
+/// two.
+///
+/// Carried as its own field rather than recovered by grepping the
+/// reason, which is what the phone would otherwise have to do: the
+/// classification exists upstream (roost's own `SshFailure`) and a
+/// substring search over a user-facing sentence is a translation away
+/// from being wrong.
+ final  BridgeReachKind kind;
 
 /// Create a copy of BridgeRoostUpdate
 /// with the given fields replaced by the non-null parameter values.
@@ -264,16 +276,16 @@ $BridgeRoostUpdate_DownCopyWith<BridgeRoostUpdate_Down> get copyWith => _$Bridge
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRoostUpdate_Down&&(identical(other.reason, reason) || other.reason == reason));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeRoostUpdate_Down&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.kind, kind) || other.kind == kind));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,reason);
+int get hashCode => Object.hash(runtimeType,reason,kind);
 
 @override
 String toString() {
-  return 'BridgeRoostUpdate.down(reason: $reason)';
+  return 'BridgeRoostUpdate.down(reason: $reason, kind: $kind)';
 }
 
 
@@ -284,7 +296,7 @@ abstract mixin class $BridgeRoostUpdate_DownCopyWith<$Res> implements $BridgeRoo
   factory $BridgeRoostUpdate_DownCopyWith(BridgeRoostUpdate_Down value, $Res Function(BridgeRoostUpdate_Down) _then) = _$BridgeRoostUpdate_DownCopyWithImpl;
 @useResult
 $Res call({
- String reason
+ String reason, BridgeReachKind kind
 });
 
 
@@ -301,10 +313,11 @@ class _$BridgeRoostUpdate_DownCopyWithImpl<$Res>
 
 /// Create a copy of BridgeRoostUpdate
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,Object? kind = null,}) {
   return _then(BridgeRoostUpdate_Down(
 reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
-as String,
+as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as BridgeReachKind,
   ));
 }
 

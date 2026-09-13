@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "roost-ipc"
 version = "0.0.19"
-source = "git+https://github.com/charliek/roost?rev=c67ac27b6a85dbee0871f32d49c1566cc068d1c8#c67ac27b6a85dbee0871f32d49c1566cc068d1c8"
+source = "git+https://github.com/charliek/roost?rev=c1bfe887bc843e35466a1dcc33fa2390909fd50e#c1bfe887bc843e35466a1dcc33fa2390909fd50e"
 dependencies = [
  "anyhow",
  "base64",
@@ -1297,7 +1297,7 @@ dependencies = [
 [[package]]
 name = "shed-app"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=9127fdac3189dc7cb9c06bf075f2e1df52a51528#9127fdac3189dc7cb9c06bf075f2e1df52a51528"
+source = "git+https://github.com/charliek/shed?rev=3170191c874f736a85f656762a5d40014af6e14d#3170191c874f736a85f656762a5d40014af6e14d"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1315,7 +1315,7 @@ dependencies = [
 [[package]]
 name = "shed-core"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=9127fdac3189dc7cb9c06bf075f2e1df52a51528#9127fdac3189dc7cb9c06bf075f2e1df52a51528"
+source = "git+https://github.com/charliek/shed?rev=3170191c874f736a85f656762a5d40014af6e14d#3170191c874f736a85f656762a5d40014af6e14d"
 dependencies = [
  "async-trait",
  "base64",
@@ -1337,7 +1337,7 @@ dependencies = [
 [[package]]
 name = "shed-gx"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=9127fdac3189dc7cb9c06bf075f2e1df52a51528#9127fdac3189dc7cb9c06bf075f2e1df52a51528"
+source = "git+https://github.com/charliek/shed?rev=3170191c874f736a85f656762a5d40014af6e14d#3170191c874f736a85f656762a5d40014af6e14d"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1352,7 +1352,7 @@ dependencies = [
 [[package]]
 name = "shed-opencode"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=9127fdac3189dc7cb9c06bf075f2e1df52a51528#9127fdac3189dc7cb9c06bf075f2e1df52a51528"
+source = "git+https://github.com/charliek/shed?rev=3170191c874f736a85f656762a5d40014af6e14d#3170191c874f736a85f656762a5d40014af6e14d"
 dependencies = [
  "async-trait",
  "base64",

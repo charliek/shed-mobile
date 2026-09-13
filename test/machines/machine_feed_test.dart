@@ -116,12 +116,16 @@ void main() {
 
       final after = foldRoostUpdate(
         before,
-        const BridgeRoostUpdate.down(reason: 'connection refused'),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
       );
 
       expect(after.sessions.map((s) => s.slug), ['1', '2']);
       expect(after.reachable, isFalse);
       expect(after.detail, 'connection refused');
+      expect(after.downKind, BridgeReachKind.other);
       expect(
         after.connectedOnce,
         isTrue,
@@ -136,7 +140,10 @@ void main() {
       // the part the transport swap would otherwise have thrown away.
       final after = foldRoostUpdate(
         _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
-        const BridgeRoostUpdate.down(reason: 'connection refused'),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
         dialDetail: 'this device\'s key is not authorized on the machine',
       );
 
@@ -150,9 +157,71 @@ void main() {
       // parameter simply always winning.
       final withoutDial = foldRoostUpdate(
         _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
-        const BridgeRoostUpdate.down(reason: 'connection refused'),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
       );
       expect(withoutDial.detail, 'connection refused');
+    });
+
+    test('every reach kind rides through to the state verbatim', () {
+      // The kind is the branch a caller acts on (an install for
+      // not-installed, a start for no-session, nothing for the other two), so
+      // the fold must not flatten or reinterpret any of them. All four, not
+      // just the two interesting ones — a fold that hard-coded `other` would
+      // pass a test that only checked `other`.
+      for (final kind in BridgeReachKind.values) {
+        final after = foldRoostUpdate(
+          _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+          BridgeRoostUpdate.down(reason: 'down', kind: kind),
+        );
+
+        expect(after.downKind, kind, reason: 'kind $kind was not carried');
+        expect(after.reachable, isFalse);
+      }
+    });
+
+    test('the generated Dart enum names the same four kinds, in order', () {
+      // FRB encodes a fieldless enum as its INDEX, so the two ends agree only
+      // while the variant lists agree. Nothing in this suite crosses the real
+      // bridge (the FRB-surface cells live in integration_test/), so this is
+      // the cheap half of that guarantee: it catches a rename or a reorder in
+      // the committed glue. The other half — a codegen that encoded one index
+      // and decoded another — is the `codegen-drift` CI job's, which
+      // regenerates from a clean checkout and asserts byte-identical output.
+      expect(BridgeReachKind.values, [
+        BridgeReachKind.notInstalled,
+        BridgeReachKind.noSession,
+        BridgeReachKind.unreachable,
+        BridgeReachKind.other,
+      ]);
+    });
+
+    test('a later Snapshot clears the kind, so the offer goes away', () {
+      // The one that matters. A machine that had no roost-session installed,
+      // and then does, must stop offering to install it — and the snapshot is
+      // the only evidence that it came back. Holding the kind past a snapshot
+      // would leave an install button on a working machine.
+      for (final kind in [
+        BridgeReachKind.notInstalled,
+        BridgeReachKind.noSession,
+      ]) {
+        final down = foldRoostUpdate(
+          _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+          BridgeRoostUpdate.down(reason: 'down', kind: kind),
+        );
+        expect(down.downKind, kind, reason: 'precondition');
+
+        final back = foldRoostUpdate(
+          down,
+          const BridgeRoostUpdate.snapshot(sessions: []),
+        );
+
+        expect(back.downKind, isNull, reason: '$kind survived a Snapshot');
+        expect(back.reachable, isTrue);
+        expect(back.detail, isNull);
+      }
     });
   });
 

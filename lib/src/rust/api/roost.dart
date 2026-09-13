@@ -12,7 +12,7 @@ part 'roost.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `bridge_update`, `claim_rx`, `close_peek`, `forward_loop`, `on_bridge_rt`, `opened_row`, `teardown`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RoostWatcherInner`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Start watching the `roost-session` reachable on `127.0.0.1:<local_port>`.
 ///
@@ -144,6 +144,27 @@ abstract class BridgeRoostPeek implements RustOpaqueInterface {}
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostWatcher>>
 abstract class BridgeRoostWatcher implements RustOpaqueInterface {}
 
+/// Why a session is not readable (mirrors `shed_app::roost::ReachKind`). Plain
+/// enum.
+///
+/// [`Other`](Self::Other) is the honest default and the common one — a stream
+/// that ended, a request that failed, a reach that was never classified. The
+/// two actionable kinds only appear when the transport actually recorded one.
+enum BridgeReachKind {
+  /// Nothing on roost's candidate ladder: an install would fix this.
+  notInstalled,
+
+  /// A `roost-session` is installed and not serving: a start would fix this.
+  noSession,
+
+  /// shed never got as far as asking — the handshake failed, the key did not
+  /// verify, the login was refused, the budget expired.
+  unreachable,
+
+  /// Anything else, including a reach that was never mapped.
+  other,
+}
+
 @freezed
 sealed class BridgeRoostUpdate with _$BridgeRoostUpdate {
   const BridgeRoostUpdate._();
@@ -169,8 +190,22 @@ sealed class BridgeRoostUpdate with _$BridgeRoostUpdate {
   /// **A normal state, not an error.** A machine that is asleep, off-network,
   /// or simply runs no roost-session is the everyday case; the UI renders its
   /// rows as last-known with a reason rather than failing.
-  const factory BridgeRoostUpdate.down({required String reason}) =
-      BridgeRoostUpdate_Down;
+  const factory BridgeRoostUpdate.down({
+    required String reason,
+
+    /// What kind of "not readable" this is. [`reason`](Self::Down::reason)
+    /// is the sentence for the user; this is the branch for the client —
+    /// an install is offered for [`BridgeReachKind::NotInstalled`], a start
+    /// for [`BridgeReachKind::NoSession`], and nothing at all for the other
+    /// two.
+    ///
+    /// Carried as its own field rather than recovered by grepping the
+    /// reason, which is what the phone would otherwise have to do: the
+    /// classification exists upstream (roost's own `SshFailure`) and a
+    /// substring search over a user-facing sentence is a translation away
+    /// from being wrong.
+    required BridgeReachKind kind,
+  }) = BridgeRoostUpdate_Down;
 }
 
 /// One `tab.dump` frame: the tab's visible viewport as text.

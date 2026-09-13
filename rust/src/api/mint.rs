@@ -1335,6 +1335,11 @@ mod tests {
             "BridgeRcMessagesPage",
             "BridgeRcSession",
             "BridgeRcState",
+            // Plan 020 C-M1 — why a roost-session is not readable, as one of
+            // four fieldless variants. It carries no data at all, let alone
+            // key material: the sentence that accompanies it is
+            // `BridgeRoostUpdate_Down.reason`, already listed below.
+            "BridgeReachKind",
             // Plan 013 S3m — the roost feed, replacing the machine hub's. Every
             // one carries TAB metadata only (roost's tab id, title, cwd, the
             // four agent axes, a viewport of text) plus a human reason string;

@@ -4015,6 +4015,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeReachKind dco_decode_bridge_reach_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeReachKind.values[raw as int];
+  }
+
+  @protected
   BridgeRoostUpdate dco_decode_bridge_roost_update(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -4024,7 +4030,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           revision: dco_decode_opt_box_autoadd_u_64(raw[2]),
         );
       case 1:
-        return BridgeRoostUpdate_Down(reason: dco_decode_String(raw[1]));
+        return BridgeRoostUpdate_Down(
+          reason: dco_decode_String(raw[1]),
+          kind: dco_decode_bridge_reach_kind(raw[2]),
+        );
       default:
         throw Exception('unreachable');
     }
@@ -5885,6 +5894,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeReachKind sse_decode_bridge_reach_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return BridgeReachKind.values[inner];
+  }
+
+  @protected
   BridgeRoostUpdate sse_decode_bridge_roost_update(
     SseDeserializer deserializer,
   ) {
@@ -5901,7 +5917,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         );
       case 1:
         var var_reason = sse_decode_String(deserializer);
-        return BridgeRoostUpdate_Down(reason: var_reason);
+        var var_kind = sse_decode_bridge_reach_kind(deserializer);
+        return BridgeRoostUpdate_Down(reason: var_reason, kind: var_kind);
       default:
         throw UnimplementedError('');
     }
@@ -7897,6 +7914,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_bridge_reach_kind(
+    BridgeReachKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_bridge_roost_update(
     BridgeRoostUpdate self,
     SseSerializer serializer,
@@ -7910,9 +7936,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(0, serializer);
         sse_encode_list_bridge_rc_session(sessions, serializer);
         sse_encode_opt_box_autoadd_u_64(revision, serializer);
-      case BridgeRoostUpdate_Down(reason: final reason):
+      case BridgeRoostUpdate_Down(reason: final reason, kind: final kind):
         sse_encode_i_32(1, serializer);
         sse_encode_String(reason, serializer);
+        sse_encode_bridge_reach_kind(kind, serializer);
     }
   }
 
