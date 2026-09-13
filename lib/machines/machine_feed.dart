@@ -83,6 +83,19 @@ class MachineFeedState {
   /// **Cleared by the next `Snapshot`**, which is the whole reason it is on the
   /// state rather than read off the last update: a machine that came back must
   /// not keep offering to install roost on it.
+  ///
+  /// **A `Snapshot` is the only thing that clears it, and deliberately so.** A
+  /// feed error, a failed watcher start and [stop] all set `reachable: false`
+  /// and leave the kind standing, because none of them is evidence about the
+  /// far side: only a snapshot proves a `roost-session` is answering. Clearing
+  /// on those paths would drop a still-true "roost is not installed here" over
+  /// a dropped connection — the same mistake as blanking [sessions] on a
+  /// `Down`, which this module already declines to make.
+  ///
+  /// The consequence a renderer must handle: [detail] and this field can
+  /// describe different things at once ("paused", plus a kind from the last
+  /// real `Down`). The kind says what could be OFFERED; [detail] says what is
+  /// happening now.
   final BridgeReachKind? downKind;
 
   MachineFeedState copyWith({
