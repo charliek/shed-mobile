@@ -13,6 +13,35 @@ make check   # pub get + dart format --set-exit-if-changed + flutter analyze + f
 This mirrors CI. New pure logic gets unit tests **before** the UI; ported
 TypeScript logic translates its test tables case-for-case.
 
+### Format with the PINNED SDK, and read a local format failure carefully
+
+`make check` runs `dart format` from whatever Flutter is on `PATH`, and that is
+usually **newer** than the CI pin (`.github/workflows/ci.yml`: Flutter 3.44.2 /
+Dart 3.12). The two disagree about whether a trailing collection argument
+collapses onto the `expect(` line, and the gap bites in **both** directions:
+
+- A file you edit and format with the newer local SDK is well-formatted locally
+  and **rejected by CI**. That is what `0061064` had to go back and fix.
+- The newer local SDK also wants to rewrite files that are at **pristine,
+  CI-correct content** — today `test/keys/key_manager_test.dart` and
+  `test/machines/machine_feed_test.dart`. Reformatting those to satisfy a local
+  run **turns CI red**.
+
+So: **format only the files your branch actually edited, and with the pinned
+SDK.** On a box that has it checked out (this one: `~/apps/flutter-3.44.2`):
+
+```bash
+~/apps/flutter-3.44.2/bin/dart format lib/ssh/exec_bytes.dart   # the files you touched
+~/apps/flutter-3.44.2/bin/dart format --output=none --set-exit-if-changed $(git ls-files '*.dart')
+```
+
+The second line is the **authoritative** pre-push check — it is what CI runs,
+over the files CI actually sees. A repo-wide `dart format .` under the local SDK
+proves nothing on its own: besides the pristine files above it also walks
+`build/`, which is gitignored and does not exist on CI (the format step runs
+straight after `flutter pub get`, before anything is built), so it reports a
+vendored cargokit artifact that CI will never look at.
+
 ## Unit tests (tier a/b)
 
 `test/` mirrors `lib/`. Heaviest coverage sits on the pure ports — the SSE

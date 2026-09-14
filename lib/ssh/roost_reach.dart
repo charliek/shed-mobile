@@ -165,8 +165,22 @@ BridgeReachKind reachKindFor(SshFailureClass failureClass) =>
       SshFailureClass.transport => BridgeReachKind.unreachable,
     };
 
-/// **What one chunk of a roost exec's stderr is worth recording, if
-/// anything.**
+/// **What a roost exec's stderr TAIL is worth recording, if anything.**
+///
+/// The input is the accumulated tail the pump keeps, not one chunk: SSH frame
+/// boundaries are arbitrary, and a classifier handed `client-bridge: no ` and
+/// `session\n` separately matches neither. Classifying the whole tail is what
+/// makes amendment A2 work at all.
+///
+/// **The classification comes from the whole tail; the MESSAGE is one line.**
+/// Those are different questions and this is the one place they meet. The tail
+/// is up to [kStderrTailBytes] of login banner, MOTD and whatever else the far
+/// side felt like saying, and this message is user-facing: it rides out through
+/// `roostBootstrapNoteReach` into the `CallError` a failed probe reports, so
+/// handing the blob over verbatim would put four kilobytes of "Welcome to
+/// Ubuntu" on a card whose actual diagnosis is the last line. [lastNonEmptyLine]
+/// is the rule for exactly that, and it is roost's own — it is what a
+/// `transport` failure's `detail` carries.
 ///
 /// **Only a classification roost actually named is recorded.** The classifier's
 /// fallback is [SshFailureClass.transport], which means "nothing here is
@@ -185,7 +199,10 @@ BridgeReachKind reachKindFor(SshFailureClass failureClass) =>
 RoostReachNote? noteForExecStderr(String text) {
   final verdict = classifySshFailure(null, text);
   if (verdict.failureClass == SshFailureClass.transport) return null;
-  return RoostReachNote(reachKindFor(verdict.failureClass), text.trim());
+  return RoostReachNote(
+    reachKindFor(verdict.failureClass),
+    lastNonEmptyLine(text),
+  );
 }
 
 // ---------------------------------------------------------------------------

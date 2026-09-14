@@ -110,6 +110,29 @@ void main() {
       );
     });
 
+    test('classifies from the whole tail but MESSAGES from one line', () {
+      // The two halves of this function answer different questions, and the
+      // tail is what makes them different. `duplex_pump` hands over an
+      // accumulated tail so a marker split across SSH frames still matches —
+      // but that tail is mostly login banner, and this message is user-facing:
+      // it rides out through `roostBootstrapNoteReach` into the `CallError` a
+      // failed probe reports. Carrying the blob would put "Welcome to Ubuntu"
+      // on a card whose actual diagnosis is its last line.
+      final tail =
+          '${'Welcome to Ubuntu 24.04 LTS\n' * 3}'
+          'Last login: Sun Sep 14 00:00:00 2026\n'
+          'client-bridge: no session\n';
+      final note = noteForExecStderr(tail);
+
+      expect(note?.kind, BridgeReachKind.noSession, reason: 'the whole tail');
+      expect(note?.message, 'client-bridge: no session');
+      expect(
+        note!.message,
+        isNot(contains('Welcome to Ubuntu')),
+        reason: 'the banner is not the diagnosis',
+      );
+    });
+
     test('records NOTHING for a line roost did not name', () {
       // The fallback class means "nothing here is recognizable", and on a
       // remote process's own stderr that is a chatty program, not an
