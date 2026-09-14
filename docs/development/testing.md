@@ -148,25 +148,37 @@ portal processes holding ~15 GB of RSS**, enough that unrelated background
 commands started being killed for low memory. Nothing warns you; the suite
 passes and the machine just gets smaller.
 
-The safe discriminator is the display, not the start time or the process name.
-A leaked portal has `DISPLAY=:99` (the harness's Xvfb) and a dead parent; the
-owner's real desktop session has `DISPLAY=:1` and must never be touched:
+The safe discriminator is the **display**, and you must LOOK before you kill —
+do not infer it. Two traps make the obvious rules wrong:
+
+* `make test-integration-linux` runs `xvfb-run -a`, which **auto-selects** a free
+  display. It is not always `:99`, so a hardcoded number silently cleans nothing.
+  Driving the app by hand (the `drive-shed-mobile` skill) uses whatever you set,
+  e.g. `:77`.
+* "No X socket in `/tmp/.X11-unix` means orphaned" is **false on Wayland**. On
+  COSMIC the owner's own session is `DISPLAY=:1` with no socket there, so that
+  rule flags the live desktop for killing. (Tried; it would have taken the
+  owner's session.)
+
+So: count portals by display first, decide which display was yours, then kill
+that one by exact value.
 
 ```bash
-# list what a run left behind
+# 1. what is out there, grouped by display
 for p in $(pgrep -f xdg-desktop-portal); do
-  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx 'DISPLAY=:99' && echo $p
-done
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | sed -n 's/^DISPLAY=//p'
+done | sort | uniq -c
 
-# ...and reap exactly those
+# 2. kill ONLY the display you started (:77 here) — never the owner's session
+D=:77
 for p in $(pgrep -f xdg-desktop-portal); do
-  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx 'DISPLAY=:99' && kill -TERM $p
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx "DISPLAY=$D" && kill -TERM $p
 done
 ```
 
-Never match on `xdg-desktop-portal` alone and never sweep by age: the owner is
-very likely logged into a desktop of their own, and a blanket kill takes their
-session's portals with it. Check `DISPLAY` per process, every time. (A related
+Step 1 makes the answer obvious: the owner's desktop shows a handful on one
+display, and a day of test runs shows dozens on another. Never `pkill
+xdg-desktop-portal`, never sweep by age, and never skip step 1. (A related
 near-miss: a teardown rehearsal with a blanket `pgrep shed_mobile` sweep killed
 a leftover `flutter run` belonging to someone else's session.)
 

@@ -53,9 +53,12 @@ screenshots come from the engine, so headless loses nothing.
 `xdg-desktop-portal-*` over D-Bus, and those processes outlive the app at ~200 MB
 each — they accumulated to 110 processes and ~15 GB across one day of plan-020
 runs, until background commands started being killed for low memory. Kill only
-processes whose own `DISPLAY` matches the Xvfb you started; the owner's desktop
-session is on a different display and must not be touched. `docs/development/testing.md`
-carries the exact loop, under the integration harness.
+processes whose own `DISPLAY` equals the one YOU started (`:77` above) — count
+them by display first, because the owner's desktop session is on another display
+and must not be touched. Do not try to infer which are orphaned: on Wayland the
+owner's session has no socket in `/tmp/.X11-unix` either, so "no X socket" flags
+the live desktop. `docs/development/testing.md` carries the two-step loop, under
+the integration harness.
 
 Put `~/.pub-cache/bin` on PATH for the `marionette` calls that follow — the
 script prints absolute paths but every example below assumes the short name.
