@@ -1315,12 +1315,14 @@ fn wire__crate__api__roost__create_roost_watcher_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_machine = <String>::sse_decode(&mut deserializer);
             let api_local_port = <u16>::sse_decode(&mut deserializer);
+            let api_bootstrapped = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Result::<_, ()>::Ok(crate::api::roost::create_roost_watcher(
                         api_machine,
                         api_local_port,
+                        api_bootstrapped,
                     ))?;
                     Ok(output_ok)
                 })())

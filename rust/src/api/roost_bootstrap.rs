@@ -114,7 +114,12 @@ use super::roost::BridgeReachKind;
 /// their clients wired these hooks last. It is a constant rather than an
 /// argument because it identifies *this build*, not the call — a client label
 /// Dart could choose would be a client label a bug could mislabel.
-const CLIENT_LABEL: &str = "shed-mobile";
+///
+/// **Two senders, one definition.** The install wires the hooks once, here; the
+/// watcher re-sends them on every cycle it connects
+/// (`super::roost::watcher_options`, plan 020 §3.3). Both read this constant,
+/// so the phone cannot end up filed under two names — and Dart supplies neither.
+pub(super) const CLIENT_LABEL: &str = "shed-mobile";
 
 /// How many steps one handle is allowed before the drive calls it a loop.
 ///

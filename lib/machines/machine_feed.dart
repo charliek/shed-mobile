@@ -7,10 +7,12 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../rc/rc_ui.dart';
 import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/roost.dart';
+import '../src/rust/api/roost_bootstrap.dart';
 import '../ssh/exec_bytes.dart';
 import '../ssh/host_key_store.dart';
 import '../ssh/lane_forward.dart';
 import '../ssh/roost_bootstrap_runner.dart';
+import '../ssh/roost_entitlement.dart';
 import '../ssh/roost_reach.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
@@ -327,6 +329,18 @@ Future<bool> releaseIfStopped<T>({
   return true;
 }
 
+/// Spawning one machine's roost watcher — `createRoostWatcher`'s own signature.
+///
+/// Named as a type so a drift between it and the bridge call is a compile error
+/// in this file, exactly as [BootstrapExec] is. See [MachineFeed]'s
+/// `_spawnWatcher` for why the seam exists at all.
+typedef WatcherSpawn =
+    Future<BridgeRoostWatcher> Function({
+      required String machine,
+      required int localPort,
+      required bool bootstrapped,
+    });
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
@@ -367,7 +381,10 @@ class MachineFeed {
     required this.machine,
     required this.identities,
     required this.hostKeys,
-  }) : _state = MachineFeedState(
+    required this.entitlements,
+    WatcherSpawn? spawnWatcher,
+  }) : _spawnWatcher = spawnWatcher ?? createRoostWatcher,
+       _state = MachineFeedState(
          machine: machine,
          // Synchronous, and therefore present on the FIRST state the UI sees:
          // there is no host to ask, and making the gates wait on a round trip
@@ -378,6 +395,27 @@ class MachineFeed {
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
   final HostKeyStore hostKeys;
+
+  /// **What this app run bootstrapped** — shared with every other feed, because
+  /// the claim belongs to the app rather than to this object.
+  ///
+  /// A feed is `autoDispose` and the phone tears one down on every background,
+  /// so a per-feed set would forget the install the moment the user left the
+  /// screen — and the machine's hooks would then never be re-sent again for the
+  /// rest of the run. See [RoostBootstrapEntitlements].
+  final RoostBootstrapEntitlements entitlements;
+
+  /// How [start] spawns the watcher — `createRoostWatcher` in production.
+  ///
+  /// **The seam exists because a watcher handle answers nothing.** What [start]
+  /// tells the bridge about this machine's entitlement is the one thing this
+  /// class decides and the one thing nothing can read back: `BridgeRoostWatcher`
+  /// is opaque, and the effect of the bool is on a wire only a fake roost sees
+  /// (it is pinned there, in Rust). A pass-through recorder is therefore the
+  /// only way a harness can assert that a feed asks for the claim it holds —
+  /// including across the re-spawn [_entitle] performs, which is the case this
+  /// whole commit exists for.
+  final WatcherSpawn _spawnWatcher;
 
   final _controller = StreamController<MachineFeedState>.broadcast();
   MachineFeedState _state;
@@ -436,6 +474,15 @@ class MachineFeed {
 
   bool get isRunning => _watcher != null;
 
+  /// **Did THIS APP RUN bootstrap this machine?** — what [start] hands
+  /// `createRoostWatcher`, and the whole of what decides whether this machine's
+  /// watcher keeps its agent hooks wired (plan 020 §3.3).
+  ///
+  /// A getter over [entitlements] rather than a field of its own: the answer
+  /// changes during a feed's life (an install is what changes it) and every
+  /// reader must see the change, not a copy taken at construction.
+  bool get bootstrappedThisRun => entitlements.holds(machine.name);
+
   /// The local port the machine's `roost-session` is reachable on, or null when
   /// the tunnel is down.
   ///
@@ -474,9 +521,15 @@ class MachineFeed {
       _tunnel = tunnel;
 
       // Rust is handed the PORT and nothing else — no host, no key, no SSH.
-      final watcher = await createRoostWatcher(
+      final watcher = await _spawnWatcher(
         machine: machine.name,
         localPort: tunnel.port,
+        // **Asked afresh at every spawn**, which is the whole reason the answer
+        // lives outside this object: a phone spawns a watcher on every
+        // foreground, and an entitlement read once at app start would be read
+        // before the install that earns it. A bool, never a label — Rust
+        // substitutes its own (plan 020 §3.3, amendment A8).
+        bootstrapped: bootstrappedThisRun,
       );
       // The worst of the two: `_watcher` non-null with `_tunnel` already nulled
       // by the teardown makes `isRunning` true and `tunnelPort` null, and every
@@ -750,6 +803,57 @@ class MachineFeed {
   /// connection, rather than a surprise at the one call site that wires them
   /// together.
   late final BootstrapExec bootstrapExec = _bootstrapExec;
+
+  /// **Drive one bootstrap of this machine to its answer** — a probe or an
+  /// install, over this feed's one `SSHClient` (plan 020 §3.8).
+  ///
+  /// The runner is assembled HERE rather than by the caller, and that is the
+  /// point. A completed install is the ONLY thing that entitles this app run to
+  /// keep this machine's agent hooks wired, and a caller free to assemble its
+  /// own runner is a caller free to drive an install that records nothing —
+  /// which is plan 019's defect exactly: a hook seam built, unit-tested, and
+  /// then constructed by no production caller. The recording is not the UI's to
+  /// remember.
+  ///
+  /// [handle] is the bridge handle for the drive (`roostBootstrapProbe` /
+  /// `roostBootstrapInstall`, wrapped in a [LiveBootstrapHandle]). A cancelled
+  /// drive is re-run by calling this again — see [RoostBootstrapRunner.run].
+  Future<BridgeBootstrapStep> runBootstrap(BootstrapHandle handle) async {
+    final step = await RoostBootstrapRunner(
+      handle: handle,
+      exec: bootstrapExec,
+      // The same observation the machine card branches on. Two of them would be
+      // two answers to one question — see [reach].
+      reach: reach,
+    ).run();
+    if (step is BridgeBootstrapStep_Installed) await _entitle();
+    return step;
+  }
+
+  /// Record that this app run bootstrapped this machine, and re-spawn the
+  /// watcher so the claim takes effect now rather than whenever the feed next
+  /// restarts.
+  ///
+  /// **The re-spawn is not a nicety.** A watcher decides at SPAWN whether it
+  /// wires hooks (`createRoostWatcher`'s `bootstrapped`), and this machine has
+  /// had one since the screen opened — the one that has been reporting it as
+  /// unreachable all the while roost was missing. Leaving it would mean the one
+  /// machine that just earned the entitlement is the one machine that never
+  /// exercises it, until the user happens to leave the screen and come back.
+  /// The desktop hits the same trap from the other side and solves it with a
+  /// shared flag; a phone, which rebuilds its watcher constantly anyway, can
+  /// simply rebuild it once more.
+  ///
+  /// [stop] + [start] is the documented restart pair. It costs one reconnect on
+  /// a machine shed has just put a NEW `roost-session` on, where the old
+  /// connection is stale by construction.
+  Future<void> _entitle() async {
+    entitlements.record(machine.name);
+    if (isRunning) {
+      await stop();
+      await start();
+    }
+  }
 
   Future<ExecBytesOutcome> _bootstrapExec(
     String command,

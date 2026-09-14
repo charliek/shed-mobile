@@ -48,13 +48,16 @@
 //! Divergences are noted where they occur.
 
 use std::future::Future;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use flutter_rust_bridge::frb;
 use roost_ipc::messages::{Project, Tab, TabDumpResult, TabOpenParams};
 use shed_app::machine::FixedPort;
-use shed_app::roost::{LabelledPort, ReachKind, RoostPeek, RoostUpdate, RoostWatcher};
+use shed_app::roost::{
+    HooksRefresh, LabelledPort, ReachKind, RoostPeek, RoostUpdate, RoostWatcher,
+    RoostWatcherOptions,
+};
 use shed_core::rc::RcKind;
 use shed_core::roost::RoostSession;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -63,6 +66,7 @@ use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_FORWARDERS, ACTIVE_WATCHERS};
 use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
+use super::roost_bootstrap::CLIENT_LABEL;
 
 // ---------------------------------------------------------------------------
 // the watcher
@@ -210,11 +214,41 @@ fn claim_rx(state: &Arc<Mutex<RoostWatcherInner>>) -> Option<UnboundedReceiver<R
 /// Does NOT dial anything itself: the watcher connects on its own schedule and
 /// reports [`BridgeRoostUpdate::Down`] until it can, so a machine that is asleep
 /// costs a caller nothing at construction time.
-pub fn create_roost_watcher(machine: String, local_port: u16) -> BridgeRoostWatcher {
-    let (watcher, rx) = RoostWatcher::spawn(
+///
+/// ## `bootstrapped` — did THIS APP RUN bootstrap this target?
+///
+/// A watcher for a target this app run bootstrapped re-sends
+/// `session.set_agent_hooks {mode: "auto"}` at the head of every cycle it
+/// connects; every other watcher sends nothing at all, ever. That is the whole
+/// of shed's entitlement rule at session protocol 5 (plan 020 §3.3) — roost's
+/// own gate on the op is gone and any same-UID client may now wire any session,
+/// so this is shed's answer to *should it* rather than *may it*.
+///
+/// **Why every cycle and not once at install time.** `auto` wires only the
+/// agents whose config directory exists *at that moment*, so an agent the user
+/// sets up tomorrow is wired by a LATER call and by nothing else. The desktop
+/// has re-sent since plan 020; a phone needs it more, because it tears its
+/// watcher down on every background and rebuilds it on every foreground.
+///
+/// **A bool, never a label** (amendment A8). Dart says *whether* this app run
+/// bootstrapped the target; the label it is filed under is
+/// [`CLIENT_LABEL`], substituted here. A client label Dart could choose would
+/// be a client label a bug could mislabel, and there would then be two sources
+/// of truth for a string only Rust ever sends.
+///
+/// The fact itself is Dart's and lives in memory for the app run
+/// (`lib/ssh/roost_entitlement.dart`): a phone that was killed and relaunched
+/// has no claim on a session it did not start in this run.
+pub fn create_roost_watcher(
+    machine: String,
+    local_port: u16,
+    bootstrapped: bool,
+) -> BridgeRoostWatcher {
+    let (watcher, rx) = RoostWatcher::spawn_with(
         bridge_rt().handle(),
         Arc::new(LabelledPort::new(machine.clone(), local_port)),
-        machine,
+        machine.clone(),
+        watcher_options(&machine, bootstrapped),
     );
     ACTIVE_WATCHERS.fetch_add(1, Ordering::SeqCst);
     BridgeRoostWatcher {
@@ -225,6 +259,35 @@ pub fn create_roost_watcher(machine: String, local_port: u16) -> BridgeRoostWatc
             streaming: false,
             stopped: false,
         })),
+    }
+}
+
+/// **What a watcher for `target` does beyond watching** — the one place the
+/// phone answers "may shed wire this host's agent hooks?" (plan 020 §3.3,
+/// amendment A8).
+///
+/// `Some` only for a target this app run bootstrapped, and the entry is then
+/// armed for that watcher's whole life. `None` is an observer: it reads the
+/// inventory and sends nothing, which is what keeps shed out of the dotfiles of
+/// a machine somebody else's session is serving.
+///
+/// **Where this diverges from the desktop's shape, and why it is not a second
+/// design.** `shed-app`'s [`HooksRefresh::armed`] is a shared flag the desktop
+/// flips *under* a live watcher, because a desktop watcher is spawned once at
+/// app start and must never be replaced. A phone's is spawned constantly —
+/// backgrounding is a STOP and foregrounding is a fresh
+/// [`create_roost_watcher`] — so the answer is re-taken at every spawn from the
+/// registry Dart keeps, and `MachineFeed` re-spawns the watcher of a machine
+/// whose bootstrap it just drove. The flag is therefore per-watcher here and
+/// never flips: what carries the fact across a watcher's life is the Dart-side
+/// registry, not the atomic.
+fn watcher_options(target: &str, bootstrapped: bool) -> RoostWatcherOptions {
+    RoostWatcherOptions {
+        hooks: bootstrapped.then(|| HooksRefresh {
+            target: target.to_string(),
+            client_label: CLIENT_LABEL.to_string(),
+            armed: Arc::new(AtomicBool::new(true)),
+        }),
     }
 }
 
@@ -623,7 +686,7 @@ mod tests {
         let _g = test_guard();
         let before = live_counters();
 
-        let handle = create_roost_watcher("mini3".into(), 1);
+        let handle = create_roost_watcher("mini3".into(), 1, false);
         assert_eq!(live_counters().active_watchers, before.active_watchers + 1);
 
         stop_roost_watcher(&handle);
@@ -654,7 +717,7 @@ mod tests {
         let _g = test_guard();
         let fake = FakeRoost::start().await;
 
-        let handle = create_roost_watcher("mini3".into(), fake.tcp_port());
+        let handle = create_roost_watcher("mini3".into(), fake.tcp_port(), false);
         let mut rx = claim_rx(&handle.state).expect("the receiver is claimable once");
         // A second claim must find nothing — otherwise two consumers would each
         // get half the updates.
@@ -711,6 +774,156 @@ mod tests {
             row.rc_id.as_deref(),
             Some("ses_f85010d7effexVvTJ1mRHZkDqL"),
             "the AGENT's own session id, not roost's tab id"
+        );
+
+        stop_roost_watcher(&handle);
+    }
+
+    // ---- keeping a bootstrapped target's hooks wired -------------------
+    //
+    // Three cells, and between them they are the phone's half of plan 020
+    // §3.3 (amendment A8). The desktop's half is pinned in `shed-app`; what is
+    // pinned HERE is the only part mobile owns — that the `bootstrapped` bool
+    // crossing the bridge becomes a re-send on every cycle, under shed's own
+    // label, and nothing at all when it is false.
+
+    /// Wait for the next inventory snapshot, stepping over the `Down` a forced
+    /// reconnect publishes on the way.
+    async fn next_snapshot(rx: &mut UnboundedReceiver<RoostUpdate>, what: &str) {
+        loop {
+            if let BridgeRoostUpdate::Snapshot { .. } = next_update(rx, what).await {
+                return;
+            }
+        }
+    }
+
+    /// (a) **A bootstrapped target's watcher re-sends the hooks on EVERY
+    /// cycle**, which is what keeps `mode: "auto"` honest: it wires only the
+    /// agents whose config directory exists at that moment, so an agent the
+    /// user configures tomorrow is wired by a later call and by nothing else.
+    ///
+    /// Three cycles rather than two, deliberately — "every" is the claim, and
+    /// the failure this guards against (a send that happens once and then
+    /// stops) passes at n = 1.
+    ///
+    /// The `client` on the wire is asserted here too. `roost_bootstrap`'s own
+    /// cell pins the label the INSTALL sends; this is the other sender, and the
+    /// two must be the one constant — roost files it as the `by` of the state
+    /// entry, and a phone under two names would be two clients to that host.
+    #[tokio::test]
+    async fn a_bootstrapped_targets_watcher_re_sends_the_hooks_on_every_cycle() {
+        let _g = test_guard();
+        let fake = FakeRoost::start().await;
+
+        let handle = create_roost_watcher("mini3".into(), fake.tcp_port(), true);
+        let mut rx = claim_rx(&handle.state).expect("the receiver is claimable once");
+
+        next_snapshot(&mut rx, "the first snapshot").await;
+        assert_eq!(fake.agent_hooks_calls().len(), 1, "the first connect");
+
+        // Each reconnect: the stream ends, the watcher re-dials, and the hooks
+        // go again — the same request every time, with nothing carried across.
+        for expected in [2, 3] {
+            fake.close_all();
+            next_snapshot(&mut rx, "the snapshot after a reconnect").await;
+            let calls = fake.agent_hooks_calls();
+            assert_eq!(
+                calls.len(),
+                expected,
+                "cycle {expected} did not re-send: {calls:?}"
+            );
+        }
+
+        let calls = fake.agent_hooks_calls();
+        assert!(
+            calls.iter().all(|call| call["client"] == "shed-mobile"),
+            "the phone must be filed under its own label: {calls:?}"
+        );
+        assert!(calls.iter().all(|call| call["mode"] == "auto"));
+        assert!(
+            calls
+                .iter()
+                .all(|call| call["skip"] == serde_json::json!([])),
+            "shed never asks a host to skip an agent: {calls:?}"
+        );
+
+        stop_roost_watcher(&handle);
+    }
+
+    /// (b) **And across a RESPAWN**, which is the case a phone hits constantly
+    /// and a desktop almost never does: backgrounding is a stop, foregrounding
+    /// builds a whole new watcher, and the target's hooks must go again.
+    ///
+    /// The second half is the other side of the same fact: Rust remembers
+    /// NOTHING between watchers. A third watcher told `false` — a relaunch,
+    /// where Dart's in-memory registry came back empty — wires nothing, so the
+    /// entitlement cannot be smuggled across an app restart by a global on this
+    /// side.
+    #[tokio::test]
+    async fn a_respawned_watcher_wires_again_and_a_relaunched_one_does_not() {
+        let _g = test_guard();
+        let fake = FakeRoost::start().await;
+
+        // The foreground before the background.
+        let first = create_roost_watcher("mini3".into(), fake.tcp_port(), true);
+        let mut rx = claim_rx(&first.state).expect("the receiver is claimable once");
+        next_snapshot(&mut rx, "the first watcher's snapshot").await;
+        assert_eq!(fake.agent_hooks_calls().len(), 1);
+        stop_roost_watcher(&first);
+        drop(first);
+
+        // The foreground after it. A NEW watcher over the same tunnel port, and
+        // it is entitled because Dart's registry outlived the watcher that
+        // earned it.
+        let second = create_roost_watcher("mini3".into(), fake.tcp_port(), true);
+        let mut rx = claim_rx(&second.state).expect("the receiver is claimable once");
+        next_snapshot(&mut rx, "the respawned watcher's snapshot").await;
+        let calls = fake.agent_hooks_calls();
+        assert_eq!(
+            calls.len(),
+            2,
+            "the respawned watcher did not re-send: {calls:?}"
+        );
+        stop_roost_watcher(&second);
+        drop(second);
+
+        // And the relaunch. Same target, same port, no claim.
+        let third = create_roost_watcher("mini3".into(), fake.tcp_port(), false);
+        let mut rx = claim_rx(&third.state).expect("the receiver is claimable once");
+        next_snapshot(&mut rx, "the relaunched watcher's snapshot").await;
+        fake.close_all();
+        next_snapshot(&mut rx, "its second cycle").await;
+        let calls = fake.agent_hooks_calls();
+        assert_eq!(
+            calls.len(),
+            2,
+            "a watcher this app run did not bootstrap wired hooks: {calls:?}"
+        );
+        stop_roost_watcher(&third);
+    }
+
+    /// (c) **A target this app run did not bootstrap is wired on NO cycle.**
+    ///
+    /// Two cycles, because a first cycle alone cannot tell "never" apart from
+    /// "not yet". At session protocol 5 the far side would accept the call from
+    /// any same-UID client, so this rule is shed's own and this cell is the only
+    /// thing holding the phone to it.
+    #[tokio::test]
+    async fn an_unbootstrapped_targets_watcher_wires_nothing() {
+        let _g = test_guard();
+        let fake = FakeRoost::start().await;
+
+        let handle = create_roost_watcher("mini3".into(), fake.tcp_port(), false);
+        let mut rx = claim_rx(&handle.state).expect("the receiver is claimable once");
+
+        next_snapshot(&mut rx, "the first snapshot").await;
+        fake.close_all();
+        next_snapshot(&mut rx, "the snapshot after a reconnect").await;
+
+        let calls = fake.agent_hooks_calls();
+        assert!(
+            calls.is_empty(),
+            "an observer wired somebody else's hooks: {calls:?}"
         );
 
         stop_roost_watcher(&handle);

@@ -208,6 +208,7 @@ abstract class RustLibApi extends BaseApi {
   Future<BridgeRoostWatcher> crateApiRoostCreateRoostWatcher({
     required String machine,
     required int localPort,
+    required bool bootstrapped,
   });
 
   Stream<BridgeCreateUpdate> crateApiCreateStreamCreateShedEvents({
@@ -1354,6 +1355,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<BridgeRoostWatcher> crateApiRoostCreateRoostWatcher({
     required String machine,
     required int localPort,
+    required bool bootstrapped,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1361,6 +1363,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(machine, serializer);
           sse_encode_u_16(localPort, serializer);
+          sse_encode_bool(bootstrapped, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1374,7 +1377,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiRoostCreateRoostWatcherConstMeta,
-        argValues: [machine, localPort],
+        argValues: [machine, localPort, bootstrapped],
         apiImpl: this,
       ),
     );
@@ -1383,7 +1386,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiRoostCreateRoostWatcherConstMeta =>
       const TaskConstMeta(
         debugName: 'create_roost_watcher',
-        argNames: ['machine', 'localPort'],
+        argNames: ['machine', 'localPort', 'bootstrapped'],
       );
 
   @override

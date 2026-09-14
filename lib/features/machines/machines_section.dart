@@ -146,6 +146,10 @@ class _MachineCard extends ConsumerWidget {
             tooltip: 'Remove machine',
             onPressed: () async {
               await ref.read(machineStoreProvider).remove(machine.name);
+              // The claim goes with the machine. Otherwise a different host
+              // added under this same name later in the same run would inherit
+              // an entitlement nothing earned (plan 020 §3.3).
+              ref.read(roostEntitlementsProvider).forget(machine.name);
               ref.invalidate(machinesProvider);
               logDriveResult('machine-remove', ok: true);
             },

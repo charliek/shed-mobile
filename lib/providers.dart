@@ -27,6 +27,7 @@ import 'src/rust/api/error.dart';
 import 'src/rust/api/watcher.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
+import 'ssh/roost_entitlement.dart';
 import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
@@ -689,6 +690,21 @@ final machineHostKeysProvider = Provider<HostKeyStore>(
   (ref) => HostKeyStore(tofu: true),
 );
 
+/// **Which machines THIS APP RUN bootstrapped** — the one claim that decides
+/// whether a machine's watcher keeps its agent hooks wired (plan 020 §3.3).
+///
+/// Not `autoDispose`, and for a sharper reason than the store above: every
+/// reader IS `autoDispose`. A `MachineFeed` dies when the user leaves the
+/// screen and the phone tears one down on every background, so a claim kept
+/// anywhere nearer the feed would be forgotten by the next foreground — and the
+/// install that earned it would never be honoured again.
+///
+/// In memory only, and deliberately never persisted: see
+/// [RoostBootstrapEntitlements].
+final roostEntitlementsProvider = Provider<RoostBootstrapEntitlements>(
+  (ref) => RoostBootstrapEntitlements(),
+);
+
 /// One machine's live feed — the SSH tunnel plus the shared Rust roost watcher.
 ///
 /// Split in two on purpose: this provider owns the FEED OBJECT (so `create` and
@@ -720,6 +736,9 @@ final machineFeedControllerProvider = Provider.autoDispose
         // [machineHostKeysProvider] for why a per-feed store would be TOFU in
         // name only.
         hostKeys: ref.watch(machineHostKeysProvider),
+        // Shared for the same shape of reason: this feed is `autoDispose` and
+        // the claim is the app run's, not this object's.
+        entitlements: ref.watch(roostEntitlementsProvider),
       );
       ref.onDispose(feed.dispose);
       return feed;
