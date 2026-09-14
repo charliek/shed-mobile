@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'roost.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bridge_update`, `claim_rx`, `close_peek`, `forward_loop`, `on_bridge_rt`, `opened_row`, `teardown`
+// These functions are ignored because they are not marked as `pub`: `bridge_update`, `claim_rx`, `close_peek`, `forward_loop`, `on_bridge_rt`, `opened_row`, `teardown`, `watcher_options`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RoostWatcherInner`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
@@ -25,12 +25,39 @@ part 'roost.freezed.dart';
 /// Does NOT dial anything itself: the watcher connects on its own schedule and
 /// reports [`BridgeRoostUpdate::Down`] until it can, so a machine that is asleep
 /// costs a caller nothing at construction time.
+///
+/// ## `bootstrapped` — did THIS APP RUN bootstrap this target?
+///
+/// A watcher for a target this app run bootstrapped re-sends
+/// `session.set_agent_hooks {mode: "auto"}` at the head of every cycle it
+/// connects; every other watcher sends nothing at all, ever. That is the whole
+/// of shed's entitlement rule at session protocol 5 (plan 020 §3.3) — roost's
+/// own gate on the op is gone and any same-UID client may now wire any session,
+/// so this is shed's answer to *should it* rather than *may it*.
+///
+/// **Why every cycle and not once at install time.** `auto` wires only the
+/// agents whose config directory exists *at that moment*, so an agent the user
+/// sets up tomorrow is wired by a LATER call and by nothing else. The desktop
+/// has re-sent since plan 020; a phone needs it more, because it tears its
+/// watcher down on every background and rebuilds it on every foreground.
+///
+/// **A bool, never a label** (amendment A8). Dart says *whether* this app run
+/// bootstrapped the target; the label it is filed under is
+/// [`CLIENT_LABEL`], substituted here. A client label Dart could choose would
+/// be a client label a bug could mislabel, and there would then be two sources
+/// of truth for a string only Rust ever sends.
+///
+/// The fact itself is Dart's and lives in memory for the app run
+/// (`lib/ssh/roost_entitlement.dart`): a phone that was killed and relaunched
+/// has no claim on a session it did not start in this run.
 Future<BridgeRoostWatcher> createRoostWatcher({
   required String machine,
   required int localPort,
+  required bool bootstrapped,
 }) => RustLib.instance.api.crateApiRoostCreateRoostWatcher(
   machine: machine,
   localPort: localPort,
+  bootstrapped: bootstrapped,
 );
 
 /// Stream this machine's updates. Claims the receiver, so a second call on the

@@ -32,6 +32,7 @@ use crate::api::create_stream::*;
 use crate::api::lane::*;
 use crate::api::local_sse::*;
 use crate::api::roost::*;
+use crate::api::roost_bootstrap::*;
 use crate::api::watcher::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
@@ -45,7 +46,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -65435705;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -720920562;
 
 // Section: executor
 
@@ -1069,6 +1070,113 @@ fn wire__crate__api__local_sse__BridgeTestSse_stop_impl(
         },
     )
 }
+fn wire__crate__api__roost_bootstrap__bootstrap_source_read_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "bootstrap_source_read",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            let api_max = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let mut api_handle_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_handle,
+                                0,
+                                false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_handle_guard = api_handle_guard.unwrap();
+                    let output_ok = crate::api::roost_bootstrap::bootstrap_source_read(
+                        &*api_handle_guard,
+                        api_max,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__bootstrap_source_rewind_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "bootstrap_source_rewind",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let mut api_handle_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_handle,
+                                0,
+                                false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_handle_guard = api_handle_guard.unwrap();
+                    let output_ok =
+                        crate::api::roost_bootstrap::bootstrap_source_rewind(&*api_handle_guard)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__create_stream__cancel_create_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1207,12 +1315,14 @@ fn wire__crate__api__roost__create_roost_watcher_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_machine = <String>::sse_decode(&mut deserializer);
             let api_local_port = <u16>::sse_decode(&mut deserializer);
+            let api_bootstrapped = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Result::<_, ()>::Ok(crate::api::roost::create_roost_watcher(
                         api_machine,
                         api_local_port,
+                        api_bootstrapped,
                     ))?;
                     Ok(output_ok)
                 })())
@@ -2483,6 +2593,356 @@ fn wire__crate__api__watcher__rc_watcher_events_impl(
         },
     )
 }
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_begin",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let mut api_handle_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_handle,
+                                    0,
+                                    false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_handle_guard =
+                                        Some(api_handle.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_handle_guard = api_handle_guard.unwrap();
+                        let output_ok =
+                            crate::api::roost_bootstrap::roost_bootstrap_begin(&*api_handle_guard)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_close",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_handle_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_handle,
+                            0,
+                            false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_handle_guard = api_handle_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::roost_bootstrap::roost_bootstrap_close(&*api_handle_guard);
+                })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_feed_exec",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            let api_exit = <Option<i32>>::sse_decode(&mut deserializer);
+            let api_stdout = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_stderr_tail = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let mut api_handle_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_handle,
+                                    0,
+                                    false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_handle_guard =
+                                        Some(api_handle.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_handle_guard = api_handle_guard.unwrap();
+                        let output_ok = crate::api::roost_bootstrap::roost_bootstrap_feed_exec(
+                            &*api_handle_guard,
+                            api_exit,
+                            api_stdout,
+                            api_stderr_tail,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_install",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_host =
+                <crate::api::roost_bootstrap::RoostHostTarget>::sse_decode(&mut deserializer);
+            let api_fingerprint = <String>::sse_decode(&mut deserializer);
+            let api_arch = <String>::sse_decode(&mut deserializer);
+            let api_needs_source = <bool>::sse_decode(&mut deserializer);
+            let api_scratch_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::roost_bootstrap::BridgeBootstrapFailure>(
+                    (move || async move {
+                        let output_ok = crate::api::roost_bootstrap::roost_bootstrap_install(
+                            api_host,
+                            api_fingerprint,
+                            api_arch,
+                            api_needs_source,
+                            api_scratch_dir,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_note_reach",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_handle = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+            >>::sse_decode(&mut deserializer);
+            let api_kind = <crate::api::roost::BridgeReachKind>::sse_decode(&mut deserializer);
+            let api_message = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_handle_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_handle,
+                            0,
+                            false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_handle_guard = Some(api_handle.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_handle_guard = api_handle_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::roost_bootstrap::roost_bootstrap_note_reach(
+                        &*api_handle_guard,
+                        api_kind,
+                        api_message,
+                    );
+                })?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_probe",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_host =
+                <crate::api::roost_bootstrap::RoostHostTarget>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(
+                        crate::api::roost_bootstrap::roost_bootstrap_probe(api_host),
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "roost_bootstrap_source_preview",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_target = <String>::sse_decode(&mut deserializer);
+            let api_arch = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(
+                    crate::api::roost_bootstrap::roost_bootstrap_source_preview(
+                        api_target, api_arch,
+                    ),
+                )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__roost__roost_capabilities_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -3308,6 +3768,9 @@ flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
+    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>
+);
+flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
     flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostPeek>
 );
 flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
@@ -3355,6 +3818,16 @@ impl SseDecode for BridgeLane {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <RustOpaqueMoi<
             flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>,
+        >>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
+    }
+}
+
+impl SseDecode for BridgeRoostBootstrap {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
         >>::sse_decode(deserializer);
         return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
     }
@@ -3440,6 +3913,16 @@ impl SseDecode
 
 impl SseDecode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <usize>::sse_decode(deserializer);
+        return decode_rust_opaque_moi(inner);
+    }
+}
+
+impl SseDecode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3605,6 +4088,446 @@ impl SseDecode for crate::api::dto_lane::BridgeAgentLaneStamp {
             session_id: var_sessionId,
             server_url: var_serverUrl,
         };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_stage =
+            <crate::api::roost_bootstrap::BridgeBootstrapStage>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        let mut var_restored = <Option<bool>>::sse_decode(deserializer);
+        let mut var_stageCode = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapFailure {
+            stage: var_stage,
+            message: var_message,
+            restored: var_restored,
+            stage_code: var_stageCode,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapHooks {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_clientLabel = <String>::sse_decode(deserializer);
+        let mut var_wired = <Vec<String>>::sse_decode(deserializer);
+        let mut var_refreshed = <Vec<String>>::sse_decode(deserializer);
+        let mut var_removed = <Vec<String>>::sse_decode(deserializer);
+        let mut var_skipped =
+            <Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksSkip>>::sse_decode(deserializer);
+        let mut var_errors =
+            <Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksError>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        let mut var_applied = <bool>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapHooks {
+            client_label: var_clientLabel,
+            wired: var_wired,
+            refreshed: var_refreshed,
+            removed: var_removed,
+            skipped: var_skipped,
+            errors: var_errors,
+            error: var_error,
+            applied: var_applied,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapHooksError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_agent = <String>::sse_decode(deserializer);
+        let mut var_error = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapHooksError {
+            agent: var_agent,
+            error: var_error,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapHooksSkip {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_agent = <String>::sse_decode(deserializer);
+        let mut var_reason = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapHooksSkip {
+            agent: var_agent,
+            reason: var_reason,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_appVersion = <String>::sse_decode(deserializer);
+        let mut var_sessionProtocol = <u32>::sse_decode(deserializer);
+        let mut var_libghosttyBuild = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapIdentity {
+            app_version: var_appVersion,
+            session_protocol: var_sessionProtocol,
+            libghostty_build: var_libghosttyBuild,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapInstalled {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_target = <String>::sse_decode(deserializer);
+        let mut var_plan =
+            <crate::api::roost_bootstrap::BridgeBootstrapPlan>::sse_decode(deserializer);
+        let mut var_dest = <Option<String>>::sse_decode(deserializer);
+        let mut var_verdict = <Option<String>>::sse_decode(deserializer);
+        let mut var_session =
+            <Option<crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>>::sse_decode(
+                deserializer,
+            );
+        let mut var_pathWarning = <Option<String>>::sse_decode(deserializer);
+        let mut var_backupWarning = <Option<String>>::sse_decode(deserializer);
+        let mut var_hooks =
+            <Option<crate::api::roost_bootstrap::BridgeBootstrapHooks>>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapInstalled {
+            target: var_target,
+            plan: var_plan,
+            dest: var_dest,
+            verdict: var_verdict,
+            session: var_session,
+            path_warning: var_pathWarning,
+            backup_warning: var_backupWarning,
+            hooks: var_hooks,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_dest = <Option<String>>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapPlan::Install {
+                    dest: var_dest,
+                };
+            }
+            1 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_incumbent = <Option<
+                    crate::api::roost_bootstrap::BridgeBootstrapIdentity,
+                >>::sse_decode(deserializer);
+                let mut var_replacesNewer = <bool>::sse_decode(deserializer);
+                let mut var_dest = <Option<String>>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapPlan::Update {
+                    path: var_path,
+                    incumbent: var_incumbent,
+                    replaces_newer: var_replacesNewer,
+                    dest: var_dest,
+                };
+            }
+            2 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapPlan::Start { path: var_path };
+            }
+            3 => {
+                let mut var_identity =
+                    <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_decode(
+                        deserializer,
+                    );
+                return crate::api::roost_bootstrap::BridgeBootstrapPlan::UpToDate {
+                    identity: var_identity,
+                };
+            }
+            4 => {
+                let mut var_protocol = <u32>::sse_decode(deserializer);
+                let mut var_message = <String>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapPlan::Report {
+                    protocol: var_protocol,
+                    message: var_message,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapProbe {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_target = <String>::sse_decode(deserializer);
+        let mut var_outcome =
+            <crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome>::sse_decode(deserializer);
+        let mut var_arch = <String>::sse_decode(deserializer);
+        let mut var_home = <String>::sse_decode(deserializer);
+        let mut var_session =
+            <crate::api::roost_bootstrap::BridgeBootstrapSessionState>::sse_decode(deserializer);
+        let mut var_candidates = <Vec<String>>::sse_decode(deserializer);
+        let mut var_fingerprint = <String>::sse_decode(deserializer);
+        let mut var_installDest = <Option<String>>::sse_decode(deserializer);
+        let mut var_plan =
+            <crate::api::roost_bootstrap::BridgeBootstrapPlan>::sse_decode(deserializer);
+        let mut var_needsSource = <bool>::sse_decode(deserializer);
+        let mut var_actionable = <bool>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapProbe {
+            target: var_target,
+            outcome: var_outcome,
+            arch: var_arch,
+            home: var_home,
+            session: var_session,
+            candidates: var_candidates,
+            fingerprint: var_fingerprint,
+            install_dest: var_installDest,
+            plan: var_plan,
+            needs_source: var_needsSource,
+            actionable: var_actionable,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_identity =
+                    <crate::api::roost_bootstrap::BridgeBootstrapIdentity>::sse_decode(
+                        deserializer,
+                    );
+                return crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Compatible {
+                    path: var_path,
+                    identity: var_identity,
+                };
+            }
+            1 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                let mut var_identity =
+                    <Option<crate::api::roost_bootstrap::BridgeBootstrapIdentity>>::sse_decode(
+                        deserializer,
+                    );
+                return crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Mismatch {
+                    path: var_path,
+                    identity: var_identity,
+                };
+            }
+            2 => {
+                return crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Missing;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_appVersion = <String>::sse_decode(deserializer);
+        let mut var_sessionProtocol = <u32>::sse_decode(deserializer);
+        let mut var_libghosttyBuild = <String>::sse_decode(deserializer);
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_startedAt = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity {
+            app_version: var_appVersion,
+            session_protocol: var_sessionProtocol,
+            libghostty_build: var_libghosttyBuild,
+            session_id: var_sessionId,
+            started_at: var_startedAt,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapSessionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_identity =
+                    <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_decode(
+                        deserializer,
+                    );
+                return crate::api::roost_bootstrap::BridgeBootstrapSessionState::Running {
+                    identity: var_identity,
+                };
+            }
+            1 => {
+                return crate::api::roost_bootstrap::BridgeBootstrapSessionState::NoSession;
+            }
+            2 => {
+                return crate::api::roost_bootstrap::BridgeBootstrapSessionState::NotInstalled;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapSource {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapSource::Override {
+                    path: var_path,
+                };
+            }
+            1 => {
+                let mut var_path = <String>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapSource::Sibling {
+                    path: var_path,
+                };
+            }
+            2 => {
+                let mut var_base = <String>::sse_decode(deserializer);
+                let mut var_version = <String>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapSource::Asset {
+                    base: var_base,
+                    version: var_version,
+                };
+            }
+            3 => {
+                return crate::api::roost_bootstrap::BridgeBootstrapSource::None;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapSourcePreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_source =
+            <crate::api::roost_bootstrap::BridgeBootstrapSource>::sse_decode(deserializer);
+        let mut var_fallback =
+            <Option<crate::api::roost_bootstrap::BridgeBootstrapSource>>::sse_decode(deserializer);
+        let mut var_skipped = <Vec<String>>::sse_decode(deserializer);
+        let mut var_available = <bool>::sse_decode(deserializer);
+        let mut var_describe = <String>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::BridgeBootstrapSourcePreview {
+            source: var_source,
+            fallback: var_fallback,
+            skipped: var_skipped,
+            available: var_available,
+            describe: var_describe,
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapStage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::roost_bootstrap::BridgeBootstrapStage::Probe,
+            1 => crate::api::roost_bootstrap::BridgeBootstrapStage::UnsupportedOs,
+            2 => crate::api::roost_bootstrap::BridgeBootstrapStage::UnsupportedArch,
+            3 => crate::api::roost_bootstrap::BridgeBootstrapStage::Fingerprint,
+            4 => crate::api::roost_bootstrap::BridgeBootstrapStage::Source,
+            5 => crate::api::roost_bootstrap::BridgeBootstrapStage::Report,
+            6 => crate::api::roost_bootstrap::BridgeBootstrapStage::Prepare,
+            7 => crate::api::roost_bootstrap::BridgeBootstrapStage::Stream,
+            8 => crate::api::roost_bootstrap::BridgeBootstrapStage::Verify,
+            9 => crate::api::roost_bootstrap::BridgeBootstrapStage::Commit,
+            10 => crate::api::roost_bootstrap::BridgeBootstrapStage::PostCommit,
+            11 => crate::api::roost_bootstrap::BridgeBootstrapStage::Start,
+            12 => crate::api::roost_bootstrap::BridgeBootstrapStage::PostStart,
+            13 => crate::api::roost_bootstrap::BridgeBootstrapStage::Hooks,
+            _ => unreachable!("Invalid variant for BridgeBootstrapStage: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapStdin {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::roost_bootstrap::BridgeBootstrapStdin::Empty;
+            }
+            1 => {
+                let mut var_bytes = <Vec<u8>>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapStdin::Bytes {
+                    bytes: var_bytes,
+                };
+            }
+            2 => {
+                let mut var_len = <u64>::sse_decode(deserializer);
+                let mut var_origin = <String>::sse_decode(deserializer);
+                let mut var_sha256 = <Option<String>>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapStdin::Source {
+                    len: var_len,
+                    origin: var_origin,
+                    sha256: var_sha256,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::BridgeBootstrapStep {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_command = <String>::sse_decode(deserializer);
+                let mut var_stdin =
+                    <crate::api::roost_bootstrap::BridgeBootstrapStdin>::sse_decode(deserializer);
+                let mut var_budgetMs = <u32>::sse_decode(deserializer);
+                let mut var_stdoutCap = <u32>::sse_decode(deserializer);
+                let mut var_captureStdout = <bool>::sse_decode(deserializer);
+                let mut var_stderrCap = <u32>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapStep::Exec {
+                    command: var_command,
+                    stdin: var_stdin,
+                    budget_ms: var_budgetMs,
+                    stdout_cap: var_stdoutCap,
+                    capture_stdout: var_captureStdout,
+                    stderr_cap: var_stderrCap,
+                };
+            }
+            1 => {
+                let mut var_probe =
+                    <crate::api::roost_bootstrap::BridgeBootstrapProbe>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapStep::Probed {
+                    probe: var_probe,
+                };
+            }
+            2 => {
+                let mut var_installed =
+                    <crate::api::roost_bootstrap::BridgeBootstrapInstalled>::sse_decode(
+                        deserializer,
+                    );
+                return crate::api::roost_bootstrap::BridgeBootstrapStep::Installed {
+                    installed: var_installed,
+                };
+            }
+            3 => {
+                let mut var_failure =
+                    <crate::api::roost_bootstrap::BridgeBootstrapFailure>::sse_decode(deserializer);
+                return crate::api::roost_bootstrap::BridgeBootstrapStep::Failed {
+                    failure: var_failure,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -4141,6 +5064,7 @@ impl SseDecode for crate::api::bridge_rt::BridgeLiveCounters {
         let mut var_pendingPreviewCredentials = <u64>::sse_decode(deserializer);
         let mut var_activeLanes = <u64>::sse_decode(deserializer);
         let mut var_activeLaneForwarders = <u64>::sse_decode(deserializer);
+        let mut var_activeRoostBootstraps = <u64>::sse_decode(deserializer);
         return crate::api::bridge_rt::BridgeLiveCounters {
             active_watchers: var_activeWatchers,
             active_forwarders: var_activeForwarders,
@@ -4150,6 +5074,7 @@ impl SseDecode for crate::api::bridge_rt::BridgeLiveCounters {
             pending_preview_credentials: var_pendingPreviewCredentials,
             active_lanes: var_activeLanes,
             active_lane_forwarders: var_activeLaneForwarders,
+            active_roost_bootstraps: var_activeRoostBootstraps,
         };
     }
 }
@@ -4849,6 +5774,34 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(
+                <crate::api::roost_bootstrap::BridgeBootstrapHooksError>::sse_decode(deserializer),
+            );
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksSkip> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(
+                <crate::api::roost_bootstrap::BridgeBootstrapHooksSkip>::sse_decode(deserializer),
+            );
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::dto::BridgeDiskEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5102,6 +6055,60 @@ impl SseDecode for Option<crate::api::dto_lane::BridgeAgentLaneStamp> {
     }
 }
 
+impl SseDecode for Option<crate::api::roost_bootstrap::BridgeBootstrapHooks> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(
+                <crate::api::roost_bootstrap::BridgeBootstrapHooks>::sse_decode(deserializer),
+            );
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::roost_bootstrap::BridgeBootstrapIdentity> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(
+                <crate::api::roost_bootstrap::BridgeBootstrapIdentity>::sse_decode(deserializer),
+            );
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(
+                <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_decode(
+                    deserializer,
+                ),
+            );
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::roost_bootstrap::BridgeBootstrapSource> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(
+                <crate::api::roost_bootstrap::BridgeBootstrapSource>::sse_decode(deserializer),
+            );
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::dto_lane::BridgeLaneApprovalOption> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5191,6 +6198,17 @@ impl SseDecode for Option<crate::api::dto::BridgeSystemDiskUsage> {
     }
 }
 
+impl SseDecode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<i64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5250,6 +6268,20 @@ impl SseDecode for (String, crate::api::dto_rc::BridgeRcKindFeatures) {
         let mut var_field0 = <String>::sse_decode(deserializer);
         let mut var_field1 = <crate::api::dto_rc::BridgeRcKindFeatures>::sse_decode(deserializer);
         return (var_field0, var_field1);
+    }
+}
+
+impl SseDecode for crate::api::roost_bootstrap::RoostHostTarget {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_target = <String>::sse_decode(deserializer);
+        let mut var_localPort = <u16>::sse_decode(deserializer);
+        let mut var_jailFsRoot = <bool>::sse_decode(deserializer);
+        return crate::api::roost_bootstrap::RoostHostTarget {
+            target: var_target,
+            local_port: var_localPort,
+            jail_fs_root: var_jailFsRoot,
+        };
     }
 }
 
@@ -5361,92 +6393,128 @@ fn pde_ffi_dispatcher_primary_impl(
         16 => {
             wire__crate__api__client__BridgeClient_system_df_impl(port, ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__api__watcher__create_rc_watcher_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__roost__create_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__create_stream__create_shed_events_impl(
+        19 => wire__crate__api__roost_bootstrap__bootstrap_source_read_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        23 => wire__crate__api__create_stream__create_shed_stream_impl(
+        20 => wire__crate__api__roost_bootstrap__bootstrap_source_rewind_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        24 => wire__crate__api__mint__demo_mint_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__lane__lane_answer_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__lane__lane_cancel_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__lane__lane_nudges_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__lane__lane_open_impl(port, ptr, rust_vec_len, data_len),
-        35 => {
+        22 => wire__crate__api__watcher__create_rc_watcher_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__roost__create_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__create_stream__create_shed_events_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        25 => wire__crate__api__create_stream__create_shed_stream_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        26 => wire__crate__api__mint__demo_mint_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__lane__lane_answer_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__lane__lane_cancel_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__lane__lane_nudges_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__lane__lane_open_impl(port, ptr, rust_vec_len, data_len),
+        37 => {
             wire__crate__api__lane__lane_refresh_credentials_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__api__lane__lane_send_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__rc_runner__rc_create_invocation_impl(
+        38 => wire__crate__api__lane__lane_send_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__rc_runner__rc_create_invocation_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__api__rc_runner__rc_decode_capabilities_impl(
+        45 => wire__crate__api__rc_runner__rc_decode_capabilities_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => {
+        46 => {
             wire__crate__api__rc_runner__rc_decode_session_impl(port, ptr, rust_vec_len, data_len)
         }
-        45 => {
+        47 => {
             wire__crate__api__rc_runner__rc_decode_sessions_impl(port, ptr, rust_vec_len, data_len)
         }
-        46 => {
+        48 => {
             wire__crate__api__rc_runner__rc_error_from_exit_impl(port, ptr, rust_vec_len, data_len)
         }
-        47 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__client__set_credential_event_sink_impl(
+        49 => wire__crate__api__rc_runner__rc_kill_argv_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__rc_runner__rc_list_argv_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__rc_runner__rc_prompt_argv_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__watcher__rc_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+        55 => wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+        56 => wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+        58 => wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__client__set_credential_event_sink_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        69 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        75 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        76 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        78 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5461,24 +6529,39 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         17 => wire__crate__api__local_sse__BridgeTestSse_base_url_impl(ptr, rust_vec_len, data_len),
         18 => wire__crate__api__local_sse__BridgeTestSse_stop_impl(ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__create_stream__cancel_create_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__lane__gx_probe_remote_command_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__lane__lane_capabilities_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__lane__lane_close_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__dto_lane__lane_option_for_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+        21 => wire__crate__api__create_stream__cancel_create_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__lane__gx_probe_remote_command_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__lane__lane_capabilities_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__lane__lane_close_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__dto_lane__lane_option_for_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        59 => wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        60 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        73 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__watcher__stop_rc_events_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5529,6 +6612,24 @@ impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<
 
 impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<BridgeLane>> for BridgeLane {
     fn into_into_dart(self) -> FrbWrapper<BridgeLane> {
+        self.into()
+    }
+}
+
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<BridgeRoostBootstrap> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
+            .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<BridgeRoostBootstrap>
+{
+}
+
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<BridgeRoostBootstrap>> for BridgeRoostBootstrap {
+    fn into_into_dart(self) -> FrbWrapper<BridgeRoostBootstrap> {
         self.into()
     }
 }
@@ -5642,6 +6743,496 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::dto_lane::BridgeAgentLaneStam
     for crate::api::dto_lane::BridgeAgentLaneStamp
 {
     fn into_into_dart(self) -> crate::api::dto_lane::BridgeAgentLaneStamp {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapFailure {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.stage.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+            self.restored.into_into_dart().into_dart(),
+            self.stage_code.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapFailure
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapFailure>
+    for crate::api::roost_bootstrap::BridgeBootstrapFailure
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapFailure {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapHooks {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.client_label.into_into_dart().into_dart(),
+            self.wired.into_into_dart().into_dart(),
+            self.refreshed.into_into_dart().into_dart(),
+            self.removed.into_into_dart().into_dart(),
+            self.skipped.into_into_dart().into_dart(),
+            self.errors.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
+            self.applied.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapHooks
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapHooks>
+    for crate::api::roost_bootstrap::BridgeBootstrapHooks
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapHooks {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapHooksError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.agent.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapHooksError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapHooksError>
+    for crate::api::roost_bootstrap::BridgeBootstrapHooksError
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapHooksError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapHooksSkip {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.agent.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapHooksSkip
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapHooksSkip>
+    for crate::api::roost_bootstrap::BridgeBootstrapHooksSkip
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapHooksSkip {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapIdentity {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.app_version.into_into_dart().into_dart(),
+            self.session_protocol.into_into_dart().into_dart(),
+            self.libghostty_build.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapIdentity
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapIdentity>
+    for crate::api::roost_bootstrap::BridgeBootstrapIdentity
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapIdentity {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapInstalled {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.target.into_into_dart().into_dart(),
+            self.plan.into_into_dart().into_dart(),
+            self.dest.into_into_dart().into_dart(),
+            self.verdict.into_into_dart().into_dart(),
+            self.session.into_into_dart().into_dart(),
+            self.path_warning.into_into_dart().into_dart(),
+            self.backup_warning.into_into_dart().into_dart(),
+            self.hooks.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapInstalled
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapInstalled>
+    for crate::api::roost_bootstrap::BridgeBootstrapInstalled
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapInstalled {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapPlan {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Install { dest } => {
+                [0.into_dart(), dest.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Update {
+                path,
+                incumbent,
+                replaces_newer,
+                dest,
+            } => [
+                1.into_dart(),
+                path.into_into_dart().into_dart(),
+                incumbent.into_into_dart().into_dart(),
+                replaces_newer.into_into_dart().into_dart(),
+                dest.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Start { path } => {
+                [2.into_dart(), path.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::UpToDate { identity } => {
+                [3.into_dart(), identity.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Report { protocol, message } => [
+                4.into_dart(),
+                protocol.into_into_dart().into_dart(),
+                message.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapPlan
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapPlan>
+    for crate::api::roost_bootstrap::BridgeBootstrapPlan
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapPlan {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapProbe {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.target.into_into_dart().into_dart(),
+            self.outcome.into_into_dart().into_dart(),
+            self.arch.into_into_dart().into_dart(),
+            self.home.into_into_dart().into_dart(),
+            self.session.into_into_dart().into_dart(),
+            self.candidates.into_into_dart().into_dart(),
+            self.fingerprint.into_into_dart().into_dart(),
+            self.install_dest.into_into_dart().into_dart(),
+            self.plan.into_into_dart().into_dart(),
+            self.needs_source.into_into_dart().into_dart(),
+            self.actionable.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapProbe
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapProbe>
+    for crate::api::roost_bootstrap::BridgeBootstrapProbe
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapProbe {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Compatible {
+                path,
+                identity,
+            } => [
+                0.into_dart(),
+                path.into_into_dart().into_dart(),
+                identity.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Mismatch {
+                path,
+                identity,
+            } => [
+                1.into_dart(),
+                path.into_into_dart().into_dart(),
+                identity.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Missing => {
+                [2.into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome>
+    for crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.app_version.into_into_dart().into_dart(),
+            self.session_protocol.into_into_dart().into_dart(),
+            self.libghostty_build.into_into_dart().into_dart(),
+            self.session_id.into_into_dart().into_dart(),
+            self.started_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>
+    for crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapSessionState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::Running { identity } => {
+                [0.into_dart(), identity.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::NoSession => {
+                [1.into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::NotInstalled => {
+                [2.into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapSessionState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapSessionState>
+    for crate::api::roost_bootstrap::BridgeBootstrapSessionState
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapSessionState {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapSource {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Override { path } => {
+                [0.into_dart(), path.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Sibling { path } => {
+                [1.into_dart(), path.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Asset { base, version } => [
+                2.into_dart(),
+                base.into_into_dart().into_dart(),
+                version.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapSource::None => [3.into_dart()].into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapSource
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapSource>
+    for crate::api::roost_bootstrap::BridgeBootstrapSource
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapSource {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapSourcePreview {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.source.into_into_dart().into_dart(),
+            self.fallback.into_into_dart().into_dart(),
+            self.skipped.into_into_dart().into_dart(),
+            self.available.into_into_dart().into_dart(),
+            self.describe.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapSourcePreview
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapSourcePreview>
+    for crate::api::roost_bootstrap::BridgeBootstrapSourcePreview
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapSourcePreview {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapStage {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Probe => 0.into_dart(),
+            Self::UnsupportedOs => 1.into_dart(),
+            Self::UnsupportedArch => 2.into_dart(),
+            Self::Fingerprint => 3.into_dart(),
+            Self::Source => 4.into_dart(),
+            Self::Report => 5.into_dart(),
+            Self::Prepare => 6.into_dart(),
+            Self::Stream => 7.into_dart(),
+            Self::Verify => 8.into_dart(),
+            Self::Commit => 9.into_dart(),
+            Self::PostCommit => 10.into_dart(),
+            Self::Start => 11.into_dart(),
+            Self::PostStart => 12.into_dart(),
+            Self::Hooks => 13.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapStage
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapStage>
+    for crate::api::roost_bootstrap::BridgeBootstrapStage
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapStage {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapStdin {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Empty => [0.into_dart()].into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Bytes { bytes } => {
+                [1.into_dart(), bytes.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Source {
+                len,
+                origin,
+                sha256,
+            } => [
+                2.into_dart(),
+                len.into_into_dart().into_dart(),
+                origin.into_into_dart().into_dart(),
+                sha256.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapStdin
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapStdin>
+    for crate::api::roost_bootstrap::BridgeBootstrapStdin
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapStdin {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::BridgeBootstrapStep {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Exec {
+                command,
+                stdin,
+                budget_ms,
+                stdout_cap,
+                capture_stdout,
+                stderr_cap,
+            } => [
+                0.into_dart(),
+                command.into_into_dart().into_dart(),
+                stdin.into_into_dart().into_dart(),
+                budget_ms.into_into_dart().into_dart(),
+                stdout_cap.into_into_dart().into_dart(),
+                capture_stdout.into_into_dart().into_dart(),
+                stderr_cap.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Probed { probe } => {
+                [1.into_dart(), probe.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Installed { installed } => {
+                [2.into_dart(), installed.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Failed { failure } => {
+                [3.into_dart(), failure.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::BridgeBootstrapStep
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::BridgeBootstrapStep>
+    for crate::api::roost_bootstrap::BridgeBootstrapStep
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::BridgeBootstrapStep {
         self
     }
 }
@@ -6247,6 +7838,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bridge_rt::BridgeLiveCounters
                 .into_dart(),
             self.active_lanes.into_into_dart().into_dart(),
             self.active_lane_forwarders.into_into_dart().into_dart(),
+            self.active_roost_bootstraps.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7073,6 +8665,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::watcher::BridgeWatcherUpdate>
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::roost_bootstrap::RoostHostTarget {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.target.into_into_dart().into_dart(),
+            self.local_port.into_into_dart().into_dart(),
+            self.jail_fs_root.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::roost_bootstrap::RoostHostTarget
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::roost_bootstrap::RoostHostTarget>
+    for crate::api::roost_bootstrap::RoostHostTarget
+{
+    fn into_into_dart(self) -> crate::api::roost_bootstrap::RoostHostTarget {
+        self
+    }
+}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -7099,6 +8713,18 @@ impl SseEncode for BridgeLane {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
+impl SseEncode for BridgeRoostBootstrap {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>,
+        >>::sse_encode(
+            flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self),
+            serializer,
+        );
     }
 }
 
@@ -7174,6 +8800,17 @@ impl SseEncode
 
 impl SseEncode
     for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        let (ptr, size) = self.sse_encode_raw();
+        <usize>::sse_encode(ptr, serializer);
+        <i32>::sse_encode(size, serializer);
+    }
+}
+
+impl SseEncode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7325,6 +8962,355 @@ impl SseEncode for crate::api::dto_lane::BridgeAgentLaneStamp {
         <String>::sse_encode(self.kind, serializer);
         <String>::sse_encode(self.session_id, serializer);
         <String>::sse_encode(self.server_url, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::roost_bootstrap::BridgeBootstrapStage>::sse_encode(self.stage, serializer);
+        <String>::sse_encode(self.message, serializer);
+        <Option<bool>>::sse_encode(self.restored, serializer);
+        <String>::sse_encode(self.stage_code, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapHooks {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.client_label, serializer);
+        <Vec<String>>::sse_encode(self.wired, serializer);
+        <Vec<String>>::sse_encode(self.refreshed, serializer);
+        <Vec<String>>::sse_encode(self.removed, serializer);
+        <Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksSkip>>::sse_encode(
+            self.skipped,
+            serializer,
+        );
+        <Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksError>>::sse_encode(
+            self.errors,
+            serializer,
+        );
+        <Option<String>>::sse_encode(self.error, serializer);
+        <bool>::sse_encode(self.applied, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapHooksError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.agent, serializer);
+        <String>::sse_encode(self.error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapHooksSkip {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.agent, serializer);
+        <String>::sse_encode(self.reason, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.app_version, serializer);
+        <u32>::sse_encode(self.session_protocol, serializer);
+        <String>::sse_encode(self.libghostty_build, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapInstalled {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.target, serializer);
+        <crate::api::roost_bootstrap::BridgeBootstrapPlan>::sse_encode(self.plan, serializer);
+        <Option<String>>::sse_encode(self.dest, serializer);
+        <Option<String>>::sse_encode(self.verdict, serializer);
+        <Option<crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>>::sse_encode(
+            self.session,
+            serializer,
+        );
+        <Option<String>>::sse_encode(self.path_warning, serializer);
+        <Option<String>>::sse_encode(self.backup_warning, serializer);
+        <Option<crate::api::roost_bootstrap::BridgeBootstrapHooks>>::sse_encode(
+            self.hooks, serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Install { dest } => {
+                <i32>::sse_encode(0, serializer);
+                <Option<String>>::sse_encode(dest, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Update {
+                path,
+                incumbent,
+                replaces_newer,
+                dest,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(path, serializer);
+                <Option<crate::api::roost_bootstrap::BridgeBootstrapIdentity>>::sse_encode(
+                    incumbent, serializer,
+                );
+                <bool>::sse_encode(replaces_newer, serializer);
+                <Option<String>>::sse_encode(dest, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Start { path } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(path, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::UpToDate { identity } => {
+                <i32>::sse_encode(3, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_encode(
+                    identity, serializer,
+                );
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapPlan::Report { protocol, message } => {
+                <i32>::sse_encode(4, serializer);
+                <u32>::sse_encode(protocol, serializer);
+                <String>::sse_encode(message, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapProbe {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.target, serializer);
+        <crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome>::sse_encode(
+            self.outcome,
+            serializer,
+        );
+        <String>::sse_encode(self.arch, serializer);
+        <String>::sse_encode(self.home, serializer);
+        <crate::api::roost_bootstrap::BridgeBootstrapSessionState>::sse_encode(
+            self.session,
+            serializer,
+        );
+        <Vec<String>>::sse_encode(self.candidates, serializer);
+        <String>::sse_encode(self.fingerprint, serializer);
+        <Option<String>>::sse_encode(self.install_dest, serializer);
+        <crate::api::roost_bootstrap::BridgeBootstrapPlan>::sse_encode(self.plan, serializer);
+        <bool>::sse_encode(self.needs_source, serializer);
+        <bool>::sse_encode(self.actionable, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Compatible {
+                path,
+                identity,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(path, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapIdentity>::sse_encode(
+                    identity, serializer,
+                );
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Mismatch {
+                path,
+                identity,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(path, serializer);
+                <Option<crate::api::roost_bootstrap::BridgeBootstrapIdentity>>::sse_encode(
+                    identity, serializer,
+                );
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapProbeOutcome::Missing => {
+                <i32>::sse_encode(2, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.app_version, serializer);
+        <u32>::sse_encode(self.session_protocol, serializer);
+        <String>::sse_encode(self.libghostty_build, serializer);
+        <String>::sse_encode(self.session_id, serializer);
+        <String>::sse_encode(self.started_at, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapSessionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::Running { identity } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_encode(
+                    identity, serializer,
+                );
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::NoSession => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSessionState::NotInstalled => {
+                <i32>::sse_encode(2, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapSource {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Override { path } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(path, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Sibling { path } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(path, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSource::Asset { base, version } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(base, serializer);
+                <String>::sse_encode(version, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapSource::None => {
+                <i32>::sse_encode(3, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapSourcePreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::roost_bootstrap::BridgeBootstrapSource>::sse_encode(self.source, serializer);
+        <Option<crate::api::roost_bootstrap::BridgeBootstrapSource>>::sse_encode(
+            self.fallback,
+            serializer,
+        );
+        <Vec<String>>::sse_encode(self.skipped, serializer);
+        <bool>::sse_encode(self.available, serializer);
+        <String>::sse_encode(self.describe, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapStage {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Probe => 0,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::UnsupportedOs => 1,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::UnsupportedArch => 2,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Fingerprint => 3,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Source => 4,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Report => 5,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Prepare => 6,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Stream => 7,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Verify => 8,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Commit => 9,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::PostCommit => 10,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Start => 11,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::PostStart => 12,
+                crate::api::roost_bootstrap::BridgeBootstrapStage::Hooks => 13,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapStdin {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Empty => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Bytes { bytes } => {
+                <i32>::sse_encode(1, serializer);
+                <Vec<u8>>::sse_encode(bytes, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStdin::Source {
+                len,
+                origin,
+                sha256,
+            } => {
+                <i32>::sse_encode(2, serializer);
+                <u64>::sse_encode(len, serializer);
+                <String>::sse_encode(origin, serializer);
+                <Option<String>>::sse_encode(sha256, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::BridgeBootstrapStep {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Exec {
+                command,
+                stdin,
+                budget_ms,
+                stdout_cap,
+                capture_stdout,
+                stderr_cap,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(command, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapStdin>::sse_encode(stdin, serializer);
+                <u32>::sse_encode(budget_ms, serializer);
+                <u32>::sse_encode(stdout_cap, serializer);
+                <bool>::sse_encode(capture_stdout, serializer);
+                <u32>::sse_encode(stderr_cap, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Probed { probe } => {
+                <i32>::sse_encode(1, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapProbe>::sse_encode(probe, serializer);
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Installed { installed } => {
+                <i32>::sse_encode(2, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapInstalled>::sse_encode(
+                    installed, serializer,
+                );
+            }
+            crate::api::roost_bootstrap::BridgeBootstrapStep::Failed { failure } => {
+                <i32>::sse_encode(3, serializer);
+                <crate::api::roost_bootstrap::BridgeBootstrapFailure>::sse_encode(
+                    failure, serializer,
+                );
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -7744,6 +9730,7 @@ impl SseEncode for crate::api::bridge_rt::BridgeLiveCounters {
         <u64>::sse_encode(self.pending_preview_credentials, serializer);
         <u64>::sse_encode(self.active_lanes, serializer);
         <u64>::sse_encode(self.active_lane_forwarders, serializer);
+        <u64>::sse_encode(self.active_roost_bootstraps, serializer);
     }
 }
 
@@ -8286,6 +10273,26 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::roost_bootstrap::BridgeBootstrapHooksError>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::roost_bootstrap::BridgeBootstrapHooksSkip> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::roost_bootstrap::BridgeBootstrapHooksSkip>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::dto::BridgeDiskEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8486,6 +10493,48 @@ impl SseEncode for Option<crate::api::dto_lane::BridgeAgentLaneStamp> {
     }
 }
 
+impl SseEncode for Option<crate::api::roost_bootstrap::BridgeBootstrapHooks> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::roost_bootstrap::BridgeBootstrapHooks>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::roost_bootstrap::BridgeBootstrapIdentity> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::roost_bootstrap::BridgeBootstrapIdentity>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::roost_bootstrap::BridgeBootstrapSessionIdentity>::sse_encode(
+                value, serializer,
+            );
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::roost_bootstrap::BridgeBootstrapSource> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::roost_bootstrap::BridgeBootstrapSource>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::dto_lane::BridgeLaneApprovalOption> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8556,6 +10605,16 @@ impl SseEncode for Option<crate::api::dto::BridgeSystemDiskUsage> {
     }
 }
 
+impl SseEncode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i32>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<i64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8609,6 +10668,15 @@ impl SseEncode for (String, crate::api::dto_rc::BridgeRcKindFeatures) {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.0, serializer);
         <crate::api::dto_rc::BridgeRcKindFeatures>::sse_encode(self.1, serializer);
+    }
+}
+
+impl SseEncode for crate::api::roost_bootstrap::RoostHostTarget {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.target, serializer);
+        <u16>::sse_encode(self.local_port, serializer);
+        <bool>::sse_encode(self.jail_fs_root, serializer);
     }
 }
 
@@ -8668,6 +10736,7 @@ mod io {
     use crate::api::lane::*;
     use crate::api::local_sse::*;
     use crate::api::roost::*;
+    use crate::api::roost_bootstrap::*;
     use crate::api::watcher::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
@@ -8719,6 +10788,20 @@ mod io {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>::decrement_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_shed_mobile_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>::increment_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_shed_mobile_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>::decrement_strong_count(ptr as _);
     }
 
     #[unsafe(no_mangle)]
@@ -8794,6 +10877,7 @@ mod web {
     use crate::api::lane::*;
     use crate::api::local_sse::*;
     use crate::api::roost::*;
+    use crate::api::roost_bootstrap::*;
     use crate::api::watcher::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
@@ -8847,6 +10931,20 @@ mod web {
         ptr: *const std::ffi::c_void,
     ) {
         MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>::decrement_strong_count(ptr as _);
+    }
+
+    #[wasm_bindgen]
+    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>::increment_strong_count(ptr as _);
+    }
+
+    #[wasm_bindgen]
+    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostBootstrap>>::decrement_strong_count(ptr as _);
     }
 
     #[wasm_bindgen]

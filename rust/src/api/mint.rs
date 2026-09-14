@@ -1351,6 +1351,74 @@ mod tests {
             "BridgeRoostUpdate_Down",
             "BridgeRoostUpdate_Snapshot",
             "BridgeRoostWatcher",
+            // Plan 020 C-M2 — putting a `roost-session` on a machine, from the
+            // phone. Every one of these is HOST DESCRIPTION and INSTALL
+            // NARRATION: a target name, a remote `$HOME`, remote paths on
+            // roost's candidate ladder, an architecture string, roost's own
+            // version/protocol/libghostty triple, the daemon's `session_id` and
+            // `started_at`, the consent fingerprint (a hash of exactly those),
+            // the plan/stage enums, the agent names a host wired its hooks for,
+            // and user-facing sentences shed-core rendered. **No credential of
+            // any kind crosses**, and two fields were looked at rather than
+            // assumed:
+            //
+            //  * `BridgeBootstrapStdin_Bytes.bytes` is roost's own shell script
+            //    (`roost_ipc::bootstrap`'s builders) travelling as data so the
+            //    far side never re-parses it. It is composed from remote paths
+            //    and nothing else; shed puts no secret into it, which is why
+            //    the twelve byte-exact goldens in shed's own suite can pin its
+            //    text.
+            //  * `BridgeBootstrapStdin_Source` deliberately carries **no bytes
+            //    and no path** — only a length, an origin sentence and the hex
+            //    sha256 the ladder verified. The open descriptor stays in Rust
+            //    and is pulled through `bootstrap_source_read`, because the
+            //    bytes shed hashed and the bytes shed sends have to be the same
+            //    bytes.
+            //
+            // The SSH identity still never crosses this surface, exactly as for
+            // the roost watcher above: Dart owns the transport and Rust is
+            // handed a loopback PORT. `BridgeRoostBootstrap` is opaque and holds
+            // the sans-IO machine plus that descriptor.
+            "BridgeBootstrapFailure",
+            "BridgeBootstrapHooks",
+            "BridgeBootstrapHooksError",
+            "BridgeBootstrapHooksSkip",
+            "BridgeBootstrapIdentity",
+            "BridgeBootstrapInstalled",
+            "BridgeBootstrapPlan",
+            "BridgeBootstrapPlan_Install",
+            "BridgeBootstrapPlan_Report",
+            "BridgeBootstrapPlan_Start",
+            "BridgeBootstrapPlan_UpToDate",
+            "BridgeBootstrapPlan_Update",
+            "BridgeBootstrapProbe",
+            "BridgeBootstrapProbeOutcome",
+            "BridgeBootstrapProbeOutcome_Compatible",
+            "BridgeBootstrapProbeOutcome_Mismatch",
+            "BridgeBootstrapProbeOutcome_Missing",
+            "BridgeBootstrapSessionIdentity",
+            "BridgeBootstrapSessionState",
+            "BridgeBootstrapSessionState_NoSession",
+            "BridgeBootstrapSessionState_NotInstalled",
+            "BridgeBootstrapSessionState_Running",
+            "BridgeBootstrapSource",
+            "BridgeBootstrapSourcePreview",
+            "BridgeBootstrapSource_Asset",
+            "BridgeBootstrapSource_None",
+            "BridgeBootstrapSource_Override",
+            "BridgeBootstrapSource_Sibling",
+            "BridgeBootstrapStage",
+            "BridgeBootstrapStdin",
+            "BridgeBootstrapStdin_Bytes",
+            "BridgeBootstrapStdin_Empty",
+            "BridgeBootstrapStdin_Source",
+            "BridgeBootstrapStep",
+            "BridgeBootstrapStep_Exec",
+            "BridgeBootstrapStep_Failed",
+            "BridgeBootstrapStep_Installed",
+            "BridgeBootstrapStep_Probed",
+            "BridgeRoostBootstrap",
+            "RoostHostTarget",
             "BridgeSession",
             "BridgeSessionRc",
             "BridgeShed",

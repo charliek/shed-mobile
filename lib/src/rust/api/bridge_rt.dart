@@ -23,6 +23,7 @@ class BridgeLiveCounters {
   final BigInt pendingPreviewCredentials;
   final BigInt activeLanes;
   final BigInt activeLaneForwarders;
+  final BigInt activeRoostBootstraps;
 
   const BridgeLiveCounters({
     required this.activeWatchers,
@@ -33,6 +34,7 @@ class BridgeLiveCounters {
     required this.pendingPreviewCredentials,
     required this.activeLanes,
     required this.activeLaneForwarders,
+    required this.activeRoostBootstraps,
   });
 
   @override
@@ -44,7 +46,8 @@ class BridgeLiveCounters {
       activeSseServers.hashCode ^
       pendingPreviewCredentials.hashCode ^
       activeLanes.hashCode ^
-      activeLaneForwarders.hashCode;
+      activeLaneForwarders.hashCode ^
+      activeRoostBootstraps.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -58,5 +61,6 @@ class BridgeLiveCounters {
           activeSseServers == other.activeSseServers &&
           pendingPreviewCredentials == other.pendingPreviewCredentials &&
           activeLanes == other.activeLanes &&
-          activeLaneForwarders == other.activeLaneForwarders;
+          activeLaneForwarders == other.activeLaneForwarders &&
+          activeRoostBootstraps == other.activeRoostBootstraps;
 }

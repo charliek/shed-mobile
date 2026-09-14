@@ -18,6 +18,7 @@ import 'servers/server_record.dart';
 import 'machines/machine_feed.dart';
 import 'machines/machine_record.dart';
 import 'machines/machine_store.dart';
+import 'machines/roost_bootstrap_flow.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
@@ -27,6 +28,7 @@ import 'src/rust/api/error.dart';
 import 'src/rust/api/watcher.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
+import 'ssh/roost_entitlement.dart';
 import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
@@ -689,6 +691,21 @@ final machineHostKeysProvider = Provider<HostKeyStore>(
   (ref) => HostKeyStore(tofu: true),
 );
 
+/// **Which machines THIS APP RUN bootstrapped** — the one claim that decides
+/// whether a machine's watcher keeps its agent hooks wired (plan 020 §3.3).
+///
+/// Not `autoDispose`, and for a sharper reason than the store above: every
+/// reader IS `autoDispose`. A `MachineFeed` dies when the user leaves the
+/// screen and the phone tears one down on every background, so a claim kept
+/// anywhere nearer the feed would be forgotten by the next foreground — and the
+/// install that earned it would never be honoured again.
+///
+/// In memory only, and deliberately never persisted: see
+/// [RoostBootstrapEntitlements].
+final roostEntitlementsProvider = Provider<RoostBootstrapEntitlements>(
+  (ref) => RoostBootstrapEntitlements(),
+);
+
 /// One machine's live feed — the SSH tunnel plus the shared Rust roost watcher.
 ///
 /// Split in two on purpose: this provider owns the FEED OBJECT (so `create` and
@@ -720,6 +737,9 @@ final machineFeedControllerProvider = Provider.autoDispose
         // [machineHostKeysProvider] for why a per-feed store would be TOFU in
         // name only.
         hostKeys: ref.watch(machineHostKeysProvider),
+        // Shared for the same shape of reason: this feed is `autoDispose` and
+        // the claim is the app run's, not this object's.
+        entitlements: ref.watch(roostEntitlementsProvider),
       );
       ref.onDispose(feed.dispose);
       return feed;
@@ -736,6 +756,35 @@ final machineFeedProvider = StreamProvider.autoDispose
       unawaited(feed.start());
       yield feed.state;
       yield* feed.updates;
+    });
+
+/// **One machine's bootstrap flow** — the probe and install verbs the machine
+/// card's install/start affordance drives (plan 020 §3.8, commit C-M4).
+///
+/// **This wiring is the commit's load-bearing line.** `drive` is a tear-off of
+/// [MachineFeed.runBootstrap] and must stay one: a completed install is the
+/// only thing that entitles this app run to keep the machine's agent hooks
+/// wired, and `runBootstrap` is where that claim is recorded and the machine's
+/// watcher re-spawned to honour it. Assembling a `RoostBootstrapRunner` here
+/// instead would drive exactly the same install and silently lose the hook
+/// re-send on the one machine that just earned it — plan 019's defect, one
+/// level up. `integration_test/roost_bootstrap_drive_test.dart` fails if this
+/// line stops going through the feed.
+///
+/// `autoDispose.family`, like every other per-machine provider: it holds the
+/// feed controller alive while a card is offering to bootstrap, and lets both
+/// go when the screen does.
+final roostBootstrapFlowProvider = Provider.autoDispose
+    .family<RoostBootstrapFlow, String>((ref, name) {
+      final feed = ref.watch(machineFeedControllerProvider(name));
+      return RoostBootstrapFlow(
+        target: name,
+        // Read at CALL time, not captured: the tunnel comes and goes with the
+        // feed, and a port read when this object was built may since have been
+        // closed and rebound.
+        localPort: () => feed.tunnelPort,
+        drive: feed.runBootstrap,
+      );
     });
 
 // ---------------------------------------------------------------------------

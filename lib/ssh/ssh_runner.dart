@@ -77,6 +77,14 @@ class SshExecResult {
 /// Both output streams are drained to completion **before** `done` is awaited:
 /// dartssh2 can complete `done` while stdout still holds buffered data, and
 /// reading them the other way round truncates the last frame.
+///
+/// **A bootstrap step is the other seam, not a call to this one.** `execBytesOn`
+/// (`exec_bytes.dart`) exists beside this because a `Step::Exec` needs things
+/// this deliberately does not have: a `Stream<Uint8List>` on stdin written with
+/// backpressure rather than a `String`, a budget, a head cap on stdout and a
+/// discard mode, and a tail cap on stderr — all of them values the STEP carries.
+/// Widening this signature to cover them would put five unused arguments on
+/// every caller that just wants a command's output.
 Future<SshExecResult> execOn(
   SSHClient client,
   String command, {

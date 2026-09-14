@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../machines/machine_feed.dart';
 import '../../machines/machine_record.dart';
 import '../../providers.dart';
 import '../../theme/shed_colors.dart';
@@ -9,6 +10,7 @@ import '../../widgets/card_shell.dart';
 import '../../widgets/host_groups.dart';
 import '../../widgets/status_badge.dart';
 import 'add_machine_screen.dart';
+import 'roost_bootstrap_offer.dart';
 
 /// **Machines on the Hosts tab**, below the shed hosts.
 ///
@@ -93,6 +95,12 @@ class _MachineCard extends ConsumerWidget {
     final state = feed.value;
     final reachable = state?.reachable ?? false;
     final count = state?.sessions.length ?? 0;
+    // **The typed kind, never a substring of the reason** (plan 020 §3.8). The
+    // whole decision is [roostOfferFor] — two of roost's four reach kinds name
+    // something the phone could do about them, and the other two are reported
+    // and nothing more. Null means this card offers nothing at all, which is
+    // also what an unclassified machine gets.
+    final offer = state == null ? null : roostOfferFor(state);
 
     return CardShell(
       child: Row(
@@ -137,6 +145,13 @@ class _MachineCard extends ConsumerWidget {
                     context,
                   ).textTheme.bodySmall?.copyWith(color: c.fg3),
                 ),
+                // The offer, under the reason it follows from. Absent entirely
+                // for the two kinds that name no action, and for a machine
+                // that is answering — a `Snapshot` clears the kind, so a
+                // machine that came back stops offering to install roost on
+                // it without this card deciding anything.
+                if (offer != null)
+                  RoostBootstrapOffer(machine: machine.name, offer: offer),
               ],
             ),
           ),
@@ -146,6 +161,10 @@ class _MachineCard extends ConsumerWidget {
             tooltip: 'Remove machine',
             onPressed: () async {
               await ref.read(machineStoreProvider).remove(machine.name);
+              // The claim goes with the machine. Otherwise a different host
+              // added under this same name later in the same run would inherit
+              // an entitlement nothing earned (plan 020 §3.3).
+              ref.read(roostEntitlementsProvider).forget(machine.name);
               ref.invalidate(machinesProvider);
               logDriveResult('machine-remove', ok: true);
             },

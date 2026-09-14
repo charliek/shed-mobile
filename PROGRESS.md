@@ -144,17 +144,38 @@ through dartssh2.
 its own, because roost retired the session lease at protocol 5 and a phone
 pinned at 4 is refused by every current session; the bootstrap follows once
 roost's own R9 work settles. This section stays open until it does.
-- [x] **C-M1** (this commit) — re-pin all four shed crates to shed's protocol-5
+- [x] **C-M1** — re-pin all four shed crates to shed's protocol-5
       merge (`3170191`) and `roost-ipc` to `c1bfe88`, the one rev shed's own
       manifest pins. Absorbs the single resulting break: `RoostUpdate::Down`
       gained a `kind`, mirrored across the bridge as `BridgeReachKind` and
       carried to `MachineFeedState.downKind`, which the next `Snapshot` clears
       so a machine that came back never keeps offering an install. No UI branches
       on it yet — that is C-M4.
-- [ ] **C-M2** — `rust/src/api/roost_bootstrap.rs`: FRB opaque handles on the
+- [x] **C-M2** — `rust/src/api/roost_bootstrap.rs`: FRB opaque handles on the
       house lifecycle, the DTOs under the mirror rule, `bootstrap_source_read`.
-- [ ] **C-M3** — the Dart exec transport, covering the whole `Step::Exec`
-      contract, plus the golden cells.
+- [x] **C-M3** (this commit) — the Dart exec transport, covering the whole
+      `Step::Exec` contract rather than its three obvious fields: `exec_bytes.dart`
+      is a second exec seam beside `execOn` (chunked writes with backpressure,
+      close-to-EOF, a `capture_stdout: false` mode that DISCARDS, a head-capped
+      stdout and a tail-capped stderr, one budget over the whole step);
+      `roost_bootstrap_runner.dart` drives the machine over it on `MachineFeed`'s
+      one `SSHClient` and applies shed-core's `exit: None` rule with the one
+      concession a runner owns. Plus amendment A2, without which C-M4's
+      affordance branches on a kind that is always `Other`: `roost_reach.dart`
+      ports roost's own classifier, the tunnel's exec stderr is OBSERVED rather
+      than only logged, and what Dart saw outranks the kind the watcher
+      published. Three golden cells in `integration_test/` make Dart the third
+      reader of shed's `roost-vectors` goldens.
+      Two things the review pass found and fixed, both of which the first cut
+      got wrong: the diagnostic band is classified from an **accumulated tail**
+      (`rolling_tail.dart`, shared with the exec seam) rather than per chunk —
+      SSH frame boundaries are arbitrary, and `client-bridge: no ` + `session\n`
+      arriving as two frames matched neither, so a stopped session classified as
+      nothing at all; and a step whose stdin was **not fully delivered** is never
+      a success, whatever status the far side reported, so a truncated stream
+      step fails where it happened instead of one step later at the staged
+      verify. The reach NOTE carries the tail's last non-empty line, not the
+      tail — the blob is mostly login banner and that message is user-facing.
 - [ ] **C-M4** — the Flutter UI: the affordance branching on `downKind`, the
       consent sheet, the progress states.
 - [ ] **C-M5** — the live leg on the Flutter Linux desktop build.

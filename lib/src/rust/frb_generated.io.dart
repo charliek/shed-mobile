@@ -16,6 +16,7 @@ import 'api/mint.dart';
 import 'api/preview.dart';
 import 'api/rc_runner.dart';
 import 'api/roost.dart';
+import 'api/roost_bootstrap.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
 import 'api/watcher.dart';
@@ -44,6 +45,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeLanePtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLanePtr;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_BridgeRoostBootstrapPtr => wire
+      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrapPtr;
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeRoostPeekPtr => wire
@@ -79,6 +84,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     dynamic raw,
   );
 
@@ -121,6 +132,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     dynamic raw,
   );
 
@@ -171,6 +188,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     dynamic raw,
   );
 
@@ -236,6 +259,45 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeBootstrapFailure dco_decode_box_autoadd_bridge_bootstrap_failure(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapHooks dco_decode_box_autoadd_bridge_bootstrap_hooks(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapIdentity dco_decode_box_autoadd_bridge_bootstrap_identity(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapInstalled dco_decode_box_autoadd_bridge_bootstrap_installed(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapProbe dco_decode_box_autoadd_bridge_bootstrap_probe(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity
+  dco_decode_box_autoadd_bridge_bootstrap_session_identity(dynamic raw);
+
+  @protected
+  BridgeBootstrapSource dco_decode_box_autoadd_bridge_bootstrap_source(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapStdin dco_decode_box_autoadd_bridge_bootstrap_stdin(
+    dynamic raw,
+  );
+
+  @protected
   BridgeCreateShedRequest dco_decode_box_autoadd_bridge_create_shed_request(
     dynamic raw,
   );
@@ -294,7 +356,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  RoostHostTarget dco_decode_box_autoadd_roost_host_target(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -307,6 +375,64 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeAgentLaneStamp dco_decode_bridge_agent_lane_stamp(dynamic raw);
+
+  @protected
+  BridgeBootstrapFailure dco_decode_bridge_bootstrap_failure(dynamic raw);
+
+  @protected
+  BridgeBootstrapHooks dco_decode_bridge_bootstrap_hooks(dynamic raw);
+
+  @protected
+  BridgeBootstrapHooksError dco_decode_bridge_bootstrap_hooks_error(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapHooksSkip dco_decode_bridge_bootstrap_hooks_skip(dynamic raw);
+
+  @protected
+  BridgeBootstrapIdentity dco_decode_bridge_bootstrap_identity(dynamic raw);
+
+  @protected
+  BridgeBootstrapInstalled dco_decode_bridge_bootstrap_installed(dynamic raw);
+
+  @protected
+  BridgeBootstrapPlan dco_decode_bridge_bootstrap_plan(dynamic raw);
+
+  @protected
+  BridgeBootstrapProbe dco_decode_bridge_bootstrap_probe(dynamic raw);
+
+  @protected
+  BridgeBootstrapProbeOutcome dco_decode_bridge_bootstrap_probe_outcome(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity dco_decode_bridge_bootstrap_session_identity(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapSessionState dco_decode_bridge_bootstrap_session_state(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapSource dco_decode_bridge_bootstrap_source(dynamic raw);
+
+  @protected
+  BridgeBootstrapSourcePreview dco_decode_bridge_bootstrap_source_preview(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapStage dco_decode_bridge_bootstrap_stage(dynamic raw);
+
+  @protected
+  BridgeBootstrapStdin dco_decode_bridge_bootstrap_stdin(dynamic raw);
+
+  @protected
+  BridgeBootstrapStep dco_decode_bridge_bootstrap_step(dynamic raw);
 
   @protected
   BridgeControlBundle dco_decode_bridge_control_bundle(dynamic raw);
@@ -471,6 +597,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<BridgeBootstrapHooksError> dco_decode_list_bridge_bootstrap_hooks_error(
+    dynamic raw,
+  );
+
+  @protected
+  List<BridgeBootstrapHooksSkip> dco_decode_list_bridge_bootstrap_hooks_skip(
+    dynamic raw,
+  );
+
+  @protected
   List<BridgeDiskEntry> dco_decode_list_bridge_disk_entry(dynamic raw);
 
   @protected
@@ -540,6 +676,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeBootstrapHooks? dco_decode_opt_box_autoadd_bridge_bootstrap_hooks(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapIdentity? dco_decode_opt_box_autoadd_bridge_bootstrap_identity(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity?
+  dco_decode_opt_box_autoadd_bridge_bootstrap_session_identity(dynamic raw);
+
+  @protected
+  BridgeBootstrapSource? dco_decode_opt_box_autoadd_bridge_bootstrap_source(
+    dynamic raw,
+  );
+
+  @protected
   BridgeLaneApprovalOption?
   dco_decode_opt_box_autoadd_bridge_lane_approval_option(dynamic raw);
 
@@ -566,6 +721,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
@@ -585,6 +743,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   (String, BridgeRcKindFeatures)
   dco_decode_record_string_bridge_rc_kind_features(dynamic raw);
+
+  @protected
+  RoostHostTarget dco_decode_roost_host_target(dynamic raw);
 
   @protected
   int dco_decode_u_16(dynamic raw);
@@ -622,6 +783,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     SseDeserializer deserializer,
   );
 
@@ -664,6 +831,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     SseDeserializer deserializer,
   );
 
@@ -716,6 +889,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLane
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeRoostBootstrap
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
     SseDeserializer deserializer,
   );
 
@@ -781,6 +960,47 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeAgentLaneStamp sse_decode_box_autoadd_bridge_agent_lane_stamp(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapFailure sse_decode_box_autoadd_bridge_bootstrap_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapHooks sse_decode_box_autoadd_bridge_bootstrap_hooks(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapIdentity sse_decode_box_autoadd_bridge_bootstrap_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapInstalled sse_decode_box_autoadd_bridge_bootstrap_installed(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapProbe sse_decode_box_autoadd_bridge_bootstrap_probe(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity
+  sse_decode_box_autoadd_bridge_bootstrap_session_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSource sse_decode_box_autoadd_bridge_bootstrap_source(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapStdin sse_decode_box_autoadd_bridge_bootstrap_stdin(
     SseDeserializer deserializer,
   );
 
@@ -863,7 +1083,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  RoostHostTarget sse_decode_box_autoadd_roost_host_target(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -878,6 +1106,86 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeAgentLaneStamp sse_decode_bridge_agent_lane_stamp(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapFailure sse_decode_bridge_bootstrap_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapHooks sse_decode_bridge_bootstrap_hooks(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapHooksError sse_decode_bridge_bootstrap_hooks_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapHooksSkip sse_decode_bridge_bootstrap_hooks_skip(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapIdentity sse_decode_bridge_bootstrap_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapInstalled sse_decode_bridge_bootstrap_installed(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapPlan sse_decode_bridge_bootstrap_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapProbe sse_decode_bridge_bootstrap_probe(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapProbeOutcome sse_decode_bridge_bootstrap_probe_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity sse_decode_bridge_bootstrap_session_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSessionState sse_decode_bridge_bootstrap_session_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSource sse_decode_bridge_bootstrap_source(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSourcePreview sse_decode_bridge_bootstrap_source_preview(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapStage sse_decode_bridge_bootstrap_stage(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapStdin sse_decode_bridge_bootstrap_stdin(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapStep sse_decode_bridge_bootstrap_step(
     SseDeserializer deserializer,
   );
 
@@ -1102,6 +1410,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<BridgeBootstrapHooksError> sse_decode_list_bridge_bootstrap_hooks_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeBootstrapHooksSkip> sse_decode_list_bridge_bootstrap_hooks_skip(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BridgeDiskEntry> sse_decode_list_bridge_disk_entry(
     SseDeserializer deserializer,
   );
@@ -1195,6 +1513,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeBootstrapHooks? sse_decode_opt_box_autoadd_bridge_bootstrap_hooks(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapIdentity? sse_decode_opt_box_autoadd_bridge_bootstrap_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSessionIdentity?
+  sse_decode_opt_box_autoadd_bridge_bootstrap_session_identity(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeBootstrapSource? sse_decode_opt_box_autoadd_bridge_bootstrap_source(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneApprovalOption?
   sse_decode_opt_box_autoadd_bridge_lane_approval_option(
     SseDeserializer deserializer,
@@ -1231,6 +1570,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
@@ -1252,6 +1594,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_record_string_bridge_rc_kind_features(
     SseDeserializer deserializer,
   );
+
+  @protected
+  RoostHostTarget sse_decode_roost_host_target(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_16(SseDeserializer deserializer);
@@ -1295,6 +1640,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
     BridgeLane self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+    BridgeRoostBootstrap self,
     SseSerializer serializer,
   );
 
@@ -1344,6 +1696,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
     BridgeLane self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+    BridgeRoostBootstrap self,
     SseSerializer serializer,
   );
 
@@ -1405,6 +1764,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane(
     BridgeLane self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+    BridgeRoostBootstrap self,
     SseSerializer serializer,
   );
 
@@ -1484,6 +1850,54 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_bridge_agent_lane_stamp(
     BridgeAgentLaneStamp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_failure(
+    BridgeBootstrapFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_hooks(
+    BridgeBootstrapHooks self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_identity(
+    BridgeBootstrapIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_installed(
+    BridgeBootstrapInstalled self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_probe(
+    BridgeBootstrapProbe self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_session_identity(
+    BridgeBootstrapSessionIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_source(
+    BridgeBootstrapSource self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_bootstrap_stdin(
+    BridgeBootstrapStdin self,
     SseSerializer serializer,
   );
 
@@ -1584,8 +1998,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_i_64(
     PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_roost_host_target(
+    RoostHostTarget self,
     SseSerializer serializer,
   );
 
@@ -1604,6 +2027,102 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_agent_lane_stamp(
     BridgeAgentLaneStamp self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_failure(
+    BridgeBootstrapFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_hooks(
+    BridgeBootstrapHooks self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_hooks_error(
+    BridgeBootstrapHooksError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_hooks_skip(
+    BridgeBootstrapHooksSkip self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_identity(
+    BridgeBootstrapIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_installed(
+    BridgeBootstrapInstalled self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_plan(
+    BridgeBootstrapPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_probe(
+    BridgeBootstrapProbe self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_probe_outcome(
+    BridgeBootstrapProbeOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_session_identity(
+    BridgeBootstrapSessionIdentity self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_session_state(
+    BridgeBootstrapSessionState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_source(
+    BridgeBootstrapSource self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_source_preview(
+    BridgeBootstrapSourcePreview self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_stage(
+    BridgeBootstrapStage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_stdin(
+    BridgeBootstrapStdin self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_bootstrap_step(
+    BridgeBootstrapStep self,
     SseSerializer serializer,
   );
 
@@ -1902,6 +2421,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_bridge_bootstrap_hooks_error(
+    List<BridgeBootstrapHooksError> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_bootstrap_hooks_skip(
+    List<BridgeBootstrapHooksSkip> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_bridge_disk_entry(
     List<BridgeDiskEntry> self,
     SseSerializer serializer,
@@ -2016,6 +2547,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_bridge_bootstrap_hooks(
+    BridgeBootstrapHooks? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_bootstrap_identity(
+    BridgeBootstrapIdentity? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_bootstrap_session_identity(
+    BridgeBootstrapSessionIdentity? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_bootstrap_source(
+    BridgeBootstrapSource? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bridge_lane_approval_option(
     BridgeLaneApprovalOption? self,
     SseSerializer serializer,
@@ -2058,6 +2613,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
     SseSerializer serializer,
@@ -2084,6 +2642,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_record_string_bridge_rc_kind_features(
     (String, BridgeRcKindFeatures) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_roost_host_target(
+    RoostHostTarget self,
     SseSerializer serializer,
   );
 
@@ -2220,6 +2784,40 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLane =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeLanePtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrapPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_shed_mobile_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrapPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrapPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_shed_mobile_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrap =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeRoostBootstrapPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   void

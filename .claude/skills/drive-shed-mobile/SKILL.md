@@ -34,6 +34,35 @@ user. Cloned from tapper's drive skill. Headless — portable to containers/CI.
 Launches the debug build, parses the `ws://` VM Service URI, and registers an
 instance named `shed-mobile`.
 
+It launches `flutter` **from PATH** and passes the process environment through to
+the app, which is the hook for both of the things a Linux drive usually wants:
+
+```bash
+PATH="$HOME/apps/flutter-3.44.2/bin:$PATH" \        # CI's pin; the default here is 3.47.2
+DISPLAY=:77 \                                        # your own Xvfb, not the owner's desktop
+ROOST_SESSION_INSTALL_BIN=/path/to/roost-session \   # the bootstrap ladder's first rung
+  .claude/skills/drive-shed-mobile/scripts/launch-and-connect.sh linux my-instance
+```
+
+Use the **pinned** SDK: a `flutter run` on the local 3.47.2 rewrites
+`pubspec.lock` and `analysis_options.yaml`, and those must not enter a diff.
+`Xvfb :77 -screen 0 1280x1000x24 &` first if you want a private display; the
+screenshots come from the engine, so headless loses nothing.
+
+**Reap the portals when you are done.** Launching under Xvfb activates
+`xdg-desktop-portal-*` over D-Bus, and those processes outlive the app at ~200 MB
+each — they accumulated to 110 processes and ~15 GB across one day of plan-020
+runs, until background commands started being killed for low memory. Kill only
+processes whose own `DISPLAY` equals the one YOU started (`:77` above) — count
+them by display first, because the owner's desktop session is on another display
+and must not be touched. Do not try to infer which are orphaned: on Wayland the
+owner's session has no socket in `/tmp/.X11-unix` either, so "no X socket" flags
+the live desktop. `docs/development/testing.md` carries the two-step loop, under
+the integration harness.
+
+Put `~/.pub-cache/bin` on PATH for the `marionette` calls that follow — the
+script prints absolute paths but every example below assumes the short name.
+
 ## Drive reliably — the rules that matter
 
 Marionette reports success when it *dispatches* a command, NOT when the app
@@ -46,6 +75,13 @@ or text entry worked.**
 - **A disabled control is a silent no-op**: submit buttons disable while busy
   (`_busy`/`_running`). Confirm `onPressed` is non-null before tapping.
 - **Poll MSTATE, not a fixed sleep**, to know when an async step finished.
+- **`press-back-button` on the root route KILLS the desktop app.** There is no
+  system back stack to fall through to, so the pop exits the process and the
+  next marionette call answers `Connection refused`. The trap is that several
+  screens pop themselves when they succeed — `CreateRcScreen` does, right after
+  `MRESULT rc-create ok` — so a reflexive back press lands on the root route and
+  ends the run. Check the last MSTATE line for which screen you are actually on
+  before pressing back; on desktop, prefer tapping `nav-*` to navigate.
 
 ## Live state via get-logs (MSTATE / MRESULT)
 

@@ -65,6 +65,21 @@ class FakeChannel implements DuplexChannel {
     _stream.add(Uint8List.fromList(utf8.encode(text)));
   }
 
+  /// Write to the channel's DIAGNOSTIC band — a remote exec's stderr.
+  ///
+  /// `roost-session: command not found` and `client-bridge: no session` arrive
+  /// this way and no other way, which is what makes the band worth observing
+  /// rather than merely logging (plan 020 amendment A2).
+  void emitStderr(String text) => emitStderrBytes(utf8.encode(text));
+
+  /// The same band, as RAW BYTES — so a cell can put a frame boundary exactly
+  /// where SSH would put one: in the middle of a marker, or in the middle of a
+  /// UTF-8 sequence. A `String` cannot express either.
+  void emitStderrBytes(List<int> bytes) {
+    if (_stderr.isClosed) return;
+    _stderr.add(Uint8List.fromList(bytes));
+  }
+
   /// The far side's channel ends — `done` only. The read half is left open on
   /// purpose: that is dartssh2's documented shape, and the pump must treat this
   /// as a hint, not as "the output is over".

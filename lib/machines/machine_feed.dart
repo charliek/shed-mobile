@@ -7,8 +7,13 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../rc/rc_ui.dart';
 import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/roost.dart';
+import '../src/rust/api/roost_bootstrap.dart';
+import '../ssh/exec_bytes.dart';
 import '../ssh/host_key_store.dart';
 import '../ssh/lane_forward.dart';
+import '../ssh/roost_bootstrap_runner.dart';
+import '../ssh/roost_entitlement.dart';
+import '../ssh/roost_reach.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
 import '../ssh/ssh_runner.dart';
@@ -195,11 +200,23 @@ class MachinePatch {
 /// while the tunnel underneath knows the connection was refused *because this
 /// device's key is not authorized*. Losing that was the transport swap's one
 /// real regression, and this is where it is not lost.
+///
+/// [observedKind] is the same argument for the same outage, one field over, and
+/// it is what makes `downKind` mean anything at all on a phone (plan 020
+/// amendment A2). The reach Rust holds here is a `LabelledPort` — a loopback
+/// port Dart owns — which takes `RoostReach::last_error`'s `None` default, so
+/// **every `Down` this watcher publishes carries `kind: Other`**, whatever the
+/// real cause. Dart owns the transport, so Dart is the only layer that ever
+/// sees the far end's `exit 127` or its `client-bridge: no session`, and its
+/// classification wins for exactly the reason [dialDetail] does. Where Dart
+/// observed nothing the update's own kind stands, so a transport that one day
+/// does classify needs no change here.
 @visibleForTesting
 MachineFeedState foldRoostUpdate(
   MachineFeedState state,
   BridgeRoostUpdate update, {
   String? dialDetail,
+  BridgeReachKind? observedKind,
 }) => switch (update) {
   BridgeRoostUpdate_Snapshot(:final sessions) => state.copyWith(
     sessions: sessions,
@@ -212,9 +229,96 @@ MachineFeedState foldRoostUpdate(
   BridgeRoostUpdate_Down(:final reason, :final kind) => state.copyWith(
     reachable: false,
     detail: dialDetail ?? reason,
-    downKind: kind,
+    downKind: observedKind ?? kind,
   ),
 };
+
+/// **What a machine card may OFFER about its roost reach** — an install, a
+/// start, or nothing at all.
+///
+/// Two members and no third, because only two of roost's four reach kinds name
+/// something a phone could do about them. The other two are reported and
+/// nothing more, and [roostOfferFor] answers null for both rather than
+/// inventing a `none` member that every call site would then have to remember
+/// to handle as "no button".
+enum RoostOffer {
+  /// Nothing on roost's candidate ladder — an install would fix it.
+  install,
+
+  /// A `roost-session` is installed and not serving — a start would fix it.
+  start,
+}
+
+/// **The kind → affordance decision, as a pure function of the state** (plan
+/// 020 §3.8, shed-mobile AC 2).
+///
+/// Extracted beside [foldRoostUpdate] and [foldOpenedRow] for the reason those
+/// two are: the decision is the whole of what a card offers, it breaks silently
+/// in production when it is wrong, and buried in a widget it can only ever be
+/// checked by driving a live machine into each of four states. Here all four
+/// are a table.
+///
+/// It reads [MachineFeedState.downKind] and nothing else, and that field is
+/// already the EFFECTIVE kind — [foldRoostUpdate] resolves Dart's own
+/// observation over the update's (amendment A2) before it lands there, which on
+/// a phone is the only thing that makes the datum mean anything. Branching on
+/// the last `Down`'s own kind instead would branch on `Other` forever and the
+/// install offer would never appear on a machine that genuinely has no
+/// `roost-session`.
+///
+/// **Never a substring of [MachineFeedState.detail]**, which §3.8 forbids: that
+/// is copy — translated, shortened and reworded — and a branch on it is a bug
+/// waiting for an edit.
+///
+/// There is deliberately no second condition on [MachineFeedState.reachable].
+/// A kind survives exactly as long as the machine is down: only a `Snapshot`
+/// clears it, and a `Snapshot` is also the only thing that sets `reachable`, so
+/// a non-null kind already means "not answering". A second gate would be a
+/// second answer to one question.
+///
+/// Not `@visibleForTesting`, unlike its neighbours: the render site that acts
+/// on it lives in another library (`lib/features/machines/`), so this is
+/// ordinary public API. The extraction is what AC 2 asks for, not the
+/// annotation.
+RoostOffer? roostOfferFor(MachineFeedState state) => switch (state.downKind) {
+  BridgeReachKind.notInstalled => RoostOffer.install,
+  BridgeReachKind.noSession => RoostOffer.start,
+  // Reported, and nothing more. `unreachable` is "shed never got as far as
+  // asking" and `other` is "nothing classified this at all" — neither is
+  // evidence that installing or starting anything would help, and offering a
+  // button that cannot work is worse than offering none.
+  BridgeReachKind.unreachable || BridgeReachKind.other => null,
+  // Unclassified, which is not the same as reachable: a feed error or a pause
+  // marks a machine down with no `Down` to classify. The honest answer is to
+  // offer nothing.
+  null => null,
+};
+
+/// **Where one of a machine's rows came from** — the sessions view's source
+/// stamp (plan 020 §5, C-M4; shed-mobile AC 3).
+enum MachineRowSource {
+  /// The machine's own `roost-session`, read over the phone's tunnel.
+  roost('roost'),
+
+  /// The shed RC activity hub — the pre-plan-013 source, which a machine's
+  /// rows no longer come from.
+  hub('hub');
+
+  const MachineRowSource(this.label);
+
+  /// The word the card shows and the drive transcript counts.
+  final String label;
+}
+
+/// Which source a row came from.
+///
+/// `tab_id` is the discriminator because it is the one field only roost fills:
+/// "roost's tab id, for a roost-sourced row; `None` for every shed row". AC 3
+/// asks the live leg to prove the app is reading roost rather than the hub, and
+/// a field that only one of the two ever sets is the only honest way to say so
+/// — a count of rows says nothing about where they came from.
+MachineRowSource rowSourceOf(BridgeRcSession row) =>
+    row.tabId != null ? MachineRowSource.roost : MachineRowSource.hub;
 
 /// Apply the row a `tab.open` returned, optimistically.
 ///
@@ -312,6 +416,18 @@ Future<bool> releaseIfStopped<T>({
   return true;
 }
 
+/// Spawning one machine's roost watcher — `createRoostWatcher`'s own signature.
+///
+/// Named as a type so a drift between it and the bridge call is a compile error
+/// in this file, exactly as [BootstrapExec] is. See [MachineFeed]'s
+/// `_spawnWatcher` for why the seam exists at all.
+typedef WatcherSpawn =
+    Future<BridgeRoostWatcher> Function({
+      required String machine,
+      required int localPort,
+      required bool bootstrapped,
+    });
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
@@ -352,7 +468,10 @@ class MachineFeed {
     required this.machine,
     required this.identities,
     required this.hostKeys,
-  }) : _state = MachineFeedState(
+    required this.entitlements,
+    WatcherSpawn? spawnWatcher,
+  }) : _spawnWatcher = spawnWatcher ?? createRoostWatcher,
+       _state = MachineFeedState(
          machine: machine,
          // Synchronous, and therefore present on the FIRST state the UI sees:
          // there is no host to ask, and making the gates wait on a round trip
@@ -363,6 +482,27 @@ class MachineFeed {
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
   final HostKeyStore hostKeys;
+
+  /// **What this app run bootstrapped** — shared with every other feed, because
+  /// the claim belongs to the app rather than to this object.
+  ///
+  /// A feed is `autoDispose` and the phone tears one down on every background,
+  /// so a per-feed set would forget the install the moment the user left the
+  /// screen — and the machine's hooks would then never be re-sent again for the
+  /// rest of the run. See [RoostBootstrapEntitlements].
+  final RoostBootstrapEntitlements entitlements;
+
+  /// How [start] spawns the watcher — `createRoostWatcher` in production.
+  ///
+  /// **The seam exists because a watcher handle answers nothing.** What [start]
+  /// tells the bridge about this machine's entitlement is the one thing this
+  /// class decides and the one thing nothing can read back: `BridgeRoostWatcher`
+  /// is opaque, and the effect of the bool is on a wire only a fake roost sees
+  /// (it is pinned there, in Rust). A pass-through recorder is therefore the
+  /// only way a harness can assert that a feed asks for the claim it holds —
+  /// including across the re-spawn [_entitle] performs, which is the case this
+  /// whole commit exists for.
+  final WatcherSpawn _spawnWatcher;
 
   final _controller = StreamController<MachineFeedState>.broadcast();
   MachineFeedState _state;
@@ -397,6 +537,22 @@ class MachineFeed {
   /// Why the last SSH dial failed, if it did. See [foldRoostUpdate].
   String? _dialDetail;
 
+  /// **What Dart's own transport has learned about this machine's roost
+  /// reach**, and the only source of a meaningful `downKind` on a phone (plan
+  /// 020 amendment A2).
+  ///
+  /// Two things record into it, and they are the only two that ever see the
+  /// answer: the tunnel's exec stderr (`roost-session: command not found`,
+  /// `client-bridge: no session`), and a dial that never got onto the box at
+  /// all. Two things read it: [foldRoostUpdate], so a card can offer an install
+  /// or a start; and a [RoostBootstrapRunner], so the probe's one
+  /// `session.identify` comes back as a *state of the far side* rather than as
+  /// "the probe could not be completed".
+  ///
+  /// Exposed so the bootstrap runner reads the same observation the card does.
+  /// Two of them would be two answers to one question.
+  final RoostReachObserver reach = RoostReachObserver();
+
   /// The current view. Always available — a machine that has never connected
   /// still has a row, because "mini3 is asleep" IS the information.
   MachineFeedState get state => _state;
@@ -404,6 +560,15 @@ class MachineFeed {
   Stream<MachineFeedState> get updates => _controller.stream;
 
   bool get isRunning => _watcher != null;
+
+  /// **Did THIS APP RUN bootstrap this machine?** — what [start] hands
+  /// `createRoostWatcher`, and the whole of what decides whether this machine's
+  /// watcher keeps its agent hooks wired (plan 020 §3.3).
+  ///
+  /// A getter over [entitlements] rather than a field of its own: the answer
+  /// changes during a feed's life (an install is what changes it) and every
+  /// reader must see the change, not a copy taken at construction.
+  bool get bootstrappedThisRun => entitlements.holds(machine.name);
 
   /// The local port the machine's `roost-session` is reachable on, or null when
   /// the tunnel is down.
@@ -430,6 +595,7 @@ class MachineFeed {
         // argv business entirely (see `roostRemoteCommand`).
         remoteCommand: roostRemoteCommand(),
         machine: machine.name,
+        onStderr: _observeStderr,
       );
       if (await releaseIfStopped(
         startedAt: generation,
@@ -442,9 +608,15 @@ class MachineFeed {
       _tunnel = tunnel;
 
       // Rust is handed the PORT and nothing else — no host, no key, no SSH.
-      final watcher = await createRoostWatcher(
+      final watcher = await _spawnWatcher(
         machine: machine.name,
         localPort: tunnel.port,
+        // **Asked afresh at every spawn**, which is the whole reason the answer
+        // lives outside this object: a phone spawns a watcher on every
+        // foreground, and an entitlement read once at app start would be read
+        // before the install that earns it. A bool, never a label — Rust
+        // substitutes its own (plan 020 §3.3, amendment A8).
+        bootstrapped: bootstrappedThisRun,
       );
       // The worst of the two: `_watcher` non-null with `_tunnel` already nulled
       // by the teardown makes `isRunning` true and `tunnelPort` null, and every
@@ -508,7 +680,16 @@ class MachineFeed {
       // Record WHY: the watcher only ever sees "the local port refused", and
       // "this device's key is not authorized" is the one thing the user can
       // actually act on. See [foldRoostUpdate].
-      if (generation == _generation) _dialDetail = _describe(e);
+      if (generation == _generation) {
+        final detail = _describe(e);
+        _dialDetail = detail;
+        // Every dial failure is `Unreachable` by roost's own definition of it —
+        // "shed never got as far as asking: the handshake failed, the key did
+        // not verify, the login was refused". It is deliberately NOT `Other`:
+        // `Other` is what a failure that never ran an exec at all reports, and
+        // this one is about the box.
+        reach.record(RoostReachNote(BridgeReachKind.unreachable, detail));
+      }
       rethrow;
     } finally {
       _dialDedupe.clear(future);
@@ -661,8 +842,126 @@ class MachineFeed {
     _dialDetail = null;
   }
 
-  void _apply(BridgeRoostUpdate update) =>
-      _emit(foldRoostUpdate(_state, update, dialDetail: _dialDetail));
+  void _apply(BridgeRoostUpdate update) {
+    // **A `Snapshot` is the only thing that clears the observation**, exactly
+    // as it is the only thing that clears `downKind` — and for the same reason.
+    // A feed error, a failed watcher start and a [stop] all mark the machine
+    // unreachable without being evidence about the far side; only a snapshot
+    // proves a `roost-session` is answering, and clearing on any of the others
+    // would drop a still-true "roost is not installed here" over a dropped
+    // connection.
+    if (update is BridgeRoostUpdate_Snapshot) reach.clear();
+    _emit(
+      foldRoostUpdate(
+        _state,
+        update,
+        dialDetail: _dialDetail,
+        observedKind: reach.last?.kind,
+      ),
+    );
+  }
+
+  /// The tunnel exec's stderr, as the pump's ACCUMULATED tail — the only place
+  /// the phone ever learns *why* this machine's roost reach is refusing.
+  ///
+  /// A tail rather than a chunk because SSH frame boundaries are arbitrary and
+  /// `client-bridge: no session` can arrive as two of them; see
+  /// [DuplexPump.onStderr]. See [noteForExecStderr] for what is recorded and
+  /// what deliberately is not.
+  void _observeStderr(String text) {
+    final note = noteForExecStderr(text);
+    if (note != null) reach.record(note);
+  }
+
+  /// **Run one bootstrap `Step::Exec` on this machine** — the production
+  /// [BootstrapExec] for a [RoostBootstrapRunner] (plan 020 §3.8).
+  ///
+  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
+  /// every lane forward use, exactly as [probe] and [acquireForward] do: a
+  /// bootstrap costs no second SSH link and inherits the dial's dedupe and
+  /// generation fencing.
+  ///
+  /// Every cap comes from the step; nothing here invents one. The command is
+  /// roost's own composition and is passed verbatim — see `exec_bytes.dart`.
+  ///
+  /// Held as a field of the seam's own type rather than declared as a plain
+  /// method: that is what makes a drift between this signature and
+  /// [BootstrapExec] a compile error HERE, in the file that owns the
+  /// connection, rather than a surprise at the one call site that wires them
+  /// together.
+  late final BootstrapExec bootstrapExec = _bootstrapExec;
+
+  /// **Drive one bootstrap of this machine to its answer** — a probe or an
+  /// install, over this feed's one `SSHClient` (plan 020 §3.8).
+  ///
+  /// The runner is assembled HERE rather than by the caller, and that is the
+  /// point. A completed install is the ONLY thing that entitles this app run to
+  /// keep this machine's agent hooks wired, and a caller free to assemble its
+  /// own runner is a caller free to drive an install that records nothing —
+  /// which is plan 019's defect exactly: a hook seam built, unit-tested, and
+  /// then constructed by no production caller. The recording is not the UI's to
+  /// remember.
+  ///
+  /// [handle] is the bridge handle for the drive (`roostBootstrapProbe` /
+  /// `roostBootstrapInstall`, wrapped in a [LiveBootstrapHandle]). A cancelled
+  /// drive is re-run by calling this again — see [RoostBootstrapRunner.run].
+  Future<BridgeBootstrapStep> runBootstrap(BootstrapHandle handle) async {
+    final step = await RoostBootstrapRunner(
+      handle: handle,
+      exec: bootstrapExec,
+      // The same observation the machine card branches on. Two of them would be
+      // two answers to one question — see [reach].
+      reach: reach,
+    ).run();
+    if (step is BridgeBootstrapStep_Installed) await _entitle();
+    return step;
+  }
+
+  /// Record that this app run bootstrapped this machine, and re-spawn the
+  /// watcher so the claim takes effect now rather than whenever the feed next
+  /// restarts.
+  ///
+  /// **The re-spawn is not a nicety.** A watcher decides at SPAWN whether it
+  /// wires hooks (`createRoostWatcher`'s `bootstrapped`), and this machine has
+  /// had one since the screen opened — the one that has been reporting it as
+  /// unreachable all the while roost was missing. Leaving it would mean the one
+  /// machine that just earned the entitlement is the one machine that never
+  /// exercises it, until the user happens to leave the screen and come back.
+  /// The desktop hits the same trap from the other side and solves it with a
+  /// shared flag; a phone, which rebuilds its watcher constantly anyway, can
+  /// simply rebuild it once more.
+  ///
+  /// [stop] + [start] is the documented restart pair. It costs one reconnect on
+  /// a machine shed has just put a NEW `roost-session` on, where the old
+  /// connection is stale by construction.
+  Future<void> _entitle() async {
+    entitlements.record(machine.name);
+    if (isRunning) {
+      await stop();
+      await start();
+    }
+  }
+
+  Future<ExecBytesOutcome> _bootstrapExec(
+    String command,
+    Stream<Uint8List> stdin, {
+    required Duration budget,
+    required int stdoutCap,
+    required bool captureStdout,
+    required int stderrCap,
+  }) async {
+    final client = await _connect();
+    return execBytesOn(
+      client,
+      command,
+      stdin,
+      budget: budget,
+      stdoutCap: stdoutCap,
+      captureStdout: captureStdout,
+      stderrCap: stderrCap,
+      label: machine.name,
+    );
+  }
 
   void _emit(MachineFeedState next) {
     _state = next;

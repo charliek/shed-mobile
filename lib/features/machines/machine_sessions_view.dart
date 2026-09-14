@@ -72,9 +72,18 @@ class _MachineGroup extends ConsumerWidget {
     final sessions = state?.sessions ?? const <BridgeRcSession>[];
     final reachable = state?.reachable ?? false;
 
+    // **The source stamp, counted** (plan 020 §5 C-M4; shed-mobile AC 3). A row
+    // count alone says nothing about where the rows came from, and the thing
+    // the live leg has to prove is that the app is reading the machine's own
+    // `roost-session` rather than a shed's RC hub. `rowSourceOf` reads the one
+    // field only roost fills, so `roost=N` in the transcript is a named field
+    // and not a look at the screen.
+    final roostRows = sessions
+        .where((s) => rowSourceOf(s) == MachineRowSource.roost)
+        .length;
     logDriveState(
       'machine-sessions machine=${machine.name} reachable=$reachable '
-      'count=${sessions.length}',
+      'count=${sessions.length} roost=$roostRows',
     );
 
     return Padding(
@@ -268,8 +277,17 @@ class _MachineSessionCard extends StatelessWidget {
                     // repeated: the list is grouped by it.
                     [
                       if (session.workdir != null) session.workdir!,
+                      // The SOURCE STAMP. A machine's rows come from its own
+                      // `roost-session` now (plan 013 S3m), and saying so on
+                      // the row is what makes "this app is reading roost, not
+                      // the hub" readable rather than inferred — the same fact
+                      // the group's drive line counts.
+                      rowSourceOf(session).label,
                       if (!state.reachable) 'last known',
                     ].join(' · '),
+                    key: ValueKey(
+                      'machine-meta-${machine.name}-${session.slug}',
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: monoStyle(fontSize: 11.5, color: colors.fg3),

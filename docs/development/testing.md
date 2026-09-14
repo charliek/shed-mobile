@@ -13,6 +13,35 @@ make check   # pub get + dart format --set-exit-if-changed + flutter analyze + f
 This mirrors CI. New pure logic gets unit tests **before** the UI; ported
 TypeScript logic translates its test tables case-for-case.
 
+### Format with the PINNED SDK, and read a local format failure carefully
+
+`make check` runs `dart format` from whatever Flutter is on `PATH`, and that is
+usually **newer** than the CI pin (`.github/workflows/ci.yml`: Flutter 3.44.2 /
+Dart 3.12). The two disagree about whether a trailing collection argument
+collapses onto the `expect(` line, and the gap bites in **both** directions:
+
+- A file you edit and format with the newer local SDK is well-formatted locally
+  and **rejected by CI**. That is what `0061064` had to go back and fix.
+- The newer local SDK also wants to rewrite files that are at **pristine,
+  CI-correct content** — today `test/keys/key_manager_test.dart` and
+  `test/machines/machine_feed_test.dart`. Reformatting those to satisfy a local
+  run **turns CI red**.
+
+So: **format only the files your branch actually edited, and with the pinned
+SDK.** On a box that has it checked out (this one: `~/apps/flutter-3.44.2`):
+
+```bash
+~/apps/flutter-3.44.2/bin/dart format lib/ssh/exec_bytes.dart   # the files you touched
+~/apps/flutter-3.44.2/bin/dart format --output=none --set-exit-if-changed $(git ls-files '*.dart')
+```
+
+The second line is the **authoritative** pre-push check — it is what CI runs,
+over the files CI actually sees. A repo-wide `dart format .` under the local SDK
+proves nothing on its own: besides the pristine files above it also walks
+`build/`, which is gitignored and does not exist on CI (the format step runs
+straight after `flutter pub get`, before anything is built), so it reports a
+vendored cargokit artifact that CI will never look at.
+
 ## Unit tests (tier a/b)
 
 `test/` mirrors `lib/`. Heaviest coverage sits on the pure ports — the SSE
@@ -34,7 +63,7 @@ make test-integration-linux              # sibling shed checkout (../shed)
 SHED_CHECKOUT=/path/to/shed make test-integration-linux
 ```
 
-Three files, **one `flutter test` invocation each** — and that is a constraint,
+Six files, **one `flutter test` invocation each** — and that is a constraint,
 not a style choice. A single invocation naming several files relaunches the app
 per file, and on the Linux desktop device the *second* launch always fails with
 `Unable to start the app on the device`. It is positional rather than
@@ -47,6 +76,15 @@ both run every file even after one fails.
 | `shed_probe_test.dart` | a Rust→Dart call into shed-core round-trips at runtime |
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
 | `lane_test.dart` | the agent lanes, end to end against shed's own gx/opencode fakes |
+| `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
+| `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
+| `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
+
+`roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
+port, no python. It is here rather than in `test/` precisely because
+`$SHED_CHECKOUT` is guaranteed here — a unit test that skipped when the file was
+missing would be a golden that asserts nothing on the machine that needed it
+most.
 
 `lane_test.dart` is the one with an external dependency. It drives a real
 `LaneController` and a pumped `LaneScreen` through the **real** FRB bridge
@@ -95,6 +133,54 @@ Rules that matter when adding a cell:
 `make test-integration-linux` also warns when the local Flutter differs from the
 CI pin, and restores `pubspec.lock` / `analysis_options.yaml` after the run —
 **but only if they were clean before it**, so it never reverts an edit you made.
+
+**Redirect its output to a file; never pipe it.** Launching the app under Xvfb
+activates the desktop portal over D-Bus, and on at least COSMIC the resulting
+`xdg-desktop-portal-*` processes OUTLIVE the run holding the inherited stdout.
+So `make test-integration-linux | tail -60` never ends: the tests finish, `make`
+exits, and the reader sits on a pipe whose write end a portal still has. Use
+`make test-integration-linux > run.log 2>&1` and read the file.
+
+**And reap them afterwards — they are not free.** The same portals that hold
+that pipe also stay resident, and they accumulate **one set per run** at roughly
+200 MB each. Measured on this box after a day of plan-020 work: **110 orphaned
+portal processes holding ~15 GB of RSS**, enough that unrelated background
+commands started being killed for low memory. Nothing warns you; the suite
+passes and the machine just gets smaller.
+
+The safe discriminator is the **display**, and you must LOOK before you kill —
+do not infer it. Two traps make the obvious rules wrong:
+
+* `make test-integration-linux` runs `xvfb-run -a`, which **auto-selects** a free
+  display. It is not always `:99`, so a hardcoded number silently cleans nothing.
+  Driving the app by hand (the `drive-shed-mobile` skill) uses whatever you set,
+  e.g. `:77`.
+* "No X socket in `/tmp/.X11-unix` means orphaned" is **false on Wayland**. On
+  COSMIC the owner's own session is `DISPLAY=:1` with no socket there, so that
+  rule flags the live desktop for killing. (Tried; it would have taken the
+  owner's session.)
+
+So: count portals by display first, decide which display was yours, then kill
+that one by exact value.
+
+```bash
+# 1. what is out there, grouped by display
+for p in $(pgrep -f xdg-desktop-portal); do
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | sed -n 's/^DISPLAY=//p'
+done | sort | uniq -c
+
+# 2. kill ONLY the display you started (:77 here) — never the owner's session
+D=:77
+for p in $(pgrep -f xdg-desktop-portal); do
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx "DISPLAY=$D" && kill -TERM $p
+done
+```
+
+Step 1 makes the answer obvious: the owner's desktop shows a handful on one
+display, and a day of test runs shows dozens on another. Never `pkill
+xdg-desktop-portal`, never sweep by age, and never skip step 1. (A related
+near-miss: a teardown rehearsal with a blanket `pgrep shed_mobile` sweep killed
+a leftover `flutter run` belonging to someone else's session.)
 
 ## Real-shed probes (tier c)
 
