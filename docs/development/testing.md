@@ -34,7 +34,7 @@ make test-integration-linux              # sibling shed checkout (../shed)
 SHED_CHECKOUT=/path/to/shed make test-integration-linux
 ```
 
-Three files, **one `flutter test` invocation each** — and that is a constraint,
+Four files, **one `flutter test` invocation each** — and that is a constraint,
 not a style choice. A single invocation naming several files relaunches the app
 per file, and on the Linux desktop device the *second* launch always fails with
 `Unable to start the app on the device`. It is positional rather than
@@ -47,6 +47,13 @@ both run every file even after one fails.
 | `shed_probe_test.dart` | a Rust→Dart call into shed-core round-trips at runtime |
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
 | `lane_test.dart` | the agent lanes, end to end against shed's own gx/opencode fakes |
+| `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
+
+`roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
+port, no python. It is here rather than in `test/` precisely because
+`$SHED_CHECKOUT` is guaranteed here — a unit test that skipped when the file was
+missing would be a golden that asserts nothing on the machine that needed it
+most.
 
 `lane_test.dart` is the one with an external dependency. It drives a real
 `LaneController` and a pumped `LaneScreen` through the **real** FRB bridge
@@ -95,6 +102,13 @@ Rules that matter when adding a cell:
 `make test-integration-linux` also warns when the local Flutter differs from the
 CI pin, and restores `pubspec.lock` / `analysis_options.yaml` after the run —
 **but only if they were clean before it**, so it never reverts an edit you made.
+
+**Redirect its output to a file; never pipe it.** Launching the app under Xvfb
+activates the desktop portal over D-Bus, and on at least COSMIC the resulting
+`xdg-desktop-portal-*` processes OUTLIVE the run holding the inherited stdout.
+So `make test-integration-linux | tail -60` never ends: the tests finish, `make`
+exits, and the reader sits on a pipe whose write end a portal still has. Use
+`make test-integration-linux > run.log 2>&1` and read the file.
 
 ## Real-shed probes (tier c)
 

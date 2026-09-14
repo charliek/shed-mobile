@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/src/rust/api/roost.dart';
 import 'package:shed_mobile/ssh/duplex_pump.dart';
+import 'package:shed_mobile/ssh/rolling_tail.dart';
+import 'package:shed_mobile/ssh/roost_reach.dart';
 
 import 'support/fake_channel.dart';
 import 'support/loopback_client.dart';
@@ -317,12 +321,171 @@ void main() {
         expect(await second.roundTrip('still'), 'STILL');
       });
     });
+
+    group('the diagnostic band', () {
+      test('reaches an observer, which is the only way the phone learns WHY a '
+          'reach is refusing', () async {
+        // Plan 020 amendment A2. Rust is handed a loopback port and can only
+        // ever watch it stop answering; the sentence that says whether an
+        // install or a start would fix it is on THIS band and nowhere else. A
+        // pump that only logged it (which is all it used to do) leaves every
+        // `Down` the watcher publishes carrying `kind: Other`.
+        final seen = <String>[];
+        final fixture = _Fixture(echo: upperEcho, onStderr: seen.add);
+        final listener = await fixture.bind();
+        addTearDown(listener.close);
+
+        final conn = await LoopbackClient.connect(listener.port);
+        addTearDown(conn.destroy);
+        expect(await conn.roundTrip('hello'), 'HELLO');
+
+        final channel = await fixture.channelAt(0);
+        channel.emitStderr('roost-session: command not found\n');
+        await waitFor(() => seen.isNotEmpty, 'the stderr chunk');
+
+        expect(seen, <String>['roost-session: command not found\n']);
+      });
+
+      test('is classified from the ACCUMULATED tail, so a marker split across '
+          'two frames still classifies', () async {
+        // The defect amendment A2 exists to prevent, and it is invisible in a
+        // one-frame test. SSH frame boundaries are arbitrary: `client-bridge`
+        // writes one line and the far side's transport is free to deliver it as
+        // two data messages. An observer handed each chunk on its own sees
+        // 'client-bridge: no ' (matches nothing) and then 'session\n' (matches
+        // nothing) — so a stopped session classifies as NOTHING, every `Down`
+        // keeps `kind: Other`, and the card never offers a start.
+        final seen = <String>[];
+        final fixture = _Fixture(echo: upperEcho, onStderr: seen.add);
+        final listener = await fixture.bind();
+        addTearDown(listener.close);
+
+        final conn = await LoopbackClient.connect(listener.port);
+        addTearDown(conn.destroy);
+        expect(await conn.roundTrip('hello'), 'HELLO');
+        final channel = await fixture.channelAt(0);
+
+        channel.emitStderr('client-bridge: no ');
+        await waitFor(() => seen.length == 1, 'the first frame');
+        expect(
+          noteForExecStderr(seen.last),
+          isNull,
+          reason: 'half a marker is not a classification',
+        );
+
+        channel.emitStderr('session\n');
+        await waitFor(() => seen.length == 2, 'the second frame');
+
+        expect(seen.last, 'client-bridge: no session\n');
+        expect(
+          noteForExecStderr(seen.last)?.kind,
+          BridgeReachKind.noSession,
+          reason: 'the two frames are one line, and it names a start',
+        );
+      });
+
+      test('joins THREE frames, including a cut inside a UTF-8 '
+          'sequence', () async {
+        // Two boundaries, each in a place a per-chunk observer cannot survive:
+        // one inside a multi-byte character (decoding each chunk on its own
+        // burns it into a permanent replacement character) and one inside the
+        // marker itself. Held as bytes and decoded once, both heal.
+        const line = 'roost-session: ✗ command not found\n';
+        final all = utf8.encode(line);
+        // 'roost-session: ' is 15 bytes and '✗' is three, so 16 cuts the
+        // character; 25 lands inside 'command'.
+        expect(all.length, greaterThan(25));
+
+        final seen = <String>[];
+        final fixture = _Fixture(echo: upperEcho, onStderr: seen.add);
+        final listener = await fixture.bind();
+        addTearDown(listener.close);
+
+        final conn = await LoopbackClient.connect(listener.port);
+        addTearDown(conn.destroy);
+        expect(await conn.roundTrip('hello'), 'HELLO');
+        final channel = await fixture.channelAt(0);
+
+        channel.emitStderrBytes(all.sublist(0, 16));
+        await waitFor(() => seen.length == 1, 'the first frame');
+        expect(noteForExecStderr(seen.last), isNull);
+
+        channel.emitStderrBytes(all.sublist(16, 25));
+        await waitFor(() => seen.length == 2, 'the second frame');
+        expect(
+          noteForExecStderr(seen.last),
+          isNull,
+          reason: "'comman' is not 'command not found'",
+        );
+
+        channel.emitStderrBytes(all.sublist(25));
+        await waitFor(() => seen.length == 3, 'the third frame');
+
+        // Byte-for-byte the original: no replacement character survived the
+        // cut through '✗', which is what decoding once at the end buys.
+        expect(seen.last, line);
+        expect(
+          noteForExecStderr(seen.last)?.kind,
+          BridgeReachKind.notInstalled,
+        );
+      });
+
+      test('is BOUNDED: a chatty remote cannot grow the tail without '
+          'limit', () async {
+        // An accumulator with no ceiling is its own bug. The window is the
+        // LAST bytes, for the same reason the exec seam's `stderr_cap` is: a
+        // login banner comes first and the useful line last.
+        final seen = <String>[];
+        final fixture = _Fixture(echo: upperEcho, onStderr: seen.add);
+        final listener = await fixture.bind();
+        addTearDown(listener.close);
+
+        final conn = await LoopbackClient.connect(listener.port);
+        addTearDown(conn.destroy);
+        expect(await conn.roundTrip('hello'), 'HELLO');
+        final channel = await fixture.channelAt(0);
+
+        channel.emitStderr('BANNER${'.' * (kStderrTailBytes * 2)}');
+        await waitFor(() => seen.isNotEmpty, 'the banner');
+        channel.emitStderr('client-bridge: no session\n');
+        await waitFor(() => seen.length == 2, 'the line that matters');
+
+        expect(seen.last.length, lessThanOrEqualTo(kStderrTailBytes));
+        expect(seen.last, isNot(contains('BANNER')));
+        expect(
+          noteForExecStderr(seen.last)?.kind,
+          BridgeReachKind.noSession,
+          reason: 'the tail keeps the end, which is where the answer is',
+        );
+      });
+
+      test('is optional: a listener with no observer still pumps', () async {
+        // Every other caller of `PortListener` (a lane forward) passes none,
+        // and a null observer must be a no-op rather than a null dereference
+        // on the first byte of a banner.
+        final fixture = _Fixture(echo: upperEcho);
+        final listener = await fixture.bind();
+        addTearDown(listener.close);
+
+        final conn = await LoopbackClient.connect(listener.port);
+        addTearDown(conn.destroy);
+        final channel = await fixture.channelAt(0);
+        channel.emitStderr('a banner\n');
+
+        expect(await conn.roundTrip('hello'), 'HELLO');
+      });
+    });
   });
 }
 
 /// Binds listeners whose channel half is a [FakeChannel].
 class _Fixture {
-  _Fixture({this.echo, this.stderr = StderrBand.open, this.failDials = 0});
+  _Fixture({
+    this.echo,
+    this.stderr = StderrBand.open,
+    this.failDials = 0,
+    this.onStderr,
+  });
 
   final Uint8List Function(Uint8List)? echo;
   final StderrBand stderr;
@@ -330,10 +493,14 @@ class _Fixture {
   /// How many of the first dials throw, the way an asleep machine's would.
   final int failDials;
 
+  /// The observer of the channel's diagnostic band, when a cell is about it.
+  final void Function(String)? onStderr;
+
   int dials = 0;
   final List<FakeChannel> channels = <FakeChannel>[];
 
-  Future<PortListener> bind() => PortListener.bind(dial: _dial, log: quietLog);
+  Future<PortListener> bind() =>
+      PortListener.bind(dial: _dial, log: quietLog, onStderr: onStderr);
 
   Future<DuplexChannel> _dial() async {
     dials++;

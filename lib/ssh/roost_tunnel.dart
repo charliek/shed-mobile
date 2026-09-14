@@ -109,10 +109,19 @@ class RoostTunnel {
   /// [close] frees the port and every exec, but never closes a connection this
   /// class did not create (backgrounding drops the SSH client at the call site,
   /// which may be sharing it with a PTY).
+  /// [onStderr] is handed the exec's diagnostic band as an accumulated,
+  /// byte-bounded tail. It is what tells the phone *why* a machine's roost
+  /// reach is refusing — `roost-session: command not found`,
+  /// `client-bridge: no session` — which nothing above the port can see,
+  /// because Rust is handed a loopback port and can only ever watch it stop
+  /// answering (plan 020 amendment A2). A tail rather than a chunk because a
+  /// marker split across two SSH frames would otherwise classify as nothing;
+  /// see [DuplexPump.onStderr].
   static Future<RoostTunnel> open({
     required Future<SSHClient> Function() connect,
     required String remoteCommand,
     required String machine,
+    void Function(String)? onStderr,
   }) {
     return openWithExec(
       exec: (command) async {
@@ -121,6 +130,7 @@ class RoostTunnel {
       },
       remoteCommand: remoteCommand,
       machine: machine,
+      onStderr: onStderr,
     );
   }
 
@@ -130,6 +140,7 @@ class RoostTunnel {
     required RoostExec exec,
     required String remoteCommand,
     required String machine,
+    void Function(String)? onStderr,
   }) async {
     final listener = await PortListener.bind(
       dial: () async => _ExecChannel(await exec(remoteCommand)),
@@ -138,6 +149,7 @@ class RoostTunnel {
           debugPrint('RoostTunnel[$machine] $message');
         }
       },
+      onStderr: onStderr,
     );
     return RoostTunnel._(listener, remoteCommand, machine);
   }

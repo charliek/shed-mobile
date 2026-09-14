@@ -182,6 +182,38 @@ void main() {
       }
     });
 
+    test('what DART observed outranks the kind the watcher published', () {
+      // Amendment A2, and without it nothing downstream works. The reach Rust
+      // holds here is a `LabelledPort` — a loopback port Dart owns — which
+      // takes `RoostReach::last_error`'s `None` default, so every `Down` this
+      // watcher publishes carries `kind: Other` whatever the real cause. Dart
+      // owns the transport and is the only layer that ever sees the far end's
+      // `exit 127`; an affordance branching on the published kind alone would
+      // branch on `Other` forever and the install offer would never appear.
+      final after = foldRoostUpdate(
+        _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
+        observedKind: BridgeReachKind.notInstalled,
+      );
+
+      expect(after.downKind, BridgeReachKind.notInstalled);
+
+      // The control: with nothing observed, the update's own kind stands — so
+      // the assertion above is about precedence, and a transport that one day
+      // does classify needs no change here.
+      final unobserved = foldRoostUpdate(
+        _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.noSession,
+        ),
+      );
+      expect(unobserved.downKind, BridgeReachKind.noSession);
+    });
+
     test('the generated Dart enum names the same four kinds, in order', () {
       // FRB encodes a fieldless enum as its INDEX, so the two ends agree only
       // while the variant lists agree. Nothing in this suite crosses the real

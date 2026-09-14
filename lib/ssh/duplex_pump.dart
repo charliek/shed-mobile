@@ -7,6 +7,8 @@ import 'dart:io';
 // duplicate the analyzer rejects.
 import 'package:flutter/foundation.dart';
 
+import 'rolling_tail.dart';
+
 /// One duplex byte channel to the far side, reduced to the six things a byte
 /// pump needs.
 ///
@@ -83,11 +85,12 @@ typedef ChannelDial = Future<DuplexChannel> Function();
 /// owns the `SSHClient` the dial rides: [close] frees the port and every
 /// channel, but never a connection this class did not create.
 class PortListener {
-  PortListener._(this._server, this._dial, this._log);
+  PortListener._(this._server, this._dial, this._log, this._onStderr);
 
   final ServerSocket _server;
   final ChannelDial _dial;
   final void Function(String) _log;
+  final void Function(String)? _onStderr;
 
   bool _closed = false;
   final Set<DuplexPump> _pumps = <DuplexPump>{};
@@ -99,16 +102,21 @@ class PortListener {
   bool get isClosed => _closed;
 
   /// Bind a loopback port and start accepting.
+  ///
+  /// [onStderr] is handed the channel's diagnostic band as an accumulated,
+  /// byte-bounded tail — not a chunk. See [DuplexPump]'s own parameter for what
+  /// it is for, why it is not the log, and why the tail is the unit.
   static Future<PortListener> bind({
     required ChannelDial dial,
     required void Function(String) log,
+    void Function(String)? onStderr,
   }) async {
     final server = await ServerSocket.bind(
       InternetAddress.loopbackIPv4,
       0,
       shared: false,
     );
-    final listener = PortListener._(server, dial, log);
+    final listener = PortListener._(server, dial, log, onStderr);
     listener._accept();
     return listener;
   }
@@ -132,7 +140,7 @@ class PortListener {
           socket.destroy();
           return;
         }
-        final pump = DuplexPump(socket, channel, _log);
+        final pump = DuplexPump(socket, channel, _log, onStderr: _onStderr);
         if (_closed) {
           // close() raced the dial; the pump was never registered, so stop it
           // here or the channel leaks.
@@ -217,11 +225,40 @@ const Duration _kSocketCloseTimeout = Duration(seconds: 5);
 /// the socket gracefully; an explicit shutdown waits a bounded moment and then
 /// [DuplexChannel.destroy]s; any failure ends both directions.
 class DuplexPump {
-  DuplexPump(this._socket, this._channel, this._log);
+  DuplexPump(this._socket, this._channel, this._log, {this.onStderr});
 
   final Socket _socket;
   final DuplexChannel _channel;
   final void Function(String) _log;
+
+  /// **The accumulated tail** of the channel's diagnostic band, decoded — for
+  /// an observer that has to CLASSIFY it rather than merely record it.
+  ///
+  /// Separate from [_log] because the two want opposite things: the log is a
+  /// debug aid that is compiled out of a release build, while this is the only
+  /// place the phone ever learns *why* a machine's roost reach is refusing.
+  /// `roost-session: command not found` and `client-bridge: no session` arrive
+  /// here and nowhere else — Rust is handed a loopback port and can only ever
+  /// see it stop answering (plan 020 amendment A2). Null for a transport with
+  /// no band at all, and for every caller that does not care.
+  ///
+  /// **A tail, never a chunk, and that is the whole of amendment A2's
+  /// value.** SSH frame boundaries are arbitrary: `client-bridge: no ` and
+  /// `session\n` can and do arrive as two data messages, and a classifier
+  /// handed each one separately matches neither — a stopped session then
+  /// classifies as nothing at all and the card offers nothing. So the bytes are
+  /// accumulated first and the observer is handed the whole tail each time,
+  /// which also re-joins a cut that landed inside a UTF-8 sequence.
+  ///
+  /// Bounded at [kStderrTailBytes] for the reason the exec seam's `stderr_cap`
+  /// is bounded: an unbounded accumulator on a chatty remote is its own bug,
+  /// and the useful line of stderr is the LAST one — a login banner comes
+  /// first.
+  final void Function(String)? onStderr;
+
+  /// The bytes behind [onStderr]. Allocated per pump, so two machines' bands
+  /// never mix.
+  final RollingTail _stderrTail = RollingTail(kStderrTailBytes);
 
   final Completer<void> _finished = Completer<void>();
 
@@ -294,7 +331,16 @@ class DuplexPump {
     final stderr = _channel.stderr;
     if (stderr != null) {
       _err = stderr.listen(
-        (chunk) => _log('stderr: ${utf8.decode(chunk, allowMalformed: true)}'),
+        (chunk) {
+          // The log is per chunk (it is a running trace of what arrived); the
+          // observer is handed the accumulated tail, because a classifier
+          // works on the whole thing or on nothing. See [onStderr].
+          _log('stderr: ${utf8.decode(chunk, allowMalformed: true)}');
+          final observer = onStderr;
+          if (observer == null) return;
+          _stderrTail.add(chunk);
+          observer(_stderrTail.decode());
+        },
         // A fallback, like `done`: stderr closing means the channel is going
         // away, but the read half may still have buffered frames to hand over.
         onDone: () => _armStreamGrace('stderr closed'),
