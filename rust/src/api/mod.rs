@@ -11,6 +11,7 @@ pub mod mint;
 pub mod preview;
 pub mod rc_runner;
 pub mod roost;
+pub mod roost_bootstrap;
 pub mod shed;
 pub mod simple;
 #[cfg(test)]

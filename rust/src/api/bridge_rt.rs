@@ -56,6 +56,13 @@ pub(crate) static ACTIVE_LANES: AtomicU64 = AtomicU64::new(0);
 /// self-tore-down after a cancelled Dart stream must show up as one gone and one
 /// lane gone, not as an ambiguous single decrement.
 pub(crate) static ACTIVE_LANE_FORWARDERS: AtomicU64 = AtomicU64::new(0);
+/// Open roost bootstraps ([`super::roost_bootstrap::BridgeRoostBootstrap`],
+/// plan 020 §3.8). Each one owns a sans-IO machine and, for an install, an OPEN
+/// FILE DESCRIPTOR on the verified `roost-session` it is about to stream — so a
+/// non-zero reading after every sheet has been dismissed is a descriptor that
+/// outlived the consent it was opened under, which is the one thing
+/// [`super::roost_bootstrap::roost_bootstrap_close`] exists to make impossible.
+pub(crate) static ACTIVE_ROOST_BOOTSTRAPS: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of the live-resource counters (plan AC#2). A Dart integration test
 /// asserts every field is 0 after disposing each slice's resources.
@@ -68,6 +75,7 @@ pub struct BridgeLiveCounters {
     pub pending_preview_credentials: u64,
     pub active_lanes: u64,
     pub active_lane_forwarders: u64,
+    pub active_roost_bootstraps: u64,
 }
 
 /// Read the current live-resource counters.
@@ -81,6 +89,7 @@ pub fn live_counters() -> BridgeLiveCounters {
         pending_preview_credentials: PENDING_PREVIEW_CREDENTIALS.load(Ordering::SeqCst),
         active_lanes: ACTIVE_LANES.load(Ordering::SeqCst),
         active_lane_forwarders: ACTIVE_LANE_FORWARDERS.load(Ordering::SeqCst),
+        active_roost_bootstraps: ACTIVE_ROOST_BOOTSTRAPS.load(Ordering::SeqCst),
     }
 }
 
