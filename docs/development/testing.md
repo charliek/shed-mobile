@@ -63,7 +63,7 @@ make test-integration-linux              # sibling shed checkout (../shed)
 SHED_CHECKOUT=/path/to/shed make test-integration-linux
 ```
 
-Four files, **one `flutter test` invocation each** — and that is a constraint,
+Six files, **one `flutter test` invocation each** — and that is a constraint,
 not a style choice. A single invocation naming several files relaunches the app
 per file, and on the Linux desktop device the *second* launch always fails with
 `Unable to start the app on the device`. It is positional rather than
@@ -77,6 +77,8 @@ both run every file even after one fails.
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
 | `lane_test.dart` | the agent lanes, end to end against shed's own gx/opencode fakes |
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
+| `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
+| `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
