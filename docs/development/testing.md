@@ -141,6 +141,35 @@ So `make test-integration-linux | tail -60` never ends: the tests finish, `make`
 exits, and the reader sits on a pipe whose write end a portal still has. Use
 `make test-integration-linux > run.log 2>&1` and read the file.
 
+**And reap them afterwards — they are not free.** The same portals that hold
+that pipe also stay resident, and they accumulate **one set per run** at roughly
+200 MB each. Measured on this box after a day of plan-020 work: **110 orphaned
+portal processes holding ~15 GB of RSS**, enough that unrelated background
+commands started being killed for low memory. Nothing warns you; the suite
+passes and the machine just gets smaller.
+
+The safe discriminator is the display, not the start time or the process name.
+A leaked portal has `DISPLAY=:99` (the harness's Xvfb) and a dead parent; the
+owner's real desktop session has `DISPLAY=:1` and must never be touched:
+
+```bash
+# list what a run left behind
+for p in $(pgrep -f xdg-desktop-portal); do
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx 'DISPLAY=:99' && echo $p
+done
+
+# ...and reap exactly those
+for p in $(pgrep -f xdg-desktop-portal); do
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx 'DISPLAY=:99' && kill -TERM $p
+done
+```
+
+Never match on `xdg-desktop-portal` alone and never sweep by age: the owner is
+very likely logged into a desktop of their own, and a blanket kill takes their
+session's portals with it. Check `DISPLAY` per process, every time. (A related
+near-miss: a teardown rehearsal with a blanket `pgrep shed_mobile` sweep killed
+a leftover `flutter run` belonging to someone else's session.)
+
 ## Real-shed probes (tier c)
 
 Command-line end-to-end tools under `tool/` (not run in CI). They default to

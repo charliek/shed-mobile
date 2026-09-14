@@ -49,6 +49,14 @@ Use the **pinned** SDK: a `flutter run` on the local 3.47.2 rewrites
 `Xvfb :77 -screen 0 1280x1000x24 &` first if you want a private display; the
 screenshots come from the engine, so headless loses nothing.
 
+**Reap the portals when you are done.** Launching under Xvfb activates
+`xdg-desktop-portal-*` over D-Bus, and those processes outlive the app at ~200 MB
+each — they accumulated to 110 processes and ~15 GB across one day of plan-020
+runs, until background commands started being killed for low memory. Kill only
+processes whose own `DISPLAY` matches the Xvfb you started; the owner's desktop
+session is on a different display and must not be touched. `docs/development/testing.md`
+carries the exact loop, under the integration harness.
+
 Put `~/.pub-cache/bin` on PATH for the `marionette` calls that follow — the
 script prints absolute paths but every example below assumes the short name.
 
