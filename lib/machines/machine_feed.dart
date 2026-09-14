@@ -233,6 +233,93 @@ MachineFeedState foldRoostUpdate(
   ),
 };
 
+/// **What a machine card may OFFER about its roost reach** — an install, a
+/// start, or nothing at all.
+///
+/// Two members and no third, because only two of roost's four reach kinds name
+/// something a phone could do about them. The other two are reported and
+/// nothing more, and [roostOfferFor] answers null for both rather than
+/// inventing a `none` member that every call site would then have to remember
+/// to handle as "no button".
+enum RoostOffer {
+  /// Nothing on roost's candidate ladder — an install would fix it.
+  install,
+
+  /// A `roost-session` is installed and not serving — a start would fix it.
+  start,
+}
+
+/// **The kind → affordance decision, as a pure function of the state** (plan
+/// 020 §3.8, shed-mobile AC 2).
+///
+/// Extracted beside [foldRoostUpdate] and [foldOpenedRow] for the reason those
+/// two are: the decision is the whole of what a card offers, it breaks silently
+/// in production when it is wrong, and buried in a widget it can only ever be
+/// checked by driving a live machine into each of four states. Here all four
+/// are a table.
+///
+/// It reads [MachineFeedState.downKind] and nothing else, and that field is
+/// already the EFFECTIVE kind — [foldRoostUpdate] resolves Dart's own
+/// observation over the update's (amendment A2) before it lands there, which on
+/// a phone is the only thing that makes the datum mean anything. Branching on
+/// the last `Down`'s own kind instead would branch on `Other` forever and the
+/// install offer would never appear on a machine that genuinely has no
+/// `roost-session`.
+///
+/// **Never a substring of [MachineFeedState.detail]**, which §3.8 forbids: that
+/// is copy — translated, shortened and reworded — and a branch on it is a bug
+/// waiting for an edit.
+///
+/// There is deliberately no second condition on [MachineFeedState.reachable].
+/// A kind survives exactly as long as the machine is down: only a `Snapshot`
+/// clears it, and a `Snapshot` is also the only thing that sets `reachable`, so
+/// a non-null kind already means "not answering". A second gate would be a
+/// second answer to one question.
+///
+/// Not `@visibleForTesting`, unlike its neighbours: the render site that acts
+/// on it lives in another library (`lib/features/machines/`), so this is
+/// ordinary public API. The extraction is what AC 2 asks for, not the
+/// annotation.
+RoostOffer? roostOfferFor(MachineFeedState state) => switch (state.downKind) {
+  BridgeReachKind.notInstalled => RoostOffer.install,
+  BridgeReachKind.noSession => RoostOffer.start,
+  // Reported, and nothing more. `unreachable` is "shed never got as far as
+  // asking" and `other` is "nothing classified this at all" — neither is
+  // evidence that installing or starting anything would help, and offering a
+  // button that cannot work is worse than offering none.
+  BridgeReachKind.unreachable || BridgeReachKind.other => null,
+  // Unclassified, which is not the same as reachable: a feed error or a pause
+  // marks a machine down with no `Down` to classify. The honest answer is to
+  // offer nothing.
+  null => null,
+};
+
+/// **Where one of a machine's rows came from** — the sessions view's source
+/// stamp (plan 020 §5, C-M4; shed-mobile AC 3).
+enum MachineRowSource {
+  /// The machine's own `roost-session`, read over the phone's tunnel.
+  roost('roost'),
+
+  /// The shed RC activity hub — the pre-plan-013 source, which a machine's
+  /// rows no longer come from.
+  hub('hub');
+
+  const MachineRowSource(this.label);
+
+  /// The word the card shows and the drive transcript counts.
+  final String label;
+}
+
+/// Which source a row came from.
+///
+/// `tab_id` is the discriminator because it is the one field only roost fills:
+/// "roost's tab id, for a roost-sourced row; `None` for every shed row". AC 3
+/// asks the live leg to prove the app is reading roost rather than the hub, and
+/// a field that only one of the two ever sets is the only honest way to say so
+/// — a count of rows says nothing about where they came from.
+MachineRowSource rowSourceOf(BridgeRcSession row) =>
+    row.tabId != null ? MachineRowSource.roost : MachineRowSource.hub;
+
 /// Apply the row a `tab.open` returned, optimistically.
 ///
 /// Keyed on the slug (roost's tab id as a string), so a re-open of a row the

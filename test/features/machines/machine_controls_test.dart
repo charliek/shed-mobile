@@ -424,6 +424,39 @@ void main() {
     expect(find.byKey(const ValueKey('machine-kill-mini3-2')), findsOneWidget);
   });
 
+  testWidgets('a machine row is STAMPED with where it came from', (
+    tester,
+  ) async {
+    // Plan 020 §5 (C-M4), shed-mobile AC 3. A machine's rows come from its own
+    // `roost-session` now, and "the app is reading roost rather than the hub"
+    // is exactly the thing the live leg has to prove — so the row says so
+    // rather than leaving it to be inferred from a count.
+    await tester.pumpWidget(
+      _app(
+        _live([
+          _session('1', const BridgeRcKind.opencode()),
+          // The negative control: the SAME row shape with no roost tab id —
+          // what a hub-sourced row looks like. `int.tryParse('x')` is null, so
+          // this row carries none.
+          _session('x', const BridgeRcKind.opencode()),
+        ], caps: _roostCaps),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    String meta(String slug) => tester
+        .widget<Text>(find.byKey(ValueKey('machine-meta-mini3-$slug')))
+        .data!;
+
+    expect(meta('1'), contains('roost'));
+    expect(
+      meta('x'),
+      contains('hub'),
+      reason: 'a row with no roost tab id must not claim to be roost-sourced',
+    );
+    expect(meta('x'), isNot(contains('roost')));
+  });
+
   testWidgets(
     'two machines with the same tab slug get distinct, non-colliding keys',
     (tester) async {

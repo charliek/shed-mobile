@@ -18,6 +18,7 @@ import 'servers/server_record.dart';
 import 'machines/machine_feed.dart';
 import 'machines/machine_record.dart';
 import 'machines/machine_store.dart';
+import 'machines/roost_bootstrap_flow.dart';
 import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
@@ -755,6 +756,35 @@ final machineFeedProvider = StreamProvider.autoDispose
       unawaited(feed.start());
       yield feed.state;
       yield* feed.updates;
+    });
+
+/// **One machine's bootstrap flow** — the probe and install verbs the machine
+/// card's install/start affordance drives (plan 020 §3.8, commit C-M4).
+///
+/// **This wiring is the commit's load-bearing line.** `drive` is a tear-off of
+/// [MachineFeed.runBootstrap] and must stay one: a completed install is the
+/// only thing that entitles this app run to keep the machine's agent hooks
+/// wired, and `runBootstrap` is where that claim is recorded and the machine's
+/// watcher re-spawned to honour it. Assembling a `RoostBootstrapRunner` here
+/// instead would drive exactly the same install and silently lose the hook
+/// re-send on the one machine that just earned it — plan 019's defect, one
+/// level up. `integration_test/roost_bootstrap_drive_test.dart` fails if this
+/// line stops going through the feed.
+///
+/// `autoDispose.family`, like every other per-machine provider: it holds the
+/// feed controller alive while a card is offering to bootstrap, and lets both
+/// go when the screen does.
+final roostBootstrapFlowProvider = Provider.autoDispose
+    .family<RoostBootstrapFlow, String>((ref, name) {
+      final feed = ref.watch(machineFeedControllerProvider(name));
+      return RoostBootstrapFlow(
+        target: name,
+        // Read at CALL time, not captured: the tunnel comes and goes with the
+        // feed, and a port read when this object was built may since have been
+        // closed and rebound.
+        localPort: () => feed.tunnelPort,
+        drive: feed.runBootstrap,
+      );
     });
 
 // ---------------------------------------------------------------------------

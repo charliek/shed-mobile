@@ -33,6 +33,19 @@ BridgeRcSession _row(String slug, {String? workdir}) => BridgeRcSession(
   tabId: int.parse(slug),
 );
 
+/// The same row WITHOUT a tab id — what a shed row from the RC hub looks like,
+/// and the negative control for the source stamp.
+BridgeRcSession _hubRow(String slug) => BridgeRcSession(
+  host: 'h',
+  shed: 'shed-a',
+  slug: slug,
+  displayName: 'row$slug',
+  kind: const BridgeRcKind.opencode(),
+  state: BridgeRcState.ready,
+  managed: true,
+  attention: false,
+);
+
 MachineFeedState _state({
   List<BridgeRcSession> sessions = const [],
   bool reachable = false,
@@ -254,6 +267,134 @@ void main() {
         expect(back.reachable, isTrue);
         expect(back.detail, isNull);
       }
+    });
+  });
+
+  group('roostOfferFor', () {
+    // **The kind → affordance decision** (plan 020 §3.8, shed-mobile AC 2).
+    //
+    // A pure function of the state, tested here rather than only by the live
+    // leg, because driving a real machine into each of four reach kinds is not
+    // something anybody does twice — and three of the four are exactly the
+    // cases a hurried branch gets wrong.
+
+    test('not-installed offers an install, and no-session offers a start', () {
+      expect(
+        roostOfferFor(
+          _state().copyWith(downKind: BridgeReachKind.notInstalled),
+        ),
+        RoostOffer.install,
+      );
+      expect(
+        roostOfferFor(_state().copyWith(downKind: BridgeReachKind.noSession)),
+        RoostOffer.start,
+      );
+    });
+
+    test('unreachable and other offer nothing at all', () {
+      // The two §3.8 names as "reported and nothing more". `unreachable` is
+      // "shed never got as far as asking" — installing anything would not help
+      // and could not even be attempted; `other` is "nothing classified this",
+      // which is a guess, not a diagnosis.
+      expect(
+        roostOfferFor(_state().copyWith(downKind: BridgeReachKind.unreachable)),
+        isNull,
+      );
+      expect(
+        roostOfferFor(_state().copyWith(downKind: BridgeReachKind.other)),
+        isNull,
+      );
+    });
+
+    test('all four kinds are covered, and only two of them offer anything', () {
+      // The table, whole. A `switch` that grew a fifth kind without a decision
+      // fails to compile; this catches the other half — a kind quietly
+      // re-mapped to the wrong offer, which compiles perfectly.
+      expect(
+        {
+          for (final kind in BridgeReachKind.values)
+            kind: roostOfferFor(_state().copyWith(downKind: kind)),
+        },
+        {
+          BridgeReachKind.notInstalled: RoostOffer.install,
+          BridgeReachKind.noSession: RoostOffer.start,
+          BridgeReachKind.unreachable: null,
+          BridgeReachKind.other: null,
+        },
+      );
+    });
+
+    test('an unclassified machine offers nothing — null is not "reachable"', () {
+      // A feed error, a failed watcher start and a `stop()` all mark a machine
+      // unreachable with no `Down` to classify. Reading null as "fine" would
+      // offer nothing (correct by luck); reading it as "not installed" would
+      // offer an install over a paused feed.
+      expect(_state().downKind, isNull, reason: 'precondition');
+      expect(roostOfferFor(_state()), isNull);
+      expect(
+        roostOfferFor(_state(reachable: true, connectedOnce: true)),
+        isNull,
+      );
+    });
+
+    test('the offer follows the EFFECTIVE kind the fold resolved', () {
+      // Amendment A2, end to end and in the only order that matters. The
+      // watcher's own `Down` carries `Other` on a phone whatever the real
+      // cause, so an affordance branching on the update would never appear.
+      // This pins that `roostOfferFor` reads what `foldRoostUpdate` resolved.
+      final down = foldRoostUpdate(
+        _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
+        observedKind: BridgeReachKind.notInstalled,
+      );
+
+      expect(roostOfferFor(down), RoostOffer.install);
+
+      // The control: the same `Down` with nothing observed offers nothing, so
+      // the assertion above is about the resolution and not about a function
+      // that always answers `install`.
+      final unobserved = foldRoostUpdate(
+        _state(sessions: [_row('1')], reachable: true, connectedOnce: true),
+        const BridgeRoostUpdate.down(
+          reason: 'connection refused',
+          kind: BridgeReachKind.other,
+        ),
+      );
+      expect(roostOfferFor(unobserved), isNull);
+    });
+
+    test('a Snapshot takes the offer away', () {
+      // The one that would embarrass us live: an install button still sitting
+      // on a machine that now has a running `roost-session`.
+      final down = foldRoostUpdate(
+        _state(),
+        const BridgeRoostUpdate.down(
+          reason: 'down',
+          kind: BridgeReachKind.notInstalled,
+        ),
+      );
+      expect(roostOfferFor(down), RoostOffer.install, reason: 'precondition');
+
+      final back = foldRoostUpdate(
+        down,
+        BridgeRoostUpdate.snapshot(sessions: [_row('1')]),
+      );
+      expect(roostOfferFor(back), isNull);
+    });
+  });
+
+  group('rowSourceOf', () {
+    test('a roost row is stamped roost, a hub row is stamped hub', () {
+      // `tab_id` is the one field only roost fills. AC 3 asks the live leg to
+      // prove the app is reading the machine's own `roost-session` rather than
+      // a shed's RC hub, and a count of rows cannot say that.
+      expect(rowSourceOf(_row('4')), MachineRowSource.roost);
+      expect(rowSourceOf(_hubRow('4')), MachineRowSource.hub);
+      expect(MachineRowSource.roost.label, 'roost');
+      expect(MachineRowSource.hub.label, 'hub');
     });
   });
 
