@@ -286,8 +286,34 @@ session offers.
 | `machines-empty` | empty-state note (no machines configured) |
 | `machine-card-status-<name>` | reachability + session-count badge (`N sessions` / `unreachable` / `connecting`) |
 | `machine-remove-<name>` | remove the machine (MRESULT `machine-remove ok`) |
+| `machine-roost-install-<name>` / `machine-roost-start-<name>` | the roost bootstrap affordance (plan 020) — **install** for a `Down{kind: notInstalled}`, **start** for `noSession`, and NOTHING at all for the other two kinds. Keyed by action as well as name, so a test cannot pass on the wrong one |
+| `machine-roost-note-<name>` | the sentence under that button — a probe's status line, or a failure's message |
 
-MSTATE: `machines-section count=N`.
+**AddMachineScreen** — `add-machine-name` / `add-machine-host` / `add-machine-user`
+/ `add-machine-port` / `add-machine-save`, plus `add-machine-error`. MRESULT
+`add-machine ok|error`. A shed makes a fine machine target:
+`name=<shed>`, `host=localhost`, `user=<shed>`, `port=2222` — the same triple
+`shed ssh-config --install` writes. Machine host keys are TOFU
+(`machineHostKeysProvider`), so no pin has to be seeded first.
+
+**The roost consent sheet** (`showRoostConsentSheet`, plan 020) — a modal the
+install/start button raises after its read-only probe:
+
+| Key | What |
+|---|---|
+| `roost-consent-sheet` | the sheet itself |
+| `roost-consent-title` | `Install roost-session` / `Start roost-session` / `Update …` |
+| `roost-consent-target` / `roost-consent-plan` | the machine, and what will be done |
+| `roost-consent-where` / `roost-consent-from` / `roost-consent-hooks` | where it lands, which rung the bytes come from (`… (ROOST_SESSION_INSTALL_BIN)` for the override rung), and the hook sentence |
+| `roost-consent-backup` | only on an Update |
+| `roost-consent-confirm` / `roost-consent-cancel` | the answer. **Only `confirm` acts** — Cancel, a barrier tap and a swipe-down all leave the far side untouched (`MRESULT roost-bootstrap error=dismissed`) |
+
+MSTATE: `machines-section count=N`;
+`screen=machine-card machine=<name> offer=install|start step=idle|probe|confirm|install`;
+`screen=roost-consent machine=<name> step=confirm action=Install|Start|Update`.
+MRESULT: `roost-bootstrap-probe ok|error=…`, `roost-bootstrap ok|error=…`.
+A completed install/start ends with the affordance GONE — the watcher's next
+`Snapshot` clears `downKind`, which is what makes the widget stop rendering.
 
 **Sessions tab — `MachineSessionsView`, grouped by machine**
 
@@ -306,8 +332,19 @@ Every per-row key is scoped by the MACHINE NAME, not just the slug: a slug is
 a roost tab id, per-daemon, so two machines can both hand back a tab "4" —
 an unscoped key would collide their controls.
 
-MSTATE: `machine-sessions machine=<name> reachable=t|f count=N` (one line per
-machine group, on every rebuild of that group).
+MSTATE: `machine-sessions machine=<name> reachable=t|f count=N roost=N` (one line
+per machine group, on every rebuild of that group). `roost=N` counts the rows in
+`MachineFeedState.sessions` whose `rowSourceOf()` is `MachineRowSource.roost` —
+a named field, so "the app is reading the machine's own roost-session and not a
+shed's RC hub" is assertable from the transcript rather than from the screen.
+
+**Only an agent-owned tab becomes a row.** `RoostInventory::from_list` lists
+`is_agent_owned()` tabs and hides the rest, so a tab running an unauthenticated
+agent (or a plain shell) shows `count=0` however alive it looks on the far side.
+To get a row for a drive, either create one in-app (`desktop-new-session` /
+`allsessions-create` → `pick-machine-<name>`, which folds `tab.open`'s reply in
+immediately) or claim one on the far side with
+`roostctl --socket /tmp/roost-session-1000/roost.sock tab set-state --tab <id> --state running`.
 
 **Agent lane screen — `LaneScreen` (Scaffold `lane-screen`)**
 
