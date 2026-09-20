@@ -29,17 +29,19 @@ part 'roost.freezed.dart';
 /// ## `bootstrapped` — did THIS APP RUN bootstrap this target?
 ///
 /// A watcher for a target this app run bootstrapped re-sends
-/// `session.set_agent_hooks {mode: "auto"}` at the head of every cycle it
+/// `session.set_agent_hooks {agents, client}` at the head of every cycle it
 /// connects; every other watcher sends nothing at all, ever. That is the whole
-/// of shed's entitlement rule at session protocol 5 (plan 020 §3.3) — roost's
-/// own gate on the op is gone and any same-UID client may now wire any session,
-/// so this is shed's answer to *should it* rather than *may it*.
+/// of shed's entitlement rule (plan 020 §3.3) — since session protocol 5
+/// roost's own gate on the op is gone and any same-UID client may wire any
+/// session, so this is shed's answer to *should it* rather than *may it*.
 ///
-/// **Why every cycle and not once at install time.** `auto` wires only the
-/// agents whose config directory exists *at that moment*, so an agent the user
-/// sets up tomorrow is wired by a LATER call and by nothing else. The desktop
-/// has re-sent since plan 020; a phone needs it more, because it tears its
-/// watcher down on every background and rebuilds it on every foreground.
+/// **Why every cycle and not once at install time.** The host narrows the
+/// raised list to the agents whose config directory exists *at that moment*, so
+/// an agent the user sets up tomorrow is wired by a LATER call and by nothing
+/// else (`mode: "auto"` did that job until session protocol 6 replaced it with
+/// the explicit name list). The desktop has re-sent since plan 020; a phone
+/// needs it more, because it tears its watcher down on every background and
+/// rebuilds it on every foreground.
 ///
 /// **A bool, never a label** (amendment A8). Dart says *whether* this app run
 /// bootstrapped the target; the label it is filed under is

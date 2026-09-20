@@ -2428,7 +2428,7 @@ mod tests {
         );
         assert!(
             matches!(probe.plan, BridgeBootstrapPlan::UpToDate { .. }),
-            "a protocol-5 session that is already serving is nothing to do: {:?}",
+            "a session already serving the protocol this build speaks is nothing to do: {:?}",
             probe.plan
         );
         assert!(!probe.needs_source);
@@ -2452,7 +2452,14 @@ mod tests {
         match &probe.plan {
             BridgeBootstrapPlan::Report { protocol, message } => {
                 assert_eq!(*protocol, 4);
-                assert!(message.contains('4') && message.contains('5'), "{message}");
+                // Both numbers, and the second one is read off the pin rather
+                // than written down — a protocol bump must not be able to leave
+                // this cell asserting the generation shed USED to speak.
+                let ours = roost_ipc::messages::SESSION_PROTOCOL_VERSION.to_string();
+                assert!(
+                    message.contains('4') && message.contains(&ours),
+                    "{message}"
+                );
             }
             other => panic!("pin P6 wants a Report row, got {other:?}"),
         }
@@ -2579,17 +2586,21 @@ mod tests {
         let calls = fake.agent_hooks_calls();
         assert_eq!(calls.len(), 1, "one call, no retry loop: {calls:?}");
         assert_eq!(calls[0]["client"], "shed-mobile");
-        assert_eq!(calls[0]["mode"], "auto");
+        // At session protocol 6 the raise is `{agents, client}` and nothing
+        // else: `mode` and `skip` retired at generation 6, `lease` at
+        // generation 5. The five names are shed-core's constant, not a literal,
+        // so this cell moves with shed's list rather than pinning a stale copy.
         assert_eq!(
-            calls[0]["skip"],
-            serde_json::json!([]),
-            "shed never asks a host to skip an agent"
+            calls[0]["agents"],
+            serde_json::json!(shed_core::roost::bootstrap::ROOST_WIRED_AGENTS)
         );
-        assert!(
-            calls[0].get("lease").is_none(),
-            "the lease retired at session protocol 5: {:?}",
-            calls[0]
-        );
+        for retired in ["mode", "skip", "lease"] {
+            assert!(
+                calls[0].get(retired).is_none(),
+                "`{retired}` is off the wire at session protocol 6: {:?}",
+                calls[0]
+            );
+        }
     }
 
     /// A hooks call that cannot even connect is reported, never fatal, and keeps
