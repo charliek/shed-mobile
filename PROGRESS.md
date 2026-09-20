@@ -140,10 +140,10 @@ can only report on. The bootstrap the desktop already has — probe, consent,
 install, start — comes to the phone over the same sans-IO choreography, driven
 through dartssh2.
 
-**Shipping in two parts, deliberately.** The protocol re-pin came first and on
-its own, because roost retired the session lease at protocol 5 and a phone
-pinned at 4 is refused by every current session; the bootstrap follows once
-roost's own R9 work settles. This section stays open until it does.
+**Shipped in two parts, deliberately.** The protocol re-pin came first and on
+its own (PR #22), because roost retired the session lease at protocol 5 and a
+phone pinned at 4 is refused by every current session; the bootstrap followed
+once roost's own R9 work settled, in PR #23 (`fb21620`).
 - [x] **C-M1** — re-pin all four shed crates to shed's protocol-5
       merge (`3170191`) and `roost-ipc` to `c1bfe88`, the one rev shed's own
       manifest pins. Absorbs the single resulting break: `RoostUpdate::Down`
@@ -176,9 +176,26 @@ roost's own R9 work settles. This section stays open until it does.
       step fails where it happened instead of one step later at the staged
       verify. The reach NOTE carries the tail's last non-empty line, not the
       tail — the blob is mostly login banner and that message is user-facing.
-- [ ] **C-M4** — the Flutter UI: the affordance branching on `downKind`, the
-      consent sheet, the progress states.
-- [ ] **C-M5** — the live leg on the Flutter Linux desktop build.
+- [x] **C-M4** `fb21620` — the Flutter UI: the affordance branching on
+      `downKind`, the consent sheet, the progress states.
+      `roostOfferFor(MachineFeedState)` sits
+      beside `foldRoostUpdate` as a pure function over the state — an install for
+      `notInstalled`, a start for `noSession`, nothing at all for the other two,
+      branching on the typed kind and never on a substring of a sentence written
+      for a human. The drive is wired to the feed's own verb
+      (`roostBootstrapFlowProvider` passes `drive: feed.runBootstrap`), never to a
+      runner the UI assembles: C-M3b put the entitlement record inside
+      `runBootstrap`, so a hand-built runner would silently lose the hook re-send
+      on the machine that just earned it, and an integration cell is the control
+      that notices.
+- [x] **C-M5** `fb21620` — the live leg on the Flutter Linux desktop build: the
+      whole bootstrap driven end to end (add a machine, probe, consent, install,
+      start), with what it cost written back into the drive skill — a
+      `press-back-button` on the root route ends the app (it ended run 1
+      mid-leg), the launcher passes the environment through (which is how a drive
+      reaches the pinned SDK, a private `DISPLAY` and
+      `ROOST_SESSION_INSTALL_BIN`), and plan 020's own UI keys were undocumented
+      there.
 
 ---
 

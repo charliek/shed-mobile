@@ -218,17 +218,19 @@ fn claim_rx(state: &Arc<Mutex<RoostWatcherInner>>) -> Option<UnboundedReceiver<R
 /// ## `bootstrapped` — did THIS APP RUN bootstrap this target?
 ///
 /// A watcher for a target this app run bootstrapped re-sends
-/// `session.set_agent_hooks {mode: "auto"}` at the head of every cycle it
+/// `session.set_agent_hooks {agents, client}` at the head of every cycle it
 /// connects; every other watcher sends nothing at all, ever. That is the whole
-/// of shed's entitlement rule at session protocol 5 (plan 020 §3.3) — roost's
-/// own gate on the op is gone and any same-UID client may now wire any session,
-/// so this is shed's answer to *should it* rather than *may it*.
+/// of shed's entitlement rule (plan 020 §3.3) — since session protocol 5
+/// roost's own gate on the op is gone and any same-UID client may wire any
+/// session, so this is shed's answer to *should it* rather than *may it*.
 ///
-/// **Why every cycle and not once at install time.** `auto` wires only the
-/// agents whose config directory exists *at that moment*, so an agent the user
-/// sets up tomorrow is wired by a LATER call and by nothing else. The desktop
-/// has re-sent since plan 020; a phone needs it more, because it tears its
-/// watcher down on every background and rebuilds it on every foreground.
+/// **Why every cycle and not once at install time.** The host narrows the
+/// raised list to the agents whose config directory exists *at that moment*, so
+/// an agent the user sets up tomorrow is wired by a LATER call and by nothing
+/// else (`mode: "auto"` did that job until session protocol 6 replaced it with
+/// the explicit name list). The desktop has re-sent since plan 020; a phone
+/// needs it more, because it tears its watcher down on every background and
+/// rebuilds it on every foreground.
 ///
 /// **A bool, never a label** (amendment A8). Dart says *whether* this app run
 /// bootstrapped the target; the label it is filed under is
@@ -420,6 +422,14 @@ pub async fn roost_tab_open(
                 cols: 0,
                 rows: 0,
                 title: String::new(),
+                // **The phone never steals the desktop's foreground.** roost
+                // reads absent and `Some(true)` the same way — select the tab
+                // AND its project — so a launch kicked off from a pocket would
+                // yank whoever is sitting at the machine onto a tab they did
+                // not ask for. `Some(false)` opens it in place; the desktop
+                // leaves the key off on purpose, because there the user IS the
+                // one who asked.
+                activate: Some(false),
             },
         )
         .await
@@ -798,7 +808,7 @@ mod tests {
     }
 
     /// (a) **A bootstrapped target's watcher re-sends the hooks on EVERY
-    /// cycle**, which is what keeps `mode: "auto"` honest: it wires only the
+    /// cycle**, which is what keeps the raise honest: the host wires only the
     /// agents whose config directory exists at that moment, so an agent the
     /// user configures tomorrow is wired by a later call and by nothing else.
     ///
@@ -839,12 +849,16 @@ mod tests {
             calls.iter().all(|call| call["client"] == "shed-mobile"),
             "the phone must be filed under its own label: {calls:?}"
         );
-        assert!(calls.iter().all(|call| call["mode"] == "auto"));
+        // At session protocol 6 the raise IS the name list: `mode` and `skip`
+        // are gone from the wire, and every client sends the same five names
+        // (`ROOST_WIRED_AGENTS`) for the host to narrow. Asserting against the
+        // shed-core constant rather than a literal is what makes this cell a
+        // drift pin — if shed's list ever changes, the phone's raise changes
+        // with it by construction.
+        let raised = serde_json::json!(shed_core::roost::bootstrap::ROOST_WIRED_AGENTS);
         assert!(
-            calls
-                .iter()
-                .all(|call| call["skip"] == serde_json::json!([])),
-            "shed never asks a host to skip an agent: {calls:?}"
+            calls.iter().all(|call| call["agents"] == raised),
+            "the phone must raise shed's five agents: {calls:?}"
         );
 
         stop_roost_watcher(&handle);
@@ -905,9 +919,9 @@ mod tests {
     /// (c) **A target this app run did not bootstrap is wired on NO cycle.**
     ///
     /// Two cycles, because a first cycle alone cannot tell "never" apart from
-    /// "not yet". At session protocol 5 the far side would accept the call from
-    /// any same-UID client, so this rule is shed's own and this cell is the only
-    /// thing holding the phone to it.
+    /// "not yet". Since session protocol 5 the far side would accept the call
+    /// from any same-UID client, so this rule is shed's own and this cell is the
+    /// only thing holding the phone to it.
     #[tokio::test]
     async fn an_unbootstrapped_targets_watcher_wires_nothing() {
         let _g = test_guard();
@@ -964,6 +978,46 @@ mod tests {
                 .expect_err("nothing is listening on port 1");
             assert!(!err.starts_with("unknown kind:"), "kind {kind:?}: {err}");
         }
+    }
+
+    /// **A tab the phone opens does not steal the desktop's foreground.**
+    ///
+    /// roost reads an ABSENT `activate` and `Some(true)` the same way — select
+    /// the tab and its project — so the only thing buying the phone its
+    /// no-steal behaviour is an explicit `false` on the wire. And because
+    /// `TabOpenParams` declares the field
+    /// `skip_serializing_if = "Option::is_none"`, a regression back to `None`
+    /// is invisible to anything that reads the struct or a decoded params
+    /// object: absent and `null` look identical there. `tab_open_calls()`
+    /// records the params the fake RECEIVED, verbatim, which is the only place
+    /// the difference shows.
+    ///
+    /// The desktop carries the mirror image of this cell, asserting the key is
+    /// absent (`desktop/tauri/src-tauri/src/roost_hosts.rs`, "`activate` is
+    /// ABSENT from the bytes") — there the user asking for the launch IS the
+    /// person at the screen.
+    #[tokio::test]
+    async fn the_phones_tab_open_asks_roost_not_to_activate_the_tab() {
+        let _g = test_guard();
+        let fake = FakeRoost::start().await;
+
+        roost_tab_open(
+            fake.tcp_port(),
+            "mini3".into(),
+            "opencode".into(),
+            "/home/shed".into(),
+        )
+        .await
+        .expect("the open lands against the fake");
+
+        let opened = fake.tab_open_calls();
+        assert_eq!(opened.len(), 1, "exactly one tab.open: {opened:?}");
+        assert_eq!(
+            opened[0].get("activate"),
+            Some(&serde_json::json!(false)),
+            "the phone must send `activate: false` on the wire: {}",
+            opened[0]
+        );
     }
 
     /// The remote command is roost's, whole, and it ends where it must.
