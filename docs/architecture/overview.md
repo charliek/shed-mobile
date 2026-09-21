@@ -36,9 +36,16 @@ A shed API call (e.g. *list sheds*):
 4. A `401` invalidates the credential and retries once with a freshly minted,
    distinct one.
 
-An agent-session or terminal action instead SSHes as `<shed>@host` (the shed
-name is the SSH username) and either execs roost's own `client-bridge` chain —
-the tunnel the shared Rust roost watcher reads tabs over — or `tmux attach …`.
+An agent-session or terminal action instead opens SSH and either execs roost's
+own `client-bridge` chain — the tunnel the shared Rust roost watcher reads tabs
+over — or `tmux attach …`. **Who it logs in as depends on the origin**, and
+`roostDialFor` (`lib/providers.dart`) is the one place that decides:
+
+* a **shed** origin (`shed:<server>/<shed>`) dials `<shed>@<server host>` on the
+  server's SSH port, with that server's PINNED host key — the shed name is the
+  SSH username, and an unknown server yields no pins and fails closed;
+* a **machine** origin (a bare name) dials its own `MachineRecord` — that
+  record's `user`, `host` and `sshPort`, against the shared TOFU store.
 
 ## Shared SSH primitive
 

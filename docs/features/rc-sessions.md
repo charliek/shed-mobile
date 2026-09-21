@@ -67,8 +67,17 @@ chip, a meta line, and the actions.
   (`agentLane`). The capability block's `feed: "messages"` is a per-**kind**
   ceiling and is allowed to disagree with it — a card that read the ceiling would
   offer a transcript the lane refuses to open.
-* **Peek** is gated on `attachKind == "native-remote"`, which is what every roost
-  row advertises, plus a tab id to address.
-* **`>_ open`** (the xterm `tmux attach`) is the `attachKind == "tmux"` arm. No
-  roost row produces it today; it is kept because the discriminator is the
-  capability, not the origin.
+* **Peek** is gated on `attachKind == "native-remote"` plus a tab id to address.
+  That is what every roost row of a KNOWN kind advertises — but not every row:
+  roost's `ownership.source` is an open string, so shed maps `manual`, `legacy`
+  and any future agent to `RcKind::Other`, and those kinds are absent from
+  `roost_capabilities()`' `kind_features`. A row that misses the map reads
+  `attachKind(null)`, which is **`none`** — neither Peek nor the xterm attach.
+  That is shed's stated policy for `RcKind::Other`: "renders the raw kind with
+  no affordances".
+* **`>_ open`** (the xterm `tmux attach`) is the `attachKind == "tmux"` arm.
+  **Nothing produces it any more** — S6 deleted the last producer, and the
+  unknown-kind fallback is `none`, not `tmux`. It is kept because the
+  discriminator is the capability rather than the origin, and because removing
+  the xterm attach and the Android foreground service is a product decision
+  rather than part of the S6 re-base.
