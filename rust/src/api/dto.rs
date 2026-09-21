@@ -14,7 +14,7 @@ use shed_core::models::{
     Shed, ShedImage, ShedStatus, SystemDiskUsage,
 };
 
-use super::dto_rc::{BridgeRcCapabilities, BridgeRcSession};
+use super::dto_rc::BridgeRcSession;
 
 /// A shed's lifecycle status (mirrors `ShedStatus`; an unknown wire value folds
 /// to `Unknown`). A plain fieldless enum → a plain Dart enum.
@@ -267,7 +267,6 @@ impl From<OverviewServer> for BridgeOverviewServer {
 pub struct BridgeOverviewShed {
     pub shed: BridgeShed,
     pub sessions: Vec<BridgeRcSession>,
-    pub capabilities: Option<BridgeRcCapabilities>,
 }
 
 impl From<OverviewShed> for BridgeOverviewShed {
@@ -275,7 +274,6 @@ impl From<OverviewShed> for BridgeOverviewShed {
         BridgeOverviewShed {
             shed: o.shed.into(),
             sessions: o.sessions.into_iter().map(Into::into).collect(),
-            capabilities: o.capabilities.map(Into::into),
         }
     }
 }
@@ -482,10 +480,13 @@ mod tests {
     fn overview_nested_clusters() {
         // Reuse shed-core's tolerant JSON decoder to build a realistic overview,
         // then assert the conversion preserves the nested structure + df.
-        // The overview `sheds[]` element carries the shed's own fields at the
-        // TOP level (decoded via `overview_shed_record`), a `sessions[]` list
-        // whose rows carry an `rc` block (the slug is derived from the `rc-`
-        // tmux name), and an optional `rc_capabilities` map.
+        //
+        // **This is the PRE-0.9.0 shape, kept deliberately.** The RC hub retired
+        // in S6, so a 0.9.0 server's `sessions[]` rows carry no `rc` block and
+        // the whole `rc_capabilities` map is gone from the wire (see
+        // `overview_0_9_0_rows_are_not_sessions` below). An OLD server on the
+        // other end still answers this way, and shed-core still decodes it — so
+        // the bridge conversion is pinned against the richer payload.
         let v: serde_json::Value = serde_json::from_str(
             r#"{
                 "server": {"version":"0.8.0","features":["overview","rc-events"]},
@@ -493,8 +494,7 @@ mod tests {
                 "sheds": [
                     {"name":"proj","status":"running",
                      "sessions":[{"name":"rc-cdx",
-                                  "rc":{"kind":"claude-rc","state":"ready","managed":true,"activity":"working"}}],
-                     "rc_capabilities":{"rc_version":1}}
+                                  "rc":{"kind":"claude-rc","state":"ready","managed":true,"activity":"working"}}]}
                 ],
                 "warnings": ["one degraded"]
             }"#,
@@ -514,7 +514,33 @@ mod tests {
             b.sheds[0].sessions[0].activity,
             Some(super::super::dto_rc::BridgeRcActivity::Working)
         );
-        assert!(b.sheds[0].capabilities.is_some());
         assert_eq!(b.warnings, vec!["one degraded"]);
+    }
+
+    #[test]
+    fn overview_0_9_0_rows_are_not_sessions() {
+        // A 0.9.0 server's overview: `features` no longer advertises `rc-events`,
+        // and a `sessions[]` row is a PLAIN TMUX row with no `rc` block
+        // (`internal/config/types.go`'s `Session` after S6). shed-core surfaces
+        // only rc-enriched rows, so the shed contributes no sessions at all —
+        // which is exactly why the phone reads a shed's agent sessions from its
+        // roost-session now, not from here.
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{
+                "server": {"version":"0.9.0","features":["overview"]},
+                "sheds": [
+                    {"name":"proj","status":"running",
+                     "sessions":[{"name":"default","shed_name":"proj","attached":false}]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let b = BridgeOverview::from(Overview::from_value(&v));
+        assert_eq!(b.sheds.len(), 1, "the shed itself still lists");
+        assert!(
+            b.sheds[0].sessions.is_empty(),
+            "a plain tmux row is not an agent session"
+        );
+        assert!(!b.server.features.contains(&"rc-events".to_string()));
     }
 }

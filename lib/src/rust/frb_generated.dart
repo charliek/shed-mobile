@@ -14,12 +14,10 @@ import 'api/lane.dart';
 import 'api/local_sse.dart';
 import 'api/mint.dart';
 import 'api/preview.dart';
-import 'api/rc_runner.dart';
 import 'api/roost.dart';
 import 'api/roost_bootstrap.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
-import 'api/watcher.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -82,7 +80,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0-beta.5';
 
   @override
-  int get rustContentHash => -720920562;
+  int get rustContentHash => -1893680494;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -138,34 +136,6 @@ abstract class RustLibApi extends BaseApi {
     required BridgeClient that,
   });
 
-  Future<void> crateApiClientBridgeClientRcInput({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required String text,
-  });
-
-  Future<bool> crateApiClientBridgeClientRcInterrupt({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-  });
-
-  Future<BridgeRcMessagesPage> crateApiClientBridgeClientRcMessages({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required BigInt since,
-    int? limit,
-  });
-
-  Future<String> crateApiClientBridgeClientRcTurn({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required String text,
-  });
-
   Future<void> crateApiClientBridgeClientReset({
     required BridgeClient that,
     required String name,
@@ -199,11 +169,6 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiCreateStreamCancelCreate({required BridgeCreateHandle handle});
-
-  Future<BridgeWatcherHandle> crateApiWatcherCreateRcWatcher({
-    required BridgeClient client,
-    required String serverName,
-  });
 
   Future<BridgeRoostWatcher> crateApiRoostCreateRoostWatcher({
     required String machine,
@@ -285,52 +250,6 @@ abstract class RustLibApi extends BaseApi {
     required String host,
     required int sshPort,
     required BigInt timeoutMs,
-  });
-
-  Future<BridgeRcInvocation> crateApiRcRunnerRcCreateInvocation({
-    required String kind,
-    required String name,
-    required String slug,
-    required String target,
-    required String createdBy,
-    String? workdir,
-    String? permissionMode,
-    String? prompt,
-  });
-
-  Future<BridgeRcCapabilities?> crateApiRcRunnerRcDecodeCapabilities({
-    required String stdout,
-  });
-
-  Future<BridgeRcSession> crateApiRcRunnerRcDecodeSession({
-    required String stdout,
-    required String host,
-    required String shed,
-  });
-
-  Future<List<BridgeRcSession>> crateApiRcRunnerRcDecodeSessions({
-    required String stdout,
-    required String host,
-    required String shed,
-  });
-
-  Future<BridgeError> crateApiRcRunnerRcErrorFromExit({
-    required int exitCode,
-    required String stderr,
-    required String stdout,
-  });
-
-  Future<List<String>> crateApiRcRunnerRcKillArgv({required String slug});
-
-  Future<List<String>> crateApiRcRunnerRcListArgv();
-
-  Future<List<String>> crateApiRcRunnerRcPromptArgv({
-    required String slug,
-    String? sessionId,
-  });
-
-  Stream<BridgeWatcherUpdate> crateApiWatcherRcWatcherEvents({
-    required BridgeWatcherHandle handle,
   });
 
   Future<BridgeBootstrapStep> crateApiRoostBootstrapRoostBootstrapBegin({
@@ -423,8 +342,6 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BridgeTestSse> crateApiLocalSseSpawnWatcherTestSse();
 
-  void crateApiWatcherStopRcEvents({required BridgeWatcherHandle handle});
-
   Future<void> crateApiRoostStopRoostWatcher({
     required BridgeRoostWatcher handle,
   });
@@ -494,15 +411,6 @@ abstract class RustLibApi extends BaseApi {
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeTestSsePtr;
-
-  RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_BridgeWatcherHandle;
-
-  RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_BridgeWatcherHandle;
-
-  CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_BridgeWatcherHandlePtr;
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -840,174 +748,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiClientBridgeClientRcInput({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required String text,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
-            that,
-            serializer,
-          );
-          sse_encode_String(shed, serializer);
-          sse_encode_String(slug, serializer);
-          sse_encode_String(text, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 9,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiClientBridgeClientRcInputConstMeta,
-        argValues: [that, shed, slug, text],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiClientBridgeClientRcInputConstMeta =>
-      const TaskConstMeta(
-        debugName: 'BridgeClient_rc_input',
-        argNames: ['that', 'shed', 'slug', 'text'],
-      );
-
-  @override
-  Future<bool> crateApiClientBridgeClientRcInterrupt({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
-            that,
-            serializer,
-          );
-          sse_encode_String(shed, serializer);
-          sse_encode_String(slug, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 10,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiClientBridgeClientRcInterruptConstMeta,
-        argValues: [that, shed, slug],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiClientBridgeClientRcInterruptConstMeta =>
-      const TaskConstMeta(
-        debugName: 'BridgeClient_rc_interrupt',
-        argNames: ['that', 'shed', 'slug'],
-      );
-
-  @override
-  Future<BridgeRcMessagesPage> crateApiClientBridgeClientRcMessages({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required BigInt since,
-    int? limit,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
-            that,
-            serializer,
-          );
-          sse_encode_String(shed, serializer);
-          sse_encode_String(slug, serializer);
-          sse_encode_u_64(since, serializer);
-          sse_encode_opt_box_autoadd_u_32(limit, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 11,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bridge_rc_messages_page,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiClientBridgeClientRcMessagesConstMeta,
-        argValues: [that, shed, slug, since, limit],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiClientBridgeClientRcMessagesConstMeta =>
-      const TaskConstMeta(
-        debugName: 'BridgeClient_rc_messages',
-        argNames: ['that', 'shed', 'slug', 'since', 'limit'],
-      );
-
-  @override
-  Future<String> crateApiClientBridgeClientRcTurn({
-    required BridgeClient that,
-    required String shed,
-    required String slug,
-    required String text,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
-            that,
-            serializer,
-          );
-          sse_encode_String(shed, serializer);
-          sse_encode_String(slug, serializer);
-          sse_encode_String(text, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 12,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiClientBridgeClientRcTurnConstMeta,
-        argValues: [that, shed, slug, text],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiClientBridgeClientRcTurnConstMeta =>
-      const TaskConstMeta(
-        debugName: 'BridgeClient_rc_turn',
-        argNames: ['that', 'shed', 'slug', 'text'],
-      );
-
-  @override
   Future<void> crateApiClientBridgeClientReset({
     required BridgeClient that,
     required String name,
@@ -1024,7 +764,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 9,
             port: port_,
           );
         },
@@ -1062,7 +802,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 10,
             port: port_,
           );
         },
@@ -1100,7 +840,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 11,
             port: port_,
           );
         },
@@ -1136,7 +876,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 12,
             port: port_,
           );
         },
@@ -1167,7 +907,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1196,7 +936,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1229,7 +969,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 15,
             port: port_,
           );
         },
@@ -1265,7 +1005,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 16,
             port: port_,
           );
         },
@@ -1296,7 +1036,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             handle,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1311,45 +1051,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiCreateStreamCancelCreateConstMeta =>
       const TaskConstMeta(debugName: 'cancel_create', argNames: ['handle']);
-
-  @override
-  Future<BridgeWatcherHandle> crateApiWatcherCreateRcWatcher({
-    required BridgeClient client,
-    required String serverName,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
-            client,
-            serializer,
-          );
-          sse_encode_String(serverName, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 22,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData:
-              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiWatcherCreateRcWatcherConstMeta,
-        argValues: [client, serverName],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiWatcherCreateRcWatcherConstMeta =>
-      const TaskConstMeta(
-        debugName: 'create_rc_watcher',
-        argNames: ['client', 'serverName'],
-      );
 
   @override
   Future<BridgeRoostWatcher> crateApiRoostCreateRoostWatcher({
@@ -1367,7 +1068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 18,
             port: port_,
           );
         },
@@ -1407,7 +1108,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 24,
+              funcId: 19,
               port: port_,
             );
           },
@@ -1447,7 +1148,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 20,
             port: port_,
           );
         },
@@ -1489,7 +1190,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 21,
             port: port_,
           );
         },
@@ -1516,7 +1217,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 27)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1538,7 +1239,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 28)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 23)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1563,7 +1264,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 24,
             port: port_,
           );
         },
@@ -1600,7 +1301,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1633,7 +1334,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1663,7 +1364,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             lane,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 27)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_lane_capabilities,
@@ -1689,7 +1390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             lane,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 28)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1721,7 +1422,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 34,
+              funcId: 29,
               port: port_,
             );
           },
@@ -1751,7 +1452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1781,7 +1482,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_bridge_lane_approval(approval, serializer);
           sse_encode_bridge_lane_decision(decision, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -1818,7 +1519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1858,7 +1559,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1892,7 +1593,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_opt_box_autoadd_u_64(sinceSeq, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_lane_snapshot,
@@ -1922,7 +1623,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             status,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -1950,7 +1651,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1975,7 +1676,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_bridge_mint_request(req, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2010,7 +1711,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 38,
             port: port_,
           );
         },
@@ -2032,346 +1733,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<BridgeRcInvocation> crateApiRcRunnerRcCreateInvocation({
-    required String kind,
-    required String name,
-    required String slug,
-    required String target,
-    required String createdBy,
-    String? workdir,
-    String? permissionMode,
-    String? prompt,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(kind, serializer);
-          sse_encode_String(name, serializer);
-          sse_encode_String(slug, serializer);
-          sse_encode_String(target, serializer);
-          sse_encode_String(createdBy, serializer);
-          sse_encode_opt_String(workdir, serializer);
-          sse_encode_opt_String(permissionMode, serializer);
-          sse_encode_opt_String(prompt, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 44,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bridge_rc_invocation,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiRcRunnerRcCreateInvocationConstMeta,
-        argValues: [
-          kind,
-          name,
-          slug,
-          target,
-          createdBy,
-          workdir,
-          permissionMode,
-          prompt,
-        ],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcCreateInvocationConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_create_invocation',
-        argNames: [
-          'kind',
-          'name',
-          'slug',
-          'target',
-          'createdBy',
-          'workdir',
-          'permissionMode',
-          'prompt',
-        ],
-      );
-
-  @override
-  Future<BridgeRcCapabilities?> crateApiRcRunnerRcDecodeCapabilities({
-    required String stdout,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(stdout, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 45,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_opt_box_autoadd_bridge_rc_capabilities,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiRcRunnerRcDecodeCapabilitiesConstMeta,
-        argValues: [stdout],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcDecodeCapabilitiesConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_decode_capabilities',
-        argNames: ['stdout'],
-      );
-
-  @override
-  Future<BridgeRcSession> crateApiRcRunnerRcDecodeSession({
-    required String stdout,
-    required String host,
-    required String shed,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(stdout, serializer);
-          sse_encode_String(host, serializer);
-          sse_encode_String(shed, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 46,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bridge_rc_session,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiRcRunnerRcDecodeSessionConstMeta,
-        argValues: [stdout, host, shed],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcDecodeSessionConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_decode_session',
-        argNames: ['stdout', 'host', 'shed'],
-      );
-
-  @override
-  Future<List<BridgeRcSession>> crateApiRcRunnerRcDecodeSessions({
-    required String stdout,
-    required String host,
-    required String shed,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(stdout, serializer);
-          sse_encode_String(host, serializer);
-          sse_encode_String(shed, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 47,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_bridge_rc_session,
-          decodeErrorData: sse_decode_bridge_error,
-        ),
-        constMeta: kCrateApiRcRunnerRcDecodeSessionsConstMeta,
-        argValues: [stdout, host, shed],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcDecodeSessionsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_decode_sessions',
-        argNames: ['stdout', 'host', 'shed'],
-      );
-
-  @override
-  Future<BridgeError> crateApiRcRunnerRcErrorFromExit({
-    required int exitCode,
-    required String stderr,
-    required String stdout,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_i_32(exitCode, serializer);
-          sse_encode_String(stderr, serializer);
-          sse_encode_String(stdout, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 48,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bridge_error,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRcRunnerRcErrorFromExitConstMeta,
-        argValues: [exitCode, stderr, stdout],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcErrorFromExitConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_error_from_exit',
-        argNames: ['exitCode', 'stderr', 'stdout'],
-      );
-
-  @override
-  Future<List<String>> crateApiRcRunnerRcKillArgv({required String slug}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(slug, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 49,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRcRunnerRcKillArgvConstMeta,
-        argValues: [slug],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcKillArgvConstMeta =>
-      const TaskConstMeta(debugName: 'rc_kill_argv', argNames: ['slug']);
-
-  @override
-  Future<List<String>> crateApiRcRunnerRcListArgv() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 50,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRcRunnerRcListArgvConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcListArgvConstMeta =>
-      const TaskConstMeta(debugName: 'rc_list_argv', argNames: []);
-
-  @override
-  Future<List<String>> crateApiRcRunnerRcPromptArgv({
-    required String slug,
-    String? sessionId,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(slug, serializer);
-          sse_encode_opt_String(sessionId, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 51,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiRcRunnerRcPromptArgvConstMeta,
-        argValues: [slug, sessionId],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRcRunnerRcPromptArgvConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_prompt_argv',
-        argNames: ['slug', 'sessionId'],
-      );
-
-  @override
-  Stream<BridgeWatcherUpdate> crateApiWatcherRcWatcherEvents({
-    required BridgeWatcherHandle handle,
-  }) {
-    final sink = RustStreamSink<BridgeWatcherUpdate>();
-    unawaited(
-      handler.executeNormal(
-        NormalTask(
-          callFfi: (port_) {
-            final serializer = SseSerializer(generalizedFrbRustBinding);
-            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-              handle,
-              serializer,
-            );
-            sse_encode_StreamSink_bridge_watcher_update_Sse(sink, serializer);
-            pdeCallFfi(
-              generalizedFrbRustBinding,
-              serializer,
-              funcId: 52,
-              port: port_,
-            );
-          },
-          codec: SseCodec(
-            decodeSuccessData: sse_decode_unit,
-            decodeErrorData: null,
-          ),
-          constMeta: kCrateApiWatcherRcWatcherEventsConstMeta,
-          argValues: [handle, sink],
-          apiImpl: this,
-        ),
-      ),
-    );
-    return sink.stream;
-  }
-
-  TaskConstMeta get kCrateApiWatcherRcWatcherEventsConstMeta =>
-      const TaskConstMeta(
-        debugName: 'rc_watcher_events',
-        argNames: ['handle', 'sink'],
-      );
-
-  @override
   Future<BridgeBootstrapStep> crateApiRoostBootstrapRoostBootstrapBegin({
     required BridgeRoostBootstrap handle,
   }) {
@@ -2386,7 +1747,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 53,
+            funcId: 39,
             port: port_,
           );
         },
@@ -2419,7 +1780,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             handle,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2459,7 +1820,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 55,
+            funcId: 41,
             port: port_,
           );
         },
@@ -2500,7 +1861,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 42,
             port: port_,
           );
         },
@@ -2538,7 +1899,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_bridge_reach_kind(kind, serializer);
           sse_encode_String(message, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2569,7 +1930,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 58,
+            funcId: 44,
             port: port_,
           );
         },
@@ -2603,7 +1964,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(target, serializer);
           sse_encode_String(arch, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_bootstrap_source_preview,
@@ -2629,7 +1990,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_rc_capabilities,
@@ -2658,7 +2019,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 61,
+            funcId: 47,
             port: port_,
           );
         },
@@ -2691,7 +2052,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 62,
+            funcId: 48,
             port: port_,
           );
         },
@@ -2723,7 +2084,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 63,
+            funcId: 49,
             port: port_,
           );
         },
@@ -2750,7 +2111,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2780,7 +2141,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 65,
+            funcId: 51,
             port: port_,
           );
         },
@@ -2818,7 +2179,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 66,
+            funcId: 52,
             port: port_,
           );
         },
@@ -2856,7 +2217,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 67,
+              funcId: 53,
               port: port_,
             );
           },
@@ -2891,7 +2252,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 68,
+              funcId: 54,
               port: port_,
             );
           },
@@ -2926,7 +2287,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 69,
+              funcId: 55,
               port: port_,
             );
           },
@@ -2955,7 +2316,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 70,
+            funcId: 56,
             port: port_,
           );
         },
@@ -2983,7 +2344,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 71,
+            funcId: 57,
             port: port_,
           );
         },
@@ -3007,7 +2368,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3032,7 +2393,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3057,7 +2418,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 74,
+            funcId: 60,
             port: port_,
           );
         },
@@ -3088,7 +2449,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 75,
+            funcId: 61,
             port: port_,
           );
         },
@@ -3119,7 +2480,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 76,
+            funcId: 62,
             port: port_,
           );
         },
@@ -3139,32 +2500,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: 'spawn_watcher_test_sse', argNames: []);
 
   @override
-  void crateApiWatcherStopRcEvents({required BridgeWatcherHandle handle}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-            handle,
-            serializer,
-          );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiWatcherStopRcEventsConstMeta,
-        argValues: [handle],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiWatcherStopRcEventsConstMeta =>
-      const TaskConstMeta(debugName: 'stop_rc_events', argNames: ['handle']);
-
-  @override
   Future<void> crateApiRoostStopRoostWatcher({
     required BridgeRoostWatcher handle,
   }) {
@@ -3179,7 +2514,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 78,
+            funcId: 63,
             port: port_,
           );
         },
@@ -3214,7 +2549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 79,
+            funcId: 64,
             port: port_,
           );
         },
@@ -3291,14 +2626,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get rust_arc_decrement_strong_count_BridgeTestSse => wire
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeTestSse;
 
-  RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_BridgeWatcherHandle => wire
-      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle;
-
-  RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_BridgeWatcherHandle => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle;
-
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -3369,15 +2696,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherHandle
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
   BridgeClient
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     dynamic raw,
@@ -3438,15 +2756,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return BridgeTestSseImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
-  BridgeWatcherHandle
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -3535,15 +2844,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherHandle
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalDcoDecode(raw as List<dynamic>);
-  }
-
-  @protected
   RustStreamSink<bool> dco_decode_StreamSink_bool_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
@@ -3573,13 +2873,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   RustStreamSink<BridgeRoostUpdate>
   dco_decode_StreamSink_bridge_roost_update_Sse(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    throw UnimplementedError();
-  }
-
-  @protected
-  RustStreamSink<BridgeWatcherUpdate>
-  dco_decode_StreamSink_bridge_watcher_update_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -3734,29 +3027,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcCapabilities dco_decode_box_autoadd_bridge_rc_capabilities(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_bridge_rc_capabilities(raw);
-  }
-
-  @protected
-  BridgeRcEvent dco_decode_box_autoadd_bridge_rc_event(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_bridge_rc_event(raw);
-  }
-
-  @protected
   BridgeRcFeedTool dco_decode_box_autoadd_bridge_rc_feed_tool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_bridge_rc_feed_tool(raw);
-  }
-
-  @protected
-  BridgeRcState dco_decode_box_autoadd_bridge_rc_state(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_bridge_rc_state(raw);
   }
 
   @protected
@@ -4558,22 +3831,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeOverlayEntry dco_decode_bridge_overlay_entry(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
-    return BridgeOverlayEntry(
-      shed: dco_decode_String(arr[0]),
-      slug: dco_decode_String(arr[1]),
-      activity: dco_decode_opt_box_autoadd_bridge_rc_activity(arr[2]),
-      state: dco_decode_opt_box_autoadd_bridge_rc_state(arr[3]),
-      lastMessage: dco_decode_opt_String(arr[4]),
-      lastSeq: dco_decode_opt_box_autoadd_u_64(arr[5]),
-    );
-  }
-
-  @protected
   BridgeOverview dco_decode_bridge_overview(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -4603,12 +3860,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BridgeOverviewShed dco_decode_bridge_overview_shed(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
     return BridgeOverviewShed(
       shed: dco_decode_bridge_shed(arr[0]),
       sessions: dco_decode_list_bridge_rc_session(arr[1]),
-      capabilities: dco_decode_opt_box_autoadd_bridge_rc_capabilities(arr[2]),
     );
   }
 
@@ -4646,44 +3902,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcEvent dco_decode_bridge_rc_event(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    switch (raw[0]) {
-      case 0:
-        return BridgeRcEvent_ActivityChanged(
-          shed: dco_decode_String(raw[1]),
-          slug: dco_decode_String(raw[2]),
-          activity: dco_decode_opt_box_autoadd_bridge_rc_activity(raw[3]),
-          activityAt: dco_decode_opt_String(raw[4]),
-          state: dco_decode_opt_box_autoadd_bridge_rc_state(raw[5]),
-          lastMessage: dco_decode_opt_String(raw[6]),
-        );
-      case 1:
-        return BridgeRcEvent_SessionUpdated(
-          shed: dco_decode_String(raw[1]),
-          slug: dco_decode_String(raw[2]),
-          activity: dco_decode_opt_box_autoadd_bridge_rc_activity(raw[3]),
-          state: dco_decode_opt_box_autoadd_bridge_rc_state(raw[4]),
-          lastMessage: dco_decode_opt_String(raw[5]),
-          lane: dco_decode_opt_String(raw[6]),
-          removed: dco_decode_bool(raw[7]),
-        );
-      case 2:
-        return BridgeRcEvent_MessageAppended(
-          shed: dco_decode_String(raw[1]),
-          slug: dco_decode_String(raw[2]),
-          seq: dco_decode_u_64(raw[3]),
-        );
-      case 3:
-        return BridgeRcEvent_HubUnavailable(shed: dco_decode_String(raw[1]));
-      case 4:
-        return BridgeRcEvent_ShedStopped(shed: dco_decode_String(raw[1]));
-      default:
-        throw Exception('unreachable');
-    }
-  }
-
-  @protected
   BridgeRcFeedMessage dco_decode_bridge_rc_feed_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -4708,18 +3926,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return BridgeRcFeedTool(
       name: dco_decode_opt_String(arr[0]),
       detail: dco_decode_opt_String(arr[1]),
-    );
-  }
-
-  @protected
-  BridgeRcInvocation dco_decode_bridge_rc_invocation(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return BridgeRcInvocation(
-      argv: dco_decode_list_String(arr[0]),
-      stdin: dco_decode_opt_String(arr[1]),
     );
   }
 
@@ -4764,18 +3970,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       feed: dco_decode_String(arr[4]),
       interrupt: dco_decode_bool(arr[5]),
       attach: dco_decode_String(arr[6]),
-    );
-  }
-
-  @protected
-  BridgeRcMessagesPage dco_decode_bridge_rc_messages_page(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return BridgeRcMessagesPage(
-      messages: dco_decode_list_bridge_rc_feed_message(arr[0]),
-      truncated: dco_decode_bool(arr[1]),
     );
   }
 
@@ -4963,23 +4157,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherUpdate dco_decode_bridge_watcher_update(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    switch (raw[0]) {
-      case 0:
-        return BridgeWatcherUpdate_Event(
-          event: dco_decode_box_autoadd_bridge_rc_event(raw[1]),
-          overlay: dco_decode_list_bridge_overlay_entry(raw[2]),
-          resync: dco_decode_bool(raw[3]),
-        );
-      case 1:
-        return BridgeWatcherUpdate_Down(reason: dco_decode_String(raw[1]));
-      default:
-        throw Exception('unreachable');
-    }
-  }
-
-  @protected
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -5043,12 +4220,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<BridgeLaneQuestion> dco_decode_list_bridge_lane_question(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_bridge_lane_question).toList();
-  }
-
-  @protected
-  List<BridgeOverlayEntry> dco_decode_list_bridge_overlay_entry(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_bridge_overlay_entry).toList();
   }
 
   @protected
@@ -5216,27 +4387,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcCapabilities? dco_decode_opt_box_autoadd_bridge_rc_capabilities(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null
-        ? null
-        : dco_decode_box_autoadd_bridge_rc_capabilities(raw);
-  }
-
-  @protected
   BridgeRcFeedTool? dco_decode_opt_box_autoadd_bridge_rc_feed_tool(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_bridge_rc_feed_tool(raw);
-  }
-
-  @protected
-  BridgeRcState? dco_decode_opt_box_autoadd_bridge_rc_state(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null ? null : dco_decode_box_autoadd_bridge_rc_state(raw);
   }
 
   @protected
@@ -5452,18 +4607,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherHandle
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
   BridgeClient
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     SseDeserializer deserializer,
@@ -5542,18 +4685,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return BridgeTestSseImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
-  BridgeWatcherHandle
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -5668,18 +4799,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherHandle
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return BridgeWatcherHandleImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
   RustStreamSink<bool> sse_decode_StreamSink_bool_Sse(
     SseDeserializer deserializer,
   ) {
@@ -5713,15 +4832,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   RustStreamSink<BridgeRoostUpdate>
   sse_decode_StreamSink_bridge_roost_update_Sse(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    throw UnimplementedError('Unreachable ()');
-  }
-
-  @protected
-  RustStreamSink<BridgeWatcherUpdate>
-  sse_decode_StreamSink_bridge_watcher_update_Sse(
-    SseDeserializer deserializer,
-  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
   }
@@ -5891,35 +5001,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcCapabilities sse_decode_box_autoadd_bridge_rc_capabilities(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_bridge_rc_capabilities(deserializer));
-  }
-
-  @protected
-  BridgeRcEvent sse_decode_box_autoadd_bridge_rc_event(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_bridge_rc_event(deserializer));
-  }
-
-  @protected
   BridgeRcFeedTool sse_decode_box_autoadd_bridge_rc_feed_tool(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_bridge_rc_feed_tool(deserializer));
-  }
-
-  @protected
-  BridgeRcState sse_decode_box_autoadd_bridge_rc_state(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_bridge_rc_state(deserializer));
   }
 
   @protected
@@ -6940,29 +6026,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeOverlayEntry sse_decode_bridge_overlay_entry(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_shed = sse_decode_String(deserializer);
-    var var_slug = sse_decode_String(deserializer);
-    var var_activity = sse_decode_opt_box_autoadd_bridge_rc_activity(
-      deserializer,
-    );
-    var var_state = sse_decode_opt_box_autoadd_bridge_rc_state(deserializer);
-    var var_lastMessage = sse_decode_opt_String(deserializer);
-    var var_lastSeq = sse_decode_opt_box_autoadd_u_64(deserializer);
-    return BridgeOverlayEntry(
-      shed: var_shed,
-      slug: var_slug,
-      activity: var_activity,
-      state: var_state,
-      lastMessage: var_lastMessage,
-      lastSeq: var_lastSeq,
-    );
-  }
-
-  @protected
   BridgeOverview sse_decode_bridge_overview(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_server = sse_decode_bridge_overview_server(deserializer);
@@ -6996,14 +6059,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_shed = sse_decode_bridge_shed(deserializer);
     var var_sessions = sse_decode_list_bridge_rc_session(deserializer);
-    var var_capabilities = sse_decode_opt_box_autoadd_bridge_rc_capabilities(
-      deserializer,
-    );
-    return BridgeOverviewShed(
-      shed: var_shed,
-      sessions: var_sessions,
-      capabilities: var_capabilities,
-    );
+    return BridgeOverviewShed(shed: var_shed, sessions: var_sessions);
   }
 
   @protected
@@ -7047,72 +6103,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcEvent sse_decode_bridge_rc_event(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var tag_ = sse_decode_i_32(deserializer);
-    switch (tag_) {
-      case 0:
-        var var_shed = sse_decode_String(deserializer);
-        var var_slug = sse_decode_String(deserializer);
-        var var_activity = sse_decode_opt_box_autoadd_bridge_rc_activity(
-          deserializer,
-        );
-        var var_activityAt = sse_decode_opt_String(deserializer);
-        var var_state = sse_decode_opt_box_autoadd_bridge_rc_state(
-          deserializer,
-        );
-        var var_lastMessage = sse_decode_opt_String(deserializer);
-        return BridgeRcEvent_ActivityChanged(
-          shed: var_shed,
-          slug: var_slug,
-          activity: var_activity,
-          activityAt: var_activityAt,
-          state: var_state,
-          lastMessage: var_lastMessage,
-        );
-      case 1:
-        var var_shed = sse_decode_String(deserializer);
-        var var_slug = sse_decode_String(deserializer);
-        var var_activity = sse_decode_opt_box_autoadd_bridge_rc_activity(
-          deserializer,
-        );
-        var var_state = sse_decode_opt_box_autoadd_bridge_rc_state(
-          deserializer,
-        );
-        var var_lastMessage = sse_decode_opt_String(deserializer);
-        var var_lane = sse_decode_opt_String(deserializer);
-        var var_removed = sse_decode_bool(deserializer);
-        return BridgeRcEvent_SessionUpdated(
-          shed: var_shed,
-          slug: var_slug,
-          activity: var_activity,
-          state: var_state,
-          lastMessage: var_lastMessage,
-          lane: var_lane,
-          removed: var_removed,
-        );
-      case 2:
-        var var_shed = sse_decode_String(deserializer);
-        var var_slug = sse_decode_String(deserializer);
-        var var_seq = sse_decode_u_64(deserializer);
-        return BridgeRcEvent_MessageAppended(
-          shed: var_shed,
-          slug: var_slug,
-          seq: var_seq,
-        );
-      case 3:
-        var var_shed = sse_decode_String(deserializer);
-        return BridgeRcEvent_HubUnavailable(shed: var_shed);
-      case 4:
-        var var_shed = sse_decode_String(deserializer);
-        return BridgeRcEvent_ShedStopped(shed: var_shed);
-      default:
-        throw UnimplementedError('');
-    }
-  }
-
-  @protected
   BridgeRcFeedMessage sse_decode_bridge_rc_feed_message(
     SseDeserializer deserializer,
   ) {
@@ -7141,16 +6131,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_name = sse_decode_opt_String(deserializer);
     var var_detail = sse_decode_opt_String(deserializer);
     return BridgeRcFeedTool(name: var_name, detail: var_detail);
-  }
-
-  @protected
-  BridgeRcInvocation sse_decode_bridge_rc_invocation(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_argv = sse_decode_list_String(deserializer);
-    var var_stdin = sse_decode_opt_String(deserializer);
-    return BridgeRcInvocation(argv: var_argv, stdin: var_stdin);
   }
 
   @protected
@@ -7203,19 +6183,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       feed: var_feed,
       interrupt: var_interrupt,
       attach: var_attach,
-    );
-  }
-
-  @protected
-  BridgeRcMessagesPage sse_decode_bridge_rc_messages_page(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_messages = sse_decode_list_bridge_rc_feed_message(deserializer);
-    var var_truncated = sse_decode_bool(deserializer);
-    return BridgeRcMessagesPage(
-      messages: var_messages,
-      truncated: var_truncated,
     );
   }
 
@@ -7467,31 +6434,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeWatcherUpdate sse_decode_bridge_watcher_update(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var tag_ = sse_decode_i_32(deserializer);
-    switch (tag_) {
-      case 0:
-        var var_event = sse_decode_box_autoadd_bridge_rc_event(deserializer);
-        var var_overlay = sse_decode_list_bridge_overlay_entry(deserializer);
-        var var_resync = sse_decode_bool(deserializer);
-        return BridgeWatcherUpdate_Event(
-          event: var_event,
-          overlay: var_overlay,
-          resync: var_resync,
-        );
-      case 1:
-        var var_reason = sse_decode_String(deserializer);
-        return BridgeWatcherUpdate_Down(reason: var_reason);
-      default:
-        throw UnimplementedError('');
-    }
-  }
-
-  @protected
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
@@ -7595,20 +6537,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <BridgeLaneQuestion>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_bridge_lane_question(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<BridgeOverlayEntry> sse_decode_list_bridge_overlay_entry(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <BridgeOverlayEntry>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_bridge_overlay_entry(deserializer));
     }
     return ans_;
   }
@@ -7895,19 +6823,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  BridgeRcCapabilities? sse_decode_opt_box_autoadd_bridge_rc_capabilities(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_bridge_rc_capabilities(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
   BridgeRcFeedTool? sse_decode_opt_box_autoadd_bridge_rc_feed_tool(
     SseDeserializer deserializer,
   ) {
@@ -7915,19 +6830,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_bridge_rc_feed_tool(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  BridgeRcState? sse_decode_opt_box_autoadd_bridge_rc_state(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_bridge_rc_state(deserializer));
     } else {
       return null;
     }
@@ -8185,19 +7087,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    BridgeWatcherHandle self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as BridgeWatcherHandleImpl).frbInternalSseEncode(move: true),
-      serializer,
-    );
-  }
-
-  @protected
-  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     BridgeClient self,
     SseSerializer serializer,
@@ -8283,19 +7172,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
       (self as BridgeTestSseImpl).frbInternalSseEncode(move: false),
-      serializer,
-    );
-  }
-
-  @protected
-  void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    BridgeWatcherHandle self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as BridgeWatcherHandleImpl).frbInternalSseEncode(move: false),
       serializer,
     );
   }
@@ -8416,19 +7292,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeWatcherHandle(
-    BridgeWatcherHandle self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as BridgeWatcherHandleImpl).frbInternalSseEncode(move: null),
-      serializer,
-    );
-  }
-
-  @protected
   void sse_encode_StreamSink_bool_Sse(
     RustStreamSink<bool> self,
     SseSerializer serializer,
@@ -8506,23 +7369,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.setupAndSerialize(
         codec: SseCodec(
           decodeSuccessData: sse_decode_bridge_roost_update,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-      ),
-      serializer,
-    );
-  }
-
-  @protected
-  void sse_encode_StreamSink_bridge_watcher_update_Sse(
-    RustStreamSink<BridgeWatcherUpdate> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(
-      self.setupAndSerialize(
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_bridge_watcher_update,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -8711,39 +7557,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_box_autoadd_bridge_rc_capabilities(
-    BridgeRcCapabilities self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bridge_rc_capabilities(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_bridge_rc_event(
-    BridgeRcEvent self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bridge_rc_event(self, serializer);
-  }
-
-  @protected
   void sse_encode_box_autoadd_bridge_rc_feed_tool(
     BridgeRcFeedTool self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bridge_rc_feed_tool(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_bridge_rc_state(
-    BridgeRcState self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bridge_rc_state(self, serializer);
   }
 
   @protected
@@ -9577,20 +8396,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_bridge_overlay_entry(
-    BridgeOverlayEntry self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.shed, serializer);
-    sse_encode_String(self.slug, serializer);
-    sse_encode_opt_box_autoadd_bridge_rc_activity(self.activity, serializer);
-    sse_encode_opt_box_autoadd_bridge_rc_state(self.state, serializer);
-    sse_encode_opt_String(self.lastMessage, serializer);
-    sse_encode_opt_box_autoadd_u_64(self.lastSeq, serializer);
-  }
-
-  @protected
   void sse_encode_bridge_overview(
     BridgeOverview self,
     SseSerializer serializer,
@@ -9620,10 +8425,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bridge_shed(self.shed, serializer);
     sse_encode_list_bridge_rc_session(self.sessions, serializer);
-    sse_encode_opt_box_autoadd_bridge_rc_capabilities(
-      self.capabilities,
-      serializer,
-    );
   }
 
   @protected
@@ -9662,63 +8463,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_bridge_rc_event(
-    BridgeRcEvent self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    switch (self) {
-      case BridgeRcEvent_ActivityChanged(
-        shed: final shed,
-        slug: final slug,
-        activity: final activity,
-        activityAt: final activityAt,
-        state: final state,
-        lastMessage: final lastMessage,
-      ):
-        sse_encode_i_32(0, serializer);
-        sse_encode_String(shed, serializer);
-        sse_encode_String(slug, serializer);
-        sse_encode_opt_box_autoadd_bridge_rc_activity(activity, serializer);
-        sse_encode_opt_String(activityAt, serializer);
-        sse_encode_opt_box_autoadd_bridge_rc_state(state, serializer);
-        sse_encode_opt_String(lastMessage, serializer);
-      case BridgeRcEvent_SessionUpdated(
-        shed: final shed,
-        slug: final slug,
-        activity: final activity,
-        state: final state,
-        lastMessage: final lastMessage,
-        lane: final lane,
-        removed: final removed,
-      ):
-        sse_encode_i_32(1, serializer);
-        sse_encode_String(shed, serializer);
-        sse_encode_String(slug, serializer);
-        sse_encode_opt_box_autoadd_bridge_rc_activity(activity, serializer);
-        sse_encode_opt_box_autoadd_bridge_rc_state(state, serializer);
-        sse_encode_opt_String(lastMessage, serializer);
-        sse_encode_opt_String(lane, serializer);
-        sse_encode_bool(removed, serializer);
-      case BridgeRcEvent_MessageAppended(
-        shed: final shed,
-        slug: final slug,
-        seq: final seq,
-      ):
-        sse_encode_i_32(2, serializer);
-        sse_encode_String(shed, serializer);
-        sse_encode_String(slug, serializer);
-        sse_encode_u_64(seq, serializer);
-      case BridgeRcEvent_HubUnavailable(shed: final shed):
-        sse_encode_i_32(3, serializer);
-        sse_encode_String(shed, serializer);
-      case BridgeRcEvent_ShedStopped(shed: final shed):
-        sse_encode_i_32(4, serializer);
-        sse_encode_String(shed, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_bridge_rc_feed_message(
     BridgeRcFeedMessage self,
     SseSerializer serializer,
@@ -9740,16 +8484,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_String(self.name, serializer);
     sse_encode_opt_String(self.detail, serializer);
-  }
-
-  @protected
-  void sse_encode_bridge_rc_invocation(
-    BridgeRcInvocation self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_String(self.argv, serializer);
-    sse_encode_opt_String(self.stdin, serializer);
   }
 
   @protected
@@ -9791,16 +8525,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.feed, serializer);
     sse_encode_bool(self.interrupt, serializer);
     sse_encode_String(self.attach, serializer);
-  }
-
-  @protected
-  void sse_encode_bridge_rc_messages_page(
-    BridgeRcMessagesPage self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_bridge_rc_feed_message(self.messages, serializer);
-    sse_encode_bool(self.truncated, serializer);
   }
 
   @protected
@@ -9984,28 +8708,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_bridge_watcher_update(
-    BridgeWatcherUpdate self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    switch (self) {
-      case BridgeWatcherUpdate_Event(
-        event: final event,
-        overlay: final overlay,
-        resync: final resync,
-      ):
-        sse_encode_i_32(0, serializer);
-        sse_encode_box_autoadd_bridge_rc_event(event, serializer);
-        sse_encode_list_bridge_overlay_entry(overlay, serializer);
-        sse_encode_bool(resync, serializer);
-      case BridgeWatcherUpdate_Down(reason: final reason):
-        sse_encode_i_32(1, serializer);
-        sse_encode_String(reason, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
@@ -10095,18 +8797,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_bridge_lane_question(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_bridge_overlay_entry(
-    List<BridgeOverlayEntry> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_bridge_overlay_entry(item, serializer);
     }
   }
 
@@ -10379,19 +9069,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_opt_box_autoadd_bridge_rc_capabilities(
-    BridgeRcCapabilities? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_bridge_rc_capabilities(self, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_opt_box_autoadd_bridge_rc_feed_tool(
     BridgeRcFeedTool? self,
     SseSerializer serializer,
@@ -10401,19 +9078,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_bridge_rc_feed_tool(self, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_opt_box_autoadd_bridge_rc_state(
-    BridgeRcState? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_bridge_rc_state(self, serializer);
     }
   }
 
@@ -10609,53 +9273,6 @@ class BridgeClientImpl extends RustOpaque implements BridgeClient {
   Future<BridgeOverview> overview() =>
       RustLib.instance.api.crateApiClientBridgeClientOverview(that: this);
 
-  Future<void> rcInput({
-    required String shed,
-    required String slug,
-    required String text,
-  }) => RustLib.instance.api.crateApiClientBridgeClientRcInput(
-    that: this,
-    shed: shed,
-    slug: slug,
-    text: text,
-  );
-
-  /// Interrupt the running turn. `false` = nothing was running, which is an
-  /// answer rather than a failure.
-  Future<bool> rcInterrupt({required String shed, required String slug}) =>
-      RustLib.instance.api.crateApiClientBridgeClientRcInterrupt(
-        that: this,
-        shed: shed,
-        slug: slug,
-      );
-
-  Future<BridgeRcMessagesPage> rcMessages({
-    required String shed,
-    required String slug,
-    required BigInt since,
-    int? limit,
-  }) => RustLib.instance.api.crateApiClientBridgeClientRcMessages(
-    that: this,
-    shed: shed,
-    slug: slug,
-    since: since,
-    limit: limit,
-  );
-
-  /// Start a structured turn on a shed session — the `input: "turn"`
-  /// counterpart to [`Self::rc_input`]'s `"gated"` keystroke path. Which one
-  /// applies is the kind's business (`kind_features.input`), never a guess.
-  Future<String> rcTurn({
-    required String shed,
-    required String slug,
-    required String text,
-  }) => RustLib.instance.api.crateApiClientBridgeClientRcTurn(
-    that: this,
-    shed: shed,
-    slug: slug,
-    text: text,
-  );
-
   Future<void> reset({required String name}) => RustLib.instance.api
       .crateApiClientBridgeClientReset(that: this, name: name);
 
@@ -10812,33 +9429,4 @@ class BridgeTestSseImpl extends RustOpaque implements BridgeTestSse {
   /// Idempotent synchronous stop: abort the accept loop, decrement the counter.
   void stop() =>
       RustLib.instance.api.crateApiLocalSseBridgeTestSseStop(that: this);
-}
-
-@sealed
-class BridgeWatcherHandleImpl extends RustOpaque
-    implements BridgeWatcherHandle {
-  // Not to be used by end users
-  BridgeWatcherHandleImpl.frbInternalDcoDecode(List<dynamic> wire)
-    : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  BridgeWatcherHandleImpl.frbInternalSseDecode(
-    BigInt ptr,
-    int externalSizeOnNative,
-  ) : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: RustLib
-        .instance
-        .api
-        .rust_arc_increment_strong_count_BridgeWatcherHandle,
-    rustArcDecrementStrongCount: RustLib
-        .instance
-        .api
-        .rust_arc_decrement_strong_count_BridgeWatcherHandle,
-    rustArcDecrementStrongCountPtr: RustLib
-        .instance
-        .api
-        .rust_arc_decrement_strong_count_BridgeWatcherHandlePtr,
-  );
 }

@@ -2,16 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
 import '../../src/rust/api/dto.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
 import '../machines/machine_sessions_view.dart';
-import 'session_card.dart';
+import 'shed_session_group.dart';
 
-/// Cross-host Sessions — every host's rc sessions grouped by host, read from one
-/// `GET /api/overview` call per host (the server rc-enriches the sessions). Cards:
-/// status badge, kind chip, meta, "›_ open" (→ terminal), delete.
+/// Cross-host Sessions — every host's agent sessions grouped by host, then by
+/// shed.
+///
+/// **The rows are roost tabs** (plan 022 S6, shed#328). The RC hub that used to
+/// enrich `GET /api/overview`'s session rows is gone, so the overview is read
+/// for ONE thing here: which sheds exist and which are running. Each running
+/// shed's rows then come from its own `roost-session`, over the phone's SSH
+/// tunnel — the identical path a machine's rows take, which is why a machine
+/// group and a shed group differ only by the header above them.
 class AllSessionsView extends StatelessWidget {
   const AllSessionsView({super.key});
 
@@ -70,35 +77,37 @@ class _HostSessions extends ConsumerWidget {
             tone: ShedStatusTone.err,
           );
         }(),
-        OverviewData(:final overview) => _sessions(ref, overview),
+        OverviewData(:final overview) => _sheds(overview),
       },
     );
   }
 
-  Widget _sessions(WidgetRef ref, BridgeOverview overview) {
-    final list = shedSessionPairs(overview);
-    // Live activity badges require the server's aggregate SSE stream. When it's
-    // advertised, keep the per-host subscription alive at the group level (so a
-    // scrolled-off card can't drop it) and mark cards live; otherwise cards stay
-    // on the static overview snapshot (today's manual-refresh behavior).
-    final live = overview.server.features.contains('rc-events');
-    if (live) ref.watch(liveActivityProvider(serverName));
+  /// One group per RUNNING shed. A stopped shed is skipped rather than listed
+  /// as unreachable: it has no `roost-session` because it has no kernel, the
+  /// fix is on its own card in the Sheds tab, and a permanent "unreachable"
+  /// badge for a box nobody asked to be running is noise.
+  Widget _sheds(BridgeOverview overview) {
+    final running = overview.sheds
+        .where((s) => bridgeShedIsRunning(s.shed))
+        .toList();
     logDriveState(
-      'all-sessions host=$serverName reachable=true count=${list.length} '
-      'live=$live',
+      'all-sessions host=$serverName reachable=true sheds=${running.length}',
     );
-    if (list.isEmpty) return const HostNote('No sessions');
+    if (running.isEmpty) return const HostNote('No running sheds');
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final e in list)
-          SessionCard(
-            key: ValueKey(
-              'all-session-$serverName-${e.shedName}-${e.session.slug}',
-            ),
+        for (final s in running)
+          ShedSessionGroup(
+            key: ValueKey('all-sessions-shed-$serverName-${s.shed.name}'),
             serverName: serverName,
-            shedName: e.shedName,
-            session: e.session,
-            live: live,
+            shedName: s.shed.name,
+            // A 0.9.0 server contributes NO sessions here — its rows carry no
+            // `rc` block, so the decoder drops them (`dto.rs`'s
+            // `overview_0_9_0_rows_are_not_sessions`). A non-empty list is
+            // therefore a reliable "this server predates 0.9.0" signal, and
+            // the only one the phone gets for free.
+            serverPredatesRoost: s.sessions.isNotEmpty,
           ),
       ],
     );

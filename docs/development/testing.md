@@ -188,9 +188,8 @@ Command-line end-to-end tools under `tool/` (not run in CI). They default to
 `shed-mobile-test@localhost:2222`:
 
 ```bash
-dart run tool/e2e_list.dart   # mint -> pin -> GET /api/sheds
-dart run tool/e2e_rc.dart     # shed-ext-rc create/list/kill (+ idempotent kill)
-dart run tool/e2e_pty.dart    # attach PTY, echo round-trip, resize, detach
+dart run tool/e2e_list.dart      # mint -> pin -> GET /api/sheds
+dart run tool/e2e_pty.dart <slug>  # attach PTY, echo round-trip, resize, detach
 ```
 
 These verify the transport against reality before any UI is involved — the same

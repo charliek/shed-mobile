@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/sheds/shed_card.dart';
+import 'package:shed_mobile/machines/machine_feed.dart';
+import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/src/rust/api/dto.dart';
-import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 import 'fake_shed_client.dart';
@@ -53,13 +54,19 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         shedClientProvider('h').overrideWith((ref) async => fake),
-        // So a whole-card tap can push ShedDetailScreen (which watches
-        // rcSessionsProvider) without a real client — it renders empty.
+        // So a whole-card tap can push ShedDetailScreen (which watches the
+        // shed's roost feed) without opening a real SSH connection — it
+        // renders its empty state.
         if (overrideSessions)
-          rcSessionsProvider((
-            serverName: 'h',
-            shedName: 'web',
-          )).overrideWith((ref) async => <BridgeRcSession>[]),
+          machineFeedProvider(shedFeedKey('h', 'web')).overrideWith(
+            (ref) => Stream.value(
+              const MachineFeedState(
+                machine: MachineRecord(name: 'shed:h/web', host: 'h'),
+                reachable: true,
+                connectedOnce: true,
+              ),
+            ),
+          ),
       ],
       child: MaterialApp(
         theme: shedLightTheme,

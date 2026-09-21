@@ -11,10 +11,8 @@ library;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../bridge/bridge_adapters.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
-import '../../src/rust/api/dto.dart';
 import '../../machines/machine_feed.dart';
 import '../../src/rust/api/dto_rc.dart';
 
@@ -147,184 +145,52 @@ sealed class CreateRcTarget {
   });
 }
 
-/// A session in a shed, read through the host's overview.
-class ShedRcTarget extends CreateRcTarget {
-  const ShedRcTarget({required this.serverName, required this.shedName});
-
-  final String serverName;
-  final String shedName;
-
-  ({String serverName, String shedName}) get _key =>
-      (serverName: serverName, shedName: shedName);
-
-  @override
-  String get label => shedName;
-
-  @override
-  String get noKindsHint =>
-      'This shed offers no session kinds — update the shed image.';
-
-  @override
-  String get nameFieldLabel =>
-      'Session name (optional — defaults to shed/slug)';
-
-  @override
-  String get workdirFieldLabel =>
-      'Workdir (optional — defaults to \$SHED_WORKSPACE)';
-
-  @override
-  void refresh(WidgetRef ref) => ref.invalidate(overviewProvider(serverName));
-
-  @override
-  void listenSettled(WidgetRef ref, VoidCallback onSettled) {
-    ref.listen(overviewProvider(serverName), (_, next) {
-      if (!next.isLoading) onSettled();
-    });
-  }
-
-  /// We key off [overviewProvider] (not the lossy `shedCapabilitiesProvider`,
-  /// which collapses server-too-old / shed-missing / shed-stopped / probe-failed
-  /// all into one `null`) so each becomes a distinct, honest UI branch.
-  @override
-  RcCapsView caps(WidgetRef ref) {
-    final async = ref.watch(overviewProvider(serverName));
-    return withReloading(_reduce(async), async.isLoading);
-  }
-
-  RcCapsView _reduce(AsyncValue<OverviewResult> async) {
-    // A retained previous value (a reload after data) still renders from data;
-    // only a value-less loading/error surfaces the loading/error branches.
-    if (!async.hasValue) {
-      return async.hasError
-          ? baseCapsView(
-              offered: const [],
-              retry: true,
-              note: "Couldn't read this shed's capabilities.",
-              logToken: 'error',
-            )
-          : baseCapsView(offered: const [], loading: true, logToken: 'loading');
-    }
-    final result = async.requireValue;
-    // Server predates GET /api/overview: base is CORRECT here and a retry would
-    // just re-404 forever — quiet base + a non-retry note, today's good path.
-    if (result is OverviewUnsupported) {
-      return baseCapsView(
-        note: 'Server too old for codex/cursor/opencode.',
-        logToken: 'unsupported',
-      );
-    }
-    final overview = (result as OverviewData).overview;
-    BridgeOverviewShed? row;
-    for (final s in overview.sheds) {
-      if (s.shed.name == shedName) {
-        row = s;
-        break;
-      }
-    }
-    // Shed not in the overview at all: neutral — do NOT claim "unreadable".
-    if (row == null) {
-      return baseCapsView(
-        note: "This shed isn't on this server — refresh its host.",
-        logToken: 'missing',
-      );
-    }
-    // Found but not running: caps only exist for a running shed, so this is not
-    // a failure — a neutral "start it" note, no retry.
-    if (!bridgeShedIsRunning(row.shed)) {
-      final note = switch (row.shed.status) {
-        BridgeShedStatus.stopped => 'Start the shed to see its session kinds.',
-        BridgeShedStatus.starting =>
-          'This shed is starting — its session kinds will appear once it\'s '
-              'running.',
-        _ => "This shed isn't running — start it to see its session kinds.",
-      };
-      return baseCapsView(note: note, logToken: 'stopped');
-    }
-    final shedCaps = row.capabilities;
-    // Running but no caps: a probe miss (retry re-probes) or an old binary that
-    // can't advertise (retry is a harmless no-op) — the note is honest either
-    // way, and unlike an old SERVER a retry here can genuinely self-heal.
-    if (shedCaps == null) {
-      return baseCapsView(
-        retry: true,
-        note: 'codex/cursor/opencode unavailable for this shed.',
-        logToken: 'absent',
-      );
-    }
-    return presentCapsView(shedCaps);
-  }
-
-  @override
-  Future<RcCreated> create(
-    WidgetRef ref, {
-    required BridgeRcKind kind,
-    String? displayName,
-    String? workdir,
-    String? prompt,
-    String? permissionMode,
-  }) async {
-    final svc = await rcServiceOneShot(ref, _key);
-    final session = await svc.create(
-      kind: kind,
-      displayName: displayName,
-      workdir: workdir,
-      prompt: prompt,
-      permissionMode: permissionMode,
-    );
-    return (
-      slug: session.slug,
-      state: session.state.wire,
-      url: session.url,
-      result: session,
-    );
-  }
-}
-
-/// A session on a machine, read through the machine's own capability probe.
+/// **Anything reached through a roost feed** — a shed, or a machine.
 ///
-/// A machine has no overview and no lifecycle to explain — it is reachable or
-/// it is not — so the branch set is smaller than a shed's, but the two failure
-/// modes it does have are the same two, and say the same things.
-class MachineRcTarget extends CreateRcTarget {
-  const MachineRcTarget({required this.machineName});
+/// Since S6 (plan 022, shed#328) those are the same thing to this form: both
+/// run their agents as roost tabs, both are read over the phone's own SSH
+/// tunnel, and both launch with `tab.open`. What is left to differ is the
+/// label, the empty-capabilities sentence, and the origin key the feed is
+/// addressed by — so that is all the two subclasses below carry.
+abstract class RoostRcTarget extends CreateRcTarget {
+  const RoostRcTarget();
 
-  final String machineName;
+  /// Which feed to read and launch through. See [shedFeedKey].
+  String get origin;
 
-  @override
-  String get label => machineName;
-
-  @override
-  String get noKindsHint =>
-      '$machineName has no agents installed that roost can run.';
+  /// What to call this place in a sentence ("… is unreachable right now").
+  String get subject;
 
   /// Never rendered — roost names the tab itself (see [acceptsKickoff]).
   @override
   String get nameFieldLabel => 'Session name';
 
-  // No $SHED_WORKSPACE on a machine: roost opens the tab in the project's
-  // directory, and with neither that nor a workdir, the account's home.
+  /// No `$SHED_WORKSPACE` here and no landing-dir default: roost opens the tab
+  /// in the project's directory, and with neither that nor a workdir, the
+  /// account's home.
   @override
   String get workdirFieldLabel => 'Workdir (optional — defaults to \$HOME)';
 
-  /// See [CreateRcTarget.acceptsKickoff]: roost's `tab.open` starts the agent
-  /// and nothing more.
+  /// roost's `tab.open` starts the agent and nothing more: it titles the tab
+  /// itself, and a prompt or a permission posture needs a provider script on
+  /// the far side, which is a later slice. Offering fields whose contents would
+  /// be dropped on the floor is the failure mode this flag exists to prevent.
   @override
   bool get acceptsKickoff => false;
 
   @override
-  void refresh(WidgetRef ref) =>
-      ref.invalidate(machineFeedProvider(machineName));
+  void refresh(WidgetRef ref) => ref.invalidate(machineFeedProvider(origin));
 
   @override
   void listenSettled(WidgetRef ref, VoidCallback onSettled) {
-    ref.listen(machineFeedProvider(machineName), (_, next) {
+    ref.listen(machineFeedProvider(origin), (_, next) {
       if (!next.isLoading) onSettled();
     });
   }
 
   @override
   RcCapsView caps(WidgetRef ref) {
-    final async = ref.watch(machineFeedProvider(machineName));
+    final async = ref.watch(machineFeedProvider(origin));
     return withReloading(_reduce(async), async.isLoading);
   }
 
@@ -334,32 +200,36 @@ class MachineRcTarget extends CreateRcTarget {
           ? baseCapsView(
               offered: const [],
               retry: true,
-              note: "Couldn't reach $machineName.",
+              note: "Couldn't reach $subject.",
               logToken: 'error',
             )
           : baseCapsView(offered: const [], loading: true, logToken: 'loading');
     }
     final state = async.requireValue;
-    // Unreachable: creating would only fail, so offer nothing and say why —
-    // the shed side has no equivalent (a stopped shed can still be started
-    // from its own card; a machine the phone cannot reach cannot).
+    // Unreachable: creating would only fail, so offer nothing and say why. The
+    // feed's own `detail` is the honest half — "no roost session on this shed"
+    // and "this device's key is not authorized" have different fixes, and
+    // flattening them to "unreachable" throws the actionable part away.
     if (!state.reachable) {
+      final detail = state.detail;
       return baseCapsView(
         offered: const [],
         retry: true,
-        note: '$machineName is unreachable right now.',
+        note: detail == null
+            ? '$subject is unreachable right now.'
+            : '$subject is unreachable right now — $detail.',
         logToken: 'unreachable',
       );
     }
     final caps = state.capabilities;
-    // Reachable but no capabilities. Unreachable in practice since plan 013:
-    // a machine's capabilities are SYNTHESIZED (`roostCapabilities`), not
-    // probed, so there is no round trip left to miss. Kept as the honest
-    // degradation for a state built without them.
+    // Reachable but no capabilities. Unreachable in practice: a roost feed's
+    // capabilities are SYNTHESIZED (`roostCapabilities`), not probed, so there
+    // is no round trip left to miss. Kept as the honest degradation for a state
+    // built without them.
     if (caps == null) {
       return baseCapsView(
         retry: true,
-        note: 'codex/cursor/opencode unavailable on $machineName.',
+        note: 'codex/cursor/opencode unavailable on $subject.',
         logToken: 'absent',
       );
     }
@@ -379,10 +249,60 @@ class MachineRcTarget extends CreateRcTarget {
     String? prompt,
     String? permissionMode,
   }) async {
-    final feed = ref.read(machineFeedControllerProvider(machineName));
+    final feed = ref.read(machineFeedControllerProvider(origin));
     final slug = await feed.create(kind: kind, workdir: workdir);
     // `tab.open` answers with the tab, not with a settled agent; the watcher's
-    // next poll carries the real lifecycle a second or two later.
+    // next push carries the real lifecycle a second or two later.
     return (slug: slug, state: 'created', url: null, result: slug);
   }
+}
+
+/// A session in a shed — a roost tab on the shed's own `roost-session`.
+///
+/// **Not the host's overview any more** (plan 022 S6). The overview's
+/// `rc_capabilities` block went with the RC hub, and its session rows are plain
+/// tmux rows now; what a shed can run is what roost can launch there, which is
+/// the same synthesized block a machine reads.
+class ShedRcTarget extends RoostRcTarget {
+  const ShedRcTarget({required this.serverName, required this.shedName});
+
+  final String serverName;
+  final String shedName;
+
+  @override
+  String get origin => shedFeedKey(serverName, shedName);
+
+  @override
+  String get subject => shedName;
+
+  @override
+  String get label => shedName;
+
+  @override
+  String get noKindsHint =>
+      '$shedName has no agents installed that roost can run.';
+}
+
+/// A session on a machine — a roost tab on the machine's own `roost-session`.
+///
+/// A machine has no shed lifecycle to explain — it is reachable or it is not —
+/// but everything that decides what the form offers is shared with a shed now,
+/// so this class is a name and a label.
+class MachineRcTarget extends RoostRcTarget {
+  const MachineRcTarget({required this.machineName});
+
+  final String machineName;
+
+  @override
+  String get origin => machineName;
+
+  @override
+  String get subject => machineName;
+
+  @override
+  String get label => machineName;
+
+  @override
+  String get noKindsHint =>
+      '$machineName has no agents installed that roost can run.';
 }

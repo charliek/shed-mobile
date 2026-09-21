@@ -11,8 +11,6 @@ import 'keys/key_manager.dart';
 import 'lanes/lane_controller.dart';
 import 'lanes/lane_source.dart';
 import 'lanes/lane_state.dart';
-import 'rc/activity_overlay.dart';
-import 'rc/rc_service.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
 import 'machines/machine_feed.dart';
@@ -23,13 +21,10 @@ import 'servers/server_store.dart';
 import 'src/rust/api/client.dart';
 import 'src/rust/api/dto.dart';
 import 'src/rust/api/dto_lane.dart';
-import 'src/rust/api/dto_rc.dart';
 import 'src/rust/api/error.dart';
-import 'src/rust/api/watcher.dart';
 import 'ssh/host_key_store.dart';
 import 'ssh/pty_session.dart';
 import 'ssh/roost_entitlement.dart';
-import 'ssh/ssh_runner.dart';
 import 'storage/secret_store.dart';
 
 /// Mobile (Android/iOS) vs desktop — the two platforms diverge on secret storage
@@ -299,251 +294,6 @@ final overviewProvider = FutureProvider.autoDispose
       }
     });
 
-/// The injectable seam over the two-call FRB watcher (`createRcWatcher` +
-/// `rcWatcherEvents` + the sync `stopRcEvents` + the opaque `dispose`). The
-/// default impl calls the generated FRB functions; [liveActivityProvider] drives
-/// it, and a test overrides [rcWatcherBridgeProvider] with a fake so the
-/// Riverpod wiring is unit-testable without the native library.
-abstract class RcWatcherBridge {
-  const RcWatcherBridge();
-
-  /// Spawn a watcher for [serverName] against [client], returning its opaque
-  /// handle (step 1 of the two-call shape).
-  Future<BridgeWatcherHandle> create({
-    required BridgeClient client,
-    required String serverName,
-  });
-
-  /// Drain the handle's watcher into a Dart `Stream` (step 2).
-  Stream<BridgeWatcherUpdate> events(BridgeWatcherHandle handle);
-
-  /// Synchronous, idempotent stop (the co-primary teardown Riverpod `onDispose`
-  /// calls); aborts a parked forwarder immediately.
-  void stop(BridgeWatcherHandle handle);
-
-  /// Drop the Rust-owned opaque (guarded against double-dispose).
-  void dispose(BridgeWatcherHandle handle);
-}
-
-class _FrbRcWatcherBridge extends RcWatcherBridge {
-  const _FrbRcWatcherBridge();
-
-  @override
-  Future<BridgeWatcherHandle> create({
-    required BridgeClient client,
-    required String serverName,
-  }) => createRcWatcher(client: client, serverName: serverName);
-
-  @override
-  Stream<BridgeWatcherUpdate> events(BridgeWatcherHandle handle) =>
-      rcWatcherEvents(handle: handle);
-
-  @override
-  void stop(BridgeWatcherHandle handle) => stopRcEvents(handle: handle);
-
-  @override
-  void dispose(BridgeWatcherHandle handle) {
-    if (!handle.isDisposed) handle.dispose();
-  }
-}
-
-final rcWatcherBridgeProvider = Provider<RcWatcherBridge>(
-  (ref) => const _FrbRcWatcherBridge(),
-);
-
-/// Debounce for the unknown-slug overview refetch: a session created outside the
-/// app (e.g. via the CLI) announces itself on the rc-events stream, but the
-/// overlay can only patch EXISTING cards — the overview must be refetched once
-/// for the new card to appear at all. At most one such refetch per window, so a
-/// burst of events for a new session costs a single fetch. This stays
-/// consumer-side because it needs overview knowledge the watcher lacks.
-///
-/// A top-level `var` (not `const`) purely so tests can shrink the window via
-/// [setRcUnknownSlugDebounceForTest] and assert the debounce re-enables without a
-/// real 5s wait; production never mutates it.
-Duration _rcUnknownSlugDebounce = const Duration(seconds: 5);
-
-/// Test seam: override (or reset, with `null`) the unknown-slug debounce window so
-/// the "debounce re-enables after the window" behavior is assertable in a unit
-/// test. Restore to the 5s default in `tearDown`.
-@visibleForTesting
-void setRcUnknownSlugDebounceForTest(Duration? window) =>
-    _rcUnknownSlugDebounce = window ?? const Duration(seconds: 5);
-
-/// The live rc-activity overlay for one host, folded by the Rust
-/// `RcEventsWatcher` and streamed over the bridge (`createRcWatcher` +
-/// `rcWatcherEvents`). A StreamProvider so the sessions view (and per-card
-/// `.select`s) react to each folded snapshot without re-fetching the overview.
-///
-/// Lifecycle: autoDispose — the watcher runs only while something watches this
-/// (the Sessions view / a watch screen for the host is visible). `onDispose`
-/// cancels the Dart subscription, calls the SYNCHRONOUS `stopRcEvents` (which
-/// aborts the Rust forwarder even while parked), then drops the opaque handle.
-///
-/// Reconnect is Rust-owned: the `RcEventsWatcher` backs off + reconnects, clears
-/// its held overlay on resync, and re-mints on a 401. A `Down` update is NOT
-/// destructive here — the subscription and the last overlay are kept. A resync
-/// arrives folded onto the next `Event` as `resync: true`, which triggers exactly
-/// one `overviewProvider` invalidation (so a coalesced/dropped intermediate can't
-/// lose the signal). The consumer-side unknown-slug debounce (below) is retained
-/// because it surfaces an out-of-band session on a HEALTHY connection, which the
-/// resync-on-reconnect path alone does not.
-final liveActivityProvider = StreamProvider.autoDispose
-    .family<ActivityOverlay, String>((ref, serverName) {
-      final bridge = ref.watch(rcWatcherBridgeProvider);
-      final controller = StreamController<ActivityOverlay>();
-      var disposed = false;
-      BridgeWatcherHandle? handle;
-      StreamSubscription<BridgeWatcherUpdate>? sub;
-
-      void teardown() {
-        final h = handle;
-        if (h != null) {
-          bridge.stop(h);
-          bridge.dispose(h);
-        }
-      }
-
-      ref.onDispose(() {
-        disposed = true;
-        unawaited(sub?.cancel());
-        teardown();
-        unawaited(controller.close());
-      });
-
-      // Emit an initial empty overlay immediately so consumers render before the
-      // first event (pre-B3 behavior).
-      var overlay = ActivityOverlay.empty;
-      controller.add(overlay);
-
-      // Unknown-slug refetch (debounced): an event for a session the current
-      // overview snapshot doesn't hold means there's no card for the patch to
-      // land on — refetch the overview once so the new card appears. ref.read
-      // (not watch): the overview must never be a dependency, or its own
-      // invalidation would rebuild this provider and tear down the watcher.
-      var lastUnknownRefetch = DateTime.fromMillisecondsSinceEpoch(0);
-      bool overviewHasSession(String shed, String slug) {
-        final r = ref.read(overviewProvider(serverName)).value;
-        // No snapshot to compare against — don't churn (treat as known).
-        if (r is! OverviewData) return true;
-        for (final s in r.overview.sheds) {
-          if (s.shed.name == shed) {
-            return s.sessions.any((sess) => sess.slug == slug);
-          }
-        }
-        return false; // whole shed unknown → the snapshot is stale too
-      }
-
-      void maybeRefetchUnknown(String shed, String slug) {
-        if (overviewHasSession(shed, slug)) return;
-        final now = DateTime.now();
-        if (now.difference(lastUnknownRefetch) < _rcUnknownSlugDebounce) return;
-        lastUnknownRefetch = now;
-        ref.invalidate(overviewProvider(serverName));
-      }
-
-      void onUpdate(BridgeWatcherUpdate update) {
-        if (disposed) return;
-        switch (update) {
-          case BridgeWatcherUpdate_Event(
-            :final event,
-            overlay: final entries,
-            :final resync,
-          ):
-            // A resync (reconnect cleared the held overlay) → refetch the base
-            // overview once (Rust already cleared its snapshot; this restores
-            // the Event.resync → invalidate ordering). A resync already
-            // invalidates the overview, so skip the unknown-slug check for this
-            // same update — it would only ever cost a redundant second refetch
-            // (and burn the debounce window). The next non-resync event picks up
-            // any still-unknown slug.
-            if (resync) {
-              ref.invalidate(overviewProvider(serverName));
-            } else {
-              // A live event for a session the overview doesn't know about → one
-              // debounced overview refetch so the new card materializes. Match
-              // the pre-B3 set: session.updated (not removed) + activity.changed.
-              switch (event) {
-                case BridgeRcEvent_SessionUpdated(
-                  :final shed,
-                  :final slug,
-                  :final removed,
-                ):
-                  if (!removed) maybeRefetchUnknown(shed, slug);
-                case BridgeRcEvent_ActivityChanged(:final shed, :final slug):
-                  maybeRefetchUnknown(shed, slug);
-                case _:
-                  break;
-              }
-            }
-            overlay = ActivityOverlay(entries);
-            controller.add(overlay);
-          case BridgeWatcherUpdate_Down():
-            // Do NOTHING destructive — the Rust watcher owns reconnect/backoff.
-            // Keep the subscription and the last overlay (Rust clears it via a
-            // resync on reconnect).
-            break;
-        }
-      }
-
-      ref
-          .watch(shedClientProvider(serverName).future)
-          .then((client) async {
-            // Disposed before the client resolved → never create the watcher.
-            if (disposed) return;
-            final h = await bridge.create(
-              client: client,
-              serverName: serverName,
-            );
-            // Disposed between create and listen → stop + drop immediately.
-            if (disposed) {
-              bridge.stop(h);
-              bridge.dispose(h);
-              return;
-            }
-            handle = h;
-            sub = bridge.events(h).listen(onUpdate);
-          })
-          .catchError((Object e, StackTrace st) {
-            // Client build failed (unknown server / keychain error): surface it
-            // as the provider's error state rather than silently idling.
-            if (!disposed) controller.addError(e, st);
-          });
-
-      return controller.stream;
-    });
-
-/// One (shed, rc session) pair on a host — the cross-host Sessions view's unit.
-typedef ShedSession = ({String shedName, BridgeRcSession session});
-
-/// Flatten an overview into the Sessions view's (shed, session) pairs — the
-/// server rc-enriches the sessions, and a stopped shed contributes none. The
-/// embedded bridge sessions are rendered directly (B4: consumers are on the
-/// bridge RC types), so the shared session card renders identically whether the
-/// data came from the overview (here) or the per-shed SSH `rc list` fan-out.
-List<ShedSession> shedSessionPairs(BridgeOverview overview) => [
-  for (final s in overview.sheds)
-    for (final sess in s.sessions) (shedName: s.shed.name, session: sess),
-];
-
-/// The rc capabilities of one shed, read from the host overview (a single call
-/// shared with the Hosts/Sessions views). Null when the shed is absent/stopped,
-/// the server reported no caps, or the server predates /api/overview
-/// ([OverviewUnsupported]) — the create form treats all of those as "absent" and
-/// falls back to its safe base (claude + shell). A real transport error bubbles
-/// so the form can degrade to the base too.
-final shedCapabilitiesProvider = FutureProvider.autoDispose
-    .family<BridgeRcCapabilities?, ShedRef>((ref, key) async {
-      final result = await ref.watch(overviewProvider(key.serverName).future);
-      if (result is! OverviewData) return null; // old server → absent caps
-      for (final s in result.overview.sheds) {
-        if (s.shed.name == key.shedName) {
-          return s.capabilities;
-        }
-      }
-      return null;
-    });
-
 /// Refresh everything the Hosts section renders: the saved-host list plus each
 /// host's overview (reachability + shed summary + disk usage + sessions). Shared
 /// by the mobile Hosts screen and the desktop Hosts pane so "what a Hosts refresh
@@ -564,83 +314,17 @@ void invalidateShedViews(WidgetRef ref, String serverName) {
   ref.invalidate(overviewProvider(serverName));
 }
 
-/// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
-/// to the stored fingerprint) and drive shed-ext-rc. The advisory target label
-/// uses the server alias. The named-record key guards against swapping the two
-/// same-typed strings (a positional `(String, String)` would not).
+/// One shed on one host — the key every per-shed provider families on. A named
+/// record, so the family key compares structurally and the two same-typed
+/// strings cannot be swapped by accident (a positional `(String, String)`
+/// would not catch it).
 typedef ShedRef = ({String serverName, String shedName});
-
-/// Build an RcService for a (server, shed): SSH as `<shed>@host` (host key pinned
-/// to the stored fingerprint) and drive shed-ext-rc. A plain factory reading only
-/// the stable serverStore/identities providers (like [buildPtySession]) so the
-/// cross-host fan-out can call it directly without the autoDispose-disposed-during
-/// -load race a one-shot `ref.read(rcServiceProvider.future)` would hit.
-/// Assemble an RcService from an already-resolved server record + identities, so
-/// the cross-host fan-out can resolve those once and reuse them across a host's
-/// sheds (rather than re-reading the keychain/server list per shed).
-RcService rcServiceFor(
-  ServerRecord rec,
-  List<SSHKeyPair> identities,
-  String shedName,
-) {
-  final runner = SshRunner(
-    host: rec.host,
-    port: rec.sshPort,
-    user: shedName,
-    identities: identities,
-    hostKeys: pinnedHostKeysFor(rec),
-  );
-  return RcService(
-    runner: runner.run,
-    shedName: shedName,
-    serverLabel: rec.name,
-  );
-}
-
-Future<RcService> buildRcService(Ref ref, ShedRef key) async {
-  final rec = await ref.read(serverStoreProvider).get(key.serverName);
-  if (rec == null) throw StateError('unknown server: ${key.serverName}');
-  final identities = await ref.read(identitiesProvider.future);
-  return rcServiceFor(rec, identities, key.shedName);
-}
-
-/// One-shot [RcService] for a widget action (create/kill fired from a screen
-/// that doesn't otherwise watch [rcServiceProvider]). Reads only the STABLE
-/// serverStore/identities providers: a one-shot
-/// `ref.read(rcServiceProvider(key).future)` races autoDispose — nothing keeps
-/// the provider alive through its own async build, so its body's later read
-/// throws "Cannot use the Ref after it has been disposed" and the action never
-/// runs. Mirrors [buildRcService] for [WidgetRef] callers (and the session
-/// card's delete action, which already assembles the service this way).
-Future<RcService> rcServiceOneShot(WidgetRef ref, ShedRef key) async {
-  // Capture both dependencies BEFORE the first await: a WidgetRef must not be
-  // read after an async gap (the widget can dispose mid-flight, and
-  // `ref.read` then throws "Cannot use a WidgetRef after dispose"). Reading the
-  // store synchronously and the identities Future up front means no `ref` usage
-  // survives an await.
-  final store = ref.read(serverStoreProvider);
-  final identitiesFuture = ref.read(identitiesProvider.future);
-  final rec = await store.get(key.serverName);
-  if (rec == null) throw StateError('unknown server: ${key.serverName}');
-  final identities = await identitiesFuture;
-  return rcServiceFor(rec, identities, key.shedName);
-}
-
-final rcServiceProvider = FutureProvider.autoDispose.family<RcService, ShedRef>(
-  (ref, key) => buildRcService(ref, key),
-);
-
-final rcSessionsProvider = FutureProvider.autoDispose
-    .family<List<BridgeRcSession>, ShedRef>((ref, key) async {
-      final svc = await ref.watch(rcServiceProvider(key).future);
-      return svc.list();
-    });
 
 /// Build (but don't start) a [PtySession] for attaching a terminal to a shed's RC
 /// session. A plain factory — NOT an autoDispose provider — so a one-shot read
 /// can't dispose its Ref mid-connect; the terminal screen owns the returned
 /// instance's lifecycle. Reads only the stable serverStore/identities providers.
-/// Mirrors how [rcServiceProvider] assembles its SshRunner.
+/// Mirrors how [roostDialFor] assembles a feed's SSH identity.
 Future<PtySession> buildPtySession(
   WidgetRef ref, {
   required String serverName,
@@ -706,7 +390,127 @@ final roostEntitlementsProvider = Provider<RoostBootstrapEntitlements>(
   (ref) => RoostBootstrapEntitlements(),
 );
 
-/// One machine's live feed — the SSH tunnel plus the shared Rust roost watcher.
+/// **The ORIGIN key** every per-feed provider families on — a configured
+/// machine, or a shed on a saved host (plan 022 S6).
+///
+/// A bare string is a MACHINE NAME, which is what the key has always meant;
+/// `shed:<server>/<shed>` is a shed. Two reasons the shed case rides the same
+/// key rather than a second family:
+///
+/// * **It is the same feed.** After S6 a shed's agent sessions are roost tabs
+///   read over an SSH tunnel — the identical mechanism a machine's rows come
+///   from, with a different login and a pinned host key. The object, the
+///   watcher, the tunnel and the state are unchanged.
+/// * **Everything keyed on "which feed" works for both for free.** The lane
+///   (`LaneRef.machine`) and the read-only peek (`RoostPeekScreen.machineName`)
+///   both address a feed by this string, so a shed row gets a transcript and a
+///   peek with no second code path.
+///
+/// A configured machine literally named `shed:…` would collide. Machine names
+/// come from the add-machine form, the prefix is stated here, and the
+/// alternative (a sealed key type) would change `LaneRef` and every override in
+/// the test suite for a collision nobody can hit by accident.
+const String shedOriginPrefix = 'shed:';
+
+/// Why a machine may not be called [name], or null when it may.
+///
+/// A machine's name IS its feed origin, and `shed:<server>/<shed>` is a shed's
+/// ([shedFeedKey]). Nothing else separates the two namespaces, so a machine
+/// named `shed:h/proj` resolves to that shed: same provider key, same feed,
+/// same controls — and the machine's own host and user are never dialled.
+/// Ending a session from the machine's list would end the shed's.
+///
+/// Pure and exported so the rule is testable without driving the form, and so
+/// any future entry point for a machine name has one place to ask.
+String? machineNameError(String name) {
+  if (name.startsWith(shedOriginPrefix)) {
+    return 'A machine name cannot start with "$shedOriginPrefix" — '
+        'that prefix names a shed.';
+  }
+  return null;
+}
+
+/// The feed origin for one shed. See [shedOriginPrefix].
+String shedFeedKey(String serverName, String shedName) =>
+    '$shedOriginPrefix$serverName/$shedName';
+
+/// The shed a feed origin names, or null when it names a machine.
+///
+/// Splits on the LAST `/`. A shed name cannot contain one — shed validates it
+/// as `^[a-z][a-z0-9-]*[a-z0-9]$` (`internal/config/types.go:84`) — while a
+/// server alias is free-form and unconstrained (shed says so in as many words
+/// at `internal/config/clientcreds_test.go:248`, which is why it escapes the
+/// name before putting it in a path). So in `shed:a/b/c` the only parse that
+/// can be real is the server `a/b` and the shed `c`: `b/c` is not a name any
+/// shed could have. A left-split reads the server as `a`, which either fails
+/// closed on an unknown server or — if a server really is named `a` — dials
+/// THE WRONG SERVER.
+ShedRef? parseShedFeedKey(String origin) {
+  if (!origin.startsWith(shedOriginPrefix)) return null;
+  final rest = origin.substring(shedOriginPrefix.length);
+  final slash = rest.lastIndexOf('/');
+  if (slash <= 0 || slash == rest.length - 1) return null;
+  return (
+    serverName: rest.substring(0, slash),
+    shedName: rest.substring(slash + 1),
+  );
+}
+
+/// **What one feed origin dials** — the record and the host-key store, as a
+/// pure function of the saved hosts (plan 022 S6).
+///
+/// Pure, and extracted for the reason `foldRoostUpdate` and `roostOfferFor`
+/// are: it is the whole of the difference between a shed feed and a machine
+/// feed, it breaks silently in production when it is wrong (a wrong user or
+/// port is a connection that lands somewhere else entirely), and inside the
+/// provider it could only be checked by building a [MachineFeed] — which calls
+/// `roostCapabilities()` and therefore needs the native library. Here it is a
+/// table.
+///
+/// The two arms:
+///
+/// * **A shed** is reached as `<shed>@<server host>` on the SERVER's sshd —
+///   that is how shed-server routes a connection into the right VM (the same
+///   login [buildPtySession] uses). Its host key is PINNED to the fingerprint
+///   the add-host flow stored, never TOFU: a shed server publishes its key over
+///   `/api/ssh-host-key`, so there is nothing to trust on first use. An UNKNOWN
+///   server yields no pins and `tofu: false`, so the dial fails closed with a
+///   host-key error rather than trusting whatever answers.
+/// * **A machine** keeps the record the user configured and the SHARED TOFU
+///   store — see [machineHostKeysProvider] for why a per-feed store would be
+///   TOFU in name only.
+({MachineRecord record, HostKeyStore hostKeys}) roostDialFor({
+  required String origin,
+  required List<ServerRecord> servers,
+  required List<MachineRecord> machines,
+  required HostKeyStore machineHostKeys,
+}) {
+  final shed = parseShedFeedKey(origin);
+  if (shed == null) {
+    return (
+      record: machines.firstWhere(
+        (m) => m.name == origin,
+        orElse: () => MachineRecord(name: origin, host: origin),
+      ),
+      hostKeys: machineHostKeys,
+    );
+  }
+  final rec = servers.where((s) => s.name == shed.serverName).firstOrNull;
+  return (
+    record: MachineRecord(
+      // The ORIGIN, not the shed name: this string labels the tunnel, the
+      // watcher and every error the feed raises, and two servers may well both
+      // have a shed called `proj`.
+      name: origin,
+      host: rec?.host ?? shed.serverName,
+      user: shed.shedName,
+      sshPort: rec?.sshPort ?? 22,
+    ),
+    hostKeys: rec == null ? HostKeyStore(tofu: false) : pinnedHostKeysFor(rec),
+  );
+}
+
+/// One origin's live feed — the SSH tunnel plus the shared Rust roost watcher.
 ///
 /// Split in two on purpose: this provider owns the FEED OBJECT (so `create` and
 /// `kill` have something to call), and [machineFeedProvider] exposes its state
@@ -719,40 +523,40 @@ final roostEntitlementsProvider = Provider<RoostBootstrapEntitlements>(
 /// nothing — roost's `tab.list` is authoritative, so reconnecting is a complete
 /// resync.
 final machineFeedControllerProvider = Provider.autoDispose
-    .family<MachineFeed, String>((ref, name) {
+    .family<MachineFeed, String>((ref, origin) {
       // Read the already-resolved values: this provider is only reached from a
-      // widget that has a live feed, which means both futures have completed.
-      final machines =
-          ref.watch(machinesProvider).value ?? const <MachineRecord>[];
-      final machine = machines.firstWhere(
-        (m) => m.name == name,
-        orElse: () => MachineRecord(name: name, host: name),
+      // widget that has a live feed, which means the futures have completed.
+      final dial = roostDialFor(
+        origin: origin,
+        servers: ref.watch(serversProvider).value ?? const <ServerRecord>[],
+        machines: ref.watch(machinesProvider).value ?? const <MachineRecord>[],
+        machineHostKeys: ref.watch(machineHostKeysProvider),
       );
-      final identities =
-          ref.watch(identitiesProvider).value ?? const <SSHKeyPair>[];
       final feed = MachineFeed(
-        machine: machine,
-        identities: identities,
-        // Shared across every connection to every machine — see
-        // [machineHostKeysProvider] for why a per-feed store would be TOFU in
-        // name only.
-        hostKeys: ref.watch(machineHostKeysProvider),
-        // Shared for the same shape of reason: this feed is `autoDispose` and
-        // the claim is the app run's, not this object's.
+        machine: dial.record,
+        identities: ref.watch(identitiesProvider).value ?? const <SSHKeyPair>[],
+        hostKeys: dial.hostKeys,
+        // Shared because this feed is `autoDispose` and the claim is the app
+        // run's, not this object's.
         entitlements: ref.watch(roostEntitlementsProvider),
       );
       ref.onDispose(feed.dispose);
       return feed;
     });
 
-/// One machine's live state stream.
+/// One origin's live state stream.
 final machineFeedProvider = StreamProvider.autoDispose
-    .family<MachineFeedState, String>((ref, name) async* {
-      // Ensure the machine list + identity are loaded before building the feed,
-      // so the controller reads resolved values rather than empty defaults.
-      await ref.watch(machinesProvider.future);
+    .family<MachineFeedState, String>((ref, origin) async* {
+      // Ensure the record source + identity are loaded before building the
+      // feed, so the controller reads resolved values rather than empty
+      // defaults.
+      if (parseShedFeedKey(origin) != null) {
+        await ref.watch(serversProvider.future);
+      } else {
+        await ref.watch(machinesProvider.future);
+      }
       await ref.watch(identitiesProvider.future);
-      final feed = ref.watch(machineFeedControllerProvider(name));
+      final feed = ref.watch(machineFeedControllerProvider(origin));
       unawaited(feed.start());
       yield feed.state;
       yield* feed.updates;

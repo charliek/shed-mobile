@@ -17,7 +17,7 @@ Reference repos (siblings on disk):
 |---|---|
 | `shed-remote-agent` | Source of truth for transport logic (`controlToken.ts`, `shedClient.ts`, `rc.ts`, `shedRc.ts`, `ssh.ts`, `rcAttach.ts`, `sse.ts`) and their tests as golden tables. |
 | `shed` | Server (Go): SSH gateway, `auth.ssh`, control API. |
-| `shed-extensions` | `shed-ext-rc` guest binary + the RC Session Convention + the golden DTO fixture. |
+| `roost` | The terminal multiplexer whose `roost-session` hosts every agent tab, and whose `roost-ipc` crate composes the remote command and the wire. |
 | `tapper` | The drive-skill and Android-signing patterns were cloned from here. |
 
 ## Code map
@@ -61,8 +61,8 @@ Docs/config-only phases skip Gates 2–3 (no logic to review).
 ## Conventions
 
 - **Verify the model against a real shed before building UI.** The transport was
-  proven with `ssh-keygen`, `_bootstrap` mint, and `shed-ext-rc` probes before any
-  Dart was written; keep this discipline.
+  proven with `ssh-keygen`, `_bootstrap` mint, and live `roost-session` probes
+  before any Dart was written; keep this discipline.
 - **Drivability is part of the change.** Every control gets a stable `ValueKey`;
   state the widget tree can't show gets `logDriveState`/`logDriveResult`. Both are
   `kDebugMode`-gated.

@@ -1303,22 +1303,14 @@ mod tests {
             "BridgeMintOutcome_Success",
             "BridgeMintPurpose",
             "BridgeMintRequest",
-            "BridgeOverlayEntry",
             "BridgeOverview",
             "BridgeOverviewServer",
             "BridgeOverviewShed",
             "BridgeRcActivity",
             "BridgeRcAgentInfo",
             "BridgeRcCapabilities",
-            "BridgeRcEvent",
-            "BridgeRcEvent_ActivityChanged",
-            "BridgeRcEvent_HubUnavailable",
-            "BridgeRcEvent_MessageAppended",
-            "BridgeRcEvent_SessionUpdated",
-            "BridgeRcEvent_ShedStopped",
             "BridgeRcFeedMessage",
             "BridgeRcFeedTool",
-            "BridgeRcInvocation",
             "BridgeRcKind",
             "BridgeRcKind_ClaudeBroker",
             "BridgeRcKind_ClaudeRc",
@@ -1332,7 +1324,6 @@ mod tests {
             "BridgeRcKind_Other",
             "BridgeRcKind_Shell",
             "BridgeRcKindFeatures",
-            "BridgeRcMessagesPage",
             "BridgeRcSession",
             "BridgeRcState",
             // Plan 020 C-M1 — why a roost-session is not readable, as one of
@@ -1429,10 +1420,6 @@ mod tests {
             // the visible rows as text. Read-only, and terminal text only.
             "BridgeTabDump",
             "BridgeTestSse",
-            "BridgeWatcherHandle",
-            "BridgeWatcherUpdate",
-            "BridgeWatcherUpdate_Down",
-            "BridgeWatcherUpdate_Event",
         ];
 
         let api = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_section.dart';
 import '../../core/url_launch.dart';
+import '../../machines/machine_feed.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/format.dart';
@@ -15,30 +16,36 @@ import '../../widgets/kind_chip.dart';
 import '../../widgets/open_pill.dart';
 import '../../widgets/session_actions.dart';
 import '../../widgets/status_badge.dart';
-import '../sheds/shed_actions.dart';
+import '../lanes/lane_screen.dart';
+import '../terminal/roost_peek_screen.dart';
 import '../terminal/terminal_screen.dart';
 import '../terminal/terminal_target.dart';
-import 'session_watch_screen.dart';
-import 'session_watch_source.dart';
 
-/// A cross-host rc-session card: lifecycle badge, a live activity badge (when the
-/// hub reports one and lifecycle permits it), an attention dot (roost's sticky
-/// notification, plan 013 S3m — see [AttentionDot]), kind chip, a meta line
-/// (shed · workdir · age), an optional one-line last-message preview, a "watch"
-/// affordance (→ the codex message-feed view) for watch-capable kinds, a dark
-/// "›_ open" pill (→ the in-app terminal) shown only when `attachKind ==
-/// 'tmux'` (a shed row, always — see `lib/rc/rc_ui.dart`), and delete.
+/// One shed session — **a roost tab** (plan 022 S6, shed#328).
 ///
-/// When [live] is true the card overlays the host's `GET /api/rc/events` stream
-/// (via [liveActivityProvider]) onto the base overview snapshot, so its activity
-/// badge and last-message line update without a refetch. [live] should be set
-/// only when the server advertises `rc-events`.
+/// The RC hub is gone: a shed's agent sessions come from the `roost-session`
+/// running on it, read over the phone's own SSH tunnel, exactly as a machine's
+/// do. So the whole card is a function of the feed's state — the live
+/// activity/lifecycle patch, the per-kind affordances, and the tab id a kill
+/// closes — and nothing here calls the server's HTTP API any more.
+///
+/// What the card shows: lifecycle badge, live activity badge (when the
+/// lifecycle permits it), an attention dot (roost's sticky notification), kind
+/// chip, a meta line (shed · workdir · age), and the actions below.
+///
+/// **The Transcript pill is gated on the ROW, never on the kind.** A row whose
+/// tab reported an agent lane carries [BridgeRcSession.agentLane]; the
+/// capability block's `feed: "messages"` is a per-KIND ceiling and is allowed to
+/// disagree with it (`roost_kind_features`' doc says so in as many words). The
+/// attach affordance reads [attachKind]: `native-remote` — every roost row — is
+/// the read-only peek, and `tmux` is the xterm attach, which is what a
+/// capability block from an older, non-roost producer would still ask for.
 class SessionCard extends ConsumerStatefulWidget {
   const SessionCard({
     required this.serverName,
     required this.shedName,
     required this.session,
-    this.live = false,
+    required this.state,
     this.originIsImplied = false,
     this.urlLauncher,
     super.key,
@@ -47,7 +54,10 @@ class SessionCard extends ConsumerStatefulWidget {
   final String serverName;
   final String shedName;
   final BridgeRcSession session;
-  final bool live;
+
+  /// The shed feed's current state — the live patch, the per-kind affordances,
+  /// and whether the shed is answering at all.
+  final MachineFeedState state;
 
   /// Whether the surrounding view already says which shed this session is in.
   ///
@@ -69,13 +79,15 @@ class SessionCard extends ConsumerStatefulWidget {
 
 class _SessionCardState extends ConsumerState<SessionCard> {
   bool _busy = false;
+  String? _error;
 
   String get _base =>
       '${widget.serverName}-${widget.shedName}-${widget.session.slug}';
 
-  ShedRef get _key =>
-      (serverName: widget.serverName, shedName: widget.shedName);
+  /// The feed this row belongs to — the shed's, addressed by its origin.
+  String get _origin => shedFeedKey(widget.serverName, widget.shedName);
 
+  /// The xterm attach, for a capability block that still asks for tmux.
   void _open() => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => TerminalScreen(
@@ -89,50 +101,60 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     ),
   );
 
-  void _watch() => Navigator.of(context).push(
+  /// The read-only roost peek (`tab.dump`, polled) — the attach affordance for
+  /// a `native-remote` row, which is every roost row. `tabId` is non-null there
+  /// by construction: only a roost-sourced row carries one, and only a roost
+  /// row advertises `native-remote`.
+  void _peek() => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => SessionWatchScreen(
-        source: ShedWatchSource(
-          serverName: widget.serverName,
-          shedName: widget.shedName,
-          session: widget.session,
-        ),
+      builder: (_) => RoostPeekScreen(
+        machineName: _origin,
+        tabId: widget.session.tabId!,
+        title: widget.session.displayName,
       ),
     ),
   );
 
+  /// The row's agent lane. Gated on the row carrying a stamp:
+  /// `laneControllerProvider` THROWS for a row with none, so the affordance and
+  /// the provider's precondition are the same condition.
+  void _openLane() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LaneScreen(
+        machine: _origin,
+        // The ROW's slug (roost's tab id), not the stamp's session id — the
+        // session id is the thing being reconciled.
+        slug: widget.session.slug,
+        title: widget.session.displayName,
+      ),
+    ),
+  );
+
+  /// End the session — roost's `tab.close`, through the feed that holds the
+  /// tunnel. The feed folds the row out optimistically, so the card goes at
+  /// once rather than at the next push.
   Future<void> _delete() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
-      await runAction(
-        ref,
-        context,
-        action: 'session-delete',
-        // rcServiceOneShot builds from the stable serverStore/identities, not the
-        // autoDispose rcServiceProvider: nothing keeps the latter alive in the
-        // cross-host view, so reading it here would dispose mid-load ("Cannot use
-        // Ref after disposed") and the kill would never run.
-        op: () async {
-          final svc = await rcServiceOneShot(ref, _key);
-          await svc.kill(widget.session.slug);
-        },
-        invalidate: () {
-          ref.invalidate(overviewProvider(widget.serverName));
-          ref.invalidate(rcSessionsProvider(_key));
-        },
-      );
+      await ref
+          .read(machineFeedControllerProvider(_origin))
+          .kill(widget.session.slug);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// Copy the session's claude.ai URL to the clipboard (the login/console link a
-  /// claude-rc session advertises). Shown only when the session carries a URL.
   @override
   Widget build(BuildContext context) {
     final c = context.shed;
     final s = widget.session;
+    final st = widget.state;
     final desktop = isDesktopWidth(MediaQuery.sizeOf(context).width);
 
     // A claude-rc (or claude-broker) session advertises its login/console URL;
@@ -140,41 +162,28 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     // when a non-empty URL is present.
     final url = (s.url != null && s.url!.isNotEmpty) ? s.url : null;
 
-    // Overlay the live SSE patch (if watching) onto the base snapshot.
-    final patch = widget.live
-        ? ref.watch(
-            liveActivityProvider(
-              widget.serverName,
-            ).select((a) => a.value?.lookup(widget.shedName, s.slug)),
-          )
-        : null;
-    final state = patch?.state ?? s.state;
-    final activity = patch?.activity ?? s.activity;
+    // The live patch the feed folded, applied over the last snapshot.
+    final state = st.stateOf(s);
+    final activity = st.activityOf(s);
     // Lifecycle-trumps covers the WHOLE activity dimension: a blocking state
     // (needs-*/dead) suppresses the last-message line too — a stale preview on
-    // a dead/gated row would present pre-death context as current (mirrors the
-    // Go server's DisplayActivity + toSessionRC suppression).
-    final lastMessage = rcStatePermitsActivity(state)
-        ? (patch?.lastMessage ?? s.lastMessage)
-        : null;
+    // a dead/gated row would present pre-death context as current.
+    final lastMessage = rcStatePermitsActivity(state) ? s.lastMessage : null;
 
-    // Watch affordance: only for a kind whose capabilities advertise the feed.
-    final caps = ref.watch(shedCapabilitiesProvider(_key)).value;
-    final features = caps?.kindFeatures[s.kind.wire];
-    final canWatch = features?.watch ?? false;
-    // A shed row is `tmux` absent capabilities (the pre-v2 fallback) — the
-    // xterm attach. A `native-remote`/other value has no shed-side affordance
-    // (roost owns machine rows, never a shed's); this is the discriminator, so
-    // a shed row can never silently lose its `>_ open` pill on an old server.
-    final canOpen = attachKind(features) == 'tmux';
+    final attach = attachKind(st.featuresFor(s));
+    // `native-remote` only ever routes to the peek, and the peek addresses the
+    // tab by roost's own id — a row without one could not be peeked at all.
+    final canPeek = attach == 'native-remote' && s.tabId != null;
+    final canOpen = attach == 'tmux';
+    final canTranscribe = s.agentLane != null;
 
     final badge = StatusBadge(
       tone: shedStatusTone(state.wire).tone,
       label: state.wire.replaceAll('-', ' '),
     );
 
-    // Lifecycle trumps activity: show the activity badge only when the lifecycle
-    // permits it (needs-*/dead hide it) AND the hub reported a renderable one.
+    // Lifecycle trumps activity: show the activity badge only when the
+    // lifecycle permits it AND the feed reported a renderable one.
     final actDisplay = rcActivityBadge(state, activity);
     final activityBadge = actDisplay == null
         ? null
@@ -217,6 +226,44 @@ class _SessionCardState extends ConsumerState<SessionCard> {
             style: sansStyle(fontSize: 12.5, color: c.fg2),
           );
 
+    final actions = <Widget>[
+      // The PRIMARY action when there is one, and the accent says so: reading
+      // the conversation is what you came for, and the pane is the fallback.
+      if (canTranscribe) ...[
+        AccentPill(
+          key: ValueKey('all-session-lane-$_base'),
+          icon: Icons.forum_outlined,
+          label: 'Transcript',
+          onTap: _openLane,
+        ),
+        const SizedBox(width: 8),
+      ],
+      if (canPeek)
+        OpenPill(
+          key: ValueKey('all-session-peek-$_base'),
+          onTap: _peek,
+          padding: EdgeInsets.symmetric(horizontal: desktop ? 16 : 14),
+          tooltip: 'Peek',
+        ),
+      if (canOpen)
+        OpenPill(
+          key: ValueKey('all-session-open-$_base'),
+          onTap: _open,
+          padding: EdgeInsets.symmetric(horizontal: desktop ? 16 : 14),
+        ),
+      // A claude session advertises a claude.ai URL — a second way in to the
+      // same session, so it follows the attach affordance.
+      if (url != null) ...[
+        const SizedBox(width: 8),
+        SessionUrlActions(
+          url: url,
+          keyPrefix: 'all-session',
+          keySuffix: _base,
+          launcher: widget.urlLauncher,
+        ),
+      ],
+    ];
+
     final body = desktop
         ? Row(
             children: [
@@ -254,25 +301,9 @@ class _SessionCardState extends ConsumerState<SessionCard> {
                 ),
               ),
               const SizedBox(width: 12),
-              ..._leadingActions(c, canWatch),
-              if (canOpen) ...[
-                OpenPill(
-                  key: ValueKey('all-session-open-$_base'),
-                  onTap: _open,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-              ],
-              if (url != null) ...[
-                const SizedBox(width: 8),
-                SessionUrlActions(
-                  url: url,
-                  keyPrefix: 'all-session',
-                  keySuffix: _base,
-                  launcher: widget.urlLauncher,
-                ),
-              ],
+              ...actions,
               const SizedBox(width: 8),
-              _deleteButton(c),
+              _deleteButton(),
             ],
           )
         : Column(
@@ -311,57 +342,45 @@ class _SessionCardState extends ConsumerState<SessionCard> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  ..._leadingActions(c, canWatch),
-                  if (canOpen) ...[
-                    OpenPill(
-                      key: ValueKey('all-session-open-$_base'),
-                      onTap: _open,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                    ),
-                  ],
-                  // The terminal first, then the link pair: `>_ open` is how
-                  // you reach the session itself, and the URL is a second way
-                  // in to the same one.
-                  if (url != null) ...[
-                    const SizedBox(width: 8),
-                    SessionUrlActions(
-                      url: url,
-                      keyPrefix: 'all-session',
-                      keySuffix: _base,
-                      launcher: widget.urlLauncher,
-                    ),
-                  ],
+                  ...actions,
                   // Delete sits at the far edge, away from everything you might
                   // actually be reaching for.
                   const Spacer(),
-                  _deleteButton(c),
+                  _deleteButton(),
                 ],
               ),
             ],
           );
 
-    return CardShell(rail: sessionRailColor(c, state, activity), child: body);
+    return Opacity(
+      // A stale row is the last KNOWN state of a shed we cannot currently
+      // reach — dimmed rather than hidden, because it is still the best
+      // available answer to "what is running in there?".
+      opacity: st.reachable ? 1 : 0.55,
+      child: CardShell(
+        rail: sessionRailColor(c, state, activity, stale: !st.reachable),
+        child: _error == null
+            ? body
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  body,
+                  const SizedBox(height: 6),
+                  Text(
+                    _error!,
+                    key: ValueKey('all-session-control-error-$_base'),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: c.errFg),
+                  ),
+                ],
+              ),
+      ),
+    );
   }
 
-  /// What leads the action row: Watch, when the kind has a feed to watch.
-  /// Shared by the desktop and mobile layouts so the gate lives in one place.
-  ///
-  /// Everything else follows the terminal — `>_ open` reaches the session
-  /// itself, and the claude.ai link pair is a second way in to the same one.
-  List<Widget> _leadingActions(ShedColors c, bool canWatch) => [
-    if (canWatch) ...[_watchButton(c), const SizedBox(width: 8)],
-  ];
-
-  /// The PRIMARY action, and labelled: an unlabelled eye is a guess, and this is
-  /// the one thing on the card most people want.
-  Widget _watchButton(ShedColors c) => AccentPill(
-    key: ValueKey('all-session-watch-$_base'),
-    icon: Icons.visibility_outlined,
-    label: 'Watch',
-    onTap: _watch,
-  );
-
-  Widget _deleteButton(ShedColors c) => GhostIconButton(
+  Widget _deleteButton() => GhostIconButton(
     key: ValueKey('all-session-delete-$_base'),
     icon: Icons.delete_outline,
     tooltip: 'Delete',

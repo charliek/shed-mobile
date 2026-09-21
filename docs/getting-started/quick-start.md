@@ -40,9 +40,8 @@ Real-shed probes, handy for confirming connectivity or debugging the transport
 layer (not run in CI):
 
 ```bash
-dart run tool/e2e_list.dart   # mint -> pin -> list sheds
-dart run tool/e2e_rc.dart     # shed-ext-rc create/list/kill
-dart run tool/e2e_pty.dart    # attach a PTY, echo round-trip, resize, detach
+dart run tool/e2e_list.dart      # mint -> pin -> list sheds
+dart run tool/e2e_pty.dart <slug>  # attach a PTY, echo round-trip, resize, detach
 ```
 
 Each defaults to `shed-mobile-test@localhost:2222`; pass `user@host:port` to

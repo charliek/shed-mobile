@@ -58,6 +58,12 @@ class _AddMachineScreenState extends ConsumerState<AddMachineScreen> {
       setState(() => _error = 'The SSH port must be 1–65535.');
       return;
     }
+    // The name doubles as the feed origin; `machineNameError` owns the rule.
+    final nameError = machineNameError(name);
+    if (nameError != null) {
+      setState(() => _error = nameError);
+      return;
+    }
 
     setState(() {
       _saving = true;

@@ -5,8 +5,9 @@ The device talks **directly** to shed servers over Tailscale — there is no
 orchestrator process to run. Targets: macOS + Linux desktop, and Android.
 
 - Pinned-TLS HTTPS to each shed's control API (self-signed cert, sha256 leaf pin)
-- SSH (dartssh2) for control-token mint (`_bootstrap`), RC lifecycle
-  (`shed-ext-rc`), and an in-app terminal (`tmux attach`)
+- SSH (dartssh2) for control-token mint (`_bootstrap`), the tunnel to each
+  origin's `roost-session` (agent sessions are roost tabs), and an in-app
+  terminal (`tmux attach`)
 - One per-device ed25519 key (generated in-app on mobile, or reuse `~/.ssh` on
   desktop), trusted via GitHub (`auth.ssh.github_users`)
 
@@ -118,9 +119,8 @@ A headless Marionette skill drives the debug app like a user:
 Real-shed end-to-end probes (not run in CI):
 
 ```bash
-dart run tool/e2e_list.dart   # mint → pin → list sheds
-dart run tool/e2e_rc.dart     # shed-ext-rc create/list/kill
-dart run tool/e2e_pty.dart    # attach a PTY, echo round-trip, resize, detach
+dart run tool/e2e_list.dart      # mint → pin → list sheds
+dart run tool/e2e_pty.dart <slug>  # attach a PTY, echo round-trip, resize, detach
 ```
 
 ## Build & release
