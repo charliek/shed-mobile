@@ -6,8 +6,10 @@ import '../src/rust/api/error.dart';
 /// Adapters between the FRB bridge and the app's Dart error/status types.
 ///
 /// B4 finished the RC-domain swap: consumers now render the bridge RC types
-/// (`BridgeRcSession`/`BridgeRcCapabilities`/`BridgeRcMessagesPage`) directly, so
-/// the transitional RC converters are gone. What remains here is the
+/// (`BridgeRcSession`/`BridgeRcCapabilities`) directly, so the transitional RC
+/// converters are gone. `BridgeRcMessagesPage` used to be named here too; it
+/// went with the RC hub in plan 022/S6, along with the `/messages` route that
+/// filled it. What remains here is the
 /// bridge→[AppError] mapping (status codes preserved) and the shed-status
 /// helpers — both genuinely at the bridge boundary.
 

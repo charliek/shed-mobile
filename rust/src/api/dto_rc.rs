@@ -1,19 +1,21 @@
-//! Bridge-owned rc-domain DTOs (plan §3.6): the enriched session model, the
-//! capabilities cluster, the feed page, and the rc-event variants — each mapped
-//! from its `shed_core::rc` / `shed_core::rc_events` source.
+//! Bridge-owned rc-domain DTOs: the enriched session model and the capabilities
+//! cluster, each mapped from its `shed_core::rc` source.
 //!
-//! FRB 2.13 renders the fielded enums here — [`BridgeRcKind`] (its `Other(String)`
-//! arm) and [`BridgeRcEvent`] (five data-carrying variants) — as Dart 3 **sealed
-//! classes**, so the app switches on them exhaustively. The plain enums
-//! ([`BridgeRcState`], [`BridgeRcActivity`]) render as plain Dart enums.
+//! Plan 022/S6 deleted the RC hub, and `shed_core::rc_events` with it, so the
+//! rc-event variants and the feed page that this module also used to carry are
+//! gone. What remains is the model roost rows are decoded into.
+//!
+//! FRB 2.13 renders the fielded enum here — [`BridgeRcKind`], for its
+//! `Other(String)` arm — as a Dart 3 **sealed class**, so the app switches on it
+//! exhaustively. The plain enums ([`BridgeRcState`], [`BridgeRcActivity`])
+//! render as plain Dart enums.
 
 use std::collections::HashMap;
 
 use shed_core::rc::{
-    RcActivity, RcAgentInfo, RcCapabilities, RcFeedMessage, RcKind, RcKindFeatures, RcMessagesPage,
-    RcSession, RcSessionDto, RcState,
+    RcActivity, RcAgentInfo, RcCapabilities, RcFeedMessage, RcKind, RcKindFeatures, RcSession,
+    RcSessionDto, RcState,
 };
-use shed_core::rc_events::RcEvent;
 use shed_core::roost::RoostSession;
 
 use super::dto_lane::BridgeAgentLaneStamp;
@@ -325,52 +327,6 @@ impl BridgeRcSession {
     }
 }
 
-/// The neutral `shed-ext-rc list` row (mirrors `rc::RcSessionDto`). Distinct
-/// from [`BridgeRcSession`] — this is the pre-enrichment binary output the Dart
-/// runner captures then hands back to the bridge decoder.
-///
-/// `tmux_session` is dropped here for the same reason it is dropped from
-/// [`BridgeRcSession`] (plan 013 S3m): the wire still carries it and shed-core
-/// still parses it, it simply stops crossing into Dart.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BridgeRcSessionDto {
-    pub slug: String,
-    pub kind: BridgeRcKind,
-    pub state: BridgeRcState,
-    pub managed: bool,
-    pub display_name: Option<String>,
-    pub workdir: Option<String>,
-    pub url: Option<String>,
-    pub id: Option<String>,
-    pub created_by: Option<String>,
-    pub created_at: Option<String>,
-    pub target_label: Option<String>,
-    pub activity: Option<BridgeRcActivity>,
-    pub activity_at: Option<String>,
-    pub last_message: Option<String>,
-}
-
-impl From<RcSessionDto> for BridgeRcSessionDto {
-    fn from(d: RcSessionDto) -> Self {
-        BridgeRcSessionDto {
-            slug: d.slug,
-            kind: d.kind.into(),
-            state: d.state.into(),
-            managed: d.managed,
-            display_name: d.display_name,
-            workdir: d.workdir,
-            url: d.url,
-            id: d.id,
-            created_by: d.created_by,
-            created_at: d.created_at,
-            target_label: d.target_label,
-            activity: d.activity.map(Into::into),
-            activity_at: d.activity_at,
-            last_message: d.last_message,
-        }
-    }
-}
-
 /// A feed message's tool block (mirrors `rc::RcFeedTool`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcFeedTool {
@@ -402,103 +358,6 @@ impl From<RcFeedMessage> for BridgeRcFeedMessage {
                 name: t.name,
                 detail: t.detail,
             }),
-        }
-    }
-}
-
-/// A page of the feed (mirrors `rc::RcMessagesPage`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BridgeRcMessagesPage {
-    pub messages: Vec<BridgeRcFeedMessage>,
-    pub truncated: bool,
-}
-
-impl From<RcMessagesPage> for BridgeRcMessagesPage {
-    fn from(p: RcMessagesPage) -> Self {
-        BridgeRcMessagesPage {
-            messages: p.messages.into_iter().map(Into::into).collect(),
-            truncated: p.truncated,
-        }
-    }
-}
-
-/// A decoded rc-events frame (mirrors `rc_events::RcEvent`, all five variants).
-/// A fielded enum → a Dart sealed class.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BridgeRcEvent {
-    ActivityChanged {
-        shed: String,
-        slug: String,
-        activity: Option<BridgeRcActivity>,
-        activity_at: Option<String>,
-        state: Option<BridgeRcState>,
-        last_message: Option<String>,
-    },
-    SessionUpdated {
-        shed: String,
-        slug: String,
-        activity: Option<BridgeRcActivity>,
-        state: Option<BridgeRcState>,
-        last_message: Option<String>,
-        /// The session's lane (contract v2), carried verbatim when the hub sends
-        /// one. `None` on a removal, and on a hub that predates the field.
-        /// Additive: a consumer that ignores it behaves exactly as before.
-        lane: Option<String>,
-        removed: bool,
-    },
-    MessageAppended {
-        shed: String,
-        slug: String,
-        seq: u64,
-    },
-    HubUnavailable {
-        shed: String,
-    },
-    ShedStopped {
-        shed: String,
-    },
-}
-
-impl From<RcEvent> for BridgeRcEvent {
-    fn from(e: RcEvent) -> Self {
-        match e {
-            RcEvent::ActivityChanged {
-                shed,
-                slug,
-                activity,
-                activity_at,
-                state,
-                last_message,
-            } => BridgeRcEvent::ActivityChanged {
-                shed,
-                slug,
-                activity: activity.map(Into::into),
-                activity_at,
-                state: state.map(Into::into),
-                last_message,
-            },
-            RcEvent::SessionUpdated {
-                shed,
-                slug,
-                activity,
-                state,
-                last_message,
-                lane,
-                removed,
-            } => BridgeRcEvent::SessionUpdated {
-                shed,
-                slug,
-                activity: activity.map(Into::into),
-                state: state.map(Into::into),
-                last_message,
-                lane,
-                removed,
-            },
-            RcEvent::MessageAppended { shed, slug, seq } => {
-                BridgeRcEvent::MessageAppended { shed, slug, seq }
-            }
-            RcEvent::HubUnavailable { shed } => BridgeRcEvent::HubUnavailable { shed },
-            RcEvent::ShedStopped { shed } => BridgeRcEvent::ShedStopped { shed },
         }
     }
 }
@@ -788,75 +647,29 @@ mod tests {
     }
 
     #[test]
-    fn feed_page_u64_seq_round_trips() {
-        // Large u64 seq (FRB BigInt marshalling edge) + a tool block + a text-only.
-        let page = RcMessagesPage::from_value(&serde_json::json!({
-            "messages": [
-                {"seq": 9007199254740993_u64, "role":"assistant","type":"tool_use",
-                 "tool":{"name":"bash","detail":"ls"}},
-                {"seq": 2, "role":"user","type":"text","text":"hi"}
-            ],
-            "truncated": true
-        }));
-        let b = BridgeRcMessagesPage::from(page);
-        assert!(b.truncated);
-        assert_eq!(b.messages.len(), 2);
-        assert_eq!(b.messages[0].seq, 9007199254740993);
-        assert_eq!(b.messages[0].msg_type, "tool_use");
-        let tool = b.messages[0].tool.as_ref().expect("tool");
+    fn feed_message_u64_seq_round_trips() {
+        // Large u64 seq (FRB BigInt marshalling edge) + a tool block, and a
+        // text-only row. The RC hub's `/messages` page is gone with S6; these
+        // rows survive as an AGENT LANE's transcript (`dto_lane`'s
+        // `BridgeLaneSnapshot.messages`), which is why the conversion — and
+        // this test — stay.
+        let with_tool: RcFeedMessage = serde_json::from_value(serde_json::json!({
+            "seq": 9007199254740993_u64, "role": "assistant", "type": "tool_use",
+            "tool": {"name": "bash", "detail": "ls"}
+        }))
+        .expect("tolerant decode");
+        let b = BridgeRcFeedMessage::from(with_tool);
+        assert_eq!(b.seq, 9007199254740993);
+        assert_eq!(b.msg_type, "tool_use");
+        let tool = b.tool.as_ref().expect("tool");
         assert_eq!(tool.name.as_deref(), Some("bash"));
-        assert_eq!(b.messages[1].text.as_deref(), Some("hi"));
-        assert!(b.messages[1].tool.is_none());
-    }
 
-    #[test]
-    fn rc_event_all_five_variants() {
-        let act = BridgeRcEvent::from(RcEvent::ActivityChanged {
-            shed: "proj".into(),
-            slug: "cdx".into(),
-            activity: Some(RcActivity::Working),
-            activity_at: Some("t".into()),
-            state: Some(RcState::Ready),
-            last_message: Some("m".into()),
-        });
-        assert!(matches!(
-            act,
-            BridgeRcEvent::ActivityChanged { ref shed, ref activity, .. }
-                if shed == "proj" && *activity == Some(BridgeRcActivity::Working)
-        ));
-
-        let upd = BridgeRcEvent::from(RcEvent::SessionUpdated {
-            shed: "proj".into(),
-            slug: "cdx".into(),
-            activity: None,
-            state: None,
-            last_message: None,
-            lane: None,
-            removed: true,
-        });
-        assert!(matches!(
-            upd,
-            BridgeRcEvent::SessionUpdated { removed: true, .. }
-        ));
-
-        // u64 seq preserved through the event conversion.
-        let msg = BridgeRcEvent::from(RcEvent::MessageAppended {
-            shed: "proj".into(),
-            slug: "cdx".into(),
-            seq: 4_294_967_296,
-        });
-        assert!(matches!(
-            msg,
-            BridgeRcEvent::MessageAppended { seq: 4_294_967_296, .. }
-        ));
-
-        assert!(matches!(
-            BridgeRcEvent::from(RcEvent::HubUnavailable { shed: "proj".into() }),
-            BridgeRcEvent::HubUnavailable { .. }
-        ));
-        assert!(matches!(
-            BridgeRcEvent::from(RcEvent::ShedStopped { shed: "proj".into() }),
-            BridgeRcEvent::ShedStopped { .. }
-        ));
+        let text_only: RcFeedMessage = serde_json::from_value(serde_json::json!({
+            "seq": 2, "role": "user", "type": "text", "text": "hi"
+        }))
+        .expect("tolerant decode");
+        let b = BridgeRcFeedMessage::from(text_only);
+        assert_eq!(b.text.as_deref(), Some("hi"));
+        assert!(b.tool.is_none());
     }
 }

@@ -70,26 +70,16 @@ Future<void> newShedFromTab(BuildContext context, WidgetRef ref) async {
 /// shed: an agent on a machine is a session like any other, and making it a
 /// separate flow would be the first place that stopped being true.
 ///
-/// On a created session, refresh what lists it. CreateRcScreen pops the created
-/// session but self-invalidates nothing, so this is load-bearing for a shed; a
-/// machine's hub reconcile brings its own row in, but invalidating is still what
-/// makes it appear at once rather than at the next tick.
+/// A created session needs nothing invalidated: every target is a roost feed
+/// now (plan 022 S6), `tab.open` folds the new row onto it optimistically, and
+/// roost's next push is authoritative either way. The create screen still pops
+/// the result so a caller that wants it has it.
 Future<void> newSessionFromTab(BuildContext context, WidgetRef ref) async {
   final target = await pickRunTarget(context, ref);
   if (target == null || !context.mounted) return;
-  final created = await Navigator.of(context).push<Object?>(
+  await Navigator.of(context).push<Object?>(
     MaterialPageRoute<Object?>(builder: (_) => CreateRcScreen(target: target)),
   );
-  if (created == null) return;
-  switch (target) {
-    case ShedRcTarget(:final serverName, :final shedName):
-      ref.invalidate(overviewProvider(serverName));
-      ref.invalidate(
-        rcSessionsProvider((serverName: serverName, shedName: shedName)),
-      );
-    case MachineRcTarget(:final machineName):
-      ref.invalidate(machineFeedProvider(machineName));
-  }
 }
 
 /// Pick a saved host. One host → returned immediately (no sheet); many → a bottom

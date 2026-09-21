@@ -145,16 +145,11 @@ class BridgeOverviewServer {
 class BridgeOverviewShed {
   final BridgeShed shed;
   final List<BridgeRcSession> sessions;
-  final BridgeRcCapabilities? capabilities;
 
-  const BridgeOverviewShed({
-    required this.shed,
-    required this.sessions,
-    this.capabilities,
-  });
+  const BridgeOverviewShed({required this.shed, required this.sessions});
 
   @override
-  int get hashCode => shed.hashCode ^ sessions.hashCode ^ capabilities.hashCode;
+  int get hashCode => shed.hashCode ^ sessions.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -162,8 +157,7 @@ class BridgeOverviewShed {
       other is BridgeOverviewShed &&
           runtimeType == other.runtimeType &&
           shed == other.shed &&
-          sessions == other.sessions &&
-          capabilities == other.capabilities;
+          sessions == other.sessions;
 }
 
 /// One `GET /api/sheds/{name}/sessions` row (mirrors `models::Session`).

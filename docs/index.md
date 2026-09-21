@@ -12,10 +12,10 @@ any app store.
 
 - **Browse and manage sheds** on each server: list, start, stop, delete, and
   create (with live SSE progress).
-- **Manage remote-control (RC) sessions** inside a shed via the `shed-ext-rc`
-  guest binary — create `claude-rc` / `claude-broker` / `shell` sessions, see
-  their derived state, and copy/open the `claude.ai` URL.
-- **Attach an in-app terminal** to any RC session's tmux pane.
+- **Manage agent sessions** — the **roost tabs** running on a shed's or a
+  machine's `roost-session`, read over an SSH tunnel: launch a `claude-rc` /
+  `codex` / `opencode` / `cursor` / `gx` / `grok` tab, watch its live state, peek
+  at its pane, read an agent lane's transcript, and close it.
 
 Everything happens on the device: it mints its own control tokens over SSH, pins
 each server's self-signed TLS certificate, and pins each server's SSH host key.
@@ -26,7 +26,7 @@ each server's self-signed TLS certificate, and pins each server's SSH host key.
 graph LR
     subgraph "Device (Flutter)"
         UI[Riverpod UI] --> SHED[ShedClient]
-        UI --> RC[RcService]
+        UI --> RC[MachineFeed / roost watcher]
         UI --> PTY[PtySession]
         SHED --> TOK[ControlTokenProvider]
         TOK --> SSH[SshRunner / BootstrapService]
@@ -38,12 +38,12 @@ graph LR
     TLS -->|"HTTPS, cert pinned"| SRV
     subgraph "shed server (Tailscale)"
         SRV[shed-server] --> SHEDS[(sheds / VMs)]
-        SHEDS --> RCB[shed-ext-rc + tmux]
+        SHEDS --> RCB[roost-session tabs]
     end
 ```
 
-- **SSH (dartssh2)** mints control tokens (`_bootstrap`), drives `shed-ext-rc`,
-  and carries the terminal PTY (`tmux attach`).
+- **SSH (dartssh2)** mints control tokens (`_bootstrap`), tunnels to each
+  origin's `roost-session`, and carries the terminal PTY (`tmux attach`).
 - **Pinned-TLS HTTPS** calls each shed's control API with the minted bearer token.
 - **One per-device ed25519 key** — generated in-app on mobile, or `~/.ssh` on
   desktop — trusted by the server (GitHub `auth.ssh.github_users`, or a local

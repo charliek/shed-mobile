@@ -1033,16 +1033,27 @@ mod tests {
 
     /// The capabilities a roost host advertises, as the app's gates read them:
     /// the attach affordance is `native-remote` (→ the peek, never a tmux
-    /// attach) and the steering features every hub kind had are off.
+    /// attach) and the steering features the RC hub used to offer are off.
     ///
-    /// `feed` is the one that reads backwards. It is `"activity"`, not `"none"`
-    /// — a roost row DOES carry a live activity dimension (folded out of
-    /// `agent_lifecycle`), it just carries no MESSAGE feed. `"none"` is what the
-    /// guest hub says for those same kinds, and it briefly said here too.
+    /// **`feed` is a KIND CEILING, not a row promise** (S6, plan 022 §3.2).
+    /// `roost_kind_features(kind, lane_attached)` answers `"messages"` exactly
+    /// when a lane adapter exists for the kind — so `opencode` and `gx` claim
+    /// the transcript their adapters produce, and a bare-TUI kind like `grok`
+    /// claims the activity dimension it does carry. **Never `"none"`**: with
+    /// the hub gone there is no producer of that word left anywhere, and a
+    /// roost row always carries an activity dimension folded out of
+    /// `agent_lifecycle`.
+    ///
+    /// The consequence a renderer must not get wrong, and the reason this test
+    /// is explicit about it: a card offers a transcript on
+    /// `BridgeRcSession.agentLane`, **never** on this block — the ceiling says
+    /// what an opencode row COULD have, the stamp says what THIS row has.
     #[test]
     fn roost_capabilities_advertise_a_native_remote_attach_and_no_steering() {
         let caps = roost_capabilities();
-        for kind in ["opencode", "gx", "grok"] {
+        // Every roost kind, ceiling or not: the attach affordance is the peek
+        // and nothing steers.
+        for kind in ["claude-rc", "codex", "opencode", "cursor", "gx", "grok"] {
             let f = caps
                 .kind_features
                 .get(kind)
@@ -1051,7 +1062,20 @@ mod tests {
             assert!(!f.post_input, "{kind}");
             assert!(!f.interrupt, "{kind}");
             assert_eq!(f.approvals, "none", "{kind}");
-            assert_eq!(f.feed, "activity", "{kind}: activity, never messages");
+            assert!(f.input.is_empty(), "{kind}");
+            assert_ne!(f.feed, "none", "{kind}: the hub's word has no producer left");
+        }
+        // The two kinds an agent-lane adapter exists for claim the feed the
+        // adapter produces; every other kind claims the activity dimension.
+        for kind in ["opencode", "gx"] {
+            let f = &caps.kind_features[kind];
+            assert_eq!(f.feed, "messages", "{kind}: a lane adapter exists");
+            assert!(f.watch, "{kind}: watch is feed==messages, in lockstep");
+        }
+        for kind in ["claude-rc", "codex", "cursor", "grok"] {
+            let f = &caps.kind_features[kind];
+            assert_eq!(f.feed, "activity", "{kind}: no lane adapter");
+            assert!(!f.watch, "{kind}: watch is feed==messages, in lockstep");
         }
         assert!(caps.kinds.contains(&BridgeRcKind::Opencode));
         // The two grok kinds map through the bridge as themselves, not as

@@ -1,9 +1,20 @@
-// M3 end-to-end (tier c): against a REAL shed. Creates a shell RC session, attaches
-// an interactive PTY via PtySession (`tmux attach -t rc-<slug>`), types a command,
-// confirms the echoed output round-trips, resizes, detaches, then kills the session.
-// Proves the bidirectional PTY (write/read/resize/teardown). NOT run in CI.
+// M3 end-to-end (tier c): against a REAL shed. Attaches an interactive PTY via
+// PtySession (`tmux attach -t rc-<slug>`), types a command, confirms the echoed
+// output round-trips, resizes, then detaches. Proves the bidirectional PTY
+// (write/read/resize/teardown). NOT run in CI.
 //
-//   dart run tool/e2e_pty.dart [shed@host:port]   (default shed-mobile-test@localhost:2222)
+//   dart run tool/e2e_pty.dart <slug> [shed@host:port]
+//                                     (default shed-mobile-test@localhost:2222)
+//
+// **The session is yours to make and yours to clean up** (plan 022 S6,
+// shed#328). This tool used to create and kill one through `RcService`, which
+// drove `shed-ext-rc` over SSH — and `shed-ext-rc` is gone from the image along
+// with the rest of the RC hub. Make a tmux session on the shed first, e.g.
+//
+//   shed exec <shed> -- tmux new-session -d -s rc-<slug>
+//
+// and remove it the same way afterwards. Nothing else in the tool changed: the
+// PTY attaches to `rc-<slug>`, which is the naming `rcAttachCommand` composes.
 //
 // ignore_for_file: avoid_print
 import 'dart:async';
@@ -11,15 +22,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shed_mobile/keys/key_manager.dart';
-import 'package:shed_mobile/rc/rc_ui.dart';
-import 'package:shed_mobile/src/rust/api/dto_rc.dart';
-import 'package:shed_mobile/rc/rc_service.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/pty_session.dart';
-import 'package:shed_mobile/ssh/ssh_runner.dart';
 
 Future<void> main(List<String> args) async {
-  final spec = args.isNotEmpty ? args[0] : 'shed-mobile-test@localhost:2222';
+  if (args.isEmpty) {
+    print('usage: dart run tool/e2e_pty.dart <slug> [shed@host:port]');
+    exit(2);
+  }
+  final slug = args[0];
+  final spec = args.length > 1 ? args[1] : 'shed-mobile-test@localhost:2222';
   final at = spec.split('@');
   final shed = at[0];
   final hp = at[1].split(':');
@@ -28,18 +40,6 @@ Future<void> main(List<String> args) async {
 
   final identities = KeyManager.defaultDesktopKey();
   final hostKeys = HostKeyStore(); // TOFU for the spike
-  final runner = SshRunner(
-    host: host,
-    port: port,
-    user: shed,
-    identities: identities,
-    hostKeys: hostKeys,
-  );
-  final rc = RcService(runner: runner.run, shedName: shed, serverLabel: host);
-
-  print('Creating a shell session to attach ...');
-  final session = await rc.create(kind: const BridgeRcKind.shell());
-  print('  slug=${session.slug} state=${session.state.wire}');
 
   final pty = PtySession(
     host: host,
@@ -47,13 +47,13 @@ Future<void> main(List<String> args) async {
     user: shed,
     identities: identities,
     hostKeys: hostKeys,
-    slug: session.slug,
+    slug: slug,
   );
 
   final buf = StringBuffer();
   const Utf8Decoder(allowMalformed: true).bind(pty.output).listen(buf.write);
 
-  print('Attaching PTY (tmux attach -t rc-${session.slug}) ...');
+  print('Attaching PTY (tmux attach -t rc-$slug) ...');
   await pty.start(cols: 100, rows: 30);
 
   // Let the shell prompt render, then type a uniquely-tagged command.
@@ -77,9 +77,6 @@ Future<void> main(List<String> args) async {
 
   print('Detaching ...');
   pty.close();
-
-  print('Cleaning up rc-${session.slug} ...');
-  await rc.kill(session.slug);
 
   if (!seen) {
     print('FAIL: did not observe "$marker" echoed back from the PTY');

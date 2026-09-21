@@ -148,12 +148,17 @@ void main() {
       attach: attach,
     );
 
-    test('null falls back to tmux (the pre-v2 fallback)', () {
-      expect(attachKind(null), 'tmux');
+    test('an unknown kind gets NO attach affordance', () {
+      // Not `tmux`: after S6 roost is the only producer of capabilities, so a
+      // kind missing from the map is an unknown ROOST row and the xterm attach
+      // would target a tmux session that does not exist. Not the peek either:
+      // shed's `RcKind::Other` is defined as the unknown-kind policy that
+      // "renders the raw kind with no affordances".
+      expect(attachKind(null), 'none');
     });
 
-    test('an empty attach string falls back to tmux', () {
-      expect(attachKind(features('')), 'tmux');
+    test('an empty attach string gets NO attach affordance', () {
+      expect(attachKind(features('')), 'none');
     });
 
     test('native-remote passes through verbatim', () {

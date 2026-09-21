@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/bridge_adapters.dart';
 import 'package:shed_mobile/core/app_error.dart';
-import 'package:shed_mobile/rc/rc_service.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/error.dart';
 
@@ -79,19 +78,6 @@ void main() {
         appErrorFromBridge(const BridgeError.badStatus(code: 503)).code,
         'RC_HUB_UNAVAILABLE',
       );
-    });
-  });
-
-  group('rcDecodeError — decode-path re-map', () {
-    test('a decode RcFailed becomes RC_FAILED/502 (not the exit-path 500)', () {
-      final e = rcDecodeError(
-        const BridgeError.rcFailed(
-          detail: 'shed-ext-rc returned an invalid session DTO',
-        ),
-      );
-      expect(e.code, 'RC_FAILED');
-      expect(e.statusCode, 502);
-      expect(e.message, 'shed-ext-rc returned an invalid session DTO');
     });
   });
 

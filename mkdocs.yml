@@ -95,7 +95,7 @@ nav:
       - Transport & Security: architecture/transport-security.md
   - Features:
       - Servers & Sheds: features/sheds.md
-      - RC Sessions: features/rc-sessions.md
+      - Agent sessions: features/rc-sessions.md
       - In-App Terminal: features/terminal.md
   - Platforms:
       - Desktop (macOS / Linux): platforms/desktop.md

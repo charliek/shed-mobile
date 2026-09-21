@@ -3,13 +3,17 @@
 // emulator):
 //   (a) TokenMinter inversion  — StreamSink out + oneshot registry + Dart submit
 //                                (sealed BridgeMintOutcome) + shutdown-drains
-//   (b) RcEventsWatcher stream  — a real BridgeClient (open-mode, local SSE) →
-//                                two-call watcher → sealed BridgeWatcherUpdate
-//   (c) Dart-backed RcRunner    — argv-out → fake-exec → decode-in (sealed DTOs)
 //   (d) create-stream lifecycle — BridgeClient + CreateSink → sealed update;
 //                                one-shot-on-401 (accepted behavior change)
 //   (e) BridgeClient + BridgeError — a real method call surfaces a sealed error
 // Plus the AC#2 leak counters (incl. the hermetic SSE servers) returning to zero.
+//
+// **Slices (b) and (c) went with the RC hub** (plan 022 S6, shed#328): (b) drove
+// the FRB `RcEventsWatcher` and (c) the `shed-ext-rc` argv/decode runner, and
+// both of those bridge modules are deleted. The roost watcher that replaced (b)
+// has its own hermetic coverage in `lane_test.dart` and the Rust `api::roost`
+// tests; there is no successor to (c), because the phone composes no agent argv
+// of its own any more — `roost_tab_open` sends roost's.
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,12 +21,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:shed_mobile/src/rust/api/bridge_rt.dart';
 import 'package:shed_mobile/src/rust/api/client.dart';
 import 'package:shed_mobile/src/rust/api/create_stream.dart';
-import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/error.dart';
 import 'package:shed_mobile/src/rust/api/local_sse.dart';
 import 'package:shed_mobile/src/rust/api/mint.dart';
-import 'package:shed_mobile/src/rust/api/rc_runner.dart';
-import 'package:shed_mobile/src/rust/api/watcher.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 
 const _pin =
@@ -130,91 +131,6 @@ void main() {
       final c = await liveCounters();
       expect(c.pendingMints, BigInt.zero);
     });
-  });
-
-  // -------- Slice (b): RcEventsWatcher → StreamSink (real BridgeClient) --------
-  testWidgets(
-    'slice b — watcher streams a folded event then tears down to zero',
-    (_) async {
-      final srv = await spawnWatcherTestSse();
-      final client = await BridgeClient.connectOpen(
-        baseUrl: srv.baseUrl(),
-        serverName: 'demo',
-      );
-      final handle = await createRcWatcher(client: client, serverName: 'demo');
-      final stream = rcWatcherEvents(handle: handle);
-
-      final event =
-          await stream
-                  .firstWhere((u) => u is BridgeWatcherUpdate_Event)
-                  .timeout(const Duration(seconds: 10))
-              as BridgeWatcherUpdate_Event;
-
-      // The decoded event is a sealed BridgeRcEvent; the overlay is the enumerable
-      // folded snapshot; `resync` is present (folded onto the Event, Codex #4).
-      final ev = event.event;
-      expect(ev, isA<BridgeRcEvent_ActivityChanged>());
-      expect((ev as BridgeRcEvent_ActivityChanged).slug, 'cdx777');
-      expect(event.overlay.any((e) => e.slug == 'cdx777'), true);
-
-      stopRcEvents(handle: handle); // sync now (Codex #9)
-      srv.stop();
-      final c = await liveCounters();
-      expect(c.activeWatchers, BigInt.zero);
-      expect(c.activeForwarders, BigInt.zero);
-      expect(c.activeSseServers, BigInt.zero);
-    },
-  );
-
-  // -------- Slice (c): Dart-backed RcRunner (pure shed_core::rc) --------
-  testWidgets('slice c — argv-out → fake-exec → decode-in round-trips', (
-    _,
-  ) async {
-    expect(await rcListArgv(), ['shed-ext-rc', 'list']);
-
-    final prompt = await rcPromptArgv(slug: 'cdx777', sessionId: 'sess-1');
-    expect(prompt, containsAll(['prompt', '--slug', 'cdx777', '--session-id']));
-
-    // The validating create gate: argv + stdin (claude-rc accepts typed input).
-    // `createdBy` is Dart-supplied so the wire provenance carries the version.
-    final inv = await rcCreateInvocation(
-      kind: 'claude-rc',
-      name: 'My Session',
-      slug: 'cdx777',
-      target: 'proj',
-      createdBy: 'shed-mobile/test',
-      prompt: 'hello world',
-    );
-    expect(inv.argv, containsAll(['create', '--wait', '--kind', 'claude-rc']));
-    expect(inv.argv, contains('shed-mobile/test'));
-    expect(inv.stdin, 'hello world');
-
-    // Dart "runs" the list argv (fake runner) → Rust decodes AND enriches the
-    // stdout into the single BridgeRcSession type (host/shed injected).
-    const canned =
-        '{"rc_sessions":[{"slug":"cdx777","tmux_session":"tmux-cdx777",'
-        '"kind":"claude-rc","state":"ready","managed":true,'
-        '"display_name":"My Session"}]}';
-    final sessions = await rcDecodeSessions(
-      stdout: canned,
-      host: 'mini3',
-      shed: 'proj',
-    );
-    expect(sessions.length, 1);
-    expect(sessions.first.slug, 'cdx777');
-    expect(sessions.first.host, 'mini3');
-    expect(sessions.first.shed, 'proj');
-    expect(sessions.first.kind, const BridgeRcKind.claudeRc());
-    expect(sessions.first.state, BridgeRcState.ready);
-    expect(sessions.first.managed, true);
-
-    // typed-error mapping → a sealed BridgeError.
-    final err = await rcErrorFromExit(
-      exitCode: 3,
-      stderr: 'slug in use',
-      stdout: '',
-    );
-    expect(err, isA<BridgeError_RcSlugTaken>());
   });
 
   // -------- Slice (d): create-stream sink lifecycle (real BridgeClient) --------

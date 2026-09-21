@@ -10,8 +10,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_rc.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `from_roost_dto`, `from_roost`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeRcSessionDto`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// A session's live work dimension (mirrors `rc::RcActivity`). Plain enum;
 /// an unknown wire token folds to `Unknown` (no `Other` arm, by design).
@@ -83,42 +82,6 @@ class BridgeRcCapabilities {
           agents == other.agents &&
           features == other.features &&
           kindFeatures == other.kindFeatures;
-}
-
-@freezed
-sealed class BridgeRcEvent with _$BridgeRcEvent {
-  const BridgeRcEvent._();
-
-  const factory BridgeRcEvent.activityChanged({
-    required String shed,
-    required String slug,
-    BridgeRcActivity? activity,
-    String? activityAt,
-    BridgeRcState? state,
-    String? lastMessage,
-  }) = BridgeRcEvent_ActivityChanged;
-  const factory BridgeRcEvent.sessionUpdated({
-    required String shed,
-    required String slug,
-    BridgeRcActivity? activity,
-    BridgeRcState? state,
-    String? lastMessage,
-
-    /// The session's lane (contract v2), carried verbatim when the hub sends
-    /// one. `None` on a removal, and on a hub that predates the field.
-    /// Additive: a consumer that ignores it behaves exactly as before.
-    String? lane,
-    required bool removed,
-  }) = BridgeRcEvent_SessionUpdated;
-  const factory BridgeRcEvent.messageAppended({
-    required String shed,
-    required String slug,
-    required BigInt seq,
-  }) = BridgeRcEvent_MessageAppended;
-  const factory BridgeRcEvent.hubUnavailable({required String shed}) =
-      BridgeRcEvent_HubUnavailable;
-  const factory BridgeRcEvent.shedStopped({required String shed}) =
-      BridgeRcEvent_ShedStopped;
 }
 
 /// One normalized feed message (mirrors `rc::RcFeedMessage`). `seq` is `u64`
@@ -276,25 +239,6 @@ class BridgeRcKindFeatures {
           feed == other.feed &&
           interrupt == other.interrupt &&
           attach == other.attach;
-}
-
-/// A page of the feed (mirrors `rc::RcMessagesPage`).
-class BridgeRcMessagesPage {
-  final List<BridgeRcFeedMessage> messages;
-  final bool truncated;
-
-  const BridgeRcMessagesPage({required this.messages, required this.truncated});
-
-  @override
-  int get hashCode => messages.hashCode ^ truncated.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is BridgeRcMessagesPage &&
-          runtimeType == other.runtimeType &&
-          messages == other.messages &&
-          truncated == other.truncated;
 }
 
 /// The enriched session the app renders (mirrors `rc::RcSession`).

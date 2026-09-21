@@ -192,8 +192,28 @@ extension BridgeRcKindFeaturesUi on BridgeRcKindFeatures {
 /// The single discriminator every attach affordance reads: `'tmux'` → the
 /// existing xterm attach (`ShedTerminalTarget`), `'native-remote'` → the roost
 /// peek, anything else → no affordance.
+/// The attach affordance for a row, defaulting to the read-only peek.
+///
+/// The default is load-bearing. `featuresFor` is a map lookup by the row's kind
+/// (`machine_feed.dart:129`) and `roost_capabilities()` populates it for six
+/// kinds only; shed parses any other tab source as `RcKind::Other` — its own
+/// tests pin `manual`, `legacy` and `something-new` (`roost/model.rs:1130`).
+/// Such a row misses the map and lands here with `null`.
+///
+/// It used to default to `tmux`, meaning "a capability block from an older,
+/// non-roost producer". After S6 there is no such producer: `roostCapabilities()`
+/// is the only one (`machine_feed.dart:479`). A `tmux` answer therefore offered
+/// the xterm attach for `tmux attach -t rc-<tabId>` — a target tmux cannot
+/// address, and which can match an UNRELATED session of that name.
+///
+/// The replacement is `none`, not `native-remote`, because shed already states
+/// the policy for these rows: `RcKind::Other` is "the unknown-kind policy,
+/// which renders the raw kind with NO AFFORDANCES" (`roost/model.rs:212-218`).
+/// A peek would work — an unknown row is still a real roost tab with a real id
+/// — but granting one invents an affordance for a kind nobody has specified.
+/// `none` passes through the callers verbatim and yields neither button.
 String attachKind(BridgeRcKindFeatures? f) =>
-    (f != null && f.attach.isNotEmpty) ? f.attach : 'tmux';
+    (f != null && f.attach.isNotEmpty) ? f.attach : 'none';
 
 // ---- permission modes -----------------------------------------------------
 

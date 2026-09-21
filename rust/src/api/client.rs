@@ -50,7 +50,6 @@ use super::bridge_rt::bridge_rt;
 use super::dto::{
     BridgeOverview, BridgeSession, BridgeShed, BridgeShedImage, BridgeSystemDiskUsage,
 };
-use super::dto_rc::BridgeRcMessagesPage;
 use super::error::BridgeError;
 use super::mint::BridgeMinter;
 use crate::sink_registry::SinkRegistry;
@@ -172,56 +171,6 @@ impl BridgeClient {
     pub async fn delete_session(&self, shed: String, session: String) -> Result<(), BridgeError> {
         let client = self.inner.clone();
         run(async move { client.delete_session(&shed, &session).await })
-            .await
-            .map_err(Into::into)
-    }
-
-    pub async fn rc_messages(
-        &self,
-        shed: String,
-        slug: String,
-        since: u64,
-        limit: Option<u32>,
-    ) -> Result<BridgeRcMessagesPage, BridgeError> {
-        let client = self.inner.clone();
-        run(async move { client.rc_messages(&shed, &slug, since, limit).await })
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
-    }
-
-    pub async fn rc_input(
-        &self,
-        shed: String,
-        slug: String,
-        text: String,
-    ) -> Result<(), BridgeError> {
-        let client = self.inner.clone();
-        run(async move { client.rc_input(&shed, &slug, &text).await })
-            .await
-            .map_err(Into::into)
-    }
-
-    /// Start a structured turn on a shed session — the `input: "turn"`
-    /// counterpart to [`Self::rc_input`]'s `"gated"` keystroke path. Which one
-    /// applies is the kind's business (`kind_features.input`), never a guess.
-    pub async fn rc_turn(
-        &self,
-        shed: String,
-        slug: String,
-        text: String,
-    ) -> Result<String, BridgeError> {
-        let client = self.inner.clone();
-        run(async move { client.rc_turn(&shed, &slug, &text).await })
-            .await
-            .map_err(Into::into)
-    }
-
-    /// Interrupt the running turn. `false` = nothing was running, which is an
-    /// answer rather than a failure.
-    pub async fn rc_interrupt(&self, shed: String, slug: String) -> Result<bool, BridgeError> {
-        let client = self.inner.clone();
-        run(async move { client.rc_interrupt(&shed, &slug).await })
             .await
             .map_err(Into::into)
     }

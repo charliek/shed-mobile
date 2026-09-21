@@ -14,7 +14,7 @@ the control API over pinned TLS.
 | Shed API + credentials | `rust/src/api/` | The Rust core (`shed-core`) over `flutter_rust_bridge`: pinned-TLS HTTP, create-SSE, and the credential FSM (token **and** mtls). |
 | Bridge listeners | `lib/bridge/` | App-scoped `MintSink` (runs the SSH mint Rust asks for) + `CredentialSink` (persists the learned auth mode). |
 | Shed API glue | `lib/shed/` | Formatting + adapters over the bridge DTOs. |
-| RC | `lib/rc/` | `RcService` + DTOs — drives `shed-ext-rc` over SSH. |
+| Agent sessions | `lib/machines/`, `lib/lanes/` | `MachineFeed` — one SSH tunnel per origin (a machine, or a shed) to its `roost-session`, plus the agent-lane controller. |
 | SSH | `lib/ssh/` | Connection primitive, one-shot exec, bootstrap mint, PTY, host-key store. |
 | Keys | `lib/keys/` | Key import (desktop) and in-app keygen + identity store (mobile). |
 | Storage | `lib/storage/` | `SecretStore` — secure storage (mobile) / 0600 files (desktop). |
@@ -36,8 +36,9 @@ A shed API call (e.g. *list sheds*):
 4. A `401` invalidates the credential and retries once with a freshly minted,
    distinct one.
 
-An RC or terminal action instead SSHes as `<shed>@host` (the shed name is the SSH
-username) and runs `shed-ext-rc …` or `tmux attach …`.
+An agent-session or terminal action instead SSHes as `<shed>@host` (the shed
+name is the SSH username) and either execs roost's own `client-bridge` chain —
+the tunnel the shared Rust roost watcher reads tabs over — or `tmux attach …`.
 
 ## Shared SSH primitive
 
@@ -53,8 +54,12 @@ Providers are hand-written (no codegen), matching the tapper conventions.
 Per-target providers are `autoDispose.family`, keyed by a named record:
 
 - `shedClientProvider(serverName)` / `shedsProvider(serverName)`
-- `rcServiceProvider(ShedRef)` / `rcSessionsProvider(ShedRef)` where
-  `ShedRef = ({String serverName, String shedName})`
+- `machineFeedProvider(origin)` — one feed per ORIGIN, where an origin is a
+  machine name or `shed:<server>/<shed>` (`providers.dart:shedFeedKey`). This
+  replaced `rcServiceProvider`/`rcSessionsProvider`, which read the RC hub;
+  plan 022/S6 deleted the hub, and a shed's sessions are roost tabs now.
+  `ShedRef = ({String serverName, String shedName})` survives as the parse
+  result of a shed origin.
 
 The terminal owns its live `PtySession` directly in widget state (built via the
 `buildPtySession` factory) rather than through a provider, because a long-lived,
