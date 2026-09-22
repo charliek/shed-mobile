@@ -1156,8 +1156,8 @@ dependencies = [
 
 [[package]]
 name = "roost-ipc"
-version = "0.0.19"
-source = "git+https://github.com/charliek/roost?rev=ee71e44a1de3c0de4c59ac0267c0a5e0c993d88a#ee71e44a1de3c0de4c59ac0267c0a5e0c993d88a"
+version = "0.0.20"
+source = "git+https://github.com/charliek/roost?rev=8c91ce9ddd49c5a43841f72ecd149dd778d6151c#8c91ce9ddd49c5a43841f72ecd149dd778d6151c"
 dependencies = [
  "anyhow",
  "base64",
@@ -1360,7 +1360,7 @@ dependencies = [
 [[package]]
 name = "shed-app"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=d85cfdc374f7a6664a599aef0377cbe8657175b7#d85cfdc374f7a6664a599aef0377cbe8657175b7"
+source = "git+https://github.com/charliek/shed?rev=6be6000b3e67e4cbe8cef23cef5e532b49e0ef23#6be6000b3e67e4cbe8cef23cef5e532b49e0ef23"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1378,7 +1378,7 @@ dependencies = [
 [[package]]
 name = "shed-core"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=d85cfdc374f7a6664a599aef0377cbe8657175b7#d85cfdc374f7a6664a599aef0377cbe8657175b7"
+source = "git+https://github.com/charliek/shed?rev=6be6000b3e67e4cbe8cef23cef5e532b49e0ef23#6be6000b3e67e4cbe8cef23cef5e532b49e0ef23"
 dependencies = [
  "async-trait",
  "base64",
@@ -1400,7 +1400,7 @@ dependencies = [
 [[package]]
 name = "shed-gx"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=d85cfdc374f7a6664a599aef0377cbe8657175b7#d85cfdc374f7a6664a599aef0377cbe8657175b7"
+source = "git+https://github.com/charliek/shed?rev=6be6000b3e67e4cbe8cef23cef5e532b49e0ef23#6be6000b3e67e4cbe8cef23cef5e532b49e0ef23"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1415,7 +1415,7 @@ dependencies = [
 [[package]]
 name = "shed-opencode"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=d85cfdc374f7a6664a599aef0377cbe8657175b7#d85cfdc374f7a6664a599aef0377cbe8657175b7"
+source = "git+https://github.com/charliek/shed?rev=6be6000b3e67e4cbe8cef23cef5e532b49e0ef23#6be6000b3e67e4cbe8cef23cef5e532b49e0ef23"
 dependencies = [
  "async-trait",
  "base64",
