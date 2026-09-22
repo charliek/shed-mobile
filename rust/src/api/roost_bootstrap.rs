@@ -423,9 +423,10 @@ impl BridgeBootstrapProbe {
 /// [`Source`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeBootstrapSource {
-    /// The file `ROOST_SESSION_INSTALL_BIN` names. **On a phone this is the only
-    /// live rung** — there is no sibling beside a Flutter app and the release
-    /// pin is `None` — which is why every mobile acceptance criterion names it.
+    /// The file `ROOST_SESSION_INSTALL_BIN` names. **On a phone this is the
+    /// only rung above the release asset** — there is no sibling beside a
+    /// Flutter app, so a phone falls straight from here to rung 3 now that
+    /// `RELEASE_PIN` names a published release (plan 023 §3.2 amendment).
     Override { path: String },
     /// The `roost-session` beside this client. Desktop-on-Linux only.
     Sibling { path: String },
@@ -1942,9 +1943,11 @@ mod tests {
     /// **Every [`Source`] rung crosses**, and the preview carries the rendered
     /// sentence rather than letting Dart compose one.
     ///
-    /// The override rung is the one that matters on a phone: there is no sibling
-    /// beside a Flutter app and the release pin is `None`, so it is the only live
-    /// source mobile has.
+    /// The override rung still wins on a phone when the user sets it — there is
+    /// no sibling beside a Flutter app — but with `RELEASE_PIN` now naming a
+    /// published release (plan 023 §3.2 amendment, shed rev 6be6000), a bare
+    /// environment no longer falls all the way to rung 4: it lands on the
+    /// release asset instead.
     #[test]
     fn every_source_rung_crosses_and_the_preview_carries_its_sentence() {
         for (from, want) in [
@@ -1998,14 +2001,24 @@ mod tests {
             preview.describe
         );
 
-        // Nothing set at all: no sibling on a phone, and the release pin is
-        // `None`, so the sheet gets a sentence instead of a button.
+        // Nothing set at all: no sibling on a phone, but the release pin now
+        // names a published version, so the sheet gets the asset rung and a
+        // button rather than rung 4's sentence.
         let bare = source_preview(&SourceEnv::default(), TARGET, "arm64");
-        assert_eq!(bare.source, BridgeBootstrapSource::None);
-        assert!(!bare.available);
+        assert_eq!(
+            bare.source,
+            BridgeBootstrapSource::Asset {
+                base: "https://github.com/charliek/roost/releases/download/v0.0.20".into(),
+                version: "0.0.20".into(),
+            }
+        );
         assert!(
-            bare.describe.contains(TARGET) && bare.describe.contains("left untouched"),
-            "rung 4's sentence says what was not done: {}",
+            bare.available,
+            "the release pin makes the asset rung a button"
+        );
+        assert!(
+            bare.describe.contains("0.0.20") && bare.describe.contains("checksum-verified"),
+            "the sentence names the pinned release: {}",
             bare.describe
         );
     }

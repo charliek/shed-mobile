@@ -46,11 +46,11 @@ void main() {
     );
   });
 
-  group('setAuthMode', () {
+  group('adoptCredential', () {
     test('flips to mtls and drops the now-useless seed', () async {
       final store = ServerStore(InMemorySecretStore());
       await store.add(rec('mini3'));
-      expect(await store.setAuthMode('mini3', 'mtls'), isTrue);
+      expect(await store.adoptCredential('mini3', 'mtls'), isTrue);
 
       final got = (await store.get('mini3'))!;
       expect(got.authMode, kAuthModeMtls);
@@ -58,26 +58,144 @@ void main() {
       expect(got.controlTokenExpiresAt, isNull);
     });
 
+    test('mtls clears the seed even when a token is passed', () async {
+      // shed-core never sends one in mtls mode; the store does not depend on
+      // that, because a bearer stored against a certificate server is dead
+      // weight however it arrived.
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      expect(
+        await store.adoptCredential(
+          'mini3',
+          'mtls',
+          token: 'should-not-land',
+          expiresAt: DateTime.utc(2030),
+        ),
+        isTrue,
+      );
+      final got = (await store.get('mini3'))!;
+      expect(got.controlToken, isNull);
+      expect(got.controlTokenExpiresAt, isNull);
+    });
+
+    test('a rotation replaces the token AND the expiry together', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      expect(
+        await store.adoptCredential(
+          'mini3',
+          'token',
+          token: 'tok-2',
+          expiresAt: DateTime.utc(2027, 3, 4),
+        ),
+        isTrue,
+      );
+      final got = (await store.get('mini3'))!;
+      expect(got.controlToken, 'tok-2');
+      expect(got.controlTokenExpiresAt, DateTime.utc(2027, 3, 4));
+    });
+
+    test(
+      'a token with no expiry stores none — the pair is never split',
+      () async {
+        final store = ServerStore(InMemorySecretStore());
+        await store.add(rec('mini3'));
+        expect(
+          await store.adoptCredential('mini3', 'token', token: 'tok-2'),
+          isTrue,
+        );
+        final got = (await store.get('mini3'))!;
+        expect(got.controlToken, 'tok-2');
+        // NOT rec()'s stale 2026-06-28 expiry left behind beside a new bearer.
+        expect(got.controlTokenExpiresAt, isNull);
+      },
+    );
+
+    test('mtls → token repopulates both halves', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      await store.adoptCredential('mini3', 'mtls');
+      expect((await store.get('mini3'))!.controlToken, isNull);
+
+      expect(
+        await store.adoptCredential(
+          'mini3',
+          'token',
+          token: 'reissued',
+          expiresAt: DateTime.utc(2028),
+        ),
+        isTrue,
+      );
+      final got = (await store.get('mini3'))!;
+      expect(got.authMode, kAuthModeToken);
+      expect(got.controlToken, 'reissued');
+      expect(got.controlTokenExpiresAt, DateTime.utc(2028));
+    });
+
+    test('no token passed keeps the stored pair (a bare ModeChanged)', () async {
+      final store = ServerStore(InMemorySecretStore());
+      await store.add(rec('mini3'));
+      // Nothing changes at all, so nothing is written — and crucially the seed
+      // is NOT erased by the absent argument.
+      expect(await store.adoptCredential('mini3', 'token'), isFalse);
+      final got = (await store.get('mini3'))!;
+      expect(got.controlToken, 'tok');
+      expect(got.controlTokenExpiresAt, DateTime.utc(2026, 6, 28));
+    });
+
     test('is a no-op when nothing changed', () async {
       final store = ServerStore(InMemorySecretStore());
       await store.add(rec('mini3'));
-      // Adopted fires on every mint — a same-shape rotation must not write.
-      expect(await store.setAuthMode('mini3', 'token'), isFalse);
-      expect(await store.setAuthMode('mini3', 'mtls'), isTrue);
-      expect(await store.setAuthMode('mini3', 'mtls'), isFalse);
+      // Adopted fires on every mint — re-announcing the stored pair must not
+      // write, mode and credential material alike.
+      expect(await store.adoptCredential('mini3', 'token'), isFalse);
+      expect(
+        await store.adoptCredential(
+          'mini3',
+          'token',
+          token: 'tok',
+          expiresAt: DateTime.utc(2026, 6, 28),
+        ),
+        isFalse,
+      );
+      expect(await store.adoptCredential('mini3', 'mtls'), isTrue);
+      expect(await store.adoptCredential('mini3', 'mtls'), isFalse);
     });
 
     test('normalizes an unknown mode to token', () async {
       final store = ServerStore(InMemorySecretStore());
       await store.add(rec('mini3'));
-      await store.setAuthMode('mini3', 'mtls');
-      expect(await store.setAuthMode('mini3', 'future-mode'), isTrue);
+      await store.adoptCredential('mini3', 'mtls');
+      expect(await store.adoptCredential('mini3', 'future-mode'), isTrue);
       expect((await store.get('mini3'))!.authMode, kAuthModeToken);
     });
 
     test('an unknown server is a no-op', () async {
       final store = ServerStore(InMemorySecretStore());
-      expect(await store.setAuthMode('ghost', 'mtls'), isFalse);
+      expect(await store.adoptCredential('ghost', 'mtls'), isFalse);
+      expect(
+        await store.adoptCredential('ghost', 'token', token: 'tok-2'),
+        isFalse,
+      );
+    });
+
+    test('a storage-write failure SURFACES, it is not swallowed', () async {
+      final store = ServerStore(_FailingWriteStore());
+      await store.add(rec('mini3'));
+      // The record is worth more than the hint: a caller that cannot write must
+      // find out, and decide for itself (the credential sink contains it; a
+      // silent drop inside the store would take that decision away).
+      await expectLater(
+        store.adoptCredential(
+          'mini3',
+          'token',
+          token: 'tok-2',
+          expiresAt: DateTime.utc(2027),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      // ...and the queue is not wedged by the failure.
+      expect(await store.adoptCredential('ghost', 'token'), isFalse);
     });
   });
 
@@ -117,6 +235,25 @@ void main() {
     final names = (await store.list()).map((r) => r.name).toList()..sort();
     expect(names, ['alpha', 'beta']);
   });
+}
+
+/// A [SecretStore] whose FIRST write succeeds (so a record can be seeded) and
+/// every later one fails — the keychain-unavailable shape.
+class _FailingWriteStore implements SecretStore {
+  final _inner = InMemorySecretStore();
+  int writes = 0;
+
+  @override
+  Future<String?> read(String key) => _inner.read(key);
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (writes++ > 0) throw StateError('secure storage unavailable');
+    await _inner.write(key, value);
+  }
+
+  @override
+  Future<void> delete(String key) => _inner.delete(key);
 }
 
 /// A [SecretStore] with a real async gap on both sides of a read-modify-write,

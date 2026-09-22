@@ -15,13 +15,13 @@ class ServerStore {
   static const _key = 'servers.v1';
 
   /// Tail of the mutation queue. Every read-modify-write ([add], [remove],
-  /// [setAuthMode]) rewrites the WHOLE `servers.v1` blob, so two of them
+  /// [adoptCredential]) rewrites the WHOLE `servers.v1` blob, so two of them
   /// interleaving loses one update entirely: both read the same list, each
   /// mutates its own copy, and the second write clobbers the first.
   /// [SecretStore] cannot help — it makes the individual write atomic, not the
   /// surrounding read-modify-write.
   ///
-  /// That is not hypothetical here: `setAuthMode` is driven by the Rust
+  /// That is not hypothetical here: `adoptCredential` is driven by the Rust
   /// credential-event stream and fires on its own schedule, so it can land
   /// mid-`add` while the user is adding a server.
   ///
@@ -78,29 +78,66 @@ class ServerStore {
     await _save(all);
   });
 
-  /// Persist the credential shape [name]'s server just issued (plan 002 §7 P1).
+  /// Persist, ATOMICALLY, everything [name]'s server just issued: the credential
+  /// shape AND — in token mode — the freshly minted bearer with its expiry
+  /// (plan 002 §7 P1, as amended by plan 023 §3.5).
   ///
-  /// Driven by the Rust credential-event stream, which fires on EVERY successful
-  /// mint — so this is idempotent and writes NOTHING when the stored value
-  /// already matches (a rotation must not cost a secure-storage write). A flip
-  /// to mtls also drops the stored seed token: it can no longer authenticate
-  /// anything, so keeping it is pure liability. An unknown [name] (the record was
-  /// removed while a mint was in flight) is a no-op.
+  /// One method rather than a mode setter plus a token setter, because these
+  /// three fields are one fact. Two writes could interleave with a third
+  /// mutation and leave a bearer paired with someone else's expiry, or an mtls
+  /// record still holding a dead seed; one read-modify-write on the mutation
+  /// queue cannot.
+  ///
+  /// The rules, matching the events `lib/bridge/credential_sink.dart` feeds in:
+  ///
+  ///  * **mtls** — both credential fields are CLEARED, whatever was passed. A
+  ///    bearer cannot authenticate against a server that issues certificates, so
+  ///    keeping it is pure liability.
+  ///  * **token with [token] present** (an `Adopted`) — the pair is REPLACED,
+  ///    both halves together. [expiresAt] is taken as given, `null` included: a
+  ///    token the minter reported no expiry for stores none.
+  ///  * **token with [token] absent** (a bare `ModeChanged`, which carries no
+  ///    credential material) — the stored pair is left exactly as it is. The
+  ///    event neither invents nor erases a credential.
+  ///
+  /// Driven by a stream that fires on EVERY successful mint, so it is idempotent
+  /// and writes NOTHING when the stored record already says all of this. An
+  /// unknown [name] (the record was removed while a mint was in flight) is a
+  /// no-op. A storage failure is NOT swallowed here — it propagates to the
+  /// caller, which decides what a lost hint costs.
   ///
   /// Returns whether anything was written.
-  Future<bool> setAuthMode(String name, String authMode) =>
-      _serialized(() async {
-        final mode = normalizeAuthMode(authMode);
-        final all = await list();
-        final i = all.indexWhere((r) => r.name == name);
-        if (i < 0) return false;
-        final cur = all[i];
-        final dropSeed = mode == kAuthModeMtls && cur.controlToken != null;
-        if (cur.authMode == mode && !dropSeed) return false;
-        all[i] = cur.copyWith(authMode: mode, dropControlToken: dropSeed);
-        await _save(all);
-        return true;
-      });
+  Future<bool> adoptCredential(
+    String name,
+    String authMode, {
+    String? token,
+    DateTime? expiresAt,
+  }) => _serialized(() async {
+    final mode = normalizeAuthMode(authMode);
+    final all = await list();
+    final i = all.indexWhere((r) => r.name == name);
+    if (i < 0) return false;
+    final cur = all[i];
+
+    final mtls = mode == kAuthModeMtls;
+    final nextToken = mtls ? null : (token ?? cur.controlToken);
+    final nextExpiry = mtls
+        ? null
+        : (token == null ? cur.controlTokenExpiresAt : expiresAt);
+
+    if (cur.authMode == mode &&
+        cur.controlToken == nextToken &&
+        cur.controlTokenExpiresAt == nextExpiry) {
+      return false;
+    }
+    all[i] = cur.copyWith(
+      authMode: mode,
+      controlToken: nextToken,
+      controlTokenExpiresAt: nextExpiry,
+    );
+    await _save(all);
+    return true;
+  });
 
   Future<void> remove(String name) => _serialized(() async {
     final all = await list();

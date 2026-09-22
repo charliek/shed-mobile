@@ -659,9 +659,10 @@ sealed class BridgeBootstrapSessionState with _$BridgeBootstrapSessionState {
 sealed class BridgeBootstrapSource with _$BridgeBootstrapSource {
   const BridgeBootstrapSource._();
 
-  /// The file `ROOST_SESSION_INSTALL_BIN` names. **On a phone this is the only
-  /// live rung** — there is no sibling beside a Flutter app and the release
-  /// pin is `None` — which is why every mobile acceptance criterion names it.
+  /// The file `ROOST_SESSION_INSTALL_BIN` names. **On a phone this is the
+  /// only rung above the release asset** — there is no sibling beside a
+  /// Flutter app, so a phone falls straight from here to rung 3 now that
+  /// `RELEASE_PIN` names a published release (plan 023 §3.2 amendment).
   const factory BridgeBootstrapSource.override({required String path}) =
       BridgeBootstrapSource_Override;
 

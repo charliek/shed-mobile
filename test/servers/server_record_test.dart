@@ -74,20 +74,56 @@ void main() {
     });
   });
 
-  group('copyWith', () {
-    test('keeps the seed on a token-mode update', () {
+  group('copyWith (set-or-clear on the two credential fields)', () {
+    test('OMITTING both keeps the stored seed — a bare mode update', () {
       final r = _rec().copyWith(authMode: kAuthModeToken);
       expect(r.controlToken, 'tok');
+      expect(r.controlTokenExpiresAt, DateTime.utc(2026, 6, 28));
     });
 
-    test('dropControlToken clears both token fields', () {
+    test('passing null to both CLEARS them — what a flip to mtls does', () {
       final r = _rec().copyWith(
         authMode: kAuthModeMtls,
-        dropControlToken: true,
+        controlToken: null,
+        controlTokenExpiresAt: null,
       );
       expect(r.authMode, kAuthModeMtls);
       expect(r.controlToken, isNull);
       expect(r.controlTokenExpiresAt, isNull);
+    });
+
+    test('passing values SETS them — a rotation replaces the whole pair', () {
+      final r = _rec().copyWith(
+        controlToken: 'rotated',
+        controlTokenExpiresAt: DateTime.utc(2027, 1, 2),
+      );
+      expect(r.controlToken, 'rotated');
+      expect(r.controlTokenExpiresAt, DateTime.utc(2027, 1, 2));
+      expect(r.authMode, kAuthModeToken); // untouched
+    });
+
+    test('the two fields are independent of each other', () {
+      // The sink always moves them together, but nothing about the sentinel
+      // pattern couples them — assert that rather than assume it.
+      final r = _rec().copyWith(controlTokenExpiresAt: null);
+      expect(r.controlToken, 'tok');
+      expect(r.controlTokenExpiresAt, isNull);
+    });
+
+    test('a cleared pair round-trips through JSON as absent keys', () {
+      final cleared = _rec().copyWith(
+        authMode: kAuthModeMtls,
+        controlToken: null,
+        controlTokenExpiresAt: null,
+      );
+      final j = cleared.toJson();
+      expect(j.containsKey('control_token'), isFalse);
+      expect(j.containsKey('control_token_expires_at'), isFalse);
+      final back = ServerRecord.fromJson(
+        jsonDecode(jsonEncode(j)) as Map<String, Object?>,
+      );
+      expect(back.controlToken, isNull);
+      expect(back.controlTokenExpiresAt, isNull);
     });
   });
 }
