@@ -3471,6 +3471,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           server: dco_decode_String(raw[1]),
           authMode: dco_decode_String(raw[2]),
           expiresAtUnix: dco_decode_opt_box_autoadd_u_64(raw[3]),
+          token: dco_decode_opt_String(raw[4]),
         );
       case 1:
         return BridgeCredentialEvent_ModeChanged(
@@ -5561,10 +5562,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_server = sse_decode_String(deserializer);
         var var_authMode = sse_decode_String(deserializer);
         var var_expiresAtUnix = sse_decode_opt_box_autoadd_u_64(deserializer);
+        var var_token = sse_decode_opt_String(deserializer);
         return BridgeCredentialEvent_Adopted(
           server: var_server,
           authMode: var_authMode,
           expiresAtUnix: var_expiresAtUnix,
+          token: var_token,
         );
       case 1:
         var var_server = sse_decode_String(deserializer);
@@ -8024,11 +8027,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         server: final server,
         authMode: final authMode,
         expiresAtUnix: final expiresAtUnix,
+        token: final token,
       ):
         sse_encode_i_32(0, serializer);
         sse_encode_String(server, serializer);
         sse_encode_String(authMode, serializer);
         sse_encode_opt_box_autoadd_u_64(expiresAtUnix, serializer);
+        sse_encode_opt_String(token, serializer);
       case BridgeCredentialEvent_ModeChanged(
         server: final server,
         authMode: final authMode,

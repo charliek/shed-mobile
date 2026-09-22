@@ -2012,7 +2012,10 @@ mod tests {
                 version: "0.0.20".into(),
             }
         );
-        assert!(bare.available, "the release pin makes the asset rung a button");
+        assert!(
+            bare.available,
+            "the release pin makes the asset rung a button"
+        );
         assert!(
             bare.describe.contains("0.0.20") && bare.describe.contains("checksum-verified"),
             "the sentence names the pinned release: {}",

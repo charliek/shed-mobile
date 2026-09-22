@@ -3849,10 +3849,12 @@ impl SseDecode for crate::api::client::BridgeCredentialEvent {
                 let mut var_server = <String>::sse_decode(deserializer);
                 let mut var_authMode = <String>::sse_decode(deserializer);
                 let mut var_expiresAtUnix = <Option<u64>>::sse_decode(deserializer);
+                let mut var_token = <Option<String>>::sse_decode(deserializer);
                 return crate::api::client::BridgeCredentialEvent::Adopted {
                     server: var_server,
                     auth_mode: var_authMode,
                     expires_at_unix: var_expiresAtUnix,
+                    token: var_token,
                 };
             }
             1 => {
@@ -6317,11 +6319,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::client::BridgeCredentialEvent
                 server,
                 auth_mode,
                 expires_at_unix,
+                token,
             } => [
                 0.into_dart(),
                 server.into_into_dart().into_dart(),
                 auth_mode.into_into_dart().into_dart(),
                 expires_at_unix.into_into_dart().into_dart(),
+                token.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::client::BridgeCredentialEvent::ModeChanged { server, auth_mode } => [
@@ -8159,11 +8163,13 @@ impl SseEncode for crate::api::client::BridgeCredentialEvent {
                 server,
                 auth_mode,
                 expires_at_unix,
+                token,
             } => {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(server, serializer);
                 <String>::sse_encode(auth_mode, serializer);
                 <Option<u64>>::sse_encode(expires_at_unix, serializer);
+                <Option<String>>::sse_encode(token, serializer);
             }
             crate::api::client::BridgeCredentialEvent::ModeChanged { server, auth_mode } => {
                 <i32>::sse_encode(1, serializer);

@@ -17,7 +17,7 @@ never configures it.
 
 | Mode | Credential | Client story |
 |---|---|---|
-| `token` (legacy alias `secure`) | Short-lived bearer token | Minted over SSH; seeded once at add time, re-minted in Rust as it nears expiry. |
+| `token` (legacy alias `secure`) | Short-lived bearer token | Minted over SSH; seeded at add time, re-minted in Rust as it nears expiry, and the stored seed is refreshed from every adoption. |
 | `mtls` | Short-lived **client certificate** | The certificate *is* the credential — no bearer exists. The key is generated in Rust, never persisted, never crosses the bridge. |
 | `open` | None | Not used by the mobile add-server flow. |
 
@@ -26,8 +26,13 @@ The mode is decided by the **server at every mint**, so an operator flipping
 provider to the other shape and the transport is never rebuilt. The learned mode
 is written back to `ServerRecord.authMode` by the credential-event listener
 (`lib/bridge/credential_sink.dart`), which is what makes a live flip survive an
-app restart. A stored mode is only ever a **hint** on the next launch: it decides
-whether a stored seed token is worth planting. Decoding is deliberately tolerant —
+app restart — along with the freshly minted bearer and its expiry, which the same
+listener writes back through `ServerStore.adoptCredential`. (Before plan 023 the
+seed was written once, at add time, and never again; with a 2h5m refresh window
+against a 24h TTL it went stale about 22h later and every cold launch after that
+paid a mint it should have skipped.) A stored mode is only ever a **hint** on the
+next launch: it decides whether a stored seed token is worth planting. Decoding is
+deliberately tolerant —
 missing, empty, `secure`, and any unrecognized value all read as `token`
 (`normalizeAuthMode`, matching `shed_core::token::AuthMode::from_wire`); there is
 no schema-version field on the record, tolerance *is* the migration.
@@ -157,7 +162,11 @@ Rust announces the adoption, not when the request finishes.
   (Keychain/Keystore on mobile) or 0600 files (desktop) — never in logs. The
   control-scope *certificate* key is never stored at all (see Key containment).
 - A flip to mtls **deletes** the stored seed token: it can authenticate nothing
-  against the server any more, so keeping it is pure liability.
+  against the server any more, so keeping it is pure liability. A later flip back
+  to token repopulates it from the next adoption.
+- The seed token and its expiry are written and cleared **only as a pair**
+  (`ServerRecord.copyWith`, `ServerStore.adoptCredential`) — a fresh bearer beside
+  a stale expiry would make the app treat a live credential as expired.
 - `BootstrapService.mintRaw` **never surfaces SSH stdout/stderr on failure** —
   mint output can contain credential bytes. `SshRunner` does not log, and on
   empty output the mint throws without echoing it. The mint listener reports a

@@ -62,32 +62,61 @@ class ServerRecord {
   /// server), and nothing else.
   final String authMode;
 
-  /// The seed bearer token — token mode only. Persisted once at add time
-  /// (plan 002 §7 P7's sanctioned add-time crossing) so a token-mode cold launch
-  /// skips a mint. In mtls mode this is always null: the certificate and its
-  /// private key live in Rust for the process lifetime and are never persisted
-  /// (plan 001 D6).
+  /// The seed bearer token — token mode only. First persisted at add time
+  /// (plan 002 §7 P7's sanctioned add-time crossing) and then REFRESHED on every
+  /// adoption the Rust credential-event stream announces (plan 023 §3.5), so a
+  /// token-mode cold launch skips a mint however long ago the server was added.
+  /// A write-once seed could not: the mint refresh window is 2h5m against a 24h
+  /// TTL, so a seed stops being plantable about 22h after it was minted.
+  ///
+  /// In mtls mode this is always null: the certificate and its private key live
+  /// in Rust for the process lifetime and are never persisted (plan 001 D6).
   final String? controlToken;
+
+  /// When [controlToken] stops being plantable. Written and cleared ONLY
+  /// alongside it — a fresh bearer beside a stale expiry would make the app
+  /// treat a live credential as expired, or an expired one as live.
   final DateTime? controlTokenExpiresAt;
 
   /// Whether this server is believed to issue client certificates.
   bool get isMtls => authMode == kAuthModeMtls;
 
-  /// A copy with a new learned [authMode]; [dropControlToken] additionally
-  /// clears the stored seed (what a flip to mtls does — a bearer for a server
-  /// that no longer accepts one is dead weight in secure storage).
-  ServerRecord copyWith({String? authMode, bool dropControlToken = false}) =>
-      ServerRecord(
-        name: name,
-        host: host,
-        sshPort: sshPort,
-        apiUrl: apiUrl,
-        tlsCertFingerprint: tlsCertFingerprint,
-        hostKeyPin: hostKeyPin,
-        authMode: authMode ?? this.authMode,
-        controlToken: dropControlToken ? null : controlToken,
-        controlTokenExpiresAt: dropControlToken ? null : controlTokenExpiresAt,
-      );
+  /// Distinguishes "argument omitted" from "argument passed as null" for the
+  /// two nullable credential fields. `null` is a MEANINGFUL value for both
+  /// (clear it), so a plain `String?` parameter could only ever set, never
+  /// clear — the bug that made the seed write-once.
+  static const Object _unset = Object();
+
+  /// A copy with a new learned [authMode] and/or new credential material.
+  ///
+  /// [controlToken] and [controlTokenExpiresAt] are set-or-clear: OMIT one to
+  /// keep what is stored, pass a value to set it, pass `null` to clear it. The
+  /// three cases the credential sink drives are exactly these — adopting mtls
+  /// clears both (a bearer for a server that no longer accepts one is dead
+  /// weight in secure storage), adopting a token sets both, and a bare
+  /// `ModeChanged` (which carries no credential material at all) passes neither,
+  /// so it can neither invent nor erase one.
+  ///
+  /// The two always travel together; see [controlTokenExpiresAt].
+  ServerRecord copyWith({
+    String? authMode,
+    Object? controlToken = _unset,
+    Object? controlTokenExpiresAt = _unset,
+  }) => ServerRecord(
+    name: name,
+    host: host,
+    sshPort: sshPort,
+    apiUrl: apiUrl,
+    tlsCertFingerprint: tlsCertFingerprint,
+    hostKeyPin: hostKeyPin,
+    authMode: authMode ?? this.authMode,
+    controlToken: identical(controlToken, _unset)
+        ? this.controlToken
+        : controlToken as String?,
+    controlTokenExpiresAt: identical(controlTokenExpiresAt, _unset)
+        ? this.controlTokenExpiresAt
+        : controlTokenExpiresAt as DateTime?,
+  );
 
   Map<String, Object?> toJson() => {
     'name': name,

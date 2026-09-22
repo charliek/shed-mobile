@@ -33,6 +33,9 @@
 //! The learned mode reaches Dart through [`set_credential_event_sink`], whose
 //! events are what mobile persists into `ServerRecord.authMode` — mobile is the
 //! one client that DOES persist it (the desktop keeps it in memory; §7 P1).
+//! Since plan 023 §3.5 the same events also carry the freshly minted BEARER and
+//! its expiry in token mode, so the persisted seed is refreshed on every mint
+//! instead of only at add time; see [`BridgeCredentialEvent`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -246,20 +249,37 @@ pub(crate) fn build_provider(
 /// app-scoped stream shared by every [`BridgeClient`], routed by `server`
 /// (the same one-sink shape as the mint inversion, plan D3).
 ///
-/// # What it deliberately does NOT carry
+/// # What it carries, and the §7 P1 decision that was REVERSED to put it there
 ///
-/// No credential material of any kind — no certificate, no serial, and no bearer
-/// token. mtls is obvious (the private key never leaves the provider, and a
-/// certificate without it is useless), but the TOKEN omission is a decision worth
-/// stating: `shed_core::CredentialAdopted` DOES carry the bearer in token mode,
-/// for consumers whose store is the sanctioned home for it. Mobile's is not, at
-/// mint time: today's app persists a token exactly once, at ADD time, from the
-/// preview DTO (`AddServerFlow.commit` → `ServerRecord.controlToken`), and
-/// nothing rewrites it afterwards. Forwarding a token on every rotation would
-/// therefore ADD a crossing (and a secure-storage write per mint) that no
-/// existing behavior needs — so §7 P1 pins mobile's event to "auth_mode +
-/// expiry, and nothing else". The expiry is here because a UI wants to render
-/// "renews at …", not because anything authenticates with it.
+/// In **mtls** mode: nothing that could authenticate — no certificate, no
+/// serial, and above all no private key. The key never leaves the provider
+/// (plan 001 D6 / 002 §7 P3) and a certificate without it is useless, so
+/// shipping either across this boundary would buy Dart nothing while widening
+/// the surface an audit has to reason about.
+///
+/// In **token** mode: the bearer AND its expiry, travelling together.
+///
+/// The bearer used to be omitted here deliberately, and plan 023 §3.5
+/// (shed-mobile#12) REVERSES that. The original reasoning is kept because it was
+/// not wrong about the mechanics, only about the cost: mobile persisted a token
+/// exactly once, at ADD time, from the preview DTO (`AddServerFlow.commit` →
+/// `ServerRecord.controlToken`), nothing rewrote it afterwards, and forwarding
+/// one on every rotation would therefore ADD a crossing — and a secure-storage
+/// write per mint — that no existing behavior needed.
+///
+/// It did need it. A write-once seed goes stale on a clock nobody chose: the
+/// mobile [`REFRESH_WINDOW`] is 2h5m against a 24h TTL, so the stored seed stops
+/// being plantable roughly 22h after add time and EVERY cold launch past that
+/// point pays the mint it was supposed to skip — permanently, once an mtls
+/// excursion has dropped the seed for good. One secure-storage write per mint
+/// (~every 22h) is cheaper than re-adding the server daily, so the crossing is
+/// now sanctioned at mint time as well as at add time, and mobile's store is the
+/// sanctioned home `shed_core::CredentialAdopted::token` was always written for.
+///
+/// The expiry travels WITH the bearer and is never persisted apart from it:
+/// writing a fresh token beside a stale `controlTokenExpiresAt` would make the
+/// app treat a live credential as expired (or, worse, an expired one as live).
+/// It is also what a UI renders as "renews at …".
 pub enum BridgeCredentialEvent {
     /// A mint succeeded and the provider adopted this shape. Fires on EVERY
     /// successful mint, including a plain rotation — Dart's write must be
@@ -269,6 +289,11 @@ pub enum BridgeCredentialEvent {
         /// `"token"` or `"mtls"`.
         auth_mode: String,
         expires_at_unix: Option<u64>,
+        /// The bearer just adopted — `Some` in token mode, ALWAYS `None` in
+        /// mtls mode (`shed_core::CredentialAdopted::token`'s own guarantee,
+        /// passed through unchanged). A consumer persists it together with
+        /// `expires_at_unix` or not at all; see the type doc.
+        token: Option<String>,
     },
     /// The DERIVED transition (plan 001 D5's `mode_changed`): the adopted shape
     /// differs from the one last announced, in either direction. Always
@@ -290,11 +315,14 @@ struct BridgeCredentialObserver;
 
 impl CredentialObserver for BridgeCredentialObserver {
     fn on_credential_adopted(&self, event: &CredentialAdopted) {
-        // `event.token` is deliberately not read — see BridgeCredentialEvent.
+        // `event.token` IS read now (plan 023 §3.5) — and `event.expires_at_unix`
+        // with it, as one pair. shed-core guarantees the token is `None` in mtls
+        // mode, so this needs no branch of its own.
         emit_credential_event(BridgeCredentialEvent::Adopted {
             server: event.server.clone(),
             auth_mode: event.mode.as_str().to_string(),
             expires_at_unix: event.expires_at_unix,
+            token: event.token.clone(),
         });
     }
 
@@ -405,7 +433,16 @@ mod tests {
         ca: TestCa,
         /// Every CSR this minter was handed, in order.
         seen_csrs: StdMutex<Vec<Option<String>>>,
+        /// Token mints so far — each one gets its OWN expiry (`TOKEN_EXPIRY_BASE`
+        /// plus an hour per mint), so a test can tell a rotation's expiry from
+        /// the first mint's. Equal expiries would let stale-expiry forwarding
+        /// pass unnoticed (astra review finding).
+        token_mints: std::sync::atomic::AtomicU64,
     }
+
+    /// The first token mint's expiry; every later mint is an hour further out.
+    const TOKEN_EXPIRY_BASE: u64 = 4_102_444_800;
+    const TOKEN_EXPIRY_STEP: u64 = 3_600;
 
     impl ScriptedMinter {
         fn new(script: Vec<AuthMode>) -> Arc<Self> {
@@ -413,6 +450,7 @@ mod tests {
                 script: StdMutex::new(script.into_iter().rev().collect()),
                 ca: TestCa::new(),
                 seen_csrs: StdMutex::new(Vec::new()),
+                token_mints: std::sync::atomic::AtomicU64::new(0),
             })
         }
     }
@@ -439,10 +477,15 @@ mod tests {
                 .pop()
                 .ok_or_else(|| ShedError::Transport("script exhausted".into()))?;
             Ok(match next {
-                AuthMode::Token => MintedCredential::Token(MintedToken {
-                    token: format!("tok-{}", uuid_ish()),
-                    expires_at_unix: Some(4_102_444_800),
-                }),
+                AuthMode::Token => {
+                    let n = self
+                        .token_mints
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    MintedCredential::Token(MintedToken {
+                        token: format!("tok-{}", uuid_ish()),
+                        expires_at_unix: Some(TOKEN_EXPIRY_BASE + TOKEN_EXPIRY_STEP * n),
+                    })
+                }
                 AuthMode::Mtls => {
                     let csr = req
                         .csr_base64()
@@ -549,11 +592,12 @@ mod tests {
         assert_ne!(csrs[1], csrs[2]);
     }
 
-    /// §7 P1: every adoption reaches Dart, a real transition also emits the
-    /// derived `mode_changed` (adoption FIRST), and neither event carries
-    /// credential material.
+    /// §7 P1 as amended by plan 023 §3.5: every adoption reaches Dart, a real
+    /// transition also emits the derived `mode_changed` (adoption FIRST), each
+    /// token-mode adoption carries THAT mint's bearer beside its expiry, and
+    /// nothing that could authenticate an mtls handshake ever crosses.
     #[test]
-    fn credential_events_reach_dart_with_mode_and_expiry_only() {
+    fn credential_events_reach_dart_with_the_bearer_in_token_mode_only() {
         let _g = test_guard();
         let server = unique("events");
         let minter = ScriptedMinter::new(vec![AuthMode::Token, AuthMode::Token, AuthMode::Mtls]);
@@ -593,11 +637,41 @@ mod tests {
                 ("mode_changed", "mtls"),
             ]
         );
-        // The expiry rides along (a UI renders it); nothing else does.
+        // The expiry rides along (a UI renders it, and the seed is written
+        // beside it).
         assert_eq!(events[0].expires_at_unix, Some(4_102_444_800));
+
+        // The bearer crosses on every TOKEN-mode adoption, and it is THAT
+        // mint's bearer: the rotation at index 2 carries a different one, which
+        // is the whole reason for the reversal (a write-once seed goes stale).
+        let first = events[0]
+            .token
+            .clone()
+            .expect("the first adoption's bearer");
+        let rotated = events[2].token.clone().expect("the rotation's bearer");
+        assert!(first.starts_with("tok-"), "unexpected bearer: {first}");
+        assert!(rotated.starts_with("tok-"), "unexpected bearer: {rotated}");
+        assert_ne!(first, rotated, "a rotation must carry the NEW bearer");
+        // The expiry travels WITH its bearer: the first adoption carries the
+        // first mint's expiry, the rotation the second's — exact pairs, so a
+        // rotation that forwarded a stale expiry would be caught here.
+        assert_eq!(events[0].expires_at_unix, Some(TOKEN_EXPIRY_BASE));
+        assert_eq!(
+            events[2].expires_at_unix,
+            Some(TOKEN_EXPIRY_BASE + TOKEN_EXPIRY_STEP),
+            "the rotation must carry the NEW expiry beside the new bearer"
+        );
+
+        // Nothing else carries one: not the derived transitions (they are a UI
+        // signal, not credential material), and never mtls — where no bearer
+        // exists at all.
+        assert_eq!(events[1].token, None, "mode_changed carries no bearer");
+        assert_eq!(events[3].token, None, "no bearer exists in mtls mode");
+        assert_eq!(events[4].token, None, "mode_changed carries no bearer");
+
+        // And no certificate or key material, in any event.
         for e in &events {
             let rendered = format!("{e:?}");
-            assert!(!rendered.contains("tok-"), "a token crossed: {rendered}");
             assert!(
                 !rendered.contains("BEGIN"),
                 "a certificate crossed: {rendered}"

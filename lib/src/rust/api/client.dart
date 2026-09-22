@@ -119,6 +119,12 @@ sealed class BridgeCredentialEvent with _$BridgeCredentialEvent {
     /// `"token"` or `"mtls"`.
     required String authMode,
     BigInt? expiresAtUnix,
+
+    /// The bearer just adopted — `Some` in token mode, ALWAYS `None` in
+    /// mtls mode (`shed_core::CredentialAdopted::token`'s own guarantee,
+    /// passed through unchanged). A consumer persists it together with
+    /// `expires_at_unix` or not at all; see the type doc.
+    String? token,
   }) = BridgeCredentialEvent_Adopted;
 
   /// The DERIVED transition (plan 001 D5's `mode_changed`): the adopted shape

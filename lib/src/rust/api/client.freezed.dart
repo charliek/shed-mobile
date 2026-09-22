@@ -152,10 +152,10 @@ return modeChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String server,  String authMode,  BigInt? expiresAtUnix)?  adopted,TResult Function( String server,  String authMode)?  modeChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String server,  String authMode,  BigInt? expiresAtUnix,  String? token)?  adopted,TResult Function( String server,  String authMode)?  modeChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeCredentialEvent_Adopted() when adopted != null:
-return adopted(_that.server,_that.authMode,_that.expiresAtUnix);case BridgeCredentialEvent_ModeChanged() when modeChanged != null:
+return adopted(_that.server,_that.authMode,_that.expiresAtUnix,_that.token);case BridgeCredentialEvent_ModeChanged() when modeChanged != null:
 return modeChanged(_that.server,_that.authMode);case _:
   return orElse();
 
@@ -174,10 +174,10 @@ return modeChanged(_that.server,_that.authMode);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String server,  String authMode,  BigInt? expiresAtUnix)  adopted,required TResult Function( String server,  String authMode)  modeChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String server,  String authMode,  BigInt? expiresAtUnix,  String? token)  adopted,required TResult Function( String server,  String authMode)  modeChanged,}) {final _that = this;
 switch (_that) {
 case BridgeCredentialEvent_Adopted():
-return adopted(_that.server,_that.authMode,_that.expiresAtUnix);case BridgeCredentialEvent_ModeChanged():
+return adopted(_that.server,_that.authMode,_that.expiresAtUnix,_that.token);case BridgeCredentialEvent_ModeChanged():
 return modeChanged(_that.server,_that.authMode);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -192,10 +192,10 @@ return modeChanged(_that.server,_that.authMode);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String server,  String authMode,  BigInt? expiresAtUnix)?  adopted,TResult? Function( String server,  String authMode)?  modeChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String server,  String authMode,  BigInt? expiresAtUnix,  String? token)?  adopted,TResult? Function( String server,  String authMode)?  modeChanged,}) {final _that = this;
 switch (_that) {
 case BridgeCredentialEvent_Adopted() when adopted != null:
-return adopted(_that.server,_that.authMode,_that.expiresAtUnix);case BridgeCredentialEvent_ModeChanged() when modeChanged != null:
+return adopted(_that.server,_that.authMode,_that.expiresAtUnix,_that.token);case BridgeCredentialEvent_ModeChanged() when modeChanged != null:
 return modeChanged(_that.server,_that.authMode);case _:
   return null;
 
@@ -208,13 +208,18 @@ return modeChanged(_that.server,_that.authMode);case _:
 
 
 class BridgeCredentialEvent_Adopted extends BridgeCredentialEvent {
-  const BridgeCredentialEvent_Adopted({required this.server, required this.authMode, this.expiresAtUnix}): super._();
+  const BridgeCredentialEvent_Adopted({required this.server, required this.authMode, this.expiresAtUnix, this.token}): super._();
   
 
 @override final  String server;
 /// `"token"` or `"mtls"`.
 @override final  String authMode;
  final  BigInt? expiresAtUnix;
+/// The bearer just adopted — `Some` in token mode, ALWAYS `None` in
+/// mtls mode (`shed_core::CredentialAdopted::token`'s own guarantee,
+/// passed through unchanged). A consumer persists it together with
+/// `expires_at_unix` or not at all; see the type doc.
+ final  String? token;
 
 /// Create a copy of BridgeCredentialEvent
 /// with the given fields replaced by the non-null parameter values.
@@ -226,16 +231,16 @@ $BridgeCredentialEvent_AdoptedCopyWith<BridgeCredentialEvent_Adopted> get copyWi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeCredentialEvent_Adopted&&(identical(other.server, server) || other.server == server)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.expiresAtUnix, expiresAtUnix) || other.expiresAtUnix == expiresAtUnix));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeCredentialEvent_Adopted&&(identical(other.server, server) || other.server == server)&&(identical(other.authMode, authMode) || other.authMode == authMode)&&(identical(other.expiresAtUnix, expiresAtUnix) || other.expiresAtUnix == expiresAtUnix)&&(identical(other.token, token) || other.token == token));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,server,authMode,expiresAtUnix);
+int get hashCode => Object.hash(runtimeType,server,authMode,expiresAtUnix,token);
 
 @override
 String toString() {
-  return 'BridgeCredentialEvent.adopted(server: $server, authMode: $authMode, expiresAtUnix: $expiresAtUnix)';
+  return 'BridgeCredentialEvent.adopted(server: $server, authMode: $authMode, expiresAtUnix: $expiresAtUnix, token: $token)';
 }
 
 
@@ -246,7 +251,7 @@ abstract mixin class $BridgeCredentialEvent_AdoptedCopyWith<$Res> implements $Br
   factory $BridgeCredentialEvent_AdoptedCopyWith(BridgeCredentialEvent_Adopted value, $Res Function(BridgeCredentialEvent_Adopted) _then) = _$BridgeCredentialEvent_AdoptedCopyWithImpl;
 @override @useResult
 $Res call({
- String server, String authMode, BigInt? expiresAtUnix
+ String server, String authMode, BigInt? expiresAtUnix, String? token
 });
 
 
@@ -263,12 +268,13 @@ class _$BridgeCredentialEvent_AdoptedCopyWithImpl<$Res>
 
 /// Create a copy of BridgeCredentialEvent
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? server = null,Object? authMode = null,Object? expiresAtUnix = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? server = null,Object? authMode = null,Object? expiresAtUnix = freezed,Object? token = freezed,}) {
   return _then(BridgeCredentialEvent_Adopted(
 server: null == server ? _self.server : server // ignore: cast_nullable_to_non_nullable
 as String,authMode: null == authMode ? _self.authMode : authMode // ignore: cast_nullable_to_non_nullable
 as String,expiresAtUnix: freezed == expiresAtUnix ? _self.expiresAtUnix : expiresAtUnix // ignore: cast_nullable_to_non_nullable
-as BigInt?,
+as BigInt?,token: freezed == token ? _self.token : token // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

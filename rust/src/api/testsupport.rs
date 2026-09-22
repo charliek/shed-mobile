@@ -137,6 +137,11 @@ pub(crate) struct CapturedEvent {
     pub server: String,
     pub auth_mode: String,
     pub expires_at_unix: Option<u64>,
+    /// The bearer, as it crossed (plan 023 §3.5). Captured rather than elided
+    /// precisely so a test can assert WHICH token crossed and that none does in
+    /// mtls mode — the whole point of this struct is that it reconstructs
+    /// nothing.
+    pub token: Option<String>,
 }
 
 static CRED_EVENTS: Mutex<Vec<CapturedEvent>> = Mutex::new(Vec::new());
@@ -147,17 +152,20 @@ fn record_credential_event(event: &BridgeCredentialEvent) {
             server,
             auth_mode,
             expires_at_unix,
+            token,
         } => CapturedEvent {
             kind: "adopted",
             server: server.clone(),
             auth_mode: auth_mode.clone(),
             expires_at_unix: *expires_at_unix,
+            token: token.clone(),
         },
         BridgeCredentialEvent::ModeChanged { server, auth_mode } => CapturedEvent {
             kind: "mode_changed",
             server: server.clone(),
             auth_mode: auth_mode.clone(),
             expires_at_unix: None,
+            token: None,
         },
     };
     CRED_EVENTS
