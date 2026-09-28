@@ -1945,9 +1945,9 @@ mod tests {
     ///
     /// The override rung still wins on a phone when the user sets it — there is
     /// no sibling beside a Flutter app — but with `RELEASE_PIN` now naming a
-    /// published release (plan 023 §3.2 amendment, shed rev 6be6000), a bare
-    /// environment no longer falls all the way to rung 4: it lands on the
-    /// release asset instead.
+    /// published release (plan 023 §3.2 amendment, shed rev 6be6000; moved to
+    /// 0.0.21 at shed a8725fa), a bare environment no longer falls all the way
+    /// to rung 4: it lands on the release asset instead.
     #[test]
     fn every_source_rung_crosses_and_the_preview_carries_its_sentence() {
         for (from, want) in [
@@ -2008,8 +2008,8 @@ mod tests {
         assert_eq!(
             bare.source,
             BridgeBootstrapSource::Asset {
-                base: "https://github.com/charliek/roost/releases/download/v0.0.20".into(),
-                version: "0.0.20".into(),
+                base: "https://github.com/charliek/roost/releases/download/v0.0.21".into(),
+                version: "0.0.21".into(),
             }
         );
         assert!(
@@ -2017,7 +2017,7 @@ mod tests {
             "the release pin makes the asset rung a button"
         );
         assert!(
-            bare.describe.contains("0.0.20") && bare.describe.contains("checksum-verified"),
+            bare.describe.contains("0.0.21") && bare.describe.contains("checksum-verified"),
             "the sentence names the pinned release: {}",
             bare.describe
         );
