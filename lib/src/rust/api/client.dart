@@ -10,6 +10,7 @@ import 'dto_rc.dart';
 import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'secret.dart';
 part 'client.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_provider`, `emit_credential_event`, `inner`, `run`
@@ -124,7 +125,11 @@ sealed class BridgeCredentialEvent with _$BridgeCredentialEvent {
     /// mtls mode (`shed_core::CredentialAdopted::token`'s own guarantee,
     /// passed through unchanged). A consumer persists it together with
     /// `expires_at_unix` or not at all; see the type doc.
-    String? token,
+    ///
+    /// Wrapped in [`BridgeSecret`] so the variant's generated Dart
+    /// `toString()` cannot print it (shed-mobile#30); Dart reads it with
+    /// an explicit `.value`.
+    BridgeSecret? token,
   }) = BridgeCredentialEvent_Adopted;
 
   /// The DERIVED transition (plan 001 D5's `mode_changed`): the adopted shape

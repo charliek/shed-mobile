@@ -53,6 +53,7 @@ use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{bridge_rt, next_id, PENDING_MINTS};
 use super::error::encode_token_err;
+use super::secret::BridgeSecret;
 use crate::sink_registry::{EmitError, Emitter, SinkRegistry};
 
 /// Hard upper bound on a mint round-trip (SSH dial + remote exec + submit). The
@@ -149,8 +150,13 @@ pub(crate) fn csr_extra_args(csr_base64: Option<&str>) -> Vec<String> {
 /// tagged-struct workaround is retired). `Success` carries the raw
 /// `shed-ext-rc`-style bundle stdout (the token-bearing payload); `Failure`
 /// carries a non-secret code.
+///
+/// The stdout rides in a [`BridgeSecret`], not a bare `String`, because in token
+/// mode it IS the bearer (see [`RawBundle`]) and the variant's generated Dart
+/// `toString()` would otherwise print it (shed-mobile#30). Rust unwraps it
+/// straight into a [`RawBundle`].
 pub enum BridgeMintOutcome {
-    Success { raw_stdout: String },
+    Success { raw_stdout: BridgeSecret },
     Failure { code: String },
 }
 
@@ -388,7 +394,9 @@ pub(crate) async fn run_mint_raw(
     };
 
     match outcome {
-        BridgeMintOutcome::Success { raw_stdout } => {
+        BridgeMintOutcome::Success {
+            raw_stdout: BridgeSecret { value: raw_stdout },
+        } => {
             // Fail closed on an oversized payload BEFORE it reaches a JSON parser
             // (see MAX_BUNDLE_BYTES). Only the length is reported — never a byte
             // of the payload, which in token mode is the credential itself.
@@ -696,7 +704,9 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: token_bundle(&pin("ab"), Some("token")),
+                    raw_stdout: BridgeSecret {
+                        value: token_bundle(&pin("ab"), Some("token")),
+                    },
                 },
             );
         });
@@ -816,7 +826,7 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: raw_at_cap,
+                    raw_stdout: BridgeSecret { value: raw_at_cap },
                 },
             );
         });
@@ -829,7 +839,9 @@ mod tests {
         install_sink_hook(move |req| {
             submit_mint_result(
                 req.request_id,
-                BridgeMintOutcome::Success { raw_stdout: over },
+                BridgeMintOutcome::Success {
+                    raw_stdout: BridgeSecret { value: over },
+                },
             );
         });
         let err = rt()
@@ -887,7 +899,7 @@ mod tests {
             submit_mint_result(
                 "req-x".into(),
                 BridgeMintOutcome::Success {
-                    raw_stdout: "s".into()
+                    raw_stdout: BridgeSecret { value: "s".into() }
                 }
             ),
             "accepted"
@@ -1027,7 +1039,9 @@ mod tests {
                 submit_mint_result(
                     r.request_id,
                     BridgeMintOutcome::Success {
-                        raw_stdout: token_bundle(&pin("ab"), Some("token")),
+                        raw_stdout: BridgeSecret {
+                            value: token_bundle(&pin("ab"), Some("token")),
+                        },
                     },
                 );
             });
@@ -1057,7 +1071,9 @@ mod tests {
             submit_mint_result(
                 r.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: mtls_bundle(&pin("ab"), &cert),
+                    raw_stdout: BridgeSecret {
+                        value: mtls_bundle(&pin("ab"), &cert),
+                    },
                 },
             );
         });
@@ -1090,7 +1106,9 @@ mod tests {
             submit_mint_result(
                 r.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: mtls_bundle(&pin("ab"), &cert),
+                    raw_stdout: BridgeSecret {
+                        value: mtls_bundle(&pin("ab"), &cert),
+                    },
                 },
             );
         });
@@ -1116,7 +1134,9 @@ mod tests {
                     // Minted against a DIFFERENT server certificate than the one
                     // this client is pinned to — a possible MITM, never silently
                     // accepted.
-                    raw_stdout: token_bundle(&pin("cd"), Some("token")),
+                    raw_stdout: BridgeSecret {
+                        value: token_bundle(&pin("cd"), Some("token")),
+                    },
                 },
             );
         });
@@ -1410,6 +1430,13 @@ mod tests {
             "BridgeBootstrapStep_Probed",
             "BridgeRoostBootstrap",
             "RoostHostTarget",
+            // shed-mobile#30 — the wrapper around the two secrets that do
+            // cross: a token-mode adoption's BEARER (Rust→Dart, for the seed
+            // store) and a mint's raw bundle stdout (Dart→Rust, parsed then
+            // dropped). Neither is key material: mtls adoptions carry no token
+            // at all, and an mtls bundle's stdout is a CERTIFICATE, whose
+            // private half never leaves the provider.
+            "BridgeSecret",
             "BridgeSession",
             "BridgeSessionRc",
             "BridgeShed",

@@ -83,7 +83,10 @@ class CredentialSink {
         :final token,
         :final expiresAtUnix,
       ) =>
-        (server, authMode, token, _utcFromUnix(expiresAtUnix)),
+        // The bearer rides in a `BridgeSecret` so this event's generated
+        // `toString()` cannot print it (shed-mobile#30). It is unwrapped here,
+        // at the one place that persists it.
+        (server, authMode, token?.value, _utcFromUnix(expiresAtUnix)),
       // No credential material on this one, by construction — pass none, so
       // the store keeps whatever the adoption before it wrote.
       BridgeCredentialEvent_ModeChanged(:final server, :final authMode) => (

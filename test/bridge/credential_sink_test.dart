@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/credential_sink.dart';
+import 'package:shed_mobile/bridge/mint_sink.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
 import 'package:shed_mobile/servers/server_store.dart';
 import 'package:shed_mobile/src/rust/api/client.dart';
+import 'package:shed_mobile/src/rust/api/mint.dart';
+import 'package:shed_mobile/src/rust/api/secret.dart';
 import 'package:shed_mobile/storage/secret_store.dart';
 
 /// Counts writes so "a rotation must not cost a storage write" is assertable.
@@ -115,7 +118,7 @@ void main() {
         BridgeCredentialEvent.adopted(
           server: 'mini3',
           authMode: 'token',
-          token: 'lost-tok',
+          token: const BridgeSecret(value: 'lost-tok'),
           expiresAtUnix: _unix(DateTime.utc(2030)),
         ),
       );
@@ -129,7 +132,7 @@ void main() {
         BridgeCredentialEvent.adopted(
           server: 'mini3',
           authMode: 'token',
-          token: 'next-tok',
+          token: const BridgeSecret(value: 'next-tok'),
           expiresAtUnix: _unix(DateTime.utc(2030)),
         ),
       );
@@ -158,7 +161,7 @@ void main() {
       BridgeCredentialEvent.adopted(
         server: 'mini3',
         authMode: 'token',
-        token: 'post-mtls-tok',
+        token: const BridgeSecret(value: 'post-mtls-tok'),
         expiresAtUnix: _unix(exp),
       ),
     );
@@ -181,7 +184,7 @@ void main() {
         BridgeCredentialEvent.adopted(
           server: 'mini3',
           authMode: 'token',
-          token: 'rotated-tok',
+          token: const BridgeSecret(value: 'rotated-tok'),
           expiresAtUnix: _unix(rotatedExp),
         ),
       );
@@ -200,7 +203,7 @@ void main() {
       BridgeCredentialEvent.adopted(
         server: 'mini3',
         authMode: 'token',
-        token: 'cold-tok',
+        token: const BridgeSecret(value: 'cold-tok'),
         expiresAtUnix: _unix(exp),
       ),
     );
@@ -224,7 +227,7 @@ void main() {
         BridgeCredentialEvent.adopted(
           server: 'mini3',
           authMode: 'token',
-          token: 'seed-tok',
+          token: const BridgeSecret(value: 'seed-tok'),
           expiresAtUnix: _unix(exp),
         ),
       );
@@ -307,7 +310,7 @@ void main() {
       BridgeCredentialEvent.adopted(
         server: 'ghost',
         authMode: 'token',
-        token: 'orphan-tok',
+        token: const BridgeSecret(value: 'orphan-tok'),
         expiresAtUnix: _unix(DateTime.utc(2030)),
       ),
     );
@@ -321,6 +324,113 @@ void main() {
       const BridgeCredentialEvent.adopted(server: 'mini3', authMode: 'mtls'),
     );
     expect((await store().get('mini3'))!.authMode, kAuthModeMtls);
+  });
+
+  // shed-mobile#30. freezed generates a `toString()` for every sealed variant,
+  // and it renders every field. Two variants carry a secret: a token-mode
+  // `Adopted` (the bearer) and a mint `success` (the raw bundle stdout, which in
+  // token mode IS the bearer plus its envelope). The assertions are on the
+  // rendered STRING, not on a field's type, so a future codegen that starts
+  // rendering the secret some other way fails here too.
+  test('no generated type renders a secret', () async {
+    const secret = 'bearer-7f3a9c-must-not-print';
+    final exp = DateTime.utc(2034, 4, 5);
+
+    // The credential sink still persists exactly that bearer...
+    await store().add(_rec(token: null));
+    final adopted = BridgeCredentialEvent.adopted(
+      server: 'mini3',
+      authMode: 'token',
+      token: const BridgeSecret(value: secret),
+      expiresAtUnix: _unix(exp),
+    );
+    await emit(adopted);
+    final back = (await ServerStore(secrets).get('mini3'))!;
+    expect(back.controlToken, secret);
+    expect(back.controlTokenExpiresAt, exp);
+
+    // ...and the mint path still hands Rust exactly the stdout the mint made.
+    final submitted = <BridgeMintOutcome>[];
+    await runMintRequest(
+      const BridgeMintRequest(
+        requestId: 'r1',
+        purpose: BridgeMintPurpose.controlMint,
+        host: 'mini3.example',
+        sshPort: 2222,
+        baseUrl: 'https://mini3.example:8443',
+        extraArgs: [],
+      ),
+      mint: (_) async => secret,
+      submit: ({required requestId, required outcome}) async {
+        submitted.add(outcome);
+        return 'accepted';
+      },
+    );
+    final success = submitted.single as BridgeMintOutcome_Success;
+    expect(success.rawStdout.value, secret);
+
+    // Neither renders it: not `toString()`, not interpolation, not a copy.
+    final rendered = <String, String>{
+      'Adopted.toString()': adopted.toString(),
+      'Adopted interpolated': '$adopted',
+      'Adopted.copyWith(...).toString()':
+          (adopted as BridgeCredentialEvent_Adopted)
+              .copyWith(server: 'other')
+              .toString(),
+      'success.toString()': success.toString(),
+      'success interpolated': '$success',
+      'success.copyWith(...).toString()': success.copyWith().toString(),
+    };
+    final leaks = {
+      for (final e in rendered.entries)
+        if (e.value.contains(secret)) e.key: e.value,
+    };
+    expect(leaks, isEmpty, reason: 'a generated rendering printed the secret');
+
+    // The next leak vector: neither type serializes. Nothing generates a
+    // `toJson` today; a json_serializable adoption must not quietly add one.
+    for (final Object v in [adopted, success]) {
+      expect(() => (v as dynamic).toJson(), throwsNoSuchMethodError);
+    }
+  });
+
+  test('a mint request submits exactly one outcome, even when the submit '
+      'throws', () async {
+    const req = BridgeMintRequest(
+      requestId: 'r2',
+      purpose: BridgeMintPurpose.controlMint,
+      host: 'mini3.example',
+      sshPort: 2222,
+      baseUrl: 'https://mini3.example:8443',
+      extraArgs: [],
+    );
+
+    // A failed mint is one failure outcome.
+    final submitted = <BridgeMintOutcome>[];
+    await runMintRequest(
+      req,
+      mint: (_) async => throw StateError('ssh refused'),
+      submit: ({required requestId, required outcome}) async {
+        submitted.add(outcome);
+        return 'accepted';
+      },
+    );
+    expect(submitted.single, isA<BridgeMintOutcome_Failure>());
+
+    // A submit that throws is not retried as a failure for the same request.
+    var calls = 0;
+    await expectLater(
+      runMintRequest(
+        req,
+        mint: (_) async => 'stdout',
+        submit: ({required requestId, required outcome}) async {
+          calls++;
+          throw StateError('bridge gone');
+        },
+      ),
+      throwsStateError,
+    );
+    expect(calls, 1);
   });
 
   test('dispose ends the Rust stream once and is idempotent', () async {

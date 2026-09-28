@@ -18,6 +18,7 @@ import 'package:shed_mobile/servers/server_target.dart';
 import 'package:shed_mobile/src/rust/api/client.dart';
 import 'package:shed_mobile/src/rust/api/mint.dart';
 import 'package:shed_mobile/src/rust/api/preview.dart';
+import 'package:shed_mobile/src/rust/api/secret.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 import 'package:shed_mobile/ssh/bootstrap_service.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
@@ -54,7 +55,7 @@ Future<void> main(List<String> args) async {
       final raw = await bootstrap.mintRaw(pre, extraArgs: req.extraArgs);
       await submitMintResult(
         requestId: req.requestId,
-        outcome: BridgeMintOutcome.success(rawStdout: raw),
+        outcome: BridgeMintOutcome.success(rawStdout: BridgeSecret(value: raw)),
       );
     } catch (_) {
       await submitMintResult(

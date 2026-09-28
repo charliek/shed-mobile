@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../servers/server_target.dart';
 import '../src/rust/api/mint.dart';
+import '../src/rust/api/secret.dart';
 import '../ssh/bootstrap_service.dart';
 import '../ssh/host_key_store.dart';
 
@@ -41,22 +42,8 @@ class MintSink {
     return sink;
   }
 
-  Future<void> _handle(BridgeMintRequest req) async {
-    try {
-      final raw = await _mint(req);
-      await submitMintResult(
-        requestId: req.requestId,
-        outcome: BridgeMintOutcome.success(rawStdout: raw),
-      );
-    } catch (e) {
-      // Never surface stdout/stderr or exception detail (could echo token
-      // bytes) — a short, stable code only.
-      await submitMintResult(
-        requestId: req.requestId,
-        outcome: BridgeMintOutcome.failure(code: _code(e)),
-      );
-    }
-  }
+  Future<void> _handle(BridgeMintRequest req) =>
+      runMintRequest(req, mint: _mint, submit: submitMintResult);
 
   /// Run the `_bootstrap` SSH mint for the server identified by the request's
   /// immutable transport identity (host + ssh port), returning the raw bundle
@@ -91,6 +78,40 @@ class MintSink {
     await _sub?.cancel();
     _sub = null;
   }
+}
+
+/// Rust's `submitMintResult`, as a seam (the real one needs the native library).
+typedef MintSubmit =
+    Future<String> Function({
+      required String requestId,
+      required BridgeMintOutcome outcome,
+    });
+
+/// One mint request, start to finish: run [mint] and hand Rust its raw stdout
+/// as a success, or a short, stable failure code. Every path submits exactly
+/// one outcome.
+///
+/// [MintSink] passes the real SSH mint and the real submit. It is a function of
+/// its own so a test can prove the stdout Rust receives is exactly the stdout
+/// the mint produced, without SSH or the native library.
+@visibleForTesting
+Future<void> runMintRequest(
+  BridgeMintRequest req, {
+  required Future<String> Function(BridgeMintRequest req) mint,
+  required MintSubmit submit,
+}) async {
+  BridgeMintOutcome outcome;
+  try {
+    final raw = await mint(req);
+    outcome = BridgeMintOutcome.success(rawStdout: BridgeSecret(value: raw));
+  } catch (e) {
+    // Never surface stdout/stderr or exception detail (could echo token
+    // bytes) — a short, stable code only.
+    outcome = BridgeMintOutcome.failure(code: MintSink._code(e));
+  }
+  // Outside the `try`, so a submit that throws is never answered with a
+  // second, failure submit for the same request.
+  await submit(requestId: req.requestId, outcome: outcome);
 }
 
 /// The SSH trust anchor for one mint round-trip, plus the server identity the
