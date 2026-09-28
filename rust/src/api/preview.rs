@@ -278,6 +278,7 @@ mod tests {
     use std::task::Context;
 
     use super::super::mint::{shutdown_mint_sink, submit_mint_result, BridgeMintOutcome};
+    use super::super::secret::BridgeSecret;
     use super::super::testsupport::{
         install_sink_hook, mtls_bundle, noop_waker, pin, test_guard, token_bundle, wait_until,
         TestCa,
@@ -336,7 +337,9 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: token_bundle(&p_a, Some("token")),
+                    raw_stdout: BridgeSecret {
+                        value: token_bundle(&p_a, Some("token")),
+                    },
                 },
             );
         })
@@ -389,7 +392,9 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: token_bundle(&p2, Some("token")),
+                    raw_stdout: BridgeSecret {
+                        value: token_bundle(&p2, Some("token")),
+                    },
                 },
             );
         })
@@ -412,7 +417,9 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: token_bundle(&p2, Some("token")),
+                    raw_stdout: BridgeSecret {
+                        value: token_bundle(&p2, Some("token")),
+                    },
                 },
             );
         })
@@ -440,7 +447,9 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: mtls_bundle(&p2, &cert),
+                    raw_stdout: BridgeSecret {
+                        value: mtls_bundle(&p2, &cert),
+                    },
                 },
             );
         })
@@ -540,8 +549,10 @@ mod tests {
             submit_mint_result(
                 req.request_id,
                 BridgeMintOutcome::Success {
-                    raw_stdout: r#"{"scope":"control","token":"t","https_port":8443,"expires_at":"2030-01-01T00:00:00Z"}"#
-                        .into(),
+                    raw_stdout: BridgeSecret {
+                        value: r#"{"scope":"control","token":"t","https_port":8443,"expires_at":"2030-01-01T00:00:00Z"}"#
+                            .into(),
+                    },
                 },
             );
         })

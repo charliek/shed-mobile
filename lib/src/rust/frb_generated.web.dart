@@ -19,6 +19,7 @@ import 'api/mint.dart';
 import 'api/preview.dart';
 import 'api/roost.dart';
 import 'api/roost_bootstrap.dart';
+import 'api/secret.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
 import 'dart:async';
@@ -308,6 +309,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRcFeedTool dco_decode_box_autoadd_bridge_rc_feed_tool(dynamic raw);
 
   @protected
+  BridgeSecret dco_decode_box_autoadd_bridge_secret(dynamic raw);
+
+  @protected
   BridgeSessionRc dco_decode_box_autoadd_bridge_session_rc(dynamic raw);
 
   @protected
@@ -512,6 +516,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeRoostUpdate dco_decode_bridge_roost_update(dynamic raw);
 
   @protected
+  BridgeSecret dco_decode_bridge_secret(dynamic raw);
+
+  @protected
   BridgeSendMode dco_decode_bridge_send_mode(dynamic raw);
 
   @protected
@@ -648,6 +655,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeRcFeedTool? dco_decode_opt_box_autoadd_bridge_rc_feed_tool(dynamic raw);
+
+  @protected
+  BridgeSecret? dco_decode_opt_box_autoadd_bridge_secret(dynamic raw);
 
   @protected
   BridgeSessionRc? dco_decode_opt_box_autoadd_bridge_session_rc(dynamic raw);
@@ -970,6 +980,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeSecret sse_decode_box_autoadd_bridge_secret(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSessionRc sse_decode_box_autoadd_bridge_session_rc(
     SseDeserializer deserializer,
   );
@@ -1252,6 +1267,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeSecret sse_decode_bridge_secret(SseDeserializer deserializer);
+
+  @protected
   BridgeSendMode sse_decode_bridge_send_mode(SseDeserializer deserializer);
 
   @protected
@@ -1418,6 +1436,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeRcFeedTool? sse_decode_opt_box_autoadd_bridge_rc_feed_tool(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSecret? sse_decode_opt_box_autoadd_bridge_secret(
     SseDeserializer deserializer,
   );
 
@@ -1797,6 +1820,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_secret(
+    BridgeSecret self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_session_rc(
     BridgeSessionRc self,
     SseSerializer serializer,
@@ -2163,6 +2192,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_secret(BridgeSecret self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bridge_send_mode(
     BridgeSendMode self,
     SseSerializer serializer,
@@ -2369,6 +2401,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bridge_rc_feed_tool(
     BridgeRcFeedTool? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_secret(
+    BridgeSecret? self,
     SseSerializer serializer,
   );
 

@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'secret.dart';
 part 'mint.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `as_str`, `csr_extra_args`, `drain_pending_locked`, `emit_request`, `install_mint_sink`, `into_shed_error`, `pending`, `run_mint_raw`, `run_mint`, `take_pending`
@@ -116,7 +117,7 @@ class BridgeControlBundle {
 sealed class BridgeMintOutcome with _$BridgeMintOutcome {
   const BridgeMintOutcome._();
 
-  const factory BridgeMintOutcome.success({required String rawStdout}) =
+  const factory BridgeMintOutcome.success({required BridgeSecret rawStdout}) =
       BridgeMintOutcome_Success;
   const factory BridgeMintOutcome.failure({required String code}) =
       BridgeMintOutcome_Failure;

@@ -3849,7 +3849,8 @@ impl SseDecode for crate::api::client::BridgeCredentialEvent {
                 let mut var_server = <String>::sse_decode(deserializer);
                 let mut var_authMode = <String>::sse_decode(deserializer);
                 let mut var_expiresAtUnix = <Option<u64>>::sse_decode(deserializer);
-                let mut var_token = <Option<String>>::sse_decode(deserializer);
+                let mut var_token =
+                    <Option<crate::api::secret::BridgeSecret>>::sse_decode(deserializer);
                 return crate::api::client::BridgeCredentialEvent::Adopted {
                     server: var_server,
                     auth_mode: var_authMode,
@@ -4326,7 +4327,8 @@ impl SseDecode for crate::api::mint::BridgeMintOutcome {
         let mut tag_ = <i32>::sse_decode(deserializer);
         match tag_ {
             0 => {
-                let mut var_rawStdout = <String>::sse_decode(deserializer);
+                let mut var_rawStdout =
+                    <crate::api::secret::BridgeSecret>::sse_decode(deserializer);
                 return crate::api::mint::BridgeMintOutcome::Success {
                     raw_stdout: var_rawStdout,
                 };
@@ -4665,6 +4667,14 @@ impl SseDecode for crate::api::roost::BridgeRoostUpdate {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::secret::BridgeSecret {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_value = <String>::sse_decode(deserializer);
+        return crate::api::secret::BridgeSecret { value: var_value };
     }
 }
 
@@ -5225,6 +5235,17 @@ impl SseDecode for Option<crate::api::dto_rc::BridgeRcFeedTool> {
             return Some(<crate::api::dto_rc::BridgeRcFeedTool>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::secret::BridgeSecret> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::secret::BridgeSecret>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -7282,6 +7303,23 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::roost::BridgeRoostUpdate>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::secret::BridgeSecret {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.value.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::secret::BridgeSecret
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::secret::BridgeSecret>
+    for crate::api::secret::BridgeSecret
+{
+    fn into_into_dart(self) -> crate::api::secret::BridgeSecret {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::dto_lane::BridgeSendMode {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -8169,7 +8207,7 @@ impl SseEncode for crate::api::client::BridgeCredentialEvent {
                 <String>::sse_encode(server, serializer);
                 <String>::sse_encode(auth_mode, serializer);
                 <Option<u64>>::sse_encode(expires_at_unix, serializer);
-                <Option<String>>::sse_encode(token, serializer);
+                <Option<crate::api::secret::BridgeSecret>>::sse_encode(token, serializer);
             }
             crate::api::client::BridgeCredentialEvent::ModeChanged { server, auth_mode } => {
                 <i32>::sse_encode(1, serializer);
@@ -8535,7 +8573,7 @@ impl SseEncode for crate::api::mint::BridgeMintOutcome {
         match self {
             crate::api::mint::BridgeMintOutcome::Success { raw_stdout } => {
                 <i32>::sse_encode(0, serializer);
-                <String>::sse_encode(raw_stdout, serializer);
+                <crate::api::secret::BridgeSecret>::sse_encode(raw_stdout, serializer);
             }
             crate::api::mint::BridgeMintOutcome::Failure { code } => {
                 <i32>::sse_encode(1, serializer);
@@ -8803,6 +8841,13 @@ impl SseEncode for crate::api::roost::BridgeRoostUpdate {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::secret::BridgeSecret {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.value, serializer);
     }
 }
 
@@ -9230,6 +9275,16 @@ impl SseEncode for Option<crate::api::dto_rc::BridgeRcFeedTool> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::dto_rc::BridgeRcFeedTool>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::secret::BridgeSecret> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::secret::BridgeSecret>::sse_encode(value, serializer);
         }
     }
 }

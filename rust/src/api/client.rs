@@ -55,6 +55,7 @@ use super::dto::{
 };
 use super::error::BridgeError;
 use super::mint::BridgeMinter;
+use super::secret::BridgeSecret;
 use crate::sink_registry::SinkRegistry;
 
 // The mobile control-token knobs (plan §3.2), distinct from shed-core's
@@ -293,7 +294,11 @@ pub enum BridgeCredentialEvent {
         /// mtls mode (`shed_core::CredentialAdopted::token`'s own guarantee,
         /// passed through unchanged). A consumer persists it together with
         /// `expires_at_unix` or not at all; see the type doc.
-        token: Option<String>,
+        ///
+        /// Wrapped in [`BridgeSecret`] so the variant's generated Dart
+        /// `toString()` cannot print it (shed-mobile#30); Dart reads it with
+        /// an explicit `.value`.
+        token: Option<BridgeSecret>,
     },
     /// The DERIVED transition (plan 001 D5's `mode_changed`): the adopted shape
     /// differs from the one last announced, in either direction. Always
@@ -322,7 +327,7 @@ impl CredentialObserver for BridgeCredentialObserver {
             server: event.server.clone(),
             auth_mode: event.mode.as_str().to_string(),
             expires_at_unix: event.expires_at_unix,
-            token: event.token.clone(),
+            token: event.token.clone().map(|value| BridgeSecret { value }),
         });
     }
 

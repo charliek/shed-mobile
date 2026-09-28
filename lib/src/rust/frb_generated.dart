@@ -16,6 +16,7 @@ import 'api/mint.dart';
 import 'api/preview.dart';
 import 'api/roost.dart';
 import 'api/roost_bootstrap.dart';
+import 'api/secret.dart';
 import 'api/shed.dart';
 import 'api/simple.dart';
 import 'dart:async';
@@ -3033,6 +3034,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeSecret dco_decode_box_autoadd_bridge_secret(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_bridge_secret(raw);
+  }
+
+  @protected
   BridgeSessionRc dco_decode_box_autoadd_bridge_session_rc(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_bridge_session_rc(raw);
@@ -3471,7 +3478,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           server: dco_decode_String(raw[1]),
           authMode: dco_decode_String(raw[2]),
           expiresAtUnix: dco_decode_opt_box_autoadd_u_64(raw[3]),
-          token: dco_decode_opt_String(raw[4]),
+          token: dco_decode_opt_box_autoadd_bridge_secret(raw[4]),
         );
       case 1:
         return BridgeCredentialEvent_ModeChanged(
@@ -3800,7 +3807,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
       case 0:
-        return BridgeMintOutcome_Success(rawStdout: dco_decode_String(raw[1]));
+        return BridgeMintOutcome_Success(
+          rawStdout: dco_decode_box_autoadd_bridge_secret(raw[1]),
+        );
       case 1:
         return BridgeMintOutcome_Failure(code: dco_decode_String(raw[1]));
       default:
@@ -4032,6 +4041,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception('unreachable');
     }
+  }
+
+  @protected
+  BridgeSecret dco_decode_bridge_secret(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return BridgeSecret(value: dco_decode_String(arr[0]));
   }
 
   @protected
@@ -4393,6 +4411,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_bridge_rc_feed_tool(raw);
+  }
+
+  @protected
+  BridgeSecret? dco_decode_opt_box_autoadd_bridge_secret(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bridge_secret(raw);
   }
 
   @protected
@@ -5010,6 +5034,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeSecret sse_decode_box_autoadd_bridge_secret(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bridge_secret(deserializer));
+  }
+
+  @protected
   BridgeSessionRc sse_decode_box_autoadd_bridge_session_rc(
     SseDeserializer deserializer,
   ) {
@@ -5562,7 +5594,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_server = sse_decode_String(deserializer);
         var var_authMode = sse_decode_String(deserializer);
         var var_expiresAtUnix = sse_decode_opt_box_autoadd_u_64(deserializer);
-        var var_token = sse_decode_opt_String(deserializer);
+        var var_token = sse_decode_opt_box_autoadd_bridge_secret(deserializer);
         return BridgeCredentialEvent_Adopted(
           server: var_server,
           authMode: var_authMode,
@@ -5986,7 +6018,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var tag_ = sse_decode_i_32(deserializer);
     switch (tag_) {
       case 0:
-        var var_rawStdout = sse_decode_String(deserializer);
+        var var_rawStdout = sse_decode_box_autoadd_bridge_secret(deserializer);
         return BridgeMintOutcome_Success(rawStdout: var_rawStdout);
       case 1:
         var var_code = sse_decode_String(deserializer);
@@ -6274,6 +6306,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  BridgeSecret sse_decode_bridge_secret(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_value = sse_decode_String(deserializer);
+    return BridgeSecret(value: var_value);
   }
 
   @protected
@@ -6833,6 +6872,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_bridge_rc_feed_tool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  BridgeSecret? sse_decode_opt_box_autoadd_bridge_secret(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bridge_secret(deserializer));
     } else {
       return null;
     }
@@ -7569,6 +7621,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_bridge_secret(
+    BridgeSecret self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bridge_secret(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_bridge_session_rc(
     BridgeSessionRc self,
     SseSerializer serializer,
@@ -8033,7 +8094,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(server, serializer);
         sse_encode_String(authMode, serializer);
         sse_encode_opt_box_autoadd_u_64(expiresAtUnix, serializer);
-        sse_encode_opt_String(token, serializer);
+        sse_encode_opt_box_autoadd_bridge_secret(token, serializer);
       case BridgeCredentialEvent_ModeChanged(
         server: final server,
         authMode: final authMode,
@@ -8369,7 +8430,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     switch (self) {
       case BridgeMintOutcome_Success(rawStdout: final rawStdout):
         sse_encode_i_32(0, serializer);
-        sse_encode_String(rawStdout, serializer);
+        sse_encode_box_autoadd_bridge_secret(rawStdout, serializer);
       case BridgeMintOutcome_Failure(code: final code):
         sse_encode_i_32(1, serializer);
         sse_encode_String(code, serializer);
@@ -8599,6 +8660,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(reason, serializer);
         sse_encode_bridge_reach_kind(kind, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_bridge_secret(BridgeSecret self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.value, serializer);
   }
 
   @protected
@@ -9083,6 +9150,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_bridge_rc_feed_tool(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_secret(
+    BridgeSecret? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bridge_secret(self, serializer);
     }
   }
 

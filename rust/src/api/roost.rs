@@ -430,6 +430,10 @@ pub async fn roost_tab_open(
                 // leaves the key off on purpose, because there the user IS the
                 // one who asked.
                 activate: Some(false),
+                // **Absent on the wire.** `cwd_from_tab` is roost's "start where
+                // another tab is" (roostctl `--cwd-from-tab`/`--here`); the phone
+                // names the tab's cwd itself, above (`cwd: workdir`).
+                cwd_from_tab: None,
             },
         )
         .await

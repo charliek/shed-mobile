@@ -24,6 +24,7 @@ import 'package:shed_mobile/src/rust/api/create_stream.dart';
 import 'package:shed_mobile/src/rust/api/error.dart';
 import 'package:shed_mobile/src/rust/api/local_sse.dart';
 import 'package:shed_mobile/src/rust/api/mint.dart';
+import 'package:shed_mobile/src/rust/api/secret.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 
 const _pin =
@@ -51,7 +52,9 @@ void main() {
         await submitMintResult(
           requestId: req.requestId,
           outcome: BridgeMintOutcome.success(
-            rawStdout: _fixtureBundle(req.expectedTlsPin ?? _pin),
+            rawStdout: BridgeSecret(
+              value: _fixtureBundle(req.expectedTlsPin ?? _pin),
+            ),
           ),
         );
       });

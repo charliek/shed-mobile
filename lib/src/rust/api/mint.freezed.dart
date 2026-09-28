@@ -119,7 +119,7 @@ return failure(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String rawStdout)?  success,TResult Function( String code)?  failure,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BridgeSecret rawStdout)?  success,TResult Function( String code)?  failure,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeMintOutcome_Success() when success != null:
 return success(_that.rawStdout);case BridgeMintOutcome_Failure() when failure != null:
@@ -141,7 +141,7 @@ return failure(_that.code);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String rawStdout)  success,required TResult Function( String code)  failure,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BridgeSecret rawStdout)  success,required TResult Function( String code)  failure,}) {final _that = this;
 switch (_that) {
 case BridgeMintOutcome_Success():
 return success(_that.rawStdout);case BridgeMintOutcome_Failure():
@@ -159,7 +159,7 @@ return failure(_that.code);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String rawStdout)?  success,TResult? Function( String code)?  failure,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BridgeSecret rawStdout)?  success,TResult? Function( String code)?  failure,}) {final _that = this;
 switch (_that) {
 case BridgeMintOutcome_Success() when success != null:
 return success(_that.rawStdout);case BridgeMintOutcome_Failure() when failure != null:
@@ -178,7 +178,7 @@ class BridgeMintOutcome_Success extends BridgeMintOutcome {
   const BridgeMintOutcome_Success({required this.rawStdout}): super._();
   
 
- final  String rawStdout;
+ final  BridgeSecret rawStdout;
 
 /// Create a copy of BridgeMintOutcome
 /// with the given fields replaced by the non-null parameter values.
@@ -210,7 +210,7 @@ abstract mixin class $BridgeMintOutcome_SuccessCopyWith<$Res> implements $Bridge
   factory $BridgeMintOutcome_SuccessCopyWith(BridgeMintOutcome_Success value, $Res Function(BridgeMintOutcome_Success) _then) = _$BridgeMintOutcome_SuccessCopyWithImpl;
 @useResult
 $Res call({
- String rawStdout
+ BridgeSecret rawStdout
 });
 
 
@@ -230,7 +230,7 @@ class _$BridgeMintOutcome_SuccessCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? rawStdout = null,}) {
   return _then(BridgeMintOutcome_Success(
 rawStdout: null == rawStdout ? _self.rawStdout : rawStdout // ignore: cast_nullable_to_non_nullable
-as String,
+as BridgeSecret,
   ));
 }
 

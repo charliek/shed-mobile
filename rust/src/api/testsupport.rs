@@ -158,7 +158,7 @@ fn record_credential_event(event: &BridgeCredentialEvent) {
             server: server.clone(),
             auth_mode: auth_mode.clone(),
             expires_at_unix: *expires_at_unix,
-            token: token.clone(),
+            token: token.as_ref().map(|b| b.value.clone()),
         },
         BridgeCredentialEvent::ModeChanged { server, auth_mode } => CapturedEvent {
             kind: "mode_changed",
