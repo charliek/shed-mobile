@@ -71,10 +71,10 @@ use super::dto_rc::{BridgeRcActivity, BridgeRcFeedMessage};
 ///
 /// **`server_url` is the REPORTED url**, never a dial url. On a remote machine
 /// the phone dials its own fixed loopback port instead (plan 018 §3.10), and the
-/// two are never conflated: a gx discovery record is matched against THIS one.
+/// two are never conflated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeAgentLaneStamp {
-    /// The adapter token — `"opencode"` or `"gx"` today. A kind this build has
+    /// The adapter token — `"opencode"` today. A kind this build has
     /// no adapter for is refused BY NAME
     /// ([`BridgeLaneError::UnsupportedLane`]), never silently rendered as no
     /// lane: `AgentLaneStamp`'s own doc makes that the client's obligation.
@@ -629,8 +629,7 @@ impl From<LaneCapabilities> for BridgeLaneCapabilities {
 }
 
 /// **The one thing Dart reads after a nudge** — a projection of
-/// [`shed_app::lane_view::LaneViewSnapshot`] plus the two bridge-level flags,
-/// taken under ONE lock.
+/// [`shed_app::lane_view::LaneViewSnapshot`], taken under ONE lock.
 ///
 /// One value rather than two calls, because two reads would TEAR: a frame can
 /// land between "give me the messages" and "give me the approvals", and the
@@ -660,19 +659,12 @@ pub struct BridgeLaneSnapshot {
     /// The asks still waiting on the human, oldest first, id as the tiebreak.
     /// Pending only, by [`lane_status_is_pending`]'s rule.
     pub approvals: Vec<BridgeLaneApproval>,
-    /// **The gx credential ask.** `true` when a leader restarted mid-pin and the
-    /// adapter needs a FRESH discovery to continue: the controller re-runs
-    /// [`super::lane::gx_probe_remote_command`] over the machine's SSH client
-    /// and hands the bytes to
-    /// [`super::lane::lane_refresh_credentials`]. Pinning then resumes in place
-    /// — no `Down`, no re-open, generation and ring intact.
-    pub needs_credentials: bool,
 }
 
 impl BridgeLaneSnapshot {
     /// Project one [`LaneViewSnapshot`] — the fold's own output, so the phone
-    /// and the desktop read the same truth — with the bridge flag stamped on.
-    pub(crate) fn from_view(snap: LaneViewSnapshot, needs_credentials: bool) -> BridgeLaneSnapshot {
+    /// and the desktop read the same truth.
+    pub(crate) fn from_view(snap: LaneViewSnapshot) -> BridgeLaneSnapshot {
         BridgeLaneSnapshot {
             messages: snap.messages.into_iter().map(Into::into).collect(),
             full: snap.full,
@@ -680,7 +672,6 @@ impl BridgeLaneSnapshot {
             generation: snap.generation,
             stale: snap.stale,
             approvals: snap.approvals.into_iter().map(Into::into).collect(),
-            needs_credentials,
         }
     }
 }
@@ -1105,10 +1096,9 @@ mod tests {
         assert_eq!(seen.len(), 9, "two LaneError variants collapsed onto one");
     }
 
-    /// The snapshot is a projection of the fold's own output and nothing else —
-    /// the bridge adds exactly one field.
+    /// The snapshot is a projection of the fold's own output and nothing else.
     #[test]
-    fn the_snapshot_projects_the_folds_output_and_one_flag() {
+    fn the_snapshot_projects_the_folds_output() {
         let view = LaneViewSnapshot {
             messages: vec![RcFeedMessage {
                 seq: 7,
@@ -1123,7 +1113,7 @@ mod tests {
             stale: Some("unknown_session".to_string()),
             approvals: vec![approval(vec![option("allow-once", None)])],
         };
-        let snap = BridgeLaneSnapshot::from_view(view, true);
+        let snap = BridgeLaneSnapshot::from_view(view);
         assert_eq!(snap.messages.len(), 1);
         assert_eq!(snap.messages[0].seq, 7);
         assert_eq!(snap.messages[0].text.as_deref(), Some("hi"));
@@ -1133,6 +1123,5 @@ mod tests {
         assert_eq!(snap.stale.as_deref(), Some("unknown_session"));
         assert_eq!(snap.approvals.len(), 1);
         assert_eq!(snap.approvals[0].id, "per_1");
-        assert!(snap.needs_credentials);
     }
 }

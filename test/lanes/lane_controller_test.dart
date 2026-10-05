@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
@@ -14,43 +12,36 @@ import 'fake_lane_lease.dart';
 
 /// **[LaneController] — the phone's lane logic** (plan 018 §3.11).
 ///
-/// Everything here runs through the two seams that exist so it can: a
-/// [LaneSource] standing in for the FRB bridge, and a [ProbeRunner] standing in
-/// for `execOn` over the machine's SSH client. No native library is loaded and
-/// no sshd is dialled.
+/// Everything here runs through the one seam that exists so it can: a
+/// [LaneSource] standing in for the FRB bridge. No native library is loaded
+/// and no sshd is dialled.
 ///
 /// The load-bearing claims, each of which fails silently in production if it
 /// regresses:
 ///
-/// 1. **The open ORDER** — probe, then forward, then `lane_open`. The probe's
-///    bytes are an argument to the open (Rust parses them into the discovery it
-///    pins the epoch with) and the forward's local port IS the dial url, so
-///    either one out of place means opening a lane that cannot authenticate or
-///    cannot dial, and finding out a round trip later.
-/// 2. **The probe bytes never come back to Dart.** They are one `cat` away from
-///    a bearer token: they cross verbatim, and nothing decodes, logs or
-///    interpolates them — asserted with a sentinel plus invalid UTF-8.
-/// 3. **`needsCredentials` causes NO re-open.** The pin resumes in place; a
-///    re-open would throw away the generation the screen is showing.
-/// 4. **The generation fence** — a nudge from a superseded handle is dropped,
+/// 1. **The open ORDER** — forward, then `lane_open`. The forward's local
+///    port IS the dial url, so opening before it exists means dialing a port
+///    nothing is listening on yet.
+/// 2. **The generation fence** — a nudge from a superseded handle is dropped,
 ///    not folded into the live view.
-/// 5. **`unknown_session` and a vanished row end the retries.** Both are
+/// 3. **`unknown_session` and a vanished row end the retries.** Both are
 ///    answers that cannot change, and retrying them is a battery bill.
 void main() {
   group('open', () {
-    test('runs probe, then forward, then lane_open — in that order', () async {
+    test('runs forward, then lane_open — in that order', () async {
       final rig = _Rig();
       await rig.controller.open();
 
-      expect(rig.log.take(3).toList(), ['probe', 'forward:2421', 'open']);
+      expect(rig.log.take(2).toList(), ['forward:2421', 'open']);
       final spec = rig.bridge.specs.single;
-      // The reported url is what a gx discovery record is matched against; the
-      // dial url is where THIS phone reaches it. Never conflated.
+      // The reported url is what a gx discovery record used to be matched
+      // against, back when gx was one of the lane kinds; the dial url is
+      // where THIS phone reaches it. Never conflated.
       expect(spec.reportedUrl, 'http://127.0.0.1:2421');
       expect(spec.dialUrl, 'http://127.0.0.1:40001');
-      expect(spec.kind, 'gx');
+      expect(spec.kind, 'opencode');
       expect(spec.sessionId, 'sess-1');
-      expect(rig.controller.state.capabilities?.kind, 'gx');
+      expect(rig.controller.state.capabilities?.kind, 'opencode');
       // The roster row was already folded before the pump started, so there is
       // something to read without waiting for a nudge.
       expect(rig.bridge.snapshots, 1);
@@ -71,18 +62,6 @@ void main() {
       },
     );
 
-    test('an opencode lane runs no probe at all', () async {
-      // The negative control on the probe: it is gx's credential mechanism,
-      // and opencode needs none. A probe here would be an SSH round trip
-      // spent on nothing, and `lane_refresh_credentials` would refuse it.
-      final rig = _Rig(kind: 'opencode');
-      await rig.controller.open();
-
-      expect(rig.probes, isEmpty);
-      expect(rig.bridge.specs.single.gxProbeStdout, isNull);
-      expect(rig.log.take(2).toList(), ['forward:2421', 'open']);
-    });
-
     test('is idempotent — a second call opens nothing', () async {
       final rig = _Rig();
       await Future.wait([rig.controller.open(), rig.controller.open()]);
@@ -90,128 +69,43 @@ void main() {
 
       expect(rig.bridge.opens, 1);
       expect(rig.acquired, [2421]);
-      expect(rig.probes.length, 1);
-    });
-  });
-
-  group('the probe bytes', () {
-    test('cross verbatim and reach no log, no error and no decode', () async {
-      // A sentinel the way the harness greps for one, plus two bytes that are
-      // not valid UTF-8: anything that decoded this would leave replacement
-      // characters behind, and anything that logged it would leave the
-      // sentinel.
-      final sentinel = Uint8List.fromList([
-        ...utf8.encode('SENTINEL_TOKEN_deadbeefcafe'),
-        0xff,
-        0xfe,
-      ]);
-      final rig = _Rig(probeStdout: sentinel);
-      // The refusal Rust composes when no record matches — it names the
-      // reported url and nothing from the stdout.
-      rig.bridge.openFailure = const BridgeLaneError.unavailable(
-        msg: 'no gx discovery record for http://127.0.0.1:2421',
-      );
-
-      final captured = <String>[];
-      final previous = debugPrint;
-      debugPrint = (String? message, {int? wrapWidth}) {
-        if (message != null) captured.add(message);
-      };
-      await runZoned(
-        rig.controller.open,
-        zoneSpecification: ZoneSpecification(
-          print: (self, parent, zone, line) => captured.add(line),
-        ),
-      );
-      debugPrint = previous;
-
-      // Wired: the bytes DID reach the bridge, unaltered. Without this the
-      // assertions below would pass against a probe that never ran.
-      expect(rig.bridge.specs.single.gxProbeStdout, orderedEquals(sentinel));
-
-      final error = rig.controller.state.error!;
-      expect(error.code, 'LANE_UNAVAILABLE');
-      final everythingDartSaid = [
-        ...captured,
-        error.code,
-        error.message,
-        error.toString(),
-      ].join('\n');
-      expect(everythingDartSaid, isNot(contains('SENTINEL')));
-      expect(everythingDartSaid, isNot(contains('deadbeef')));
-      // The replacement character a `utf8.decode(allowMalformed: true)` would
-      // have left on those trailing bytes.
-      expect(everythingDartSaid, isNot(contains('\u{FFFD}')));
-    });
-  });
-
-  group('needsCredentials', () {
-    test('re-probes and refreshes IN PLACE — no re-open', () async {
-      final rig = _Rig();
-      rig.bridge.onSnapshot = (_) => _snap(needsCredentials: true);
-      await rig.controller.open();
-      await pumpEventQueue();
-
-      expect(rig.probes.length, 2, reason: 'one at open, one for the refresh');
-      expect(rig.bridge.refreshed.single, orderedEquals(rig.probeStdout));
-      // THE CLAIM: the lane is not re-opened, the handle is not closed, and the
-      // generation the screen is showing is untouched.
-      expect(rig.bridge.opens, 1);
-      expect(rig.bridge.closes, 0);
-      expect(rig.bridge.handles.single.closed, isFalse);
-      expect(rig.delays, isEmpty);
-      expect(rig.controller.state.needsCredentials, isTrue);
-    });
-
-    test('a snapshot that does not ask for one re-probes nothing', () async {
-      final rig = _Rig();
-      rig.bridge.onSnapshot = (_) => _snap();
-      await rig.controller.open();
-      await pumpEventQueue();
-
-      expect(rig.probes.length, 1);
-      expect(rig.bridge.refreshed, isEmpty);
     });
   });
 
   group('stale — the one re-open Dart owns', () {
-    test(
-      're-opens on the 1s → 30s ladder, with a fresh probe, keeping the lease',
-      () async {
-        final rig = _Rig();
-        rig.bridge.onSnapshot = (_) => _snap(stale: 'transport closed');
-        await rig.controller.open();
-        await pumpEventQueue();
+    test('re-opens on the 1s → 30s ladder, keeping the lease', () async {
+      final rig = _Rig();
+      rig.bridge.onSnapshot = (_) => _snap(stale: 'transport closed');
+      await rig.controller.open();
+      await pumpEventQueue();
 
-        expect(rig.delays, [const Duration(seconds: 1)]);
-        expect(rig.controller.state.retrying, isTrue);
-        expect(rig.controller.state.stale, 'transport closed');
-        expect(rig.bridge.handles.single.closed, isTrue);
-        // The lease is KEPT: the local port is fixed for the forward's life and
-        // the forward re-dials the channel underneath it, so giving it back would
-        // close a forward the next open needs.
-        expect(rig.leases.single.releases, 0);
+      expect(rig.delays, [const Duration(seconds: 1)]);
+      expect(rig.controller.state.retrying, isTrue);
+      expect(rig.controller.state.stale, 'transport closed');
+      expect(rig.bridge.handles.single.closed, isTrue);
+      // The lease is KEPT: the local port is fixed for the forward's life and
+      // the forward re-dials the channel underneath it, so giving it back would
+      // close a forward the next open needs.
+      expect(rig.leases.single.releases, 0);
 
-        rig.releaseDelay();
-        await pumpEventQueue();
-        expect(rig.bridge.opens, 2);
-        expect(rig.probes.length, 2, reason: 'a fresh probe on every re-open');
-        expect(rig.acquired, [2421], reason: 'and no second forward');
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.bridge.opens, 2);
+      expect(rig.acquired, [2421], reason: 'and no second forward');
 
-        // The ladder DOUBLES across consecutive failures — an agent that accepts
-        // a connection and dies inside it must not be retried every second. (The
-        // re-opened lane goes stale on its own first pull, which is exactly that
-        // shape.)
-        expect(rig.delays, [
-          const Duration(seconds: 1),
-          const Duration(seconds: 2),
-        ]);
-        rig.releaseDelay();
-        await pumpEventQueue();
-        expect(rig.delays.last, const Duration(seconds: 4));
-        expect(rig.leases.single.releases, 0, reason: 'still the one forward');
-      },
-    );
+      // The ladder DOUBLES across consecutive failures — an agent that accepts
+      // a connection and dies inside it must not be retried every second. (The
+      // re-opened lane goes stale on its own first pull, which is exactly that
+      // shape.)
+      expect(rig.delays, [
+        const Duration(seconds: 1),
+        const Duration(seconds: 2),
+      ]);
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.delays.last, const Duration(seconds: 4));
+      expect(rig.leases.single.releases, 0, reason: 'still the one forward');
+    });
 
     test('a healthy snapshot re-opens nothing', () async {
       final rig = _Rig();
@@ -407,7 +301,7 @@ void main() {
       // would have missed this and kept talking to a dead forward.
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'gx',
+          kind: 'opencode',
           sessionId: 'sess-1',
           serverUrl: 'http://127.0.0.1:2500',
         ),
@@ -433,7 +327,7 @@ void main() {
       rig.bridge.onSnapshot = (_) => _snap();
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'gx',
+          kind: 'opencode',
           sessionId: 'sess-2',
           serverUrl: 'http://127.0.0.1:2421',
         ),
@@ -473,19 +367,6 @@ void main() {
       expect(rig.controller.state.abandoned, isTrue);
       expect(rig.controller.state.retrying, isFalse);
       expect(rig.delays, isEmpty);
-    });
-
-    test('a failed probe gives the lease back to nobody and retries', () async {
-      final rig = _Rig();
-      rig.probeFailure = StateError('the ssh link is down');
-      await rig.controller.open();
-      await pumpEventQueue();
-
-      // The probe is first, so nothing was acquired and nothing leaked.
-      expect(rig.acquired, isEmpty);
-      expect(rig.bridge.opens, 0);
-      expect(rig.controller.state.retrying, isTrue);
-      expect(rig.delays, [const Duration(seconds: 1)]);
     });
   });
 
@@ -590,23 +471,6 @@ void main() {
       expect(rig.bridge.opens, 1);
     });
 
-    test('a close during the probe builds nothing at all', () async {
-      final rig = _Rig();
-      final gate = Completer<void>();
-      rig.holdProbe = gate;
-      final opening = rig.controller.open();
-
-      await rig.controller.close();
-      gate.complete();
-      await opening;
-
-      // The fence right after the probe: no forward is reserved and no lane is
-      // opened, so there is nothing to leak.
-      expect(rig.acquired, isEmpty);
-      expect(rig.bridge.opens, 0);
-      expect(rig.controller.isOpen, isFalse);
-    });
-
     test('a lane that lands after a close is closed, not installed', () async {
       final rig = _Rig();
       final gate = Completer<void>();
@@ -664,11 +528,7 @@ void main() {
 
 /// Everything a [LaneController] needs, faked, plus the levers each test pulls.
 class _Rig {
-  _Rig({
-    String kind = 'gx',
-    this.reach = LaneReach.machine,
-    Uint8List? probeStdout,
-  }) : probeStdout = probeStdout ?? Uint8List.fromList([1, 2, 3]) {
+  _Rig({String kind = 'opencode', this.reach = LaneReach.machine}) {
     bridge = _FakeLaneBridge(log);
     stamps = StreamController<BridgeAgentLaneStamp?>();
     controller = LaneController(
@@ -680,7 +540,6 @@ class _Rig {
         serverUrl: 'http://127.0.0.1:2421',
       ),
       source: bridge,
-      probe: _probe,
       reach: reach,
       acquireForward: _acquire,
       stamps: stamps.stream,
@@ -694,7 +553,6 @@ class _Rig {
   }
 
   final LaneReach reach;
-  final Uint8List probeStdout;
 
   /// The ORDERED record of what the open path did. The order is the claim.
   final List<String> log = [];
@@ -703,14 +561,10 @@ class _Rig {
   late final StreamController<BridgeAgentLaneStamp?> stamps;
   late final LaneController controller;
 
-  final List<String> probes = [];
   final List<int> acquired = [];
   final List<FakeLaneLease> leases = [];
   final List<Duration> delays = [];
   final List<void Function()> _frames = [];
-
-  Object? probeFailure;
-  Completer<void>? holdProbe;
 
   /// Every delay parks until [releaseDelay]. Deliberately not "completes
   /// immediately": a ladder that ran on its own would spin a failing open into
@@ -737,16 +591,6 @@ class _Rig {
     return _delayGate.future;
   }
 
-  Future<Uint8List> _probe(String wireCommand) async {
-    log.add('probe');
-    probes.add(wireCommand);
-    final gate = holdProbe;
-    if (gate != null) await gate.future;
-    final failure = probeFailure;
-    if (failure != null) throw failure;
-    return probeStdout;
-  }
-
   Future<LaneLease> _acquire(int remotePort) async {
     log.add('forward:$remotePort');
     acquired.add(remotePort);
@@ -767,7 +611,6 @@ class _FakeLaneBridge implements LaneSource {
   final List<BridgeLaneSpec> specs = [];
   final List<_FakeHandle> handles = [];
   final List<BigInt?> cursors = [];
-  final List<Uint8List> refreshed = [];
   final List<String> sent = [];
   final List<BridgeSendMode> modes = [];
   final List<String> answered = [];
@@ -790,9 +633,6 @@ class _FakeLaneBridge implements LaneSource {
   BridgeLaneSnapshot Function(BigInt? cursor) onSnapshot = (_) => _snap();
 
   @override
-  String gxProbeCommand() => "sh -c 'probe'";
-
-  @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
     log.add('open');
     specs.add(spec);
@@ -811,12 +651,12 @@ class _FakeLaneBridge implements LaneSource {
   @override
   BridgeLaneCapabilities capabilities(LaneHandle handle) =>
       const BridgeLaneCapabilities(
-        kind: 'gx',
-        interject: true,
+        kind: 'opencode',
+        interject: false,
         create: true,
         cancel: true,
         approvals: true,
-        historyCursor: true,
+        historyCursor: false,
       );
 
   @override
@@ -855,12 +695,6 @@ class _FakeLaneBridge implements LaneSource {
     final failure = answerFailure;
     if (failure != null) throw failure;
   }
-
-  @override
-  Future<void> refreshCredentials(
-    LaneHandle handle,
-    Uint8List gxProbeStdout,
-  ) async => refreshed.add(gxProbeStdout);
 
   @override
   void close(LaneHandle handle) {
@@ -923,7 +757,6 @@ BridgeLaneSnapshot _snap({
   int generation = 1,
   String? stale,
   List<BridgeLaneApproval> approvals = const [],
-  bool needsCredentials = false,
 }) => BridgeLaneSnapshot(
   messages: messages,
   full: full,
@@ -931,7 +764,6 @@ BridgeLaneSnapshot _snap({
   generation: BigInt.from(generation),
   stale: stale,
   approvals: approvals,
-  needsCredentials: needsCredentials,
 );
 
 BridgeRcFeedMessage _row(int seq, String text) => BridgeRcFeedMessage(

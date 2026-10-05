@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -539,24 +538,30 @@ void main() {
       expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
     });
 
-    testWidgets('is present but DISABLED for gx while nothing is running', (
-      tester,
-    ) async {
-      final rig = _Rig(snapshot: _snap(activity: BridgeRcActivity.idle));
-      await _pump(tester, rig);
+    testWidgets(
+      'is present but DISABLED for an interject-capable adapter while '
+      'nothing is running',
+      (tester) async {
+        final rig = _Rig(snapshot: _snap(activity: BridgeRcActivity.idle));
+        await _pump(tester, rig);
 
-      final chip = find.byKey(const ValueKey('lane-interject'));
-      expect(chip, findsOneWidget, reason: 'gx advertises interject');
-      expect(
-        tester.widget<FilterChip>(chip).onSelected,
-        isNull,
-        reason: 'there is no turn to interject into',
-      );
+        final chip = find.byKey(const ValueKey('lane-interject'));
+        expect(
+          chip,
+          findsOneWidget,
+          reason: 'the fixture adapter advertises interject',
+        );
+        expect(
+          tester.widget<FilterChip>(chip).onSelected,
+          isNull,
+          reason: 'there is no turn to interject into',
+        );
 
-      rig.bump(_snap(activity: BridgeRcActivity.working));
-      await _settle(tester);
-      expect(tester.widget<FilterChip>(chip).onSelected, isNotNull);
-    });
+        rig.bump(_snap(activity: BridgeRcActivity.working));
+        await _settle(tester);
+        expect(tester.widget<FilterChip>(chip).onSelected, isNotNull);
+      },
+    );
 
     testWidgets('the send mode is recomputed at SEND time', (tester) async {
       // The toggle records an intent. A turn that ended between the render
@@ -733,7 +738,6 @@ BridgeLaneSnapshot _snap({
   generation: BigInt.from(generation),
   stale: stale,
   approvals: approvals,
-  needsCredentials: false,
 );
 
 BridgeLaneApproval _approval({
@@ -754,22 +758,24 @@ BridgeLaneApproval _approval({
   requestJson: requestJson,
 );
 
-BridgeLaneCapabilities _caps({String kind = 'gx', bool interject = true}) =>
-    BridgeLaneCapabilities(
-      kind: kind,
-      interject: interject,
-      create: true,
-      cancel: true,
-      approvals: true,
-      historyCursor: true,
-    );
+BridgeLaneCapabilities _caps({
+  String kind = 'opencode',
+  bool interject = true,
+}) => BridgeLaneCapabilities(
+  kind: kind,
+  interject: interject,
+  create: true,
+  cancel: true,
+  approvals: true,
+  historyCursor: true,
+);
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
   _Rig({
     BridgeLaneSnapshot? snapshot,
     BridgeLaneCapabilities? capabilities,
-    String kind = 'gx',
+    String kind = 'opencode',
   }) : source = _FakeSource(
          current: snapshot ?? _snap(),
          caps: capabilities ?? _caps(),
@@ -811,9 +817,6 @@ class _FakeSource implements LaneSource {
     current = next;
     _nudges.add(true);
   }
-
-  @override
-  String gxProbeCommand() => "sh -c 'probe'";
 
   @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
@@ -862,12 +865,6 @@ class _FakeSource implements LaneSource {
   }
 
   @override
-  Future<void> refreshCredentials(
-    LaneHandle handle,
-    Uint8List gxProbeStdout,
-  ) async {}
-
-  @override
   void close(LaneHandle handle) {}
 }
 
@@ -895,7 +892,7 @@ class _FakeFeed implements MachineFeed {
         shed: '',
         slug: _ref.slug,
         displayName: 'row7',
-        kind: const BridgeRcKind.gx(),
+        kind: const BridgeRcKind.opencode(),
         state: BridgeRcState.ready,
         managed: true,
         attention: false,
@@ -912,10 +909,6 @@ class _FakeFeed implements MachineFeed {
   @override
   Stream<MachineFeedState> get updates =>
       const Stream<MachineFeedState>.empty();
-
-  @override
-  Future<Uint8List> probe(String wireCommand) async =>
-      Uint8List.fromList([9, 9]);
 
   @override
   Future<LaneLease> acquireForward(int remotePort) async =>

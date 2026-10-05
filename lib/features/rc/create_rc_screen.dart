@@ -53,9 +53,9 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   /// [_permissionMode] from riding along to it); otherwise the
   /// (already capability-gated) claude dropdown value for a claude kind
   /// (nullable → claude's own default); a fixed autonomous `auto` for the
-  /// other agent kinds (codex/cursor/opencode), which have no dropdown and are
-  /// only offered when capabilities are present; null for shell (no posture).
-  /// The service re-drops it for a posture-less kind.
+  /// other agent kinds (opencode), which have no dropdown and are only offered
+  /// when capabilities are present; null for shell (no posture). The service
+  /// re-drops it for a posture-less kind.
   String? _modeFor(BridgeRcKind kind, String? claudeMode) {
     if (!widget.target.acceptsKickoff) return null;
     if (kind.runsClaude) return claudeMode;

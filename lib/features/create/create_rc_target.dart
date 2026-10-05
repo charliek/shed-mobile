@@ -35,12 +35,9 @@ typedef RcCapsView = ({
 /// What a create produced: enough to log honestly, plus the value to pop.
 typedef RcCreated = ({String slug, String state, String? url, Object result});
 
-/// The always-safe base when capabilities are absent: claude + shell. Every
-/// build of shed-ext-rc and every build of sx has had both.
-const List<BridgeRcKind> baseRcKinds = [
-  BridgeRcKind.claudeRc(),
-  BridgeRcKind.shell(),
-];
+/// The always-safe base when capabilities are absent: claude alone. Every
+/// build of shed-ext-rc has had it, and shell is not offered (plan 025 O3).
+const List<BridgeRcKind> baseRcKinds = [BridgeRcKind.claudeRc()];
 
 /// The shared shape of every "capabilities not usable yet" branch except
 /// loading: caps absent (so [baseRcKinds] is offered), not loading, and never
@@ -229,7 +226,7 @@ abstract class RoostRcTarget extends CreateRcTarget {
     if (caps == null) {
       return baseCapsView(
         retry: true,
-        note: 'codex/cursor/opencode unavailable on $subject.',
+        note: 'opencode unavailable on $subject.',
         logToken: 'absent',
       );
     }

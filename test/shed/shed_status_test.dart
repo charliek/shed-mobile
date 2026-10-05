@@ -46,15 +46,17 @@ void main() {
       expect(kindColor(c, 'claude-rc'), c.kindClaude);
       expect(kindColor(c, 'claude-broker'), c.kindClaude);
     });
-    test('codex kinds → codex accent', () {
-      expect(kindColor(c, 'codex-rc'), c.kindCodex);
-    });
-    test('cursor / opencode → their own accents', () {
-      expect(kindColor(c, 'cursor'), c.kindCursor);
+    test('opencode → its own accent', () {
       expect(kindColor(c, 'opencode'), c.kindOpencode);
     });
-    test('shell and any unknown kind → shell grey, NEVER claude', () {
+    test('shell, a retired direct-agent kind, and any unknown kind → shell '
+        'grey, NEVER claude', () {
       expect(kindColor(c, 'shell'), c.kindShell);
+      // codex/cursor had their own tokens before plan 025 retired the
+      // direct-agent kinds; they fall back to the neutral grey like any
+      // other unrecognized string now.
+      expect(kindColor(c, 'codex-rc'), c.kindShell);
+      expect(kindColor(c, 'cursor'), c.kindShell);
       final unknown = kindColor(c, 'some-foreign-agent');
       expect(unknown, c.kindShell);
       expect(unknown, isNot(c.kindClaude));

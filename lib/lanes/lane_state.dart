@@ -22,7 +22,6 @@ class LaneState {
     this.stale,
     this.approvals = const [],
     this.capabilities,
-    this.needsCredentials = false,
     this.error,
     this.approvalErrors = const {},
     this.composerError,
@@ -60,18 +59,13 @@ class LaneState {
   /// unwinding panel keeps its buttons rather than watching them vanish.
   final BridgeLaneCapabilities? capabilities;
 
-  /// gx asked for a fresh discovery. Set by the snapshot and cleared by the
-  /// next one; the controller re-probes and calls `laneRefreshCredentials`
-  /// **without re-opening** — the pin resumes in place (§3.9).
-  final bool needsCredentials;
-
-  /// A lane-level failure: the open was refused, or the credential refresh was.
-  /// Distinct from the two inline errors below, which belong to one control.
+  /// A lane-level failure: the open was refused. Distinct from the two inline
+  /// errors below, which belong to one control.
   final AppError? error;
 
-  /// A refused answer, **keyed by the approval id that raised it**. gx refuses
-  /// a `Permission` whose decision matches no offered option with `BadRequest`,
-  /// and either adapter refuses a second answer to one approval — both belong
+  /// A refused answer, **keyed by the approval id that raised it**. An adapter
+  /// refuses a `Permission` whose decision matches no offered option with
+  /// `BadRequest`, and refuses a second answer to one approval — both belong
   /// on that card, not in a toast that says nothing about which card.
   final Map<String, AppError> approvalErrors;
 
@@ -96,7 +90,6 @@ class LaneState {
     String? stale,
     List<BridgeLaneApproval>? approvals,
     BridgeLaneCapabilities? capabilities,
-    bool? needsCredentials,
     AppError? error,
     Map<String, AppError>? approvalErrors,
     AppError? composerError,
@@ -112,7 +105,6 @@ class LaneState {
     stale: clearStale ? null : (stale ?? this.stale),
     approvals: approvals ?? this.approvals,
     capabilities: capabilities ?? this.capabilities,
-    needsCredentials: needsCredentials ?? this.needsCredentials,
     error: clearError ? null : (error ?? this.error),
     approvalErrors: approvalErrors ?? this.approvalErrors,
     composerError: clearComposerError

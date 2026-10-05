@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/scheduler.dart';
@@ -12,16 +11,15 @@ import '../src/rust/api/lane.dart';
 import '../ssh/lane_forward.dart';
 import 'lane_source.dart';
 import 'lane_state.dart';
-import 'probe_runner.dart';
 
 /// The first re-open wait after a terminal `Down`, doubling to [laneRetryMax].
 ///
 /// **Deliberately slower than Rust's 200 ms → 5 s resubscribe ladder.** Rust
 /// retries a live adapter's stream — one HTTP request against a server it is
-/// already connected to. Dart retries a WHOLE lane: an SSH probe, a forward, a
-/// roster GET and a subscription, each a round trip. A phone that hammers that
-/// every 200 ms behind a sleeping machine spends its battery discovering the
-/// machine is still asleep.
+/// already connected to. Dart retries a WHOLE lane: a forward, a roster GET
+/// and a subscription, each a round trip. A phone that hammers that every
+/// 200 ms behind a sleeping machine spends its battery discovering the machine
+/// is still asleep.
 const laneRetryBase = Duration(seconds: 1);
 
 /// The ceiling on the re-open ladder.
@@ -79,23 +77,18 @@ void scheduleOnNextFrame(void Function() pull) {
 /// **One agent lane's logic, outside every widget** (plan 018 §3.11).
 ///
 /// ```text
-///   open()  ──probe (gx only)──▶ acquireForward ──▶ laneOpen ──▶ laneNudges
-///                                                                    │
+///   open()  ──acquireForward──▶ laneOpen ──▶ laneNudges
+///                                                 │
 ///   nudge ──(one per frame)──▶ laneSnapshot(sinceSeq) ──▶ LaneState ──┘
 /// ```
 ///
 /// ## One reconnect owner, and it is Rust
 ///
 /// The single rule that decides most of this class: **Rust owns reconnection.**
-/// Its pump carries the whole resubscribe ladder, so Dart has exactly two
-/// lifecycle jobs, and both exist only because they need SSH:
-///
-/// * **`needsCredentials`** — gx's leader restarted mid-pin and wants a fresh
-///   discovery. Dart re-runs the probe and calls `laneRefreshCredentials`.
-///   **No re-open**: the pin resumes in place, generation and ring intact.
-/// * **A terminal `Down`** (the snapshot's `stale`) — Rust has stopped. Dart
-///   closes the handle, KEEPS the forward lease, and re-opens on the ladder
-///   above.
+/// Its pump carries the whole resubscribe ladder, so Dart has exactly one
+/// lifecycle job, and it exists only because it needs SSH: **a terminal
+/// `Down`** (the snapshot's `stale`) — Rust has stopped. Dart closes the
+/// handle, KEEPS the forward lease, and re-opens on the ladder above.
 ///
 /// Anything else that looks like a reconnect is not one. A dropped SSE stream,
 /// a silent resume, a server reset, a reseed: all Rust's, all invisible here
@@ -104,24 +97,23 @@ void scheduleOnNextFrame(void Function() pull) {
 /// ## The generation fence
 ///
 /// Every open carries a generation, bumped by every teardown. A nudge, a
-/// snapshot, a probe result or a queued retry from an earlier generation is
-/// DROPPED. Without it a lane that re-opened while its predecessor's probe was
-/// in flight would install the old handle behind the new one's back, and the
-/// screen would render a transcript from a transport nobody holds.
+/// snapshot or a queued retry from an earlier generation is DROPPED. Without it
+/// a lane that re-opened while its predecessor's open was still in flight would
+/// install the old handle behind the new one's back, and the screen would
+/// render a transcript from a transport nobody holds.
 ///
 /// ## What this class deliberately does not do
 ///
-/// It does not fold (Rust does), it does not decode the probe (Rust does), it
-/// does not own the SSH connection or the forward (the machine's feed does),
-/// and it has no registry — "one lane per row" is `laneControllerProvider`'s
-/// guarantee, because the bridge has no registry either.
+/// It does not fold (Rust does), it does not own the SSH connection or the
+/// forward (the machine's feed does), and it has no registry — "one lane per
+/// row" is `laneControllerProvider`'s guarantee, because the bridge has no
+/// registry either.
 class LaneController {
   LaneController({
     required this.machine,
     required this.slug,
     required BridgeAgentLaneStamp stamp,
     required this.source,
-    required this.probe,
     required this.reach,
     this.acquireForward,
     Stream<BridgeAgentLaneStamp?>? stamps,
@@ -157,7 +149,6 @@ class LaneController {
   final String slug;
 
   final LaneSource source;
-  final ProbeRunner probe;
   final LaneReach reach;
   final ForwardAcquirer? acquireForward;
 
@@ -188,7 +179,6 @@ class LaneController {
   bool _closed = false;
   bool _abandoned = false;
   bool _pullPending = false;
-  bool _refreshing = false;
 
   /// The generation whose `stale` has already been acted on, so a second
   /// snapshot carrying the same `stale` does not start a second re-open.
@@ -209,15 +199,13 @@ class LaneController {
   @visibleForTesting
   bool get isOpen => _handle != null;
 
-  /// **Open the lane: probe, forward, `lane_open`, subscribe.** Idempotent and
-  /// safe to call on every frame — a second call with a handle already held, an
-  /// open in flight, or after [close]/an abandon, returns immediately.
+  /// **Open the lane: forward, `lane_open`, subscribe.** Idempotent and safe to
+  /// call on every frame — a second call with a handle already held, an open
+  /// in flight, or after [close]/an abandon, returns immediately.
   ///
-  /// The ORDER is the contract. The gx probe comes first because its bytes are
-  /// an argument to `lane_open` (Rust parses them into the discovery it pins
-  /// the epoch with); the forward comes next because the dial url names its
-  /// local port. Reversing either would mean opening a lane that cannot dial or
-  /// cannot authenticate, and discovering it a round trip later.
+  /// The forward comes first because the dial url names its local port.
+  /// Opening the lane before the forward exists would mean dialing a port
+  /// nothing is listening on yet.
   Future<void> open() async {
     if (_closed || _abandoned || _handle != null || _opening) return;
     _opening = true;
@@ -254,13 +242,6 @@ class LaneController {
   Future<void> _openOnce(int generation) async {
     final stamp = _stamp;
 
-    Uint8List? probeStdout;
-    if (stamp.kind == _gxKind) {
-      // Verbatim, unquoted, unread. See [ProbeRunner].
-      probeStdout = await probe(source.gxProbeCommand());
-      if (_superseded(generation)) return;
-    }
-
     if (reach == LaneReach.machine && _lease?.isValid != true) {
       // A lease from a previous generation whose forward died with the feed is
       // no use to the new one, and holding it would leak a refcount.
@@ -276,13 +257,12 @@ class LaneController {
     final spec = BridgeLaneSpec(
       kind: stamp.kind,
       sessionId: stamp.sessionId,
-      // The two are NEVER conflated: a gx discovery record is matched against
-      // the reported url, while the dial goes to this phone's own forward.
+      // The two are NEVER conflated: the dial goes to this phone's own
+      // forward, never to the reported url.
       reportedUrl: stamp.serverUrl,
       dialUrl: reach == LaneReach.local
           ? stamp.serverUrl
           : laneDialUrl(stamp.serverUrl, _lease!.port),
-      gxProbeStdout: probeStdout,
     );
 
     final handle = await source.open(spec);
@@ -370,35 +350,13 @@ class LaneController {
         approvals: snap.approvals.isEmpty && _state.approvals.isEmpty
             ? _state.approvals
             : List<BridgeLaneApproval>.unmodifiable(snap.approvals),
-        needsCredentials: snap.needsCredentials,
         stale: snap.stale,
         clearStale: snap.stale == null,
       ),
     );
 
-    if (snap.needsCredentials) unawaited(_refreshCredentials(generation));
     final stale = snap.stale;
     if (stale != null) _onStale(generation, stale);
-  }
-
-  /// gx asked for a fresh discovery: probe again and hand the bytes over.
-  /// **No re-open** — that is the whole point of the ask (§3.9).
-  Future<void> _refreshCredentials(int generation) async {
-    if (_refreshing) return;
-    _refreshing = true;
-    try {
-      final stdout = await probe(source.gxProbeCommand());
-      if (generation != _generation) return;
-      final handle = _handle;
-      if (handle == null) return;
-      await source.refreshCredentials(handle, stdout);
-    } catch (e) {
-      if (generation == _generation) {
-        _emit(_state.copyWith(error: appErrorFrom(e)));
-      }
-    } finally {
-      _refreshing = false;
-    }
   }
 
   /// The pump ended on a terminal `Down`. Rust has stopped; Dart re-opens.
@@ -432,9 +390,9 @@ class LaneController {
   Future<void> cancel() => _composerVerb(source.cancel);
 
   /// Answer one approval. A refusal lands on THAT card
-  /// ([LaneState.approvalErrors]), which is the only place it is legible: gx
-  /// refuses a `Permission` whose decision matches no offered option, and
-  /// either adapter refuses a second answer to one approval.
+  /// ([LaneState.approvalErrors]), which is the only place it is legible: an
+  /// adapter refuses a `Permission` whose decision matches no offered option,
+  /// and refuses a second answer to one approval.
   Future<void> answer(String approvalId, BridgeLaneAnswer answer) =>
       _guardedVerb(
         (handle) =>
@@ -528,7 +486,6 @@ class LaneController {
         rows: const [],
         approvals: const [],
         approvalErrors: const {},
-        needsCredentials: false,
         clearStale: true,
         clearError: true,
         clearComposerError: true,
@@ -628,14 +585,12 @@ class LaneController {
   }
 }
 
-const _gxKind = 'gx';
-
 /// Whether a failed open can never succeed, so the ladder must not run.
 ///
 /// The three permanent shapes, and each is a property of the ROW rather than of
 /// the moment: this build has no adapter for the kind, the handle carries no
 /// lane at all, or the agent does not know the session. Everything else — a
-/// refused dial, an asleep machine, a probe that failed because the SSH link
+/// refused dial, an asleep machine, a forward that failed because the SSH link
 /// was down — is exactly what a retry is for.
 @visibleForTesting
 bool laneFailureIsPermanent(Object failure) => switch (failure) {

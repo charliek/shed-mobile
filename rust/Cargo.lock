@@ -1185,7 +1185,6 @@ dependencies = [
  "serde_json",
  "shed-app",
  "shed-core",
- "shed-gx",
  "shed-opencode",
  "tokio",
 ]
@@ -1395,21 +1394,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
-]
-
-[[package]]
-name = "shed-gx"
-version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf#a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf"
-dependencies = [
- "async-trait",
- "futures-util",
- "reqwest",
- "serde",
- "serde_json",
- "shed-core",
- "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]

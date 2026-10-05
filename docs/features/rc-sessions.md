@@ -32,9 +32,12 @@ key is not authorized" have different fixes.
 
 What a target can launch comes from `roostCapabilities()` — **synthesized, not
 probed**: roost is a terminal multiplexer with agent adapters, not shed's guest
-agent, so there is nothing to ask. The launchable set is `claude-rc`, `codex`,
-`opencode`, `cursor`, `gx` and `grok`; `shell` and `claude-broker` have no launch
-recipe and are refused by name rather than opening an empty tab.
+agent, so there is nothing to ask. The create form offers exactly `claude-rc`
+and `opencode` (plan 025 O3) — the only two kinds the phone can start. A row
+running any other kind (`codex`, `cursor`, `gx`, `grok`) still shows up and
+reads as a plain row when it was launched some other way (the CLI, the
+desktop app); `shell` and `claude-broker` have no launch recipe and are
+refused by name rather than opening an empty tab.
 
 ## States
 

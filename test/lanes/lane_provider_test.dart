@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -120,15 +119,11 @@ void main() {
       );
       await pumpEventQueue();
 
-      // End to end through the real wiring: the feed's OWN probe ran (the
-      // production `ProbeRunner` is `MachineFeed.probe`, i.e. `execOn` over the
-      // one SSH client the feed holds), the feed's forward was reserved, and
-      // the spec carried its local port.
-      expect(feed.probes, [source.gxProbeCommand()]);
-      expect(source.specs.single.gxProbeStdout, orderedEquals([9, 9]));
+      // End to end through the real wiring: the feed's own forward was
+      // reserved, and the spec carried its local port.
       expect(feed.acquired, [2421]);
       expect(source.specs.single.dialUrl, 'http://127.0.0.1:41000');
-      expect(sub.read().value?.capabilities?.kind, 'gx');
+      expect(sub.read().value?.capabilities?.kind, 'opencode');
       expect(sub.read().value?.rows.single.text, 'hello');
     });
   });
@@ -223,7 +218,7 @@ void main() {
         'http://127.0.0.1:41000',
         reason: 'the dial goes to OUR forward, not to the reported port',
       );
-      expect(sub.read().value?.capabilities?.kind, 'gx');
+      expect(sub.read().value?.capabilities?.kind, 'opencode');
     });
 
     test('the override is the seam the hermetic harness relies on', () async {
@@ -256,7 +251,7 @@ void main() {
         source.specs.single.reportedUrl,
         reason: 'the local branch dials the reported url verbatim',
       );
-      expect(sub.read().value?.capabilities?.kind, 'gx');
+      expect(sub.read().value?.capabilities?.kind, 'opencode');
     });
   });
 }
@@ -305,7 +300,7 @@ BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
   shed: '',
   slug: slug,
   displayName: 'row$slug',
-  kind: const BridgeRcKind.gx(),
+  kind: const BridgeRcKind.opencode(),
   state: BridgeRcState.ready,
   managed: true,
   attention: false,
@@ -313,7 +308,7 @@ BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
   agentLane: sessionId == null
       ? null
       : BridgeAgentLaneStamp(
-          kind: 'gx',
+          kind: 'opencode',
           sessionId: sessionId,
           serverUrl: 'http://127.0.0.1:2421',
         ),
@@ -326,7 +321,6 @@ BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
 class _FakeFeed implements MachineFeed {
   _FakeFeed({this.machine = _mini3});
 
-  final List<String> probes = [];
   final List<int> acquired = [];
 
   /// Carried because [MachineFeed] declares it, and settable so one test can
@@ -342,12 +336,6 @@ class _FakeFeed implements MachineFeed {
       const Stream<MachineFeedState>.empty();
 
   @override
-  Future<Uint8List> probe(String wireCommand) async {
-    probes.add(wireCommand);
-    return Uint8List.fromList([9, 9]);
-  }
-
-  @override
   Future<LaneLease> acquireForward(int remotePort) async {
     acquired.add(remotePort);
     return FakeLaneLease(41000);
@@ -361,9 +349,6 @@ class _FakeSource implements LaneSource {
   final List<BridgeLaneSpec> specs = [];
 
   @override
-  String gxProbeCommand() => "sh -c 'probe'";
-
-  @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
     specs.add(spec);
     return _FakeHandle();
@@ -375,12 +360,12 @@ class _FakeSource implements LaneSource {
   @override
   BridgeLaneCapabilities capabilities(LaneHandle handle) =>
       const BridgeLaneCapabilities(
-        kind: 'gx',
-        interject: true,
+        kind: 'opencode',
+        interject: false,
         create: true,
         cancel: true,
         approvals: true,
-        historyCursor: true,
+        historyCursor: false,
       );
 
   @override
@@ -398,7 +383,6 @@ class _FakeSource implements LaneSource {
         activity: BridgeRcActivity.idle,
         generation: BigInt.one,
         approvals: const [],
-        needsCredentials: false,
       );
 
   @override

@@ -110,7 +110,7 @@ class ShedDetailScreen extends ConsumerWidget {
         key: const ValueKey('rc-empty'),
         title: state.reachable ? 'No sessions' : 'No sessions to show',
         message: state.reachable
-            ? 'Start an agent — Claude, Codex, or a plain shell.'
+            ? 'Start an agent — Claude or opencode.'
             : shedSessionsEmptyText(state),
       );
     }

@@ -75,7 +75,7 @@ both run every file even after one fails.
 |---|---|
 | `shed_probe_test.dart` | a Rust→Dart call into shed-core round-trips at runtime |
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
-| `lane_test.dart` | the agent lanes, end to end against shed's own gx/opencode fakes |
+| `lane_test.dart` | the agent lanes, end to end against shed's own opencode fake |
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
@@ -98,14 +98,11 @@ control port. So it needs a **shed checkout** and `python3` — and nothing else
   `LaneReach.machine` for every machine, including `localhost` (a shed VM is
   dialled at `localhost:2222` and its agent is inside the VM). The refcounted
   forward has its own hermetic tests.
-- **gx credentials are real.** The fake writes a `$GROK_HOME` (a discovery
-  record plus a `0600` token) into a temp dir; the `ProbeRunner` seam's local
-  implementation runs `gxProbeRemoteCommand()` verbatim through `sh -c` with
-  `GROK_HOME` set. The wire string, the POSIX script and Rust's `parse_probe`
-  are all exercised.
-- **The fakes are never re-derived in Dart.** Every envelope comes from the
-  Python builders by name (`POST /_/envelope/<name>`), because the gx/opencode
-  wire vocabularies belong next to the adapters they were recorded from.
+- **The fake is never re-derived in Dart.** Every envelope comes from the
+  Python builders by name (`POST /_/envelope/<name>`), because the opencode
+  wire vocabulary belongs next to the adapter it was recorded from. (The gx
+  lane and its credential-probe seam were retired in plan 025, CM1 —
+  shed-mobile#33.)
 - **The shed checkout must be the pinned rev.** The fakes and the adapters under
   test are one tree; CI checks out
   `scripts/check-lock-rev.sh --print-shed-rev` and asserts the sha.
@@ -117,18 +114,9 @@ Rules that matter when adding a cell:
 - Every cell carries a 60 s timeout, and every fake is stopped from a
   `tearDown` — so a failing cell leaves nothing bound to a loopback port. The
   fake also watches its own stdin, so a killed run leaks nothing either.
-- **Both halves of a gx approval are reachable, and so is every gx body.** Two
-  knobs on shed's control-door allowlist (`GX_METHODS` in
-  `fake_lane_server.py`) carry it: `add_approval`, which writes a REAL approval
-  into the fake's store — the copy gx's `answer()` re-reads before it translates
-  a decision, so an approval the rig creates can be answered as well as rendered
-  — and `bodies_to(suffix)`, which returns every recorded body for a path suffix
-  as a LIST (a cell may post to one path twice, and the first body is not always
-  the one it means). So a gx cell presses an option and asserts the posted
-  `optionId`, answers a question and asserts its `annotations` map, and asserts
-  `mode: "interject"` on the wire. `requests()` still carries no body, on
-  purpose: its shape is pinned by a cell, and a body there would put a
-  token-bearing payload into the one ledger a failure prints.
+- **The opencode wire body is reachable too, not just the render.** The
+  opencode fake's own `post_body`/`post_paths` pair lets a cell assert the
+  real request body a decision produced, not only what rendered on screen.
 
 `make test-integration-linux` also warns when the local Flutter differs from the
 CI pin, and restores `pubspec.lock` / `analysis_options.yaml` after the run —

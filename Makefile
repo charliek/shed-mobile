@@ -60,7 +60,7 @@ cargo-test:
 	  root=$$(pwd); \
 	  cp "$$root/rust/Cargo.lock" "$$root/rust/.Cargo.lock.canonical"; \
 	  trap 'mv -f "$$root/rust/.Cargo.lock.canonical" "$$root/rust/Cargo.lock"' EXIT INT TERM; \
-	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode -p shed-gx && cargo test ); \
+	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode && cargo test ); \
 	else \
 	  cd rust && cargo test --locked; \
 	fi

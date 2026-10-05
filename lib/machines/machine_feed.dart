@@ -16,7 +16,6 @@ import '../ssh/roost_entitlement.dart';
 import '../ssh/roost_reach.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
-import '../ssh/ssh_runner.dart';
 import 'machine_record.dart';
 
 /// One machine's live view, as the UI renders it.
@@ -717,38 +716,6 @@ class MachineFeed {
     return _forwards.acquire(remotePort);
   }
 
-  /// **Run one already-composed command on this machine and return its raw
-  /// stdout** — the production [ProbeRunner] for an agent lane's gx credential
-  /// probe (plan 018 §3.11).
-  ///
-  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
-  /// every lane forward use, so a probe costs no second SSH link and inherits
-  /// the dial's dedupe and generation fencing.
-  ///
-  /// **Bytes, never a string.** The gx probe's stdout carries a bearer token.
-  /// It is handed straight across the bridge, parsed by Rust and dropped there;
-  /// nothing here decodes it, logs it, keeps it, or puts any part of it in the
-  /// error below — which is why the failure message is a fixed sentence with
-  /// only the exit code in it, and why stderr is discarded rather than
-  /// surfaced.
-  ///
-  /// A null exit code is "unknown", not "failed": dartssh2 occasionally drops
-  /// the `exit-status` request even on success. So the only refusal is the one
-  /// that is unambiguous — a non-zero status with nothing on stdout, which is a
-  /// probe that did not run (no `gx`, no `$GROK_HOME`) rather than one whose
-  /// output Rust can judge for itself.
-  Future<Uint8List> probe(String wireCommand) async {
-    final client = await _connect();
-    final result = await execOn(client, wireCommand);
-    final code = result.exitCode;
-    if (code != null && code != 0 && result.stdout.isEmpty) {
-      throw StateError(
-        'the discovery probe on ${machine.name} exited $code with no output',
-      );
-    }
-    return result.stdout;
-  }
-
   /// Start a session on this machine — roost's `tab.open`.
   ///
   /// Minimal by design (plan 013 §4): the agent's binary and a working
@@ -877,9 +844,9 @@ class MachineFeed {
   /// [BootstrapExec] for a [RoostBootstrapRunner] (plan 020 §3.8).
   ///
   /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
-  /// every lane forward use, exactly as [probe] and [acquireForward] do: a
-  /// bootstrap costs no second SSH link and inherits the dial's dedupe and
-  /// generation fencing.
+  /// every lane forward use, exactly as [acquireForward] does: a bootstrap
+  /// costs no second SSH link and inherits the dial's dedupe and generation
+  /// fencing.
   ///
   /// Every cap comes from the step; nothing here invents one. The command is
   /// roost's own composition and is passed verbatim — see `exec_bytes.dart`.

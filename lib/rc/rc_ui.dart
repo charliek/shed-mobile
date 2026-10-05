@@ -93,23 +93,15 @@ const List<BridgeRcKind> rcKindValues = [
 ];
 
 /// The kinds a create form can offer for creation, in canonical order.
-/// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind is
-/// never creatable, so both are excluded. Mirrors `RcKind::creatable`.
 ///
-/// `grok` is here and is LANE-LESS by design — launching one opens a `grok` tab
-/// whose status shed reads through roost, with no transcript affordance. `gx` is
-/// here too, but a ROW only ever reads as `gx` once its remote lane binds: roost
-/// reports both as `source: "grok"` and shed promotes the row on the `gx.remote`
-/// metadata key, so which kind was launched and which kind the card settles on
-/// are two different questions.
+/// **Exactly claude-rc and opencode** (plan 025 O3): no shell, and none of the
+/// retired direct-agent kinds (codex/cursor/grok/gx) — craze is the lane for
+/// every provider but these two, and the phone's create form does not offer it
+/// yet. `claude-broker` is URL-driven (not create-from-a-form) and an unknown
+/// kind is never creatable, so both stay excluded. Mirrors `RcKind::creatable`.
 const List<BridgeRcKind> rcCreatableKinds = [
   BridgeRcKind.claudeRc(),
-  BridgeRcKind.codex(),
   BridgeRcKind.opencode(),
-  BridgeRcKind.cursor(),
-  BridgeRcKind.gx(),
-  BridgeRcKind.grok(),
-  BridgeRcKind.shell(),
 ];
 
 /// Decode a wire value, PRESERVING an unrecognized string as an unknown kind

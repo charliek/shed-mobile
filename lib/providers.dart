@@ -645,11 +645,11 @@ Stream<BridgeAgentLaneStamp?> laneStamps(
 /// is emphatically not this device's `127.0.0.1:2421`. A container, a published
 /// Docker port and a jump port all break the same way.
 ///
-/// Proven live, not argued: one shed VM — same gx session, same everything —
-/// registered twice under two host spellings. As `localhost` the lane took the
-/// local branch, made no forward, and sat at `generation=0` forever with
-/// "Reconnecting: the gx lane at http://127.0.0.1:2421 is closed". As
-/// `192.168.86.42` — the same sshd, the same VM — it forwarded, reached
+/// Proven live, not argued: one shed VM — same agent-lane session, same
+/// everything — registered twice under two host spellings. As `localhost` the
+/// lane took the local branch, made no forward, and sat at `generation=0`
+/// forever with "Reconnecting: the lane at http://127.0.0.1:2421 is closed".
+/// As `192.168.86.42` — the same sshd, the same VM — it forwarded, reached
 /// `generation=1`, and send/approve/interject/cancel all worked. A hostname
 /// cannot tell those two apart, so nothing here tries.
 ///
@@ -699,9 +699,8 @@ final laneControllerProvider = Provider.autoDispose
         slug: key.slug,
         stamp: stamp,
         source: ref.watch(laneSourceProvider),
-        // The feed owns the SSH connection every lane call rides — the probe
-        // and the forward both go through it, so a lane costs no second link.
-        probe: feed.probe,
+        // The feed owns the SSH connection every lane call rides — the forward
+        // goes through it, so a lane costs no second link.
         reach: ref.watch(laneReachProvider),
         acquireForward: feed.acquireForward,
         stamps: laneStamps(feed.updates, key.slug),

@@ -63,9 +63,9 @@ BridgeLaneApprovalOption? laneOptionFor({
 ///
 /// **`server_url` is the REPORTED url**, never a dial url. On a remote machine
 /// the phone dials its own fixed loopback port instead (plan 018 §3.10), and the
-/// two are never conflated: a gx discovery record is matched against THIS one.
+/// two are never conflated.
 class BridgeAgentLaneStamp {
-  /// The adapter token — `"opencode"` or `"gx"` today. A kind this build has
+  /// The adapter token — `"opencode"` today. A kind this build has
   /// no adapter for is refused BY NAME
   /// ([`BridgeLaneError::UnsupportedLane`]), never silently rendered as no
   /// lane: `AgentLaneStamp`'s own doc makes that the client's obligation.
@@ -499,8 +499,7 @@ class BridgeLaneSession {
 }
 
 /// **The one thing Dart reads after a nudge** — a projection of
-/// [`shed_app::lane_view::LaneViewSnapshot`] plus the two bridge-level flags,
-/// taken under ONE lock.
+/// [`shed_app::lane_view::LaneViewSnapshot`], taken under ONE lock.
 ///
 /// One value rather than two calls, because two reads would TEAR: a frame can
 /// land between "give me the messages" and "give me the approvals", and the
@@ -534,14 +533,6 @@ class BridgeLaneSnapshot {
   /// Pending only, by [`lane_status_is_pending`]'s rule.
   final List<BridgeLaneApproval> approvals;
 
-  /// **The gx credential ask.** `true` when a leader restarted mid-pin and the
-  /// adapter needs a FRESH discovery to continue: the controller re-runs
-  /// [`super::lane::gx_probe_remote_command`] over the machine's SSH client
-  /// and hands the bytes to
-  /// [`super::lane::lane_refresh_credentials`]. Pinning then resumes in place
-  /// — no `Down`, no re-open, generation and ring intact.
-  final bool needsCredentials;
-
   const BridgeLaneSnapshot({
     required this.messages,
     required this.full,
@@ -549,7 +540,6 @@ class BridgeLaneSnapshot {
     required this.generation,
     this.stale,
     required this.approvals,
-    required this.needsCredentials,
   });
 
   @override
@@ -559,8 +549,7 @@ class BridgeLaneSnapshot {
       activity.hashCode ^
       generation.hashCode ^
       stale.hashCode ^
-      approvals.hashCode ^
-      needsCredentials.hashCode;
+      approvals.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -572,8 +561,7 @@ class BridgeLaneSnapshot {
           activity == other.activity &&
           generation == other.generation &&
           stale == other.stale &&
-          approvals == other.approvals &&
-          needsCredentials == other.needsCredentials;
+          approvals == other.approvals;
 }
 
 /// How a [`super::lane::lane_send`] is meant to land (mirrors `lane::SendMode`).

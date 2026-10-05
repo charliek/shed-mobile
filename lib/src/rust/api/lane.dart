@@ -8,9 +8,9 @@ import 'dto_lane.dart';
 import 'dto_rc.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `ask_for_a_refresh`, `begin_pin`, `bind`, `build_client`, `clear_credentials_ask`, `client`, `deliver`, `discovery_from_probe`, `forward_loop`, `lock`, `new`, `new`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_inner`, `refreshed_since`, `reported_url`, `request_credentials`, `spawn_forwarder`, `spawn_pump`, `teardown`, `timed_out`, `unavailable`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeGxCredentials`, `GxCredState`, `LaneInner`, `LaneState`, `LaneTasks`, `PinnedDial`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `dial`, `discover`, `drop`
+// These functions are ignored because they are not marked as `pub`: `apply`, `build_client`, `client`, `forward_loop`, `lock`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_inner`, `spawn_forwarder`, `spawn_pump`, `teardown`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LaneInner`, `LaneState`, `LaneTasks`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
 
 /// Open a live lane on one agent session: dispatch on `kind`, fetch the roster
 /// row, and start the pump.
@@ -18,17 +18,15 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// **Dispatch is the desktop `Lanes::open`'s, arm for arm**: `"opencode"` →
 /// [`OpencodeClient`] on the dial URL with no credential source (opencode needs
 /// none — a password-protected server answers 401, which surfaces as
-/// [`BridgeLaneError::Unauthorized`] and a status-only panel); `"gx"` →
-/// [`GxClient`] on the REPORTED url with a [`FixedDial`] transport and the
-/// probe's discovery; anything else → [`BridgeLaneError::UnsupportedLane`]
-/// **before any I/O**, because a kind with no adapter is a permanent property of
-/// the row and there is no reason to spend a round trip discovering it.
+/// [`BridgeLaneError::Unauthorized`] and a status-only panel); anything else →
+/// [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a kind with
+/// no adapter is a permanent property of the row and there is no reason to
+/// spend a round trip discovering it.
 ///
 /// The roster row is fetched BEFORE the subscription starts, for the desktop's
 /// reason: a 404 here is an honest `unknown_session` the caller can render,
 /// where the same failure inside the pump would be a `Down` the panel has to
-/// wait for. It is also the call that fails on a password-protected agent and,
-/// on gx, the one that discovers and pins the credential.
+/// wait for. It is also the call that fails on a password-protected agent.
 ///
 /// Everything runs on [`bridge_rt`] — not tidiness: the pump and the adapter's
 /// held HTTP connections OUTLIVE this call, so they must be created on a runtime
@@ -54,9 +52,8 @@ Stream<bool> laneNudges({required BridgeLane lane}) =>
 BridgeLaneCapabilities laneCapabilities({required BridgeLane lane}) =>
     RustLib.instance.api.crateApiLaneLaneCapabilities(lane: lane);
 
-/// **The one read**, and the nudge acknowledgement: the staged view projected,
-/// the pending approvals, the credential flag — under ONE lock — and the dirty
-/// bit cleared.
+/// **The one read**, and the nudge acknowledgement: the staged view projected
+/// and the pending approvals — under ONE lock — and the dirty bit cleared.
 ///
 /// `since_seq` is `None` for everything (`full: true`) and `Some(s)` for the
 /// rows after `s`. The cursor is honored only when it lands inside the current
@@ -118,27 +115,6 @@ Future<void> laneAnswer({
   answer: answer,
 );
 
-/// Answer a pending gx credential ask: parse a FRESH probe and hand it to the
-/// waiting discovery.
-///
-/// The controller calls it when a snapshot reports
-/// [`BridgeLaneSnapshot::needs_credentials`]. Pinning then resumes **in place** —
-/// no `Down`, no re-open, the generation and the ring intact — which is the
-/// whole point of asking rather than failing: a leader restart is recoverable
-/// without the panel flickering.
-///
-/// Calling it with nothing waiting is fine and cheap: the value is held for the
-/// next epoch's ask. Calling it on a lane that needs no credentials is a
-/// [`BridgeLaneError::BadRequest`], because a client that ran an SSH probe for
-/// an opencode lane has a bug worth hearing about.
-Future<void> laneRefreshCredentials({
-  required BridgeLane lane,
-  required List<int> gxProbeStdout,
-}) => RustLib.instance.api.crateApiLaneLaneRefreshCredentials(
-  lane: lane,
-  gxProbeStdout: gxProbeStdout,
-);
-
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.
 ///
@@ -146,24 +122,6 @@ Future<void> laneRefreshCredentials({
 /// connections it holds. The nudge stream ends here and only here.
 void laneClose({required BridgeLane lane}) =>
     RustLib.instance.api.crateApiLaneLaneClose(lane: lane);
-
-/// The command Dart execs on the far side to read gx's discovery, verbatim.
-///
-/// **Dart composes no part of it**, and that is the whole point: SSH has no argv
-/// API, so this multi-line script crosses as ONE string the far side re-parses,
-/// and every transport that composes it has to compose it identically. It is
-/// [`shed_core::machine::display_line`] over `["sh", "-c", PROBE_SCRIPT]` — the
-/// same quoter [`shed_app::machine::exec`] hands `ssh`, so the phone's
-/// `dartssh2` and the desktop's `ssh` binary put the same bytes on the wire.
-/// shed's `tests/machine-transport` owns that contract as its `gx-probe`
-/// scenario; a Rust test in this module pins the exact line against that
-/// scenario's golden.
-///
-/// Sync because it is a constant, and a `String` rather than an argv list
-/// because an argv list is precisely what Dart must not be given: it would then
-/// own the quoting.
-String gxProbeRemoteCommand() =>
-    RustLib.instance.api.crateApiLaneGxProbeRemoteCommand();
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>
 abstract class BridgeLane implements RustOpaqueInterface {}
@@ -173,35 +131,23 @@ abstract class BridgeLane implements RustOpaqueInterface {}
 ///
 /// **`reported_url` and `dial_url` are different values and are never
 /// conflated.** `reported_url` is the loopback URL the agent announced on ITS
-/// host, and it is what a gx discovery record is matched against;
-/// `dial_url` is where this phone actually reaches it — the near end of the
+/// host; `dial_url` is where this phone actually reaches it — the near end of the
 /// `RoostTunnel`-shaped forward Dart already holds, or the same address again
 /// when the agent is on this device. The contract is explicit that an
 /// implementation which dialled the reported URL would be wrong over SSH.
 class BridgeLaneSpec {
-  /// `"opencode"` or `"gx"`. Anything else is
+  /// `"opencode"`. Anything else is
   /// [`BridgeLaneError::UnsupportedLane`], refused before any I/O.
   final String kind;
   final String sessionId;
   final String reportedUrl;
   final String dialUrl;
 
-  /// The raw stdout of [`gx_probe_remote_command`], run by Dart over the
-  /// machine's SSH client. Required for a `"gx"` lane and ignored for every
-  /// other kind.
-  ///
-  /// **These bytes are one `cat` away from being a bearer token.** They are
-  /// parsed inside [`discovery_from_probe`] and dropped there; nothing in this
-  /// module logs them, stores them past the parse, or puts any part of them in
-  /// an error string.
-  final Uint8List? gxProbeStdout;
-
   const BridgeLaneSpec({
     required this.kind,
     required this.sessionId,
     required this.reportedUrl,
     required this.dialUrl,
-    this.gxProbeStdout,
   });
 
   @override
@@ -209,8 +155,7 @@ class BridgeLaneSpec {
       kind.hashCode ^
       sessionId.hashCode ^
       reportedUrl.hashCode ^
-      dialUrl.hashCode ^
-      gxProbeStdout.hashCode;
+      dialUrl.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -220,6 +165,5 @@ class BridgeLaneSpec {
           kind == other.kind &&
           sessionId == other.sessionId &&
           reportedUrl == other.reportedUrl &&
-          dialUrl == other.dialUrl &&
-          gxProbeStdout == other.gxProbeStdout;
+          dialUrl == other.dialUrl;
 }

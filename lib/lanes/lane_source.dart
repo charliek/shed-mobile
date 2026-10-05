@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/lane.dart';
 
@@ -23,12 +21,6 @@ abstract interface class LaneHandle {}
 /// Note what is NOT here: anything that folds. Dart pulls one atomic snapshot
 /// and merges it by the `full` flag; the fold is Rust's (`shed_app::lane_view`).
 abstract interface class LaneSource {
-  /// The command Dart execs on the far side to read gx's discovery, **verbatim
-  /// and composed entirely in Rust**. Dart must never build any part of it: SSH
-  /// has no argv API, so this crosses as one string the far side re-parses, and
-  /// shed's `tests/machine-transport` owns that wire line as a golden.
-  String gxProbeCommand();
-
   Future<LaneHandle> open(BridgeLaneSpec spec);
 
   /// One `true` per "something changed, take a snapshot". A second call on the
@@ -56,14 +48,6 @@ abstract interface class LaneSource {
     required BridgeLaneAnswer answer,
   });
 
-  /// Hand a FRESH probe's stdout to a waiting gx discovery. Pinning resumes in
-  /// place — no `Down`, no re-open, the generation and the ring intact.
-  ///
-  /// **These bytes are one `cat` away from being a bearer token.** They are
-  /// parsed in Rust and dropped there; nothing on this side decodes, logs or
-  /// interpolates them.
-  Future<void> refreshCredentials(LaneHandle handle, Uint8List gxProbeStdout);
-
   /// Synchronous teardown. Idempotent; Rust's `Drop` is the backstop.
   void close(LaneHandle handle);
 }
@@ -71,9 +55,6 @@ abstract interface class LaneSource {
 /// The production [LaneSource]: the generated FRB functions, unadorned.
 class BridgeLaneSource implements LaneSource {
   const BridgeLaneSource();
-
-  @override
-  String gxProbeCommand() => gxProbeRemoteCommand();
 
   @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async =>
@@ -106,10 +87,6 @@ class BridgeLaneSource implements LaneSource {
     required String approvalId,
     required BridgeLaneAnswer answer,
   }) => laneAnswer(lane: _lane(handle), approvalId: approvalId, answer: answer);
-
-  @override
-  Future<void> refreshCredentials(LaneHandle handle, Uint8List gxProbeStdout) =>
-      laneRefreshCredentials(lane: _lane(handle), gxProbeStdout: gxProbeStdout);
 
   @override
   void close(LaneHandle handle) {

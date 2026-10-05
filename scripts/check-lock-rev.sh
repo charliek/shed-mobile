@@ -5,9 +5,9 @@
 # dev uses a gitignored rust/.cargo/config.toml [patch] that swaps the git source
 # for a local path — if that ever leaks into the committed Cargo.lock, CI would
 # build a different (unpinned) core than the one the rev names. This asserts that
-# ALL FOUR shed crates (shed-core, shed-app, shed-opencode, shed-gx) in
+# ALL THREE shed crates (shed-core, shed-app, shed-opencode) in
 # rust/Cargo.lock resolve to the exact `rev = "…"` declared in rust/Cargo.toml —
-# one rev shared by all four — with the canonical git source (never a local path).
+# one rev shared by all three — with the canonical git source (never a local path).
 #
 # It ALSO checks `roost-ipc`, whose lock entry must match mobile's own manifest
 # rev. What it deliberately does NOT check is that mobile's roost rev equals the
@@ -97,10 +97,10 @@ lock_source_is_only() {
   return 0
 }
 
-# The four shed crates, all pinned to ONE rev. shed-opencode/shed-gx joined in
-# plan 018 (the agent-lane adapters); a manifest that let them drift from
+# The three shed crates, all pinned to ONE rev. shed-opencode joined in
+# plan 018 (the agent-lane adapter); a manifest that let it drift from
 # shed-core would silently link two shed trees.
-SHED_CRATES="shed-core shed-app shed-opencode shed-gx"
+SHED_CRATES="shed-core shed-app shed-opencode"
 
 REV=""
 for crate in $SHED_CRATES; do
@@ -181,7 +181,7 @@ This usually means the gitignored rust/.cargo/config.toml [patch] leaked a local
 path into the lock. Regenerate the lock canonically (with NO local [patch] active):
 
   ( cd rust && mv .cargo/config.toml /tmp/shed-mobile-cargo-patch.bak 2>/dev/null || true; \\
-    cargo update -p shed-core -p shed-app -p shed-opencode -p shed-gx -p roost-ipc; \\
+    cargo update -p shed-core -p shed-app -p shed-opencode -p roost-ipc; \\
     mv /tmp/shed-mobile-cargo-patch.bak .cargo/config.toml 2>/dev/null || true )
 
 then commit rust/Cargo.lock.

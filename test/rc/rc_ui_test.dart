@@ -118,21 +118,49 @@ void main() {
 
     test('creatableKinds is the canonical-ordered offered subset', () {
       final c = caps(
+        kinds: const [BridgeRcKind.opencode(), BridgeRcKind.claudeRc()],
+        agents: const {
+          'claude': BridgeRcAgentInfo(installed: true),
+          'opencode': BridgeRcAgentInfo(installed: true),
+        },
+      );
+      // Canonical order = claude-rc, opencode (plan 025 O3).
+      expect(c.creatableKinds(), const [
+        BridgeRcKind.claudeRc(),
+        BridgeRcKind.opencode(),
+      ]);
+    });
+
+    test('offers exactly claude-rc and opencode on a roost target, never the '
+        'retired direct-agent kinds', () {
+      // A roost target that advertises EVERY kind it still recognizes on
+      // the wire, all installed — the widest input `creatableKinds()` can
+      // be handed. Plan 025 O3: the create form offers exactly claude-rc
+      // and opencode regardless of what the backend advertises, because
+      // `rcCreatableKinds` is the gate, not `kinds`/`agents`.
+      final c = caps(
         kinds: const [
-          BridgeRcKind.shell(),
           BridgeRcKind.claudeRc(),
+          BridgeRcKind.claudeBroker(),
           BridgeRcKind.codex(),
+          BridgeRcKind.opencode(),
+          BridgeRcKind.cursor(),
+          BridgeRcKind.gx(),
+          BridgeRcKind.grok(),
+          BridgeRcKind.shell(),
         ],
         agents: const {
           'claude': BridgeRcAgentInfo(installed: true),
           'codex': BridgeRcAgentInfo(installed: true),
+          'opencode': BridgeRcAgentInfo(installed: true),
+          'cursor': BridgeRcAgentInfo(installed: true),
+          'gx': BridgeRcAgentInfo(installed: true),
+          'grok': BridgeRcAgentInfo(installed: true),
         },
       );
-      // Canonical order = claude-rc, codex, …, shell (broker/unknown excluded).
       expect(c.creatableKinds(), const [
         BridgeRcKind.claudeRc(),
-        BridgeRcKind.codex(),
-        BridgeRcKind.shell(),
+        BridgeRcKind.opencode(),
       ]);
     });
   });
