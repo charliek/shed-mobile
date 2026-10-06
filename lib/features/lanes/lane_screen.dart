@@ -17,11 +17,12 @@ import '../rc/feed_rows.dart';
 
 /// **One agent lane, on a phone** (plan 018 §3.12).
 ///
-/// The transcript of a `gx`/`opencode` session running on a machine, the asks it
-/// is blocked on, and the two things a person does about them: answer, or say
-/// something. Reached from a machine session row that carries an `agentLane`
-/// stamp — and ONLY from such a row, because [laneControllerProvider] refuses a
-/// row with no stamp rather than opening a lane that can never connect.
+/// The transcript of an agent session running on a machine (an `opencode` lane
+/// today; plan 025 adds craze's), the asks it is blocked on, and the two things
+/// a person does about them: answer, or say something. Reached from a machine
+/// session row that carries an `agentLane` stamp — and ONLY from such a row,
+/// because [laneControllerProvider] refuses a row with no stamp rather than
+/// opening a lane that can never connect.
 ///
 /// The layout follows [SessionWatchScreen] deliberately: a lane's rows ARE
 /// `RcFeedMessage`s, so the same [RcMessageTile] renders them and a transcript
@@ -66,13 +67,13 @@ class LaneScreen extends ConsumerStatefulWidget {
   /// not the agent session id, which is part of the stamp being reconciled.
   final String slug;
 
-  /// The row's display name, from the machine feed.
+  /// The row's display name, from the machine feed — the header's title until
+  /// the lane's LIVE session row has one.
   ///
-  /// Passed in rather than read from the lane: the bridge's snapshot projects
-  /// only the session's `activity` (`shed_app::lane_view` has nowhere to carry
-  /// the rest), so `BridgeLaneSession.title`/`cwd` are mirrored but unreachable
-  /// from a lane. The row's own name is the honest answer and costs no round
-  /// trip.
+  /// Since plan 025 the snapshot carries the session row the stream last sent
+  /// ([LaneState.session]), and the header reads its title from there once it
+  /// is seeded (see [laneHeaderTitle]). This is what renders before that, and
+  /// what a row whose session has no title of its own keeps.
   final String title;
 
   @override
@@ -218,6 +219,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     final state = async.value;
     if (state == null) {
       return _shell(
+        state: null,
         child: async.hasError
             ? _centered('lane-unavailable', 'This lane is gone: ${async.error}')
             : const Center(
@@ -232,6 +234,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
     final approvals = state.approvals;
     return _shell(
+      state: state,
       child: Column(
         children: [
           _statusStrip(context, state),
@@ -272,11 +275,12 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     );
   }
 
-  Widget _shell({required Widget child}) => Scaffold(
+  Widget _shell({required LaneState? state, required Widget child}) => Scaffold(
     key: const ValueKey('lane-screen'),
     appBar: AppBar(
       // Two lines, like the watch screen: the slug is what you came looking
-      // for, and the row's name answers "which session is this".
+      // for, and the session's name answers "which session is this" — from the
+      // LIVE session row once the stream has sent one (plan 025 §3.6.5).
       titleSpacing: 0,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,7 +288,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
         children: [
           Text(widget.slug, style: const TextStyle(fontSize: 17)),
           Text(
-            widget.title,
+            laneHeaderTitle(state?.session, widget.title),
+            key: const ValueKey('lane-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11.5, color: context.shed.fg3),
@@ -349,9 +354,15 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// A lane has no lifecycle dimension of its own, so there is no
   /// lifecycle-trumps-activity gate to apply here: `stale` is the lane's answer
   /// to "is this current", and it has its own banner.
+  ///
+  /// The session's permission posture rides here too, from the LIVE row
+  /// (plan 025 §3.6.5): a session the craze create sheet started runs
+  /// `bypass`, and this is where that consequence is visible. A row that
+  /// states no posture (every opencode row) renders nothing for it.
   Widget _statusStrip(BuildContext context, LaneState state) {
     final c = context.shed;
     final display = rcActivityDisplay(state.activity);
+    final permission = lanePermissionLine(state.session?.permissionMode);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -375,6 +386,19 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               style: monoStyle(fontSize: 11, color: c.fg3),
             ),
           const Spacer(),
+          if (permission != null)
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Text(
+                  permission,
+                  key: const ValueKey('lane-permission'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: sansStyle(fontSize: 11.5, color: c.fg2),
+                ),
+              ),
+            ),
           if (state.capabilities?.kind case final kind?)
             Text(kind, style: monoStyle(fontSize: 11, color: c.fg3)),
         ],
@@ -631,6 +655,36 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ),
     );
   }
+}
+
+/// The header's title: the LIVE session row's, once the stream has sent one
+/// with a title, and the machine feed's row name until then.
+///
+/// **The live row, not the one the lane was opened from** (plan 025 §3.6.5):
+/// a session opened the moment it was created was opened from the create's
+/// own row, and only the stream's row carries what the session says about
+/// itself now. A live row with an EMPTY title falls back too — an empty
+/// subtitle says less than the row's own name.
+@visibleForTesting
+String laneHeaderTitle(BridgeLaneSession? live, String rowTitle) {
+  final title = live?.title ?? '';
+  return title.isEmpty ? rowTitle : title;
+}
+
+/// The header's line for a session's permission posture (craze's `bypass` |
+/// `prompt`, plan 025 §3.6.5) — the desktop's `permissionLine`, word for word,
+/// so a sheet-created session says out loud on both clients that it runs tools
+/// without asking. An unknown word renders as itself; none at all renders
+/// nothing.
+@visibleForTesting
+String? lanePermissionLine(String? mode) {
+  final m = (mode ?? '').trim();
+  if (m.isEmpty) return null;
+  return switch (m) {
+    'bypass' => 'runs tools without asking',
+    'prompt' => 'asks before running tools',
+    _ => 'permissions: $m',
+  };
 }
 
 /// The frame every approval card shares: the agent's own title and detail, the

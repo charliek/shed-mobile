@@ -173,7 +173,9 @@ void main() {
       state: _state(
         caps: _caps(const [
           BridgeRcKind.opencode(),
-          BridgeRcKind.codex(),
+          // A codex tab is an unknown kind since plan 025 — and even
+          // advertised, an unknown kind is never creatable.
+          BridgeRcKind.other(raw: 'codex'),
           BridgeRcKind.shell(),
         ]),
       ),
@@ -181,8 +183,8 @@ void main() {
     expect(find.text('New session · mini3'), findsOneWidget);
     expect(find.text('opencode'), findsOneWidget);
     // The negative control (plan 025 O3): codex and shell are advertised and
-    // their agents are installed, but neither is in `rcCreatableKinds` any
-    // more, so neither renders.
+    // their agents are installed, but neither is in `rcCreatableKinds`, so
+    // neither renders.
     expect(find.text('codex'), findsNothing);
     expect(find.text('shell'), findsNothing);
   });

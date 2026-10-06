@@ -1961,4 +1961,1481 @@ as String,
 
 }
 
+/// @nodoc
+mixin _$BridgeLanePromptOutcome {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeLanePromptOutcomeCopyWith<$Res>  {
+$BridgeLanePromptOutcomeCopyWith(BridgeLanePromptOutcome _, $Res Function(BridgeLanePromptOutcome) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeLanePromptOutcome].
+extension BridgeLanePromptOutcomePatterns on BridgeLanePromptOutcome {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLanePromptOutcome_None value)?  none,TResult Function( BridgeLanePromptOutcome_Accepted value)?  accepted,TResult Function( BridgeLanePromptOutcome_Unknown value)?  unknown,TResult Function( BridgeLanePromptOutcome_Refused value)?  refused,TResult Function( BridgeLanePromptOutcome_Other value)?  other,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None() when none != null:
+return none(_that);case BridgeLanePromptOutcome_Accepted() when accepted != null:
+return accepted(_that);case BridgeLanePromptOutcome_Unknown() when unknown != null:
+return unknown(_that);case BridgeLanePromptOutcome_Refused() when refused != null:
+return refused(_that);case BridgeLanePromptOutcome_Other() when other != null:
+return other(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLanePromptOutcome_None value)  none,required TResult Function( BridgeLanePromptOutcome_Accepted value)  accepted,required TResult Function( BridgeLanePromptOutcome_Unknown value)  unknown,required TResult Function( BridgeLanePromptOutcome_Refused value)  refused,required TResult Function( BridgeLanePromptOutcome_Other value)  other,}){
+final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None():
+return none(_that);case BridgeLanePromptOutcome_Accepted():
+return accepted(_that);case BridgeLanePromptOutcome_Unknown():
+return unknown(_that);case BridgeLanePromptOutcome_Refused():
+return refused(_that);case BridgeLanePromptOutcome_Other():
+return other(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLanePromptOutcome_None value)?  none,TResult? Function( BridgeLanePromptOutcome_Accepted value)?  accepted,TResult? Function( BridgeLanePromptOutcome_Unknown value)?  unknown,TResult? Function( BridgeLanePromptOutcome_Refused value)?  refused,TResult? Function( BridgeLanePromptOutcome_Other value)?  other,}){
+final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None() when none != null:
+return none(_that);case BridgeLanePromptOutcome_Accepted() when accepted != null:
+return accepted(_that);case BridgeLanePromptOutcome_Unknown() when unknown != null:
+return unknown(_that);case BridgeLanePromptOutcome_Refused() when refused != null:
+return refused(_that);case BridgeLanePromptOutcome_Other() when other != null:
+return other(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  none,TResult Function()?  accepted,TResult Function()?  unknown,TResult Function()?  refused,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None() when none != null:
+return none();case BridgeLanePromptOutcome_Accepted() when accepted != null:
+return accepted();case BridgeLanePromptOutcome_Unknown() when unknown != null:
+return unknown();case BridgeLanePromptOutcome_Refused() when refused != null:
+return refused();case BridgeLanePromptOutcome_Other() when other != null:
+return other(_that.raw);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  none,required TResult Function()  accepted,required TResult Function()  unknown,required TResult Function()  refused,required TResult Function( String raw)  other,}) {final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None():
+return none();case BridgeLanePromptOutcome_Accepted():
+return accepted();case BridgeLanePromptOutcome_Unknown():
+return unknown();case BridgeLanePromptOutcome_Refused():
+return refused();case BridgeLanePromptOutcome_Other():
+return other(_that.raw);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  none,TResult? Function()?  accepted,TResult? Function()?  unknown,TResult? Function()?  refused,TResult? Function( String raw)?  other,}) {final _that = this;
+switch (_that) {
+case BridgeLanePromptOutcome_None() when none != null:
+return none();case BridgeLanePromptOutcome_Accepted() when accepted != null:
+return accepted();case BridgeLanePromptOutcome_Unknown() when unknown != null:
+return unknown();case BridgeLanePromptOutcome_Refused() when refused != null:
+return refused();case BridgeLanePromptOutcome_Other() when other != null:
+return other(_that.raw);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeLanePromptOutcome_None extends BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome_None(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome_None);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome.none()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLanePromptOutcome_Accepted extends BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome_Accepted(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome_Accepted);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome.accepted()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLanePromptOutcome_Unknown extends BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome.unknown()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLanePromptOutcome_Refused extends BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome_Refused(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome_Refused);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome.refused()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLanePromptOutcome_Other extends BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome_Other({required this.raw}): super._();
+  
+
+ final  String raw;
+
+/// Create a copy of BridgeLanePromptOutcome
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLanePromptOutcome_OtherCopyWith<BridgeLanePromptOutcome_Other> get copyWith => _$BridgeLanePromptOutcome_OtherCopyWithImpl<BridgeLanePromptOutcome_Other>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLanePromptOutcome_Other&&(identical(other.raw, raw) || other.raw == raw));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,raw);
+
+@override
+String toString() {
+  return 'BridgeLanePromptOutcome.other(raw: $raw)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLanePromptOutcome_OtherCopyWith<$Res> implements $BridgeLanePromptOutcomeCopyWith<$Res> {
+  factory $BridgeLanePromptOutcome_OtherCopyWith(BridgeLanePromptOutcome_Other value, $Res Function(BridgeLanePromptOutcome_Other) _then) = _$BridgeLanePromptOutcome_OtherCopyWithImpl;
+@useResult
+$Res call({
+ String raw
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLanePromptOutcome_OtherCopyWithImpl<$Res>
+    implements $BridgeLanePromptOutcome_OtherCopyWith<$Res> {
+  _$BridgeLanePromptOutcome_OtherCopyWithImpl(this._self, this._then);
+
+  final BridgeLanePromptOutcome_Other _self;
+  final $Res Function(BridgeLanePromptOutcome_Other) _then;
+
+/// Create a copy of BridgeLanePromptOutcome
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? raw = null,}) {
+  return _then(BridgeLanePromptOutcome_Other(
+raw: null == raw ? _self.raw : raw // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$BridgeLaneProviderState {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneProviderState);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLaneProviderState()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeLaneProviderStateCopyWith<$Res>  {
+$BridgeLaneProviderStateCopyWith(BridgeLaneProviderState _, $Res Function(BridgeLaneProviderState) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeLaneProviderState].
+extension BridgeLaneProviderStatePatterns on BridgeLaneProviderState {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLaneProviderState_Ready value)?  ready,TResult Function( BridgeLaneProviderState_NeedsSetup value)?  needsSetup,TResult Function( BridgeLaneProviderState_Unavailable value)?  unavailable,TResult Function( BridgeLaneProviderState_Other value)?  other,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready() when ready != null:
+return ready(_that);case BridgeLaneProviderState_NeedsSetup() when needsSetup != null:
+return needsSetup(_that);case BridgeLaneProviderState_Unavailable() when unavailable != null:
+return unavailable(_that);case BridgeLaneProviderState_Other() when other != null:
+return other(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLaneProviderState_Ready value)  ready,required TResult Function( BridgeLaneProviderState_NeedsSetup value)  needsSetup,required TResult Function( BridgeLaneProviderState_Unavailable value)  unavailable,required TResult Function( BridgeLaneProviderState_Other value)  other,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready():
+return ready(_that);case BridgeLaneProviderState_NeedsSetup():
+return needsSetup(_that);case BridgeLaneProviderState_Unavailable():
+return unavailable(_that);case BridgeLaneProviderState_Other():
+return other(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLaneProviderState_Ready value)?  ready,TResult? Function( BridgeLaneProviderState_NeedsSetup value)?  needsSetup,TResult? Function( BridgeLaneProviderState_Unavailable value)?  unavailable,TResult? Function( BridgeLaneProviderState_Other value)?  other,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready() when ready != null:
+return ready(_that);case BridgeLaneProviderState_NeedsSetup() when needsSetup != null:
+return needsSetup(_that);case BridgeLaneProviderState_Unavailable() when unavailable != null:
+return unavailable(_that);case BridgeLaneProviderState_Other() when other != null:
+return other(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  ready,TResult Function()?  needsSetup,TResult Function()?  unavailable,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready() when ready != null:
+return ready();case BridgeLaneProviderState_NeedsSetup() when needsSetup != null:
+return needsSetup();case BridgeLaneProviderState_Unavailable() when unavailable != null:
+return unavailable();case BridgeLaneProviderState_Other() when other != null:
+return other(_that.raw);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  ready,required TResult Function()  needsSetup,required TResult Function()  unavailable,required TResult Function( String raw)  other,}) {final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready():
+return ready();case BridgeLaneProviderState_NeedsSetup():
+return needsSetup();case BridgeLaneProviderState_Unavailable():
+return unavailable();case BridgeLaneProviderState_Other():
+return other(_that.raw);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  ready,TResult? Function()?  needsSetup,TResult? Function()?  unavailable,TResult? Function( String raw)?  other,}) {final _that = this;
+switch (_that) {
+case BridgeLaneProviderState_Ready() when ready != null:
+return ready();case BridgeLaneProviderState_NeedsSetup() when needsSetup != null:
+return needsSetup();case BridgeLaneProviderState_Unavailable() when unavailable != null:
+return unavailable();case BridgeLaneProviderState_Other() when other != null:
+return other(_that.raw);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneProviderState_Ready extends BridgeLaneProviderState {
+  const BridgeLaneProviderState_Ready(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneProviderState_Ready);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLaneProviderState.ready()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLaneProviderState_NeedsSetup extends BridgeLaneProviderState {
+  const BridgeLaneProviderState_NeedsSetup(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneProviderState_NeedsSetup);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLaneProviderState.needsSetup()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLaneProviderState_Unavailable extends BridgeLaneProviderState {
+  const BridgeLaneProviderState_Unavailable(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneProviderState_Unavailable);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLaneProviderState.unavailable()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeLaneProviderState_Other extends BridgeLaneProviderState {
+  const BridgeLaneProviderState_Other({required this.raw}): super._();
+  
+
+ final  String raw;
+
+/// Create a copy of BridgeLaneProviderState
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneProviderState_OtherCopyWith<BridgeLaneProviderState_Other> get copyWith => _$BridgeLaneProviderState_OtherCopyWithImpl<BridgeLaneProviderState_Other>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneProviderState_Other&&(identical(other.raw, raw) || other.raw == raw));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,raw);
+
+@override
+String toString() {
+  return 'BridgeLaneProviderState.other(raw: $raw)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneProviderState_OtherCopyWith<$Res> implements $BridgeLaneProviderStateCopyWith<$Res> {
+  factory $BridgeLaneProviderState_OtherCopyWith(BridgeLaneProviderState_Other value, $Res Function(BridgeLaneProviderState_Other) _then) = _$BridgeLaneProviderState_OtherCopyWithImpl;
+@useResult
+$Res call({
+ String raw
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneProviderState_OtherCopyWithImpl<$Res>
+    implements $BridgeLaneProviderState_OtherCopyWith<$Res> {
+  _$BridgeLaneProviderState_OtherCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneProviderState_Other _self;
+  final $Res Function(BridgeLaneProviderState_Other) _then;
+
+/// Create a copy of BridgeLaneProviderState
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? raw = null,}) {
+  return _then(BridgeLaneProviderState_Other(
+raw: null == raw ? _self.raw : raw // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$BridgeLaneSettingChange {
+
+ String get id;
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneSettingChangeCopyWith<BridgeLaneSettingChange> get copyWith => _$BridgeLaneSettingChangeCopyWithImpl<BridgeLaneSettingChange>(this as BridgeLaneSettingChange, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneSettingChange&&(identical(other.id, id) || other.id == id));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id);
+
+@override
+String toString() {
+  return 'BridgeLaneSettingChange(id: $id)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneSettingChangeCopyWith<$Res>  {
+  factory $BridgeLaneSettingChangeCopyWith(BridgeLaneSettingChange value, $Res Function(BridgeLaneSettingChange) _then) = _$BridgeLaneSettingChangeCopyWithImpl;
+@useResult
+$Res call({
+ String id
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneSettingChangeCopyWithImpl<$Res>
+    implements $BridgeLaneSettingChangeCopyWith<$Res> {
+  _$BridgeLaneSettingChangeCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneSettingChange _self;
+  final $Res Function(BridgeLaneSettingChange) _then;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeLaneSettingChange].
+extension BridgeLaneSettingChangePatterns on BridgeLaneSettingChange {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLaneSettingChange_Model value)?  model,TResult Function( BridgeLaneSettingChange_Mode value)?  mode,TResult Function( BridgeLaneSettingChange_Config value)?  config,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model() when model != null:
+return model(_that);case BridgeLaneSettingChange_Mode() when mode != null:
+return mode(_that);case BridgeLaneSettingChange_Config() when config != null:
+return config(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLaneSettingChange_Model value)  model,required TResult Function( BridgeLaneSettingChange_Mode value)  mode,required TResult Function( BridgeLaneSettingChange_Config value)  config,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model():
+return model(_that);case BridgeLaneSettingChange_Mode():
+return mode(_that);case BridgeLaneSettingChange_Config():
+return config(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLaneSettingChange_Model value)?  model,TResult? Function( BridgeLaneSettingChange_Mode value)?  mode,TResult? Function( BridgeLaneSettingChange_Config value)?  config,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model() when model != null:
+return model(_that);case BridgeLaneSettingChange_Mode() when mode != null:
+return mode(_that);case BridgeLaneSettingChange_Config() when config != null:
+return config(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String id)?  model,TResult Function( String id)?  mode,TResult Function( String id,  String value,  String? forModel)?  config,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model() when model != null:
+return model(_that.id);case BridgeLaneSettingChange_Mode() when mode != null:
+return mode(_that.id);case BridgeLaneSettingChange_Config() when config != null:
+return config(_that.id,_that.value,_that.forModel);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String id)  model,required TResult Function( String id)  mode,required TResult Function( String id,  String value,  String? forModel)  config,}) {final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model():
+return model(_that.id);case BridgeLaneSettingChange_Mode():
+return mode(_that.id);case BridgeLaneSettingChange_Config():
+return config(_that.id,_that.value,_that.forModel);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String id)?  model,TResult? Function( String id)?  mode,TResult? Function( String id,  String value,  String? forModel)?  config,}) {final _that = this;
+switch (_that) {
+case BridgeLaneSettingChange_Model() when model != null:
+return model(_that.id);case BridgeLaneSettingChange_Mode() when mode != null:
+return mode(_that.id);case BridgeLaneSettingChange_Config() when config != null:
+return config(_that.id,_that.value,_that.forModel);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneSettingChange_Model extends BridgeLaneSettingChange {
+  const BridgeLaneSettingChange_Model({required this.id}): super._();
+  
+
+@override final  String id;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneSettingChange_ModelCopyWith<BridgeLaneSettingChange_Model> get copyWith => _$BridgeLaneSettingChange_ModelCopyWithImpl<BridgeLaneSettingChange_Model>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneSettingChange_Model&&(identical(other.id, id) || other.id == id));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id);
+
+@override
+String toString() {
+  return 'BridgeLaneSettingChange.model(id: $id)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneSettingChange_ModelCopyWith<$Res> implements $BridgeLaneSettingChangeCopyWith<$Res> {
+  factory $BridgeLaneSettingChange_ModelCopyWith(BridgeLaneSettingChange_Model value, $Res Function(BridgeLaneSettingChange_Model) _then) = _$BridgeLaneSettingChange_ModelCopyWithImpl;
+@override @useResult
+$Res call({
+ String id
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneSettingChange_ModelCopyWithImpl<$Res>
+    implements $BridgeLaneSettingChange_ModelCopyWith<$Res> {
+  _$BridgeLaneSettingChange_ModelCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneSettingChange_Model _self;
+  final $Res Function(BridgeLaneSettingChange_Model) _then;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,}) {
+  return _then(BridgeLaneSettingChange_Model(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneSettingChange_Mode extends BridgeLaneSettingChange {
+  const BridgeLaneSettingChange_Mode({required this.id}): super._();
+  
+
+@override final  String id;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneSettingChange_ModeCopyWith<BridgeLaneSettingChange_Mode> get copyWith => _$BridgeLaneSettingChange_ModeCopyWithImpl<BridgeLaneSettingChange_Mode>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneSettingChange_Mode&&(identical(other.id, id) || other.id == id));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id);
+
+@override
+String toString() {
+  return 'BridgeLaneSettingChange.mode(id: $id)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneSettingChange_ModeCopyWith<$Res> implements $BridgeLaneSettingChangeCopyWith<$Res> {
+  factory $BridgeLaneSettingChange_ModeCopyWith(BridgeLaneSettingChange_Mode value, $Res Function(BridgeLaneSettingChange_Mode) _then) = _$BridgeLaneSettingChange_ModeCopyWithImpl;
+@override @useResult
+$Res call({
+ String id
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneSettingChange_ModeCopyWithImpl<$Res>
+    implements $BridgeLaneSettingChange_ModeCopyWith<$Res> {
+  _$BridgeLaneSettingChange_ModeCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneSettingChange_Mode _self;
+  final $Res Function(BridgeLaneSettingChange_Mode) _then;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,}) {
+  return _then(BridgeLaneSettingChange_Mode(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneSettingChange_Config extends BridgeLaneSettingChange {
+  const BridgeLaneSettingChange_Config({required this.id, required this.value, this.forModel}): super._();
+  
+
+@override final  String id;
+ final  String value;
+ final  String? forModel;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneSettingChange_ConfigCopyWith<BridgeLaneSettingChange_Config> get copyWith => _$BridgeLaneSettingChange_ConfigCopyWithImpl<BridgeLaneSettingChange_Config>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneSettingChange_Config&&(identical(other.id, id) || other.id == id)&&(identical(other.value, value) || other.value == value)&&(identical(other.forModel, forModel) || other.forModel == forModel));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id,value,forModel);
+
+@override
+String toString() {
+  return 'BridgeLaneSettingChange.config(id: $id, value: $value, forModel: $forModel)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneSettingChange_ConfigCopyWith<$Res> implements $BridgeLaneSettingChangeCopyWith<$Res> {
+  factory $BridgeLaneSettingChange_ConfigCopyWith(BridgeLaneSettingChange_Config value, $Res Function(BridgeLaneSettingChange_Config) _then) = _$BridgeLaneSettingChange_ConfigCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String value, String? forModel
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneSettingChange_ConfigCopyWithImpl<$Res>
+    implements $BridgeLaneSettingChange_ConfigCopyWith<$Res> {
+  _$BridgeLaneSettingChange_ConfigCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneSettingChange_Config _self;
+  final $Res Function(BridgeLaneSettingChange_Config) _then;
+
+/// Create a copy of BridgeLaneSettingChange
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? value = null,Object? forModel = freezed,}) {
+  return _then(BridgeLaneSettingChange_Config(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,value: null == value ? _self.value : value // ignore: cast_nullable_to_non_nullable
+as String,forModel: freezed == forModel ? _self.forModel : forModel // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$BridgeSourceOffline {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSourceOfflineCopyWith<$Res>  {
+$BridgeSourceOfflineCopyWith(BridgeSourceOffline _, $Res Function(BridgeSourceOffline) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSourceOffline].
+extension BridgeSourceOfflinePatterns on BridgeSourceOffline {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult Function( BridgeSourceOffline_Failed value)?  failed,TResult Function( BridgeSourceOffline_Other value)?  other,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled() when notInstalled != null:
+return notInstalled(_that);case BridgeSourceOffline_TooOld() when tooOld != null:
+return tooOld(_that);case BridgeSourceOffline_Unreachable() when unreachable != null:
+return unreachable(_that);case BridgeSourceOffline_Failed() when failed != null:
+return failed(_that);case BridgeSourceOffline_Other() when other != null:
+return other(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSourceOffline_NotInstalled value)  notInstalled,required TResult Function( BridgeSourceOffline_TooOld value)  tooOld,required TResult Function( BridgeSourceOffline_Unreachable value)  unreachable,required TResult Function( BridgeSourceOffline_Failed value)  failed,required TResult Function( BridgeSourceOffline_Other value)  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled():
+return notInstalled(_that);case BridgeSourceOffline_TooOld():
+return tooOld(_that);case BridgeSourceOffline_Unreachable():
+return unreachable(_that);case BridgeSourceOffline_Failed():
+return failed(_that);case BridgeSourceOffline_Other():
+return other(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult? Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult? Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult? Function( BridgeSourceOffline_Failed value)?  failed,TResult? Function( BridgeSourceOffline_Other value)?  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled() when notInstalled != null:
+return notInstalled(_that);case BridgeSourceOffline_TooOld() when tooOld != null:
+return tooOld(_that);case BridgeSourceOffline_Unreachable() when unreachable != null:
+return unreachable(_that);case BridgeSourceOffline_Failed() when failed != null:
+return failed(_that);case BridgeSourceOffline_Other() when other != null:
+return other(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  notInstalled,TResult Function()?  tooOld,TResult Function()?  unreachable,TResult Function()?  failed,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled() when notInstalled != null:
+return notInstalled();case BridgeSourceOffline_TooOld() when tooOld != null:
+return tooOld();case BridgeSourceOffline_Unreachable() when unreachable != null:
+return unreachable();case BridgeSourceOffline_Failed() when failed != null:
+return failed();case BridgeSourceOffline_Other() when other != null:
+return other(_that.raw);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  notInstalled,required TResult Function()  tooOld,required TResult Function()  unreachable,required TResult Function()  failed,required TResult Function( String raw)  other,}) {final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled():
+return notInstalled();case BridgeSourceOffline_TooOld():
+return tooOld();case BridgeSourceOffline_Unreachable():
+return unreachable();case BridgeSourceOffline_Failed():
+return failed();case BridgeSourceOffline_Other():
+return other(_that.raw);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  notInstalled,TResult? Function()?  tooOld,TResult? Function()?  unreachable,TResult? Function()?  failed,TResult? Function( String raw)?  other,}) {final _that = this;
+switch (_that) {
+case BridgeSourceOffline_NotInstalled() when notInstalled != null:
+return notInstalled();case BridgeSourceOffline_TooOld() when tooOld != null:
+return tooOld();case BridgeSourceOffline_Unreachable() when unreachable != null:
+return unreachable();case BridgeSourceOffline_Failed() when failed != null:
+return failed();case BridgeSourceOffline_Other() when other != null:
+return other(_that.raw);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSourceOffline_NotInstalled extends BridgeSourceOffline {
+  const BridgeSourceOffline_NotInstalled(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_NotInstalled);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.notInstalled()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSourceOffline_TooOld extends BridgeSourceOffline {
+  const BridgeSourceOffline_TooOld(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_TooOld);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.tooOld()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSourceOffline_Unreachable extends BridgeSourceOffline {
+  const BridgeSourceOffline_Unreachable(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_Unreachable);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.unreachable()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSourceOffline_Failed extends BridgeSourceOffline {
+  const BridgeSourceOffline_Failed(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_Failed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.failed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSourceOffline_Other extends BridgeSourceOffline {
+  const BridgeSourceOffline_Other({required this.raw}): super._();
+  
+
+ final  String raw;
+
+/// Create a copy of BridgeSourceOffline
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSourceOffline_OtherCopyWith<BridgeSourceOffline_Other> get copyWith => _$BridgeSourceOffline_OtherCopyWithImpl<BridgeSourceOffline_Other>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_Other&&(identical(other.raw, raw) || other.raw == raw));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,raw);
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.other(raw: $raw)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSourceOffline_OtherCopyWith<$Res> implements $BridgeSourceOfflineCopyWith<$Res> {
+  factory $BridgeSourceOffline_OtherCopyWith(BridgeSourceOffline_Other value, $Res Function(BridgeSourceOffline_Other) _then) = _$BridgeSourceOffline_OtherCopyWithImpl;
+@useResult
+$Res call({
+ String raw
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSourceOffline_OtherCopyWithImpl<$Res>
+    implements $BridgeSourceOffline_OtherCopyWith<$Res> {
+  _$BridgeSourceOffline_OtherCopyWithImpl(this._self, this._then);
+
+  final BridgeSourceOffline_Other _self;
+  final $Res Function(BridgeSourceOffline_Other) _then;
+
+/// Create a copy of BridgeSourceOffline
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? raw = null,}) {
+  return _then(BridgeSourceOffline_Other(
+raw: null == raw ? _self.raw : raw // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
 // dart format on

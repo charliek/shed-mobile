@@ -101,9 +101,13 @@ void main() {
       await rig.fake.call('hold_seed');
 
       await rig.open(tester);
+      // "Open" is the handle being held — `lane_open` returned, roster GET and
+      // all. Not the capabilities: since plan 025 they ride the SEED (an
+      // opencode seed carries them before its `Ready`), so with the seed
+      // parked there are none yet, and that is asserted below.
       await rig.pumpUntil(
         tester,
-        () => rig.state.capabilities != null,
+        () => rig.controller.isOpen,
         what: 'the lane to open with its seed parked',
       );
       expect(rig.state.generation, BigInt.zero);
@@ -112,6 +116,11 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
         expect(rig.state.rows, isEmpty);
         expect(rig.state.generation, BigInt.zero);
+        expect(
+          rig.state.capabilities,
+          isNull,
+          reason: 'capabilities swap in with the seed, never before its Ready',
+        );
       }
       expect(find.textContaining('reverse proxy'), findsNothing);
 
@@ -122,6 +131,8 @@ void main() {
         what: 'the seed to complete',
       );
       expect(rig.state.generation, BigInt.one);
+      // The seed's capabilities arrived WITH it, in the same swap.
+      expect(rig.state.capabilities?.kind, 'opencode');
       // Both turns at once — one atomic swap, not a user row then an assistant
       // row.
       expect(rig.rowText, contains('describe this project'));

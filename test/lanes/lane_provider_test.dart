@@ -357,17 +357,8 @@ class _FakeSource implements LaneSource {
   @override
   Stream<bool> nudges(LaneHandle handle) => const Stream<bool>.empty();
 
-  @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) =>
-      const BridgeLaneCapabilities(
-        kind: 'opencode',
-        interject: false,
-        create: true,
-        cancel: true,
-        approvals: true,
-        historyCursor: false,
-      );
-
+  /// A seeded opencode lane: its capabilities ride the snapshot, as every
+  /// opencode seed's do (plan 025 §3.2.1).
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) =>
       BridgeLaneSnapshot(
@@ -382,6 +373,16 @@ class _FakeSource implements LaneSource {
         full: true,
         activity: BridgeRcActivity.idle,
         generation: BigInt.one,
+        ended: false,
+        capabilities: const BridgeLaneCapabilities(
+          kind: 'opencode',
+          interject: false,
+          cancel: true,
+          approvals: true,
+          historyCursor: false,
+          settings: false,
+          stop: false,
+        ),
         approvals: const [],
       );
 

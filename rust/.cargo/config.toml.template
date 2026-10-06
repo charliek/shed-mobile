@@ -19,4 +19,4 @@
 shed-core     = { path = "../../shed/crates/shed-core" }
 shed-app      = { path = "../../shed/crates/shed-app" }
 shed-opencode = { path = "../../shed/crates/shed-opencode" }
-shed-gx       = { path = "../../shed/crates/shed-gx" }
+shed-craze    = { path = "../../shed/crates/shed-craze" }

@@ -40,6 +40,9 @@ import '../../lanes/fake_lane_lease.dart';
 ///    interject. Collapsing the two hides a capability or offers a refusal.
 /// 4. **The send MODE is recomputed at send time.** A turn that ended between
 ///    the render and the tap must send `Queue`, whatever the toggle still says.
+/// 5. **Capabilities and the header come from the SNAPSHOT** (plan 025): the
+///    session's capabilities ride the lane's stream — there is no getter to
+///    cache them from at open — and the header reads the live session row.
 void main() {
   group('the composer lifecycle', () {
     testWidgets('a send that lands after the screen is gone touches nothing', (
@@ -527,8 +530,10 @@ void main() {
       // toggle promises a capability that will never light up.
       final rig = _Rig(
         kind: 'opencode',
-        capabilities: _caps(kind: 'opencode', interject: false),
-        snapshot: _snap(activity: BridgeRcActivity.working),
+        snapshot: _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(kind: 'opencode', interject: false),
+        ),
       );
       await _pump(tester, rig);
 
@@ -549,7 +554,7 @@ void main() {
         expect(
           chip,
           findsOneWidget,
-          reason: 'the fixture adapter advertises interject',
+          reason: 'the fixture session advertises interject — in its SNAPSHOT',
         );
         expect(
           tester.widget<FilterChip>(chip).onSelected,
@@ -617,10 +622,62 @@ void main() {
       // The activity chip, in the shared activity colours.
       expect(find.byKey(const ValueKey('lane-activity')), findsOneWidget);
       expect(find.text('idle'), findsOneWidget);
-      // The row's own name is the title — a lane's snapshot carries no session
-      // title at all (the fold projects only `activity`).
+      // No live session row yet, so the row's own name is the title.
       expect(find.text('row7'), findsOneWidget);
       expect(find.text('7'), findsOneWidget);
+    });
+
+    testWidgets('the header reads the LIVE session row — its title and its '
+        'permission posture', (tester) async {
+      // Plan 025 §3.6.5: the row the lane was opened from is whatever the
+      // machine listed at that instant; the stream's row is the session's
+      // current state. A sheet-created craze session runs `bypass`, and the
+      // header is where that consequence is visible.
+      final rig = _Rig(snapshot: _snap());
+      await _pump(tester, rig);
+      // Before a seed carries a row: the machine feed's name, no posture.
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'row7',
+      );
+      expect(find.byKey(const ValueKey('lane-permission')), findsNothing);
+
+      rig.bump(
+        _snap(
+          session: _session(
+            title: 'fix the flaky test',
+            permissionMode: 'bypass',
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'fix the flaky test',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-permission'))).data,
+        'runs tools without asking',
+      );
+
+      // The live row is the newer truth about what it does NOT say, too: a
+      // row with no posture takes the line away, and one with no title falls
+      // back to the row's name rather than an empty subtitle.
+      rig.bump(_snap(session: _session(title: '')));
+      await _settle(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'row7',
+      );
+      expect(find.byKey(const ValueKey('lane-permission')), findsNothing);
+    });
+
+    test('the permission line speaks the desktop\'s words', () {
+      expect(lanePermissionLine('bypass'), 'runs tools without asking');
+      expect(lanePermissionLine('prompt'), 'asks before running tools');
+      expect(lanePermissionLine('auto-edits'), 'permissions: auto-edits');
+      expect(lanePermissionLine('  '), isNull);
+      expect(lanePermissionLine(null), isNull);
     });
 
     testWidgets('a stale lane names the reason, and a dead one says so', (
@@ -634,6 +691,7 @@ void main() {
         snapshot: _snap(
           rows: [_row(1, 'assistant', 'last thing I said')],
           stale: 'down: unknown_session',
+          ended: true,
         ),
       );
       await _pump(tester, rig);
@@ -725,20 +783,50 @@ BridgeRcFeedMessage _row(int seq, String role, String text) =>
       text: text,
     );
 
+/// The fixture session's capabilities: interject-capable, so the interject
+/// cells have something to gate on. They ride the snapshot, as a real seed's
+/// do — an explicit `capabilities: null` is "no seed yet".
+const _fixtureCaps = BridgeLaneCapabilities(
+  kind: 'opencode',
+  interject: true,
+  cancel: true,
+  approvals: true,
+  historyCursor: true,
+  settings: false,
+  stop: false,
+);
+
 BridgeLaneSnapshot _snap({
   List<BridgeRcFeedMessage> rows = const [],
   BridgeRcActivity activity = BridgeRcActivity.idle,
   List<BridgeLaneApproval> approvals = const [],
   String? stale,
+  bool ended = false,
+  BridgeLaneSession? session,
+  BridgeLaneCapabilities? capabilities = _fixtureCaps,
   int generation = 1,
 }) => BridgeLaneSnapshot(
   messages: rows,
   full: true,
   activity: activity,
+  session: session,
   generation: BigInt.from(generation),
   stale: stale,
+  ended: ended,
+  capabilities: capabilities,
   approvals: approvals,
 );
+
+BridgeLaneSession _session({required String title, String? permissionMode}) =>
+    BridgeLaneSession(
+      id: 'sess-7',
+      title: title,
+      cwd: '/home/shed/proj',
+      activity: BridgeRcActivity.idle,
+      pendingApprovals: 0,
+      approximate: false,
+      permissionMode: permissionMode,
+    );
 
 BridgeLaneApproval _approval({
   required BridgeLaneApprovalKind kind,
@@ -764,23 +852,18 @@ BridgeLaneCapabilities _caps({
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
-  create: true,
   cancel: true,
   approvals: true,
   historyCursor: true,
+  settings: false,
+  stop: false,
 );
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
-  _Rig({
-    BridgeLaneSnapshot? snapshot,
-    BridgeLaneCapabilities? capabilities,
-    String kind = 'opencode',
-  }) : source = _FakeSource(
-         current: snapshot ?? _snap(),
-         caps: capabilities ?? _caps(),
-       ),
-       feed = _FakeFeed(kind: kind);
+  _Rig({BridgeLaneSnapshot? snapshot, String kind = 'opencode'})
+    : source = _FakeSource(current: snapshot ?? _snap()),
+      feed = _FakeFeed(kind: kind);
 
   final _FakeSource source;
   final _FakeFeed feed;
@@ -791,12 +874,12 @@ class _Rig {
 }
 
 class _FakeSource implements LaneSource {
-  _FakeSource({required this.current, required this.caps});
+  _FakeSource({required this.current});
 
-  /// What the next `snapshot()` will answer with. `current`, not `snapshot` —
-  /// that name is a method on [LaneSource].
+  /// What the next `snapshot()` will answer with — the session's capabilities
+  /// included, since that is where they ride. `current`, not `snapshot` — that
+  /// name is a method on [LaneSource].
   BridgeLaneSnapshot current;
-  final BridgeLaneCapabilities caps;
   final _nudges = StreamController<bool>.broadcast();
 
   final specs = <BridgeLaneSpec>[];
@@ -826,9 +909,6 @@ class _FakeSource implements LaneSource {
 
   @override
   Stream<bool> nudges(LaneHandle handle) => _nudges.stream;
-
-  @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) => caps;
 
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) => current;

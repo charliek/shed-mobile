@@ -2,12 +2,38 @@ import '../core/app_error.dart';
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
 
+/// The three facts a lane's snapshot carries about the SESSION rather than its
+/// transcript — its live row, its capabilities and its settings — as one value.
+///
+/// One value because they are replaced TOGETHER, verbatim, from one snapshot
+/// and never merged field by field: the live view is the newer truth,
+/// including about what it does not say, so a null in it (no seed yet, a
+/// session with no settings) must land as a null rather than leave the
+/// previous value showing.
+typedef LaneLive = ({
+  BridgeLaneSession? session,
+  BridgeLaneCapabilities? capabilities,
+  BridgeLaneSettings? settings,
+});
+
+/// Nothing known about the session yet — what a fresh lane, or a lane re-opened
+/// against a new stamp, holds until its first seed lands.
+const LaneLive laneLiveUnknown = (
+  session: null,
+  capabilities: null,
+  settings: null,
+);
+
 /// **One agent lane, as a screen renders it** (plan 018 §3.11).
 ///
-/// A projection of the bridge's [BridgeLaneSnapshot] plus the four things Dart
-/// itself knows: the adapter's capabilities (read once at open), the error a
-/// verb was refused with, whether a re-open is pending, and whether this lane
-/// has been given up on.
+/// A projection of the bridge's [BridgeLaneSnapshot] plus the three things Dart
+/// itself knows: the error a verb was refused with, whether a re-open is
+/// pending, and whether this lane has been given up on.
+///
+/// The session's capabilities, settings and live row are the SNAPSHOT's, not
+/// something read once at open (plan 025 §3.2.1): they ride the lane's stream
+/// and a craze session's change with its incarnation, so a copy taken at open
+/// would be stale by construction.
 ///
 /// **Nothing here is folded.** The transcript, the approval set and the
 /// activity are Rust's fold (`shed_app::lane_view`), taken whole under one lock
@@ -20,8 +46,11 @@ class LaneState {
     this.activity = BridgeRcActivity.unknown,
     BigInt? generation,
     this.stale,
+    this.ended = false,
     this.approvals = const [],
+    this.session,
     this.capabilities,
+    this.settings,
     this.error,
     this.approvalErrors = const {},
     this.composerError,
@@ -46,18 +75,36 @@ class LaneState {
   /// being built".
   final BigInt generation;
 
-  /// Why the transport is gone, when it is. These rows are then the last
-  /// complete generation, and the controller is re-opening (see [retrying]).
+  /// The banner: why the stream behind these rows is not live, when it is not.
+  /// These rows are then the last complete generation. **Not a lifecycle
+  /// fact** — an adapter resuming from its cursor sets it and clears it again
+  /// with the lane never ending, so nothing re-opens on it (see [ended]).
   final String? stale;
+
+  /// The lifecycle: the lane's subscription ENDED (a `Down`), and the
+  /// controller is re-opening it (see [retrying]) or has given up (see
+  /// [abandoned]). The one fact a re-open is keyed on (plan 025 §3.2.4).
+  final bool ended;
 
   /// The asks still waiting on the human, oldest first. Pending only — Rust
   /// applies `lane_status_is_pending`, so a client never has to.
   final List<BridgeLaneApproval> approvals;
 
-  /// What this adapter can do. Null until the lane is open; read ONCE at open
-  /// (the contract states these are static for the adapter's life), so an
-  /// unwinding panel keeps its buttons rather than watching them vanish.
+  /// The session's row as the live stream last said it — its title, its
+  /// permission posture — or null until a seed carrying one has completed.
+  /// **This, not the row the lane was opened from, is the session's current
+  /// state** (plan 025 §3.6.5): a header reads its facts from here once it is
+  /// non-null.
+  final BridgeLaneSession? session;
+
+  /// What this SESSION can do, as of the live generation — null until a seed
+  /// carrying them has completed. From the snapshot, never cached at open: a
+  /// panel gates every affordance on this.
   final BridgeLaneCapabilities? capabilities;
+
+  /// The session's settings, as of the live generation; null when it has none
+  /// to show (its capabilities say `settings: false`).
+  final BridgeLaneSettings? settings;
 
   /// A lane-level failure: the open was refused. Distinct from the two inline
   /// errors below, which belong to one control.
@@ -88,8 +135,9 @@ class LaneState {
     BridgeRcActivity? activity,
     BigInt? generation,
     String? stale,
+    bool? ended,
     List<BridgeLaneApproval>? approvals,
-    BridgeLaneCapabilities? capabilities,
+    LaneLive? live,
     AppError? error,
     Map<String, AppError>? approvalErrors,
     AppError? composerError,
@@ -103,8 +151,11 @@ class LaneState {
     activity: activity ?? this.activity,
     generation: generation ?? this.generation,
     stale: clearStale ? null : (stale ?? this.stale),
+    ended: ended ?? this.ended,
     approvals: approvals ?? this.approvals,
-    capabilities: capabilities ?? this.capabilities,
+    session: live == null ? session : live.session,
+    capabilities: live == null ? capabilities : live.capabilities,
+    settings: live == null ? settings : live.settings,
     error: clearError ? null : (error ?? this.error),
     approvalErrors: approvalErrors ?? this.approvalErrors,
     composerError: clearComposerError

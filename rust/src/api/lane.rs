@@ -30,7 +30,10 @@
 //!   view. A `bool` nudge cannot queue anything.
 //! * **Rust owns reconnection.** [`spawn_pump`] carries the desktop's whole
 //!   resubscribe ladder. Dart's only lifecycle job is re-opening after a
-//!   terminal `Down` (§3.11), and it re-opens only on `stale`.
+//!   terminal `Down` (§3.11), and it re-opens only on the snapshot's `ended` —
+//!   never on `stale`, which an adapter's silent resume sets and clears again
+//!   without the lane ever ending (plan 025 §3.2.4). Re-opening there would
+//!   throw away the cursor the resume is using.
 //!
 //! # The snapshot IS the nudge acknowledgement
 //!
@@ -67,15 +70,13 @@ use std::time::Duration;
 
 use flutter_rust_bridge::frb;
 use shed_app::lane_view::LaneView;
-use shed_core::lane::{AgentLane, LaneError, LaneEvent};
-use shed_opencode::OpencodeClient;
+use shed_core::lane::{AgentLane, AgentSource, LaneError, LaneEvent};
+use shed_opencode::OpencodeSource;
 
 use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_LANES, ACTIVE_LANE_FORWARDERS};
-use super::dto_lane::{
-    BridgeLaneAnswer, BridgeLaneCapabilities, BridgeLaneError, BridgeLaneSnapshot, BridgeSendMode,
-};
+use super::dto_lane::{BridgeLaneAnswer, BridgeLaneError, BridgeLaneSnapshot, BridgeSendMode};
 
 /// The `agent_lane` kinds THIS BUILD has an adapter for.
 ///
@@ -86,7 +87,7 @@ use super::dto_lane::{
 /// yields a `gx` stamp, and an unfiltered DTO conversion let a tap acquire a
 /// forward and open a `LaneScreen` that `lane_open` would then refuse). The
 /// `match` in [`build_client`] is deliberately not a fourth — that is where a
-/// kind binds to a constructor, the one place a concrete client type may be
+/// kind binds to a constructor, the one place a concrete adapter type may be
 /// named.
 pub(crate) const LANE_KINDS: [&str; 1] = ["opencode"];
 
@@ -177,12 +178,14 @@ struct LaneInner {
     /// The forwarder's wakeup. `notify_one` stores a permit when nobody is
     /// waiting, so a nudge raised before [`lane_nudges`] is not lost.
     wake: tokio::sync::Notify,
-    /// The agent session id every verb addresses.
+    /// The agent session id the lane is bound to — the adapter holds the same
+    /// id (`AgentLane::session_id`); this copy names it in a refusal.
+    ///
+    /// There is no cached capabilities field beside it any more (plan 025
+    /// §3.2.1): capabilities are per session and ride the stream, so the view
+    /// holds them and [`lane_snapshot`] projects them. A copy taken at open is
+    /// stale by construction before the first seed.
     session_id: String,
-    /// Cached at open. The contract states capabilities are static for the life
-    /// of the adapter and invites a client to cache them, and caching is what
-    /// lets [`lane_capabilities`] stay `sync` and keep answering after a close.
-    capabilities: BridgeLaneCapabilities,
 }
 
 /// One open agent lane: the adapter, the fold, the pump and the nudge
@@ -220,8 +223,17 @@ impl LaneInner {
         }
     }
 
-    /// Record a transport-level failure as the same stale-with-a-reason state a
-    /// [`LaneEvent::Down`] produces — the desktop's `note_down`.
+    /// Record a failure THIS layer saw — a `subscribe` that was refused before
+    /// any stream existed — as a [`LaneEvent::Down`]: stale with a reason, and
+    /// ENDED.
+    ///
+    /// Ended, not merely stale (the desktop says `Stale` here, and the phone
+    /// deliberately does not): on the phone it is Dart's re-open that
+    /// re-acquires a forward the machine's feed may have lost underneath this
+    /// lane, so a failure before the stream is what Dart must hear as "re-open
+    /// me". The pump keeps its own ladder going meanwhile, and Dart's re-open
+    /// supersedes it. An ADAPTER's `Stale` — a transport loss it is resuming
+    /// across with its cursor intact — is folded as it stands and ends nothing.
     ///
     /// The panel must not care whether the thing that went away was the agent or
     /// the reach to it: both mean "this transcript is not live", and both are
@@ -275,12 +287,13 @@ fn teardown(inner: &Arc<LaneInner>) {
 /// row, and start the pump.
 ///
 /// **Dispatch is the desktop `Lanes::open`'s, arm for arm**: `"opencode"` →
-/// [`OpencodeClient`] on the dial URL with no credential source (opencode needs
-/// none — a password-protected server answers 401, which surfaces as
-/// [`BridgeLaneError::Unauthorized`] and a status-only panel); anything else →
-/// [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a kind with
-/// no adapter is a permanent property of the row and there is no reason to
-/// spend a round trip discovering it.
+/// an [`OpencodeSource`] on the dial URL with no credential source (opencode
+/// needs none — a password-protected server answers 401, which surfaces as
+/// [`BridgeLaneError::Unauthorized`] and a status-only panel), and the
+/// session-scoped lane it opens for the row's id (plan 025 §3.2.6); anything
+/// else → [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a
+/// kind with no adapter is a permanent property of the row and there is no
+/// reason to spend a round trip discovering it.
 ///
 /// The roster row is fetched BEFORE the subscription starts, for the desktop's
 /// reason: a 404 here is an honest `unknown_session` the caller can render,
@@ -300,18 +313,12 @@ pub async fn lane_open(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneErr
 }
 
 async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError> {
-    let client = build_client(&spec)?;
+    let client = build_client(&spec).await?;
     // The roster GET: it is also the call that fails on a password-protected
     // agent, so a 404 here is an honest `unknown_session` the caller can
-    // render before the pump ever starts.
-    client
-        .session(&spec.session_id)
-        .await
-        .map_err(BridgeLaneError::from)?;
-    // Read once, here, rather than on every `lane_capabilities` call: the
-    // contract states these are static for the life of the adapter and invites
-    // a client to cache them.
-    let capabilities: BridgeLaneCapabilities = client.capabilities().into();
+    // render before the pump ever starts. (Opening the lane above was binding,
+    // not dialling — this is the first I/O.)
+    client.session().await.map_err(BridgeLaneError::from)?;
 
     let inner = Arc::new(LaneInner {
         state: Mutex::new(LaneState {
@@ -327,7 +334,6 @@ async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError>
         }),
         wake: tokio::sync::Notify::new(),
         session_id: spec.session_id.clone(),
-        capabilities,
     });
 
     // Counted only once the lane exists and will be handed back. Every failure
@@ -341,7 +347,13 @@ async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError>
 
 /// **The one place this module names a concrete adapter.** Everything after it
 /// is written against `dyn AgentLane`.
-fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, BridgeLaneError> {
+///
+/// Through the adapter's SOURCE, the contract's two levels (plan 025 §3.2.1):
+/// the source is built on the dial URL and `open`s the session-scoped lane for
+/// the row's id — binding, not dialling, so nothing here touches the network.
+/// The source is dropped once it has opened the lane; the lane holds the
+/// transport it shares with it.
+async fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, BridgeLaneError> {
     match spec.kind.as_str() {
         "opencode" => {
             let url =
@@ -351,8 +363,11 @@ fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, BridgeLaneE
                         spec.dial_url
                     ),
                 })?;
-            let client = OpencodeClient::new(url, None).map_err(BridgeLaneError::from)?;
-            Ok(Arc::new(client))
+            let source = OpencodeSource::new(url, None).map_err(BridgeLaneError::from)?;
+            source
+                .open(&spec.session_id)
+                .await
+                .map_err(BridgeLaneError::from)
         }
         // Unreachable: `lane_open`'s guard ran before anything was built.
         // Restated rather than `unreachable!()` so that adding a kind to one
@@ -379,10 +394,9 @@ fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, BridgeLaneE
 /// two constants, ending on the same one terminal reason.
 fn spawn_pump(inner: Arc<LaneInner>, client: Arc<dyn AgentLane>) -> tokio::task::JoinHandle<()> {
     bridge_rt().spawn(async move {
-        let session_id = inner.session_id.clone();
         let mut backoff = RESUBSCRIBE_BASE;
         loop {
-            let subscription = match client.subscribe(&session_id, None).await {
+            let subscription = match client.subscribe(None).await {
                 Ok(subscription) => subscription,
                 // The session is gone for good. Anything else is worth
                 // retrying — the agent may simply be restarting.
@@ -409,11 +423,14 @@ fn spawn_pump(inner: Arc<LaneInner>, client: Arc<dyn AgentLane>) -> tokio::task:
                     // transport is healthy again.
                     LaneEvent::Ready { .. } => backoff = RESUBSCRIBE_BASE,
                     LaneEvent::Down { reason } => down = Some(reason.clone()),
+                    // An adapter's `Stale` is it retrying on its own, cursor
+                    // intact: keep reading. Folded into the view (the banner)
+                    // like any other frame, and that is all — it ends nothing.
                     _ => {}
                 }
                 // The fold and the nudge, in that order and under one lock. The
-                // terminal `Down` above therefore ALSO marks the view stale and
-                // raises the last nudge — which is what lets Dart tell "stale,
+                // terminal `Down` above therefore ALSO marks the view ended and
+                // raises the last nudge — which is what lets Dart tell "ended,
                 // re-open me" from "closed by me".
                 inner.apply(&event);
             }
@@ -457,8 +474,8 @@ type NudgeResult = Result<(), ()>;
 ///
 /// Dart gets a `true` and nothing else — the payload is "something changed, take
 /// a snapshot". The stream stays open until [`lane_close`], INCLUDING after a
-/// terminal `Down`: that is how Dart distinguishes "stale, re-open me" (the
-/// snapshot says `stale`) from "closed by me" (it called `lane_close`). A stream
+/// terminal `Down`: that is how Dart distinguishes "ended, re-open me" (the
+/// snapshot says `ended`) from "closed by me" (it called `lane_close`). A stream
 /// that ended on `Down` would make those two indistinguishable.
 pub fn lane_nudges(lane: &BridgeLane, sink: StreamSink<bool>) {
     spawn_forwarder(&lane.inner, move || sink.add(true).map_err(|_| ()));
@@ -520,17 +537,15 @@ async fn forward_loop(inner: Arc<LaneInner>, push: impl Fn() -> NudgeResult) {
 // reads
 // ---------------------------------------------------------------------------
 
-/// What this lane's adapter can do. Cached at open (the contract states these
-/// are static for the life of the adapter), so it is a lock-free read that keeps
-/// answering after [`lane_close`] — a panel unwinding does not need its buttons
-/// to start throwing.
-#[frb(sync)]
-pub fn lane_capabilities(lane: &BridgeLane) -> BridgeLaneCapabilities {
-    lane.inner.capabilities.clone()
-}
-
 /// **The one read**, and the nudge acknowledgement: the staged view projected
-/// and the pending approvals — under ONE lock — and the dirty bit cleared.
+/// — the transcript, the pending approvals, and the session's live row,
+/// capabilities and settings — under ONE lock, and the dirty bit cleared.
+///
+/// It is also where a panel reads what the session can do. There is no
+/// `lane_capabilities` getter (plan 025 §3.2.1): capabilities are per session
+/// and ride the stream, so a getter cached at open would be stale by
+/// construction before the first seed. A closed lane still projects its last
+/// view, capabilities included, so a panel unwinding keeps its buttons.
 ///
 /// `since_seq` is `None` for everything (`full: true`) and `Some(s)` for the
 /// rows after `s`. The cursor is honored only when it lands inside the current
@@ -557,19 +572,18 @@ pub fn lane_snapshot(lane: &BridgeLane, since_seq: Option<u64>) -> BridgeLaneSna
 // writes
 // ---------------------------------------------------------------------------
 
-/// Send `text` to the session. [`BridgeSendMode::Interject`] needs
-/// [`BridgeLaneCapabilities::interject`]; an adapter that cannot do it answers
-/// [`BridgeLaneError::NotAccepting`].
+/// Send `text` to the session. [`BridgeSendMode::Interject`] needs the
+/// snapshot's [`super::dto_lane::BridgeLaneCapabilities::interject`]; an adapter
+/// that cannot do it answers [`BridgeLaneError::NotAccepting`].
 pub async fn lane_send(
     lane: &BridgeLane,
     text: String,
     mode: BridgeSendMode,
 ) -> Result<(), BridgeLaneError> {
     let client = lane.inner.client()?;
-    let session_id = lane.inner.session_id.clone();
     on_bridge_rt(async move {
         client
-            .send(&session_id, &text, mode.into())
+            .send(&text, mode.into())
             .await
             .map_err(BridgeLaneError::from)
     })
@@ -585,14 +599,7 @@ pub async fn lane_send(
 /// turn ended between the render and the tap).
 pub async fn lane_cancel(lane: &BridgeLane) -> Result<(), BridgeLaneError> {
     let client = lane.inner.client()?;
-    let session_id = lane.inner.session_id.clone();
-    on_bridge_rt(async move {
-        client
-            .cancel(&session_id)
-            .await
-            .map_err(BridgeLaneError::from)
-    })
-    .await
+    on_bridge_rt(async move { client.cancel().await.map_err(BridgeLaneError::from) }).await
 }
 
 /// Answer one approval.
@@ -612,10 +619,9 @@ pub async fn lane_answer(
     answer: BridgeLaneAnswer,
 ) -> Result<(), BridgeLaneError> {
     let client = lane.inner.client()?;
-    let session_id = lane.inner.session_id.clone();
     on_bridge_rt(async move {
         client
-            .answer(&session_id, &approval_id, answer.into())
+            .answer(&approval_id, answer.into())
             .await
             .map_err(BridgeLaneError::from)
     })
@@ -665,20 +671,10 @@ mod tests {
     use shed_core::rc::RcFeedMessage;
     use shed_opencode::testing::FakeOpencode;
 
+    use shed_core::lane::LaneCapabilities;
+
     use crate::api::bridge_rt::live_counters;
     use crate::api::testsupport::{test_guard, wait_until};
-
-    /// A capabilities row for a lane with no adapter behind it.
-    fn bare_capabilities(kind: &str) -> BridgeLaneCapabilities {
-        BridgeLaneCapabilities {
-            kind: kind.to_string(),
-            interject: false,
-            create: false,
-            cancel: false,
-            approvals: false,
-            history_cursor: false,
-        }
-    }
 
     /// A lane with **no adapter and no pump** — the shape the view, nudge and
     /// teardown tests want.
@@ -701,7 +697,6 @@ mod tests {
             }),
             wake: tokio::sync::Notify::new(),
             session_id: "ses_test".to_string(),
-            capabilities: bare_capabilities("test"),
         });
         ACTIVE_LANES.fetch_add(1, Ordering::SeqCst);
         BridgeLane { inner }
@@ -814,9 +809,9 @@ mod tests {
         assert_eq!(live_counters().active_lanes, 0);
     }
 
-    /// The opencode arm, end to end against the real adapter: dispatch, the
-    /// roster GET, the cached capabilities, and a teardown that returns every
-    /// counter.
+    /// The opencode arm, end to end against the real adapter: dispatch through
+    /// `OpencodeSource`, the roster GET, the capabilities the SEED carries, and
+    /// a teardown that returns every counter.
     #[tokio::test]
     async fn an_opencode_lane_dispatches_and_tears_down() {
         let _g = test_guard();
@@ -833,11 +828,26 @@ mod tests {
         .await
         .expect("the opencode lane opens");
 
-        let caps = lane_capabilities(&lane);
+        // From the snapshot, once the seed has swapped in — there is no getter
+        // to read them from at open (plan 025 §3.2.1).
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None)
+                .capabilities
+                .is_some())
+            .await,
+            "the seed never carried the session's capabilities into the view"
+        );
+        let caps = lane_snapshot(&lane, None)
+            .capabilities
+            .expect("seeded capabilities");
         assert_eq!(caps.kind, "opencode");
         assert!(!caps.interject, "opencode cannot interject");
         assert!(!caps.history_cursor, "opencode has no history cursor");
-        assert!(caps.approvals && caps.cancel && caps.create);
+        assert!(caps.approvals && caps.cancel);
+        assert!(
+            !caps.settings && !caps.stop,
+            "opencode has no settings and cannot be stopped from here"
+        );
         assert_eq!(live_counters().active_lanes, 1);
 
         lane_close(&lane);
@@ -849,9 +859,13 @@ mod tests {
         lane_close(&lane);
         assert_eq!(live_counters().active_lanes, 0);
         // A closed lane still projects — a panel unwinding does not need its
-        // reads to start throwing — and still answers for its capabilities.
-        assert!(lane_snapshot(&lane, None).messages.is_empty());
-        assert_eq!(lane_capabilities(&lane).kind, "opencode");
+        // reads to start throwing — capabilities included.
+        let closed = lane_snapshot(&lane, None);
+        assert!(closed.messages.is_empty());
+        assert_eq!(
+            closed.capabilities.map(|c| c.kind).as_deref(),
+            Some("opencode")
+        );
     }
 
     /// The pump, the fold and the nudge, end to end against the real adapter:
@@ -893,8 +907,8 @@ mod tests {
     }
 
     /// **The terminal `Down`**: the pump ends, the view is marked stale with the
-    /// reason, and the NUDGE STREAM STAYS OPEN — which is the whole of how Dart
-    /// tells "stale, re-open me" from "closed by me".
+    /// reason AND ended, and the NUDGE STREAM STAYS OPEN — which is the whole of
+    /// how Dart tells "ended, re-open me" from "closed by me".
     #[tokio::test]
     async fn a_deleted_session_ends_the_pump_stale_but_leaves_the_stream_open() {
         let _g = test_guard();
@@ -929,6 +943,10 @@ mod tests {
             lane_snapshot(&lane, None).stale.as_deref(),
             Some(DOWN_UNKNOWN_SESSION),
             "the terminal reason is the adapter's own, not a paraphrase"
+        );
+        assert!(
+            lane_snapshot(&lane, None).ended,
+            "a terminal Down ENDS the lane — the one thing Dart re-opens on"
         );
         // Awaited for the reason above: the push lands on `bridge_rt`, not on
         // this thread.
@@ -1007,6 +1025,80 @@ mod tests {
 
         lane_close(&lane);
         assert_eq!(live_counters().active_lane_forwarders, 0);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// **A `Stale` is a banner, not an end** (plan 025 §3.2.4) — through the
+    /// bridge's own snapshot, which is what Dart's re-open rule reads.
+    ///
+    /// An adapter that can resume (craze) emits `Stale` when its transport
+    /// drops and a lone `Ready` of the same generation once it has resumed from
+    /// its cursor. The snapshot must say `stale` for the banner and NOT
+    /// `ended`, or the controller would tear the lane down and re-open it —
+    /// throwing away the very cursor the resume is using. The `Down` at the end
+    /// is the control: the same snapshot field does go true for a real end.
+    #[test]
+    fn a_stale_frame_is_a_banner_and_only_a_down_ends_the_lane() {
+        let _g = test_guard();
+        let lane = bare_lane();
+        let caps = LaneCapabilities {
+            kind: "craze".to_string(),
+            interject: true,
+            cancel: true,
+            approvals: true,
+            history_cursor: true,
+            settings: false,
+            stop: true,
+        };
+        lane.inner.apply(&LaneEvent::Reset {
+            reason: "connect".to_string(),
+            generation: 1,
+        });
+        lane.inner.apply(&message(1));
+        lane.inner.apply(&LaneEvent::Capabilities {
+            capabilities: caps.clone(),
+        });
+        lane.inner.apply(&LaneEvent::Ready { generation: 1 });
+        let live = lane_snapshot(&lane, None);
+        assert_eq!(live.stale, None);
+        assert!(!live.ended);
+        assert_eq!(live.capabilities, Some(caps.clone().into()));
+
+        lane.inner.apply(&LaneEvent::Stale {
+            reason: "hub connection lost".to_string(),
+        });
+        let resuming = lane_snapshot(&lane, None);
+        assert_eq!(resuming.stale.as_deref(), Some("hub connection lost"));
+        assert!(
+            !resuming.ended,
+            "a Stale must not read as ended — Dart would re-open and lose the cursor"
+        );
+        assert_eq!(resuming.messages.len(), 1, "the rows stay on screen");
+        assert_eq!(
+            resuming.capabilities,
+            Some(caps.into()),
+            "and so do the capabilities"
+        );
+
+        // The silent resume's end: a lone Ready of the SAME generation.
+        lane.inner.apply(&LaneEvent::Ready { generation: 1 });
+        let resumed = lane_snapshot(&lane, None);
+        assert_eq!(
+            resumed.stale, None,
+            "a lone same-generation Ready clears it"
+        );
+        assert!(!resumed.ended);
+        assert_eq!(resumed.generation, live.generation, "no reseed happened");
+
+        // The control: a terminal Down does end it.
+        lane.inner.apply(&LaneEvent::Down {
+            reason: "session_closed".to_string(),
+        });
+        let down = lane_snapshot(&lane, None);
+        assert!(down.ended);
+        assert_eq!(down.stale.as_deref(), Some("session_closed"));
+
+        lane_close(&lane);
         assert_eq!(live_counters().active_lanes, 0);
     }
 

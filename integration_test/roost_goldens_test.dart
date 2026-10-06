@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:shed_mobile/features/create/create_rc_target.dart';
 import 'package:shed_mobile/rc/rc_ui.dart';
 import 'package:shed_mobile/src/rust/api/roost.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
@@ -21,7 +22,7 @@ import 'package:shed_mobile/ssh/roost_reach.dart';
 /// | golden | what Dart asserts it against |
 /// |---|---|
 /// | `bootstrap/exec-chain-command.txt` | `roostRemoteCommand()`, the string the tunnel hands `execute` verbatim |
-/// | `agent-table.json` | `roostCapabilities().kinds`, the kinds a create form offers for a machine |
+/// | `agent-table.json` | `roostCapabilities().kinds`, the ROOST-BACKED launch kinds — not the create form's full set (plan 025 P4) |
 /// | `stderr-classes.json` | `classifySshFailure` + `reachKindFor`, Dart's port of roost's classifier and shed's reach mapping |
 ///
 /// **These cells live here and not in `test/`** because `$SHED_CHECKOUT` is
@@ -96,17 +97,27 @@ void main() {
     );
   });
 
-  testWidgets('the kinds a machine offers are the agent table\'s', (_) async {
+  testWidgets('the kinds roost can launch are the agent table\'s', (_) async {
+    // **Re-scoped in plan 025 (P4), not just re-pinned.** The golden is the
+    // `shed roost-provider` palette: what a ROOST TAB can start. It used to
+    // equal the machine create form's kinds too, and this cell asserted the
+    // two as one; plan 025's create form also offers craze — a session the
+    // machine's craze source creates, never a roost tab — so the form's set is
+    // pinned separately below and THIS cell compares the golden with the
+    // roost-backed launch kinds alone.
+    //
     // Compared as SETS, never as sequences: the golden is in the PROVIDER's
-    // display order while `roost_capabilities` orders cursor and opencode the
-    // other way round. One is a menu a human reads and the other is a
-    // capabilities advertisement whose order means nothing — so the thing worth
-    // asserting is that neither list gained or lost a kind.
+    // display order, and `roost_capabilities` is a capabilities advertisement
+    // whose order means nothing — so the thing worth asserting is that neither
+    // list gained or lost a kind.
     final agents = _rows(_readJson('agent-table.json'), 'agents');
     final table = agents.map((row) => row['kind']! as String).toSet();
-    final offered = roostCapabilities().kinds.map((k) => k.wire).toSet();
+    final roostBacked = roostCapabilities().kinds.map((k) => k.wire).toSet();
 
-    expect(offered, table);
+    expect(roostBacked, table);
+    // The palette's two kinds by name, so a golden and a core that moved in
+    // lockstep to some other set still fail here rather than agreeing.
+    expect(table, {'claude-rc', 'opencode'});
 
     // Every kind the table names is one this app KNOWS — an unrecognized wire
     // kind renders neutrally and offers nothing, so a machine whose agents all
@@ -114,6 +125,22 @@ void main() {
     for (final kind in roostCapabilities().kinds) {
       expect(kind.known, isTrue, reason: '${kind.wire} is an unknown kind');
     }
+  });
+
+  testWidgets('the machine create form offers its own full set', (_) async {
+    // The form's set, pinned on its own (plan 025 P4): what `CreateRcScreen`
+    // offers on a reachable machine, through the same reduction it renders —
+    // `presentCapsView` over the capabilities a machine feed carries
+    // (`roostCapabilities()`, synthesized, never probed).
+    //
+    // P4's full set is claude-rc, opencode AND craze. The create screen offers
+    // craze from CM4; until then this pins what it offers today.
+    // CM4 adds craze: this set becomes {'claude-rc', 'opencode', 'craze'}.
+    final form = presentCapsView(
+      roostCapabilities(),
+    ).offered.map((k) => k.wire).toSet();
+
+    expect(form, {'claude-rc', 'opencode'});
   });
 
   testWidgets('a failed exec classifies the way roost classifies it', (

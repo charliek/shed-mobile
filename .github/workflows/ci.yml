@@ -65,10 +65,10 @@ jobs:
       # and the ssh-agent the private dep needs. A separate job would pay all
       # three again.
       #
-      # It drives the real FRB bridge against shed's OWN gx/opencode fakes
+      # It drives the real FRB bridge against shed's OWN opencode fake
       # (`desktop/tools/shedtest/fake_lane_server.py`), so it needs a shed
-      # checkout — at the EXACT rev rust/Cargo.toml pins, because the fakes and
-      # the adapters they were recorded from are one tree.
+      # checkout — at the EXACT rev rust/Cargo.toml pins, because the fake and
+      # the adapter it was recorded from are one tree.
       - name: Resolve the pinned shed rev
         id: rev
         # VALIDATED HERE, at the producer, so every consumer below is handed a

@@ -10,7 +10,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_lane.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `from_view`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Whether this approval is still waiting on the human — **the only predicate a
 /// client gates its answer affordance on**.
@@ -267,44 +267,59 @@ sealed class BridgeLaneApprovalStatus with _$BridgeLaneApprovalStatus {
       BridgeLaneApprovalStatus_Other;
 }
 
-/// What this adapter can actually do (mirrors `lane::LaneCapabilities`) —
+/// What this SESSION can do, now (mirrors `lane::LaneCapabilities`) —
 /// advertised, so the panel greys out an affordance instead of discovering the
 /// refusal on a tap.
 ///
-/// opencode answers
-/// `{kind: "opencode", interject: false, create: true, cancel: true, approvals: true, history_cursor: false}`;
-/// gx answers the same with `interject` and `history_cursor` true. Those are
-/// exactly the two flags a UI branches on, which is why the flags exist.
+/// **Per session, and read from the snapshot, never cached at open** (plan 025
+/// §3.2.1). Capabilities ride the lane's stream (`LaneEvent::Capabilities`, in
+/// every seed before its `Ready` and again on change), so a craze session's can
+/// change with its incarnation; [`BridgeLaneSnapshot::capabilities`] carries
+/// the live generation's. opencode answers `{kind: "opencode", interject:
+/// false, cancel: true, approvals: true, history_cursor: false, settings:
+/// false, stop: false}` in every seed.
+///
+/// `create` left this type in plan 025 — creating is a machine-level act, and
+/// it is [`BridgeSourceCapabilities::create`] now.
 class BridgeLaneCapabilities {
   final String kind;
   final bool interject;
-  final bool create;
   final bool cancel;
   final bool approvals;
 
-  /// The adapter honors a history cursor — and therefore a **silent resume**
-  /// is possible on its stream: a reconnect may leave no trace at all. It is
-  /// why Dart must not count brackets to count connections; it never sees them
-  /// anyway (the fold is Rust's).
+  /// The STREAM may resume from a cursor silently: a reconnect may leave no
+  /// `Reset` behind, only a stale mark that a lone `Ready` clears. Since plan
+  /// 025 it speaks for the stream alone — `history`'s cursor is advisory.
+  /// Dart never counts brackets anyway (the fold is Rust's); it is here so a
+  /// panel can know a "reconnecting…" banner may clear without a reseed.
   final bool historyCursor;
+
+  /// The session has settings to show and change, and its snapshots carry
+  /// [`BridgeLaneSnapshot::settings`].
+  final bool settings;
+
+  /// The session can be ended from this client (a Stop button).
+  final bool stop;
 
   const BridgeLaneCapabilities({
     required this.kind,
     required this.interject,
-    required this.create,
     required this.cancel,
     required this.approvals,
     required this.historyCursor,
+    required this.settings,
+    required this.stop,
   });
 
   @override
   int get hashCode =>
       kind.hashCode ^
       interject.hashCode ^
-      create.hashCode ^
       cancel.hashCode ^
       approvals.hashCode ^
-      historyCursor.hashCode;
+      historyCursor.hashCode ^
+      settings.hashCode ^
+      stop.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -313,10 +328,148 @@ class BridgeLaneCapabilities {
           runtimeType == other.runtimeType &&
           kind == other.kind &&
           interject == other.interject &&
-          create == other.create &&
           cancel == other.cancel &&
           approvals == other.approvals &&
-          historyCursor == other.historyCursor;
+          historyCursor == other.historyCursor &&
+          settings == other.settings &&
+          stop == other.stop;
+}
+
+/// One selectable value — a model, a mode, or one option's value (mirrors
+/// `lane::LaneChoice`). `id` is opaque and round-tripped into a
+/// [`BridgeLaneSettingChange`]; `name` is what a client shows.
+class BridgeLaneChoice {
+  final String id;
+  final String name;
+
+  /// The agent's own ordering hint, when it gives one (lower first).
+  final int? rank;
+  final String? description;
+
+  const BridgeLaneChoice({
+    required this.id,
+    required this.name,
+    this.rank,
+    this.description,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ rank.hashCode ^ description.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneChoice &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          rank == other.rank &&
+          description == other.description;
+}
+
+/// What a create can start on a machine (mirrors `lane::LaneCreateOptions`):
+/// the providers and whether each can start, the default, and the directories
+/// sessions last ran in. Providers keep the agent's own order (plan 025 D5: a
+/// provider that cannot start is dimmed, not hidden).
+class BridgeLaneCreateOptions {
+  final List<BridgeLaneProvider> providers;
+
+  /// May name a provider that is not listed or not ready — a client
+  /// preselects it only when it is listed AND `Ready`.
+  final String? defaultProvider;
+
+  /// Newest first.
+  final List<String> recentDirs;
+
+  const BridgeLaneCreateOptions({
+    required this.providers,
+    this.defaultProvider,
+    required this.recentDirs,
+  });
+
+  @override
+  int get hashCode =>
+      providers.hashCode ^ defaultProvider.hashCode ^ recentDirs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneCreateOptions &&
+          runtimeType == other.runtimeType &&
+          providers == other.providers &&
+          defaultProvider == other.defaultProvider &&
+          recentDirs == other.recentDirs;
+}
+
+/// A create, as the phone asks for it (mirrors `lane::LaneCreateRequest`) — a
+/// provider, a directory and an optional first prompt, nothing else (plan 025
+/// D6).
+///
+/// **Strict**: a plain struct with exactly the contract's fields, so Dart
+/// cannot attach one the adapter would have to drop. `request_id` is reused
+/// ONLY while the outcome of the create that carried it is unknown, and minted
+/// fresh after any definite answer (plan 025 §3.8).
+class BridgeLaneCreateRequest {
+  /// Absolute, and existing on the machine.
+  final String cwd;
+
+  /// A [`BridgeLaneProvider::id`]; `None` for the agent's own default.
+  final String? provider;
+
+  /// The first prompt; `None` creates an idle session.
+  final String? prompt;
+  final String requestId;
+
+  const BridgeLaneCreateRequest({
+    required this.cwd,
+    this.provider,
+    this.prompt,
+    required this.requestId,
+  });
+
+  @override
+  int get hashCode =>
+      cwd.hashCode ^ provider.hashCode ^ prompt.hashCode ^ requestId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneCreateRequest &&
+          runtimeType == other.runtimeType &&
+          cwd == other.cwd &&
+          provider == other.provider &&
+          prompt == other.prompt &&
+          requestId == other.requestId;
+}
+
+/// What a create answered (mirrors `lane::LaneCreated`): the new session's row
+/// and what became of its first prompt. The session exists whenever this is
+/// returned — a refused or lost prompt is not a failed create.
+class BridgeLaneCreated {
+  final BridgeLaneSession session;
+  final BridgeLanePromptOutcome prompt;
+
+  /// Why the prompt was refused, or why its answer was lost.
+  final String? promptError;
+
+  const BridgeLaneCreated({
+    required this.session,
+    required this.prompt,
+    this.promptError,
+  });
+
+  @override
+  int get hashCode => session.hashCode ^ prompt.hashCode ^ promptError.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneCreated &&
+          runtimeType == other.runtimeType &&
+          session == other.session &&
+          prompt == other.prompt &&
+          promptError == other.promptError;
 }
 
 /// The three SEMANTIC decisions a permission approval accepts, independent of
@@ -376,6 +529,75 @@ sealed class BridgeLaneError with _$BridgeLaneError implements FrbException {
   /// refusing by name the client's obligation for exactly that reason.
   const factory BridgeLaneError.unsupportedLane({required String kind}) =
       BridgeLaneError_UnsupportedLane;
+}
+
+@freezed
+sealed class BridgeLanePromptOutcome with _$BridgeLanePromptOutcome {
+  const BridgeLanePromptOutcome._();
+
+  const factory BridgeLanePromptOutcome.none() = BridgeLanePromptOutcome_None;
+  const factory BridgeLanePromptOutcome.accepted() =
+      BridgeLanePromptOutcome_Accepted;
+  const factory BridgeLanePromptOutcome.unknown() =
+      BridgeLanePromptOutcome_Unknown;
+  const factory BridgeLanePromptOutcome.refused() =
+      BridgeLanePromptOutcome_Refused;
+  const factory BridgeLanePromptOutcome.other({required String raw}) =
+      BridgeLanePromptOutcome_Other;
+}
+
+/// One provider a create can name (mirrors `lane::LaneProvider`).
+class BridgeLaneProvider {
+  /// What [`BridgeLaneCreateRequest::provider`] takes.
+  final String id;
+  final String label;
+  final BridgeLaneProviderState state;
+
+  /// Why it cannot start — present exactly when `state` is not `Ready`.
+  final String? reason;
+
+  /// What to do about it, one line.
+  final String? fix;
+
+  const BridgeLaneProvider({
+    required this.id,
+    required this.label,
+    required this.state,
+    this.reason,
+    this.fix,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      label.hashCode ^
+      state.hashCode ^
+      reason.hashCode ^
+      fix.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneProvider &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          label == other.label &&
+          state == other.state &&
+          reason == other.reason &&
+          fix == other.fix;
+}
+
+@freezed
+sealed class BridgeLaneProviderState with _$BridgeLaneProviderState {
+  const BridgeLaneProviderState._();
+
+  const factory BridgeLaneProviderState.ready() = BridgeLaneProviderState_Ready;
+  const factory BridgeLaneProviderState.needsSetup() =
+      BridgeLaneProviderState_NeedsSetup;
+  const factory BridgeLaneProviderState.unavailable() =
+      BridgeLaneProviderState_Unavailable;
+  const factory BridgeLaneProviderState.other({required String raw}) =
+      BridgeLaneProviderState_Other;
 }
 
 /// A structured question inside an approval (mirrors `lane::LaneQuestion`).
@@ -438,14 +660,17 @@ class BridgeLaneQuestion {
 /// opencode mapping never emits `NeedsApproval`, so a client that keys its
 /// blocked badge off `activity` alone misses every opencode approval.
 ///
-/// `#[frb(unignore)]` because **no `pub` bridge function takes or returns one
-/// yet**, and the codegen prunes an unreferenced type. It is mirrored anyway
-/// because it is part of the contract §3.9 pins, and because the reason nothing
-/// returns one is a property of the FOLD, not a decision about the row:
-/// `shed_app::lane_view::LaneViewSnapshot` projects only the session's
-/// `activity`, so the phone's snapshot has nowhere to carry the rest. Marking it
-/// keeps the Dart mirror complete for the row-level verbs that follow instead of
-/// making the next slice a codegen change as well as a feature.
+/// It crosses on [`BridgeLaneSnapshot::session`] — the stream's LIVE row — and,
+/// from the craze source on, as a machine's craze rows. It used to carry
+/// `#[frb(unignore)]` because nothing returned one: before plan 025 the fold
+/// projected only the session's `activity`. `shed_app::lane_view` now projects
+/// the whole row, so the codegen reaches it through the snapshot.
+///
+/// The fields after `last_change_unix_ms` are plan 025's: what a craze roster
+/// row says about a session beyond its activity. Every one is optional and
+/// `None` on a row from an adapter that knows none of them (opencode's), and
+/// each is the contract's own field, mirrored as it stands
+/// (`shed_core::lane::LaneSession`).
 class BridgeLaneSession {
   final String id;
   final String title;
@@ -461,6 +686,46 @@ class BridgeLaneSession {
   final String? parentId;
   final PlatformInt64? lastChangeUnixMs;
 
+  /// The agent provider driving the session (craze's `cursor`, `grok`, …);
+  /// `None` where the adapter IS the provider (opencode).
+  final String? provider;
+
+  /// The model the session runs, as the agent names it.
+  final String? model;
+
+  /// What the session is doing right now, one line.
+  final String? doing;
+
+  /// The oldest open approval's one-line summary — what the session is
+  /// blocked on, for a row with no room for the approval itself.
+  final String? headAskSummary;
+
+  /// The head of the agent's last reply, one line.
+  final String? lastReply;
+
+  /// Unix epoch milliseconds since the session has been in its current state.
+  final PlatformInt64? sinceUnixMs;
+
+  /// How many clients are attached to the session right now.
+  final int? attached;
+
+  /// Why the session failed to start, when it did — shown as it is.
+  final String? startError;
+
+  /// The PROVIDER's own session id behind this row — the key a roost tab
+  /// running the same session carries, and so the key a client folds that
+  /// tab into this row by (plan 025 D4). Never an address any verb takes.
+  final String? providerSessionId;
+
+  /// The agent's permission posture (craze's `"bypass"` | `"prompt"`) for the
+  /// transcript header. An open string: a newer agent's posture renders as
+  /// its own word.
+  final String? permissionMode;
+
+  /// The roost tab this row was merged with — set ONLY by the client-side
+  /// merge (plan 025 §3.6.3), never by a source or a lane.
+  final PlatformInt64? tabId;
+
   const BridgeLaneSession({
     required this.id,
     required this.title,
@@ -470,6 +735,17 @@ class BridgeLaneSession {
     required this.approximate,
     this.parentId,
     this.lastChangeUnixMs,
+    this.provider,
+    this.model,
+    this.doing,
+    this.headAskSummary,
+    this.lastReply,
+    this.sinceUnixMs,
+    this.attached,
+    this.startError,
+    this.providerSessionId,
+    this.permissionMode,
+    this.tabId,
   });
 
   @override
@@ -481,7 +757,18 @@ class BridgeLaneSession {
       pendingApprovals.hashCode ^
       approximate.hashCode ^
       parentId.hashCode ^
-      lastChangeUnixMs.hashCode;
+      lastChangeUnixMs.hashCode ^
+      provider.hashCode ^
+      model.hashCode ^
+      doing.hashCode ^
+      headAskSummary.hashCode ^
+      lastReply.hashCode ^
+      sinceUnixMs.hashCode ^
+      attached.hashCode ^
+      startError.hashCode ^
+      providerSessionId.hashCode ^
+      permissionMode.hashCode ^
+      tabId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -495,7 +782,128 @@ class BridgeLaneSession {
           pendingApprovals == other.pendingApprovals &&
           approximate == other.approximate &&
           parentId == other.parentId &&
-          lastChangeUnixMs == other.lastChangeUnixMs;
+          lastChangeUnixMs == other.lastChangeUnixMs &&
+          provider == other.provider &&
+          model == other.model &&
+          doing == other.doing &&
+          headAskSummary == other.headAskSummary &&
+          lastReply == other.lastReply &&
+          sinceUnixMs == other.sinceUnixMs &&
+          attached == other.attached &&
+          startError == other.startError &&
+          providerSessionId == other.providerSessionId &&
+          permissionMode == other.permissionMode &&
+          tabId == other.tabId;
+}
+
+/// One of a model's options (mirrors `lane::LaneSetting`). `current` and each
+/// value are strings, and `category` an open string, exactly as the contract
+/// has them.
+class BridgeLaneSetting {
+  /// What [`BridgeLaneSettingChange::Config`]'s `id` names.
+  final String id;
+  final String name;
+  final String category;
+  final String current;
+  final List<BridgeLaneChoice> values;
+
+  const BridgeLaneSetting({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.current,
+    required this.values,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      category.hashCode ^
+      current.hashCode ^
+      values.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneSetting &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          category == other.category &&
+          current == other.current &&
+          values == other.values;
+}
+
+@freezed
+sealed class BridgeLaneSettingChange with _$BridgeLaneSettingChange {
+  const BridgeLaneSettingChange._();
+
+  /// Move to the model with this [`BridgeLaneChoice::id`].
+  const factory BridgeLaneSettingChange.model({required String id}) =
+      BridgeLaneSettingChange_Model;
+
+  /// Move to the mode with this [`BridgeLaneChoice::id`].
+  const factory BridgeLaneSettingChange.mode({required String id}) =
+      BridgeLaneSettingChange_Mode;
+
+  /// Set the option [`BridgeLaneSetting::id`] to the value
+  /// [`BridgeLaneChoice::id`].
+  const factory BridgeLaneSettingChange.config({
+    required String id,
+    required String value,
+    String? forModel,
+  }) = BridgeLaneSettingChange_Config;
+}
+
+/// A session's settings, rendered generically (mirrors `lane::LaneSettings`):
+/// the model and the models it can move to, the mode and the modes, the
+/// model's own options, and how full its context is. Inbound.
+class BridgeLaneSettings {
+  /// The current model's id.
+  final String? model;
+
+  /// The models a [`BridgeLaneSettingChange::Model`] can name, in the order a
+  /// client shows them.
+  final List<BridgeLaneChoice> models;
+
+  /// The current mode's id.
+  final String? mode;
+  final List<BridgeLaneChoice> modes;
+
+  /// The current model's own options (an effort level, a fast mode, …).
+  final List<BridgeLaneSetting> options;
+  final BridgeLaneUsage? usage;
+
+  const BridgeLaneSettings({
+    this.model,
+    required this.models,
+    this.mode,
+    required this.modes,
+    required this.options,
+    this.usage,
+  });
+
+  @override
+  int get hashCode =>
+      model.hashCode ^
+      models.hashCode ^
+      mode.hashCode ^
+      modes.hashCode ^
+      options.hashCode ^
+      usage.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneSettings &&
+          runtimeType == other.runtimeType &&
+          model == other.model &&
+          models == other.models &&
+          mode == other.mode &&
+          modes == other.modes &&
+          options == other.options &&
+          usage == other.usage;
 }
 
 /// **The one thing Dart reads after a nudge** — a projection of
@@ -507,6 +915,13 @@ class BridgeLaneSession {
 /// Reading it is also the NUDGE ACKNOWLEDGEMENT — it clears the dirty bit, which
 /// is what makes a burst of a hundred frames one nudge rather than a hundred.
 /// See [`super::lane::lane_snapshot`].
+///
+/// **`stale` is not `ended`** (plan 025 §3.2.4). `stale` is the banner: the
+/// stream behind these rows is not live, for a reason. `ended` is the
+/// lifecycle: the subscription ENDED, and it is the only thing Dart re-opens a
+/// lane on. A silent resume sets `stale` and clears it again without ever
+/// setting `ended`, and a client that re-opened on `stale` would throw away the
+/// cursor that resume exists to keep.
 class BridgeLaneSnapshot {
   /// Every row of the current generation, or just the rows after the cursor
   /// that was asked for. `full` says which.
@@ -517,17 +932,41 @@ class BridgeLaneSnapshot {
   final bool full;
   final BridgeRcActivity activity;
 
+  /// The session ROW as of the live generation — the stream's latest
+  /// `Session`, `None` until a seed carrying one has completed. **This, not
+  /// the row a lane was opened from, is the session's current state**: for a
+  /// session opened the moment it was created, the open's row carries none
+  /// of what the live stream says (its permission posture, plan 025 §3.6.5),
+  /// so a header reads its facts from here once it is `Some`.
+  final BridgeLaneSession? session;
+
   /// The generation `messages` belong to — Rust's own counter, monotonic, and
   /// it moves only when a seed COMPLETES. A number that moved when one
   /// started would tell a client to discard the generation still on its
   /// screen.
   final BigInt generation;
 
-  /// `Some(reason)` when the transport is gone and these rows are the last
-  /// complete generation. **"Stale, re-open me"** — the controller's cue to
-  /// call [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
-  /// reconnect job Dart has: Rust owns every other retry.
+  /// The banner: `Some(reason)` when the stream behind these rows is not live
+  /// — the transport is gone and the adapter is retrying (a `Stale`), or the
+  /// subscription ended (a `Down`). Cleared by the `Ready` that brings it
+  /// back. **Not** a cue to re-open: see [`Self::ended`].
   final String? stale;
+
+  /// The lifecycle: `true` once the subscription ENDED (a `Down`), and only
+  /// then. **"Ended, re-open me"** — the controller's cue to call
+  /// [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
+  /// reconnect job Dart has: Rust owns every other retry, a silent resume
+  /// included.
+  final bool ended;
+
+  /// What the session can do, as of the live generation — `None` until a
+  /// seed carrying them has completed. A panel gates its affordances on this
+  /// and on nothing it cached at open.
+  final BridgeLaneCapabilities? capabilities;
+
+  /// The session's settings, as of the live generation; `None` when it has
+  /// none to show (its capabilities say `settings: false`).
+  final BridgeLaneSettings? settings;
 
   /// The asks still waiting on the human, oldest first, id as the tiebreak.
   /// Pending only, by [`lane_status_is_pending`]'s rule.
@@ -537,8 +976,12 @@ class BridgeLaneSnapshot {
     required this.messages,
     required this.full,
     required this.activity,
+    this.session,
     required this.generation,
     this.stale,
+    required this.ended,
+    this.capabilities,
+    this.settings,
     required this.approvals,
   });
 
@@ -547,8 +990,12 @@ class BridgeLaneSnapshot {
       messages.hashCode ^
       full.hashCode ^
       activity.hashCode ^
+      session.hashCode ^
       generation.hashCode ^
       stale.hashCode ^
+      ended.hashCode ^
+      capabilities.hashCode ^
+      settings.hashCode ^
       approvals.hashCode;
 
   @override
@@ -559,9 +1006,33 @@ class BridgeLaneSnapshot {
           messages == other.messages &&
           full == other.full &&
           activity == other.activity &&
+          session == other.session &&
           generation == other.generation &&
           stale == other.stale &&
+          ended == other.ended &&
+          capabilities == other.capabilities &&
+          settings == other.settings &&
           approvals == other.approvals;
+}
+
+/// How full the session's context is, when the agent says (mirrors
+/// `lane::LaneUsage`). `u64`s, so Dart `BigInt`s.
+class BridgeLaneUsage {
+  final BigInt? contextTokens;
+  final BigInt? contextWindow;
+
+  const BridgeLaneUsage({this.contextTokens, this.contextWindow});
+
+  @override
+  int get hashCode => contextTokens.hashCode ^ contextWindow.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneUsage &&
+          runtimeType == other.runtimeType &&
+          contextTokens == other.contextTokens &&
+          contextWindow == other.contextWindow;
 }
 
 /// How a [`super::lane::lane_send`] is meant to land (mirrors `lane::SendMode`).
@@ -576,4 +1047,47 @@ enum BridgeSendMode {
   /// where in a backlog the text sits.
   queue,
   interject,
+}
+
+/// What a source can do (mirrors `lane::SourceCapabilities`) — the
+/// machine-level half of the capabilities: whether a create, and its options,
+/// will be honoured on THIS source. A client hides the create sheet on a source
+/// that says no rather than discovering the refusal on a tap.
+class BridgeSourceCapabilities {
+  /// The same agent token [`BridgeLaneCapabilities::kind`] carries.
+  final String kind;
+  final bool create;
+  final bool createOptions;
+
+  const BridgeSourceCapabilities({
+    required this.kind,
+    required this.create,
+    required this.createOptions,
+  });
+
+  @override
+  int get hashCode => kind.hashCode ^ create.hashCode ^ createOptions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSourceCapabilities &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          create == other.create &&
+          createOptions == other.createOptions;
+}
+
+@freezed
+sealed class BridgeSourceOffline with _$BridgeSourceOffline {
+  const BridgeSourceOffline._();
+
+  const factory BridgeSourceOffline.notInstalled() =
+      BridgeSourceOffline_NotInstalled;
+  const factory BridgeSourceOffline.tooOld() = BridgeSourceOffline_TooOld;
+  const factory BridgeSourceOffline.unreachable() =
+      BridgeSourceOffline_Unreachable;
+  const factory BridgeSourceOffline.failed() = BridgeSourceOffline_Failed;
+  const factory BridgeSourceOffline.other({required String raw}) =
+      BridgeSourceOffline_Other;
 }

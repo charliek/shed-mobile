@@ -12,10 +12,10 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e" }
 # The opencode agent-lane adapter (plan 015), reached the same way and pinned
-# to the SAME rev as shed-core/shed-app — one shed tree, three crates. It is
+# to the SAME rev as shed-core/shed-app — one shed tree, one rev. It is
 # named here rather than reached through shed-app because shed-app does not
 # depend on it: an adapter is chosen by the client at the point it opens a
 # lane, so the client is what has to name it.
@@ -23,7 +23,17 @@ shed-app  = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc
 # It had not been on a phone before that plan, so `android-build` is the first
 # thing that would notice a dependency it cannot cross-compile; the gate
 # checks it for `aarch64-linux-android` explicitly.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf" }
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e" }
+# The craze agent-lane adapter (plan 025): a machine's craze hub as an
+# `AgentSource`, and each of its sessions as an `AgentLane`. Named for the
+# same reason shed-opencode is — the client chooses the adapter — and pinned
+# to the SAME rev: the four shed crates are one tree at one rev, and
+# `check-lock-rev.sh` refuses a split. It joins the pinned set at the re-pin
+# (CM2), before anything here calls it (the phone's craze source is CM3), so
+# the lock guard and the Android check cover it from the first commit that
+# names it — and it must cross-compile for `aarch64-linux-android`, which
+# shed-craze's own manifest promises (no reqwest, no chrono).
+shed-craze = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e" }
 # roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
 # reached through shed-app, for two things shed-app does not re-export: the
 # `TabOpenParams` a `tab.open` takes, and `ssh::remote_command()` — the opaque
@@ -79,7 +89,7 @@ base64 = "0.22"
 # A dev-dependency (resolver v2) so the feature is enabled for `cargo test` and
 # NEVER for a shipped build — the same shape shed-app uses for the same fake.
 # Same git+rev as the [dependencies] entry above; cargo unifies them.
-shed-core = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf", features = ["test-support"] }
+shed-core = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e", features = ["test-support"] }
 # The opencode agent-lane adapter's in-process double
 # (`shed_opencode::testing::FakeOpencode`), behind the SAME non-default
 # `test-support` feature and the SAME git+rev as the `[dependencies]` entry
@@ -90,7 +100,7 @@ shed-core = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc
 # a real loopback HTTP server instead of a re-implementation of one, which is
 # the whole point: the thing under test is the bridge's dispatch, its roster GET
 # and its pump, and a hand-rolled fake adapter would test none of them.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf", features = ["test-support"] }
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

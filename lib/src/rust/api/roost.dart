@@ -88,9 +88,11 @@ Future<void> roostTabClose({
 ///
 /// The argv is [`shed_app::roost::launch_argv`]'s and nothing else (plan 013
 /// §4: prompts and permission modes are a later slice). An unrecognized kind —
-/// or a kind roost has no launch recipe for, `shell` and `grok` included — is
-/// refused BY NAME here rather than opening an empty tab somebody has to notice
-/// and close.
+/// or a kind roost has no launch recipe for, `shell` and `craze` included, and
+/// since plan 025 the four retired direct-agent kinds (codex, cursor, gx,
+/// grok), which decode as unknown kinds now — is refused BY NAME here rather
+/// than opening an empty tab somebody has to notice and close. A craze session
+/// is created through the machine's craze source, never through `tab.open`.
 ///
 /// `project_id: 0` asks roost for its default project; `cols`/`rows` are left at
 /// zero so roost picks its own initial geometry (the phone never renders this

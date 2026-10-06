@@ -29,9 +29,8 @@ BridgeRcCapabilities _caps({
     for (final k in kinds)
       switch (k) {
         'claude-rc' => const BridgeRcKind.claudeRc(),
-        'codex' => const BridgeRcKind.codex(),
         'opencode' => const BridgeRcKind.opencode(),
-        'cursor' => const BridgeRcKind.cursor(),
+        'craze' => const BridgeRcKind.craze(),
         'shell' => const BridgeRcKind.shell(),
         _ => BridgeRcKind.other(raw: k),
       },

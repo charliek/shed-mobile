@@ -26,6 +26,9 @@ import 'fake_lane_lease.dart';
 ///    not folded into the live view.
 /// 3. **`unknown_session` and a vanished row end the retries.** Both are
 ///    answers that cannot change, and retrying them is a battery bill.
+/// 4. **Only `ended` re-opens a lane, never `stale`** (plan 025 §3.2.4). An
+///    adapter resuming from its cursor marks the view stale and clears it again
+///    without the lane ending; a re-open there throws the cursor away.
 void main() {
   group('open', () {
     test('runs forward, then lane_open — in that order', () async {
@@ -41,10 +44,49 @@ void main() {
       expect(spec.dialUrl, 'http://127.0.0.1:40001');
       expect(spec.kind, 'opencode');
       expect(spec.sessionId, 'sess-1');
+      // From the first SNAPSHOT — there is no capabilities call to cache at
+      // open any more (plan 025 §3.2.1).
       expect(rig.controller.state.capabilities?.kind, 'opencode');
       // The roster row was already folded before the pump started, so there is
       // something to read without waiting for a nudge.
       expect(rig.bridge.snapshots, 1);
+    });
+
+    test('capabilities, settings and the live row follow the snapshot, '
+        'verbatim', () async {
+      // Plan 025 §3.2.1: they ride the lane's stream, so the controller takes
+      // whatever each snapshot says — including "nothing yet" — rather than
+      // keeping a value it saw once. A craze session's capabilities change
+      // with its incarnation; a copy kept from an earlier snapshot would gate
+      // the panel on a session that no longer exists.
+      final rig = _Rig();
+      rig.bridge.onSnapshot = (_) => _snap(capabilities: null);
+      await rig.controller.open();
+      expect(
+        rig.controller.state.capabilities,
+        isNull,
+        reason: 'nothing is known until a seed carries it',
+      );
+
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _caps(kind: 'craze', interject: true, stop: true),
+        session: _session(title: 'the live title', permissionMode: 'bypass'),
+      );
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      expect(rig.controller.state.capabilities?.kind, 'craze');
+      expect(rig.controller.state.capabilities?.stop, isTrue);
+      expect(rig.controller.state.session?.title, 'the live title');
+      expect(rig.controller.state.session?.permissionMode, 'bypass');
+
+      // A later snapshot that carries less — no row, different capabilities —
+      // replaces what is held rather than merging into it.
+      rig.bridge.onSnapshot = (_) =>
+          _snap(capabilities: _caps(kind: 'craze', interject: false));
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      expect(rig.controller.state.capabilities?.interject, isFalse);
+      expect(rig.controller.state.session, isNull);
     });
 
     test(
@@ -72,10 +114,11 @@ void main() {
     });
   });
 
-  group('stale — the one re-open Dart owns', () {
+  group('ended — the one re-open Dart owns', () {
     test('re-opens on the 1s → 30s ladder, keeping the lease', () async {
       final rig = _Rig();
-      rig.bridge.onSnapshot = (_) => _snap(stale: 'transport closed');
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'transport closed', ended: true);
       await rig.controller.open();
       await pumpEventQueue();
 
@@ -107,6 +150,33 @@ void main() {
       expect(rig.leases.single.releases, 0, reason: 'still the one forward');
     });
 
+    test('a STALE lane that has not ended re-opens nothing — a silent resume '
+        'is Rust\'s', () async {
+      // The shape a craze lane resuming from its cursor produces: the banner
+      // is up (`stale`), the lane has NOT ended. Re-opening here would tear
+      // down the very handle that is resuming and throw its cursor away
+      // (plan 025 §3.2.4) — the next snapshot clears the mark on its own.
+      final rig = _Rig();
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'hub connection lost', ended: false);
+      await rig.controller.open();
+      await pumpEventQueue();
+
+      expect(rig.controller.state.stale, 'hub connection lost');
+      expect(rig.controller.state.ended, isFalse);
+      expect(rig.delays, isEmpty, reason: 'no re-open ladder for a stale mark');
+      expect(rig.bridge.opens, 1);
+      expect(rig.bridge.handles.single.closed, isFalse);
+      expect(rig.controller.state.retrying, isFalse);
+
+      // The resume lands: a lone same-generation Ready cleared the mark.
+      rig.bridge.onSnapshot = (_) => _snap();
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      expect(rig.controller.state.stale, isNull);
+      expect(rig.bridge.opens, 1, reason: 'the same handle, start to finish');
+    });
+
     test('a healthy snapshot re-opens nothing', () async {
       final rig = _Rig();
       await rig.controller.open();
@@ -121,7 +191,7 @@ void main() {
     test('unknown_session in the reason ENDS the retries', () async {
       final rig = _Rig();
       rig.bridge.onSnapshot = (_) =>
-          _snap(stale: 'the agent reported unknown_session');
+          _snap(stale: 'the agent reported unknown_session', ended: true);
       await rig.controller.open();
       await pumpEventQueue();
 
@@ -141,13 +211,15 @@ void main() {
       'a nudge from a superseded handle is dropped; the live one pulls',
       () async {
         final rig = _Rig();
-        // Stale once, then healthy: the re-open has to land on a LIVE lane, or
-        // the second half of this test would be fenced for the wrong reason.
+        // Ended once, then healthy: the re-open has to land on a LIVE lane,
+        // or the second half of this test would be fenced for the wrong
+        // reason.
         var down = true;
         rig.bridge.onSnapshot = (_) {
           final stale = down ? 'transport closed' : null;
+          final ended = down;
           down = false;
-          return _snap(stale: stale);
+          return _snap(stale: stale, ended: ended);
         };
         await rig.controller.open();
         await pumpEventQueue();
@@ -319,7 +391,8 @@ void main() {
 
     test('a new stamp revives a lane that had been given up on', () async {
       final rig = _Rig();
-      rig.bridge.onSnapshot = (_) => _snap(stale: 'gone: unknown_session');
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'gone: unknown_session', ended: true);
       await rig.controller.open();
       await pumpEventQueue();
       expect(rig.controller.state.abandoned, isTrue);
@@ -649,17 +722,6 @@ class _FakeLaneBridge implements LaneSource {
   Stream<bool> nudges(LaneHandle handle) => (handle as _FakeHandle).nudges;
 
   @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) =>
-      const BridgeLaneCapabilities(
-        kind: 'opencode',
-        interject: false,
-        create: true,
-        cancel: true,
-        approvals: true,
-        historyCursor: false,
-      );
-
-  @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) {
     snapshots++;
     cursors.add(sinceSeq);
@@ -750,19 +812,63 @@ class _DeafSubscription implements StreamSubscription<bool> {
 // DTO builders (plain Dart — no FFI is touched)
 // ---------------------------------------------------------------------------
 
+/// opencode's own capabilities — what every opencode seed carries.
+const _opencodeCaps = BridgeLaneCapabilities(
+  kind: 'opencode',
+  interject: false,
+  cancel: true,
+  approvals: true,
+  historyCursor: false,
+  settings: false,
+  stop: false,
+);
+
+BridgeLaneCapabilities _caps({
+  String kind = 'opencode',
+  bool interject = false,
+  bool stop = false,
+}) => BridgeLaneCapabilities(
+  kind: kind,
+  interject: interject,
+  cancel: true,
+  approvals: true,
+  historyCursor: false,
+  settings: false,
+  stop: stop,
+);
+
+BridgeLaneSession _session({String title = '', String? permissionMode}) =>
+    BridgeLaneSession(
+      id: 'sess-1',
+      title: title,
+      cwd: '/home/shed/proj',
+      activity: BridgeRcActivity.idle,
+      pendingApprovals: 0,
+      approximate: false,
+      permissionMode: permissionMode,
+    );
+
+/// A seeded snapshot: opencode's capabilities unless a test says otherwise —
+/// an explicit `capabilities: null` is "no seed yet" — live and not ended.
 BridgeLaneSnapshot _snap({
   List<BridgeRcFeedMessage> messages = const [],
   bool full = true,
   BridgeRcActivity activity = BridgeRcActivity.idle,
   int generation = 1,
   String? stale,
+  bool ended = false,
+  BridgeLaneSession? session,
+  BridgeLaneCapabilities? capabilities = _opencodeCaps,
   List<BridgeLaneApproval> approvals = const [],
 }) => BridgeLaneSnapshot(
   messages: messages,
   full: full,
   activity: activity,
+  session: session,
   generation: BigInt.from(generation),
   stale: stale,
+  ended: ended,
+  capabilities: capabilities,
   approvals: approvals,
 );
 

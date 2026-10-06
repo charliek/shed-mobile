@@ -1185,6 +1185,7 @@ dependencies = [
  "serde_json",
  "shed-app",
  "shed-core",
+ "shed-craze",
  "shed-opencode",
  "tokio",
 ]
@@ -1359,7 +1360,7 @@ dependencies = [
 [[package]]
 name = "shed-app"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf#a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf"
+source = "git+https://github.com/charliek/shed?rev=9a84ddfe57827498e31080e1d5fdd7b73184e42e#9a84ddfe57827498e31080e1d5fdd7b73184e42e"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1377,7 +1378,7 @@ dependencies = [
 [[package]]
 name = "shed-core"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf#a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf"
+source = "git+https://github.com/charliek/shed?rev=9a84ddfe57827498e31080e1d5fdd7b73184e42e#9a84ddfe57827498e31080e1d5fdd7b73184e42e"
 dependencies = [
  "async-trait",
  "base64",
@@ -1397,9 +1398,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "shed-craze"
+version = "0.8.1"
+source = "git+https://github.com/charliek/shed?rev=9a84ddfe57827498e31080e1d5fdd7b73184e42e#9a84ddfe57827498e31080e1d5fdd7b73184e42e"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "shed-core",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "shed-opencode"
 version = "0.8.1"
-source = "git+https://github.com/charliek/shed?rev=a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf#a8725fa11f15fcebc2fedc6770ba7adbd3d87dcf"
+source = "git+https://github.com/charliek/shed?rev=9a84ddfe57827498e31080e1d5fdd7b73184e42e#9a84ddfe57827498e31080e1d5fdd7b73184e42e"
 dependencies = [
  "async-trait",
  "base64",

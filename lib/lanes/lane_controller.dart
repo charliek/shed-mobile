@@ -12,7 +12,8 @@ import '../ssh/lane_forward.dart';
 import 'lane_source.dart';
 import 'lane_state.dart';
 
-/// The first re-open wait after a terminal `Down`, doubling to [laneRetryMax].
+/// The first re-open wait after a lane ENDED (a terminal `Down`), doubling to
+/// [laneRetryMax].
 ///
 /// **Deliberately slower than Rust's 200 ms → 5 s resubscribe ladder.** Rust
 /// retries a live adapter's stream — one HTTP request against a server it is
@@ -86,13 +87,19 @@ void scheduleOnNextFrame(void Function() pull) {
 ///
 /// The single rule that decides most of this class: **Rust owns reconnection.**
 /// Its pump carries the whole resubscribe ladder, so Dart has exactly one
-/// lifecycle job, and it exists only because it needs SSH: **a terminal
-/// `Down`** (the snapshot's `stale`) — Rust has stopped. Dart closes the
-/// handle, KEEPS the forward lease, and re-opens on the ladder above.
+/// lifecycle job, and it exists only because it needs SSH: **a lane that
+/// ENDED** (the snapshot's `ended`, set by a terminal `Down` and by nothing
+/// else). Dart closes the handle, KEEPS the forward lease, and re-opens on the
+/// ladder above.
 ///
 /// Anything else that looks like a reconnect is not one. A dropped SSE stream,
-/// a silent resume, a server reset, a reseed: all Rust's, all invisible here
-/// except as a new generation in a snapshot.
+/// a server reset, a reseed: all Rust's, all invisible here except as a new
+/// generation in a snapshot. **And a `stale` that has not ended is not one
+/// either** (plan 025 §3.2.4): an adapter that can resume from a cursor (craze)
+/// marks the view stale when its transport drops and clears the mark with a
+/// lone `Ready` once it has resumed — no reseed, the same generation. A
+/// re-open there would tear down the very lane that is resuming and throw its
+/// cursor away, so `stale` is the banner's and only `ended` is this class's.
 ///
 /// ## The generation fence
 ///
@@ -180,9 +187,9 @@ class LaneController {
   bool _abandoned = false;
   bool _pullPending = false;
 
-  /// The generation whose `stale` has already been acted on, so a second
-  /// snapshot carrying the same `stale` does not start a second re-open.
-  int? _staleHandled;
+  /// The generation whose `ended` has already been acted on, so a second
+  /// snapshot carrying the same `ended` does not start a second re-open.
+  int? _endHandled;
 
   Duration _backoff = laneRetryBase;
 
@@ -272,7 +279,7 @@ class LaneController {
     }
     _handle = handle;
     _cursor = null;
-    _staleHandled = null;
+    _endHandled = null;
     _nudges = source
         .nudges(handle)
         .listen(
@@ -281,17 +288,12 @@ class LaneController {
           // the snapshot is the authority on what. It ends only on `lane_close`.
           onError: (Object _) => _onNudge(generation),
         );
-    _emit(
-      _state.copyWith(
-        capabilities: source.capabilities(handle),
-        clearError: true,
-        retrying: false,
-        abandoned: false,
-      ),
-    );
+    _emit(_state.copyWith(clearError: true, retrying: false, abandoned: false));
     // The roster row was fetched before the pump started, so there is already
     // something to read; waiting for the first nudge would leave the screen
-    // blank for one round trip.
+    // blank for one round trip. It is also the first read of the session's
+    // capabilities: there is no separate call to cache them at open (plan 025
+    // §3.2.1) — they come with every snapshot, null until a seed carries them.
     _pull(generation);
   }
 
@@ -352,17 +354,26 @@ class LaneController {
             : List<BridgeLaneApproval>.unmodifiable(snap.approvals),
         stale: snap.stale,
         clearStale: snap.stale == null,
+        ended: snap.ended,
+        // Every snapshot, verbatim — including a null, which is "not seeded
+        // yet" or "no settings", never "keep what you had".
+        live: (
+          session: snap.session,
+          capabilities: snap.capabilities,
+          settings: snap.settings,
+        ),
       ),
     );
 
-    final stale = snap.stale;
-    if (stale != null) _onStale(generation, stale);
+    // `ended`, never `stale`: see "One reconnect owner" above.
+    if (snap.ended) _onEnded(generation, snap.stale ?? '');
   }
 
-  /// The pump ended on a terminal `Down`. Rust has stopped; Dart re-opens.
-  void _onStale(int generation, String reason) {
-    if (_staleHandled == generation) return;
-    _staleHandled = generation;
+  /// The lane's subscription ENDED on a terminal `Down`. Dart re-opens — unless
+  /// the reason says no re-open can ever succeed.
+  void _onEnded(int generation, String reason) {
+    if (_endHandled == generation) return;
+    _endHandled = generation;
     if (reason.contains(laneUnknownSession)) {
       // The agent does not know this session. Re-opening would ask the same
       // question and get the same answer, forever.
@@ -486,6 +497,10 @@ class LaneController {
         rows: const [],
         approvals: const [],
         approvalErrors: const {},
+        // A new stamp is a new session: nothing the old one's stream said
+        // about itself — its row, what it can do, its settings — carries over.
+        live: laneLiveUnknown,
+        ended: false,
         clearStale: true,
         clearError: true,
         clearComposerError: true,
@@ -498,7 +513,7 @@ class LaneController {
 
   /// Drop the handle, wait out the ladder, open again.
   ///
-  /// `keepLease` is true for every re-open Rust's `Down` provoked: the local
+  /// `keepLease` is true for every re-open an ended lane provoked: the local
   /// port is fixed for the forward's life and the forward re-dials the SSH
   /// channel underneath it, so giving the lease back would close a forward the
   /// next open needs and cost an extra SSH channel to rebuild.
@@ -539,7 +554,7 @@ class LaneController {
   Future<void> _dropHandle({required bool releaseLease}) async {
     _generation++;
     _pullPending = false;
-    _staleHandled = null;
+    _endHandled = null;
     final nudges = _nudges;
     _nudges = null;
     final handle = _handle;

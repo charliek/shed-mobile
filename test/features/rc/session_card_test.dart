@@ -168,7 +168,7 @@ void main() {
         slug: 'abc123',
         attention: false,
         displayName: 'frontend',
-        kind: BridgeRcKind.codex(),
+        kind: BridgeRcKind.other(raw: 'codex'),
         state: BridgeRcState.ready,
         managed: true,
         activity: BridgeRcActivity.working,
@@ -200,7 +200,7 @@ void main() {
         slug: 'abc123',
         attention: false,
         displayName: 'frontend',
-        kind: BridgeRcKind.codex(),
+        kind: BridgeRcKind.other(raw: 'codex'),
         state: BridgeRcState.needsAuth,
         managed: true,
         activity: BridgeRcActivity.working, // present but must be suppressed
@@ -219,13 +219,15 @@ void main() {
     expect(find.text('needs auth'), findsOneWidget);
   });
 
+  // A codex tab run directly — a plain `Other('codex')` row since plan 025
+  // retired the kind, which is the row shape these cells mean by "codex".
   const codex = BridgeRcSession(
     host: 'h',
     shed: 'web',
     slug: 'abc123',
     attention: false,
     displayName: 'frontend',
-    kind: BridgeRcKind.codex(),
+    kind: BridgeRcKind.other(raw: 'codex'),
     state: BridgeRcState.ready,
     managed: true,
   );
@@ -312,7 +314,7 @@ void main() {
         slug: 'abc123',
         attention: false,
         displayName: 'frontend',
-        kind: BridgeRcKind.codex(),
+        kind: BridgeRcKind.other(raw: 'codex'),
         state: BridgeRcState.ready,
         managed: true,
         activity: BridgeRcActivity.idle,

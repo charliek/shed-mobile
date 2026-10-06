@@ -16,12 +16,13 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// row, and start the pump.
 ///
 /// **Dispatch is the desktop `Lanes::open`'s, arm for arm**: `"opencode"` →
-/// [`OpencodeClient`] on the dial URL with no credential source (opencode needs
-/// none — a password-protected server answers 401, which surfaces as
-/// [`BridgeLaneError::Unauthorized`] and a status-only panel); anything else →
-/// [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a kind with
-/// no adapter is a permanent property of the row and there is no reason to
-/// spend a round trip discovering it.
+/// an [`OpencodeSource`] on the dial URL with no credential source (opencode
+/// needs none — a password-protected server answers 401, which surfaces as
+/// [`BridgeLaneError::Unauthorized`] and a status-only panel), and the
+/// session-scoped lane it opens for the row's id (plan 025 §3.2.6); anything
+/// else → [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a
+/// kind with no adapter is a permanent property of the row and there is no
+/// reason to spend a round trip discovering it.
 ///
 /// The roster row is fetched BEFORE the subscription starts, for the desktop's
 /// reason: a 404 here is an honest `unknown_session` the caller can render,
@@ -39,21 +40,21 @@ Future<BridgeLane> laneOpen({required BridgeLaneSpec spec}) =>
 ///
 /// Dart gets a `true` and nothing else — the payload is "something changed, take
 /// a snapshot". The stream stays open until [`lane_close`], INCLUDING after a
-/// terminal `Down`: that is how Dart distinguishes "stale, re-open me" (the
-/// snapshot says `stale`) from "closed by me" (it called `lane_close`). A stream
+/// terminal `Down`: that is how Dart distinguishes "ended, re-open me" (the
+/// snapshot says `ended`) from "closed by me" (it called `lane_close`). A stream
 /// that ended on `Down` would make those two indistinguishable.
 Stream<bool> laneNudges({required BridgeLane lane}) =>
     RustLib.instance.api.crateApiLaneLaneNudges(lane: lane);
 
-/// What this lane's adapter can do. Cached at open (the contract states these
-/// are static for the life of the adapter), so it is a lock-free read that keeps
-/// answering after [`lane_close`] — a panel unwinding does not need its buttons
-/// to start throwing.
-BridgeLaneCapabilities laneCapabilities({required BridgeLane lane}) =>
-    RustLib.instance.api.crateApiLaneLaneCapabilities(lane: lane);
-
 /// **The one read**, and the nudge acknowledgement: the staged view projected
-/// and the pending approvals — under ONE lock — and the dirty bit cleared.
+/// — the transcript, the pending approvals, and the session's live row,
+/// capabilities and settings — under ONE lock, and the dirty bit cleared.
+///
+/// It is also where a panel reads what the session can do. There is no
+/// `lane_capabilities` getter (plan 025 §3.2.1): capabilities are per session
+/// and ride the stream, so a getter cached at open would be stale by
+/// construction before the first seed. A closed lane still projects its last
+/// view, capabilities included, so a panel unwinding keeps its buttons.
 ///
 /// `since_seq` is `None` for everything (`full: true`) and `Some(s)` for the
 /// rows after `s`. The cursor is honored only when it lands inside the current
@@ -71,9 +72,9 @@ BridgeLaneSnapshot laneSnapshot({required BridgeLane lane, BigInt? sinceSeq}) =>
       sinceSeq: sinceSeq,
     );
 
-/// Send `text` to the session. [`BridgeSendMode::Interject`] needs
-/// [`BridgeLaneCapabilities::interject`]; an adapter that cannot do it answers
-/// [`BridgeLaneError::NotAccepting`].
+/// Send `text` to the session. [`BridgeSendMode::Interject`] needs the
+/// snapshot's [`super::dto_lane::BridgeLaneCapabilities::interject`]; an adapter
+/// that cannot do it answers [`BridgeLaneError::NotAccepting`].
 Future<void> laneSend({
   required BridgeLane lane,
   required String text,

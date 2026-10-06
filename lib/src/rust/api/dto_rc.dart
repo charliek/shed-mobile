@@ -150,18 +150,15 @@ sealed class BridgeRcKind with _$BridgeRcKind {
 
   const factory BridgeRcKind.claudeRc() = BridgeRcKind_ClaudeRc;
   const factory BridgeRcKind.claudeBroker() = BridgeRcKind_ClaudeBroker;
-  const factory BridgeRcKind.codex() = BridgeRcKind_Codex;
   const factory BridgeRcKind.opencode() = BridgeRcKind_Opencode;
-  const factory BridgeRcKind.cursor() = BridgeRcKind_Cursor;
 
-  /// grok's `gx` agent **with a remote lane bound** — the row shed promotes
-  /// once a roost tab's `gx.remote` metadata key appears (plan 017). roost
-  /// never says `gx`; its adapter reports `source: "grok"` either way.
-  const factory BridgeRcKind.gx() = BridgeRcKind_Gx;
-
-  /// grok's `gx` agent with **no** lane: status through roost, no transcript.
-  /// Lane-less by design, not a degraded `Gx`.
-  const factory BridgeRcKind.grok() = BridgeRcKind_Grok;
+  /// A craze-owned session — the lane craze provides for every agent but
+  /// Claude and opencode (plan 025). Not creatable through roost (craze's
+  /// own create sheet is that path), and it carries no permission-mode
+  /// posture of the roost kind (craze's settings are the mode surface) —
+  /// both are `shed_core::rc::RcKind::Craze`'s own answers, mirrored in
+  /// Dart's `BridgeRcKindUi`.
+  const factory BridgeRcKind.craze() = BridgeRcKind_Craze;
   const factory BridgeRcKind.shell() = BridgeRcKind_Shell;
 
   /// An unrecognized wire kind, raw string preserved.

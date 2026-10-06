@@ -17,15 +17,21 @@
 //! Rust↔Rust pair there is no decode step, so the same rule shows up as the
 //! PRESENCE OR ABSENCE OF AN ESCAPE ARM:
 //!
-//! * **Tolerant, inbound**: [`BridgeLaneApprovalKind`] and
-//!   [`BridgeLaneApprovalStatus`] carry `Other { raw }` and preserve the raw wire
-//!   string verbatim, exactly as [`super::dto_rc::BridgeRcKind`] does. An
-//!   approval minted by a newer agent renders neutrally instead of vanishing.
-//! * **Strict, outbound**: [`BridgeLaneDecision`], [`BridgeSendMode`] and
-//!   [`BridgeLaneAnswer`] have NO escape arm at all. Dart cannot construct an
-//!   unrecognized decision, mode or answer — the mirror of "serde refuses it" is
-//!   "the type does not admit it", which is a stronger guarantee than a runtime
-//!   refusal and is what keeps a user's "allow" from becoming a silent no-op.
+//! * **Tolerant, inbound**: [`BridgeLaneApprovalKind`],
+//!   [`BridgeLaneApprovalStatus`], and plan 025's three — [`BridgeSourceOffline`],
+//!   [`BridgeLaneProviderState`] and [`BridgeLanePromptOutcome`] — carry
+//!   `Other { raw }` and preserve the raw wire string verbatim, exactly as
+//!   [`super::dto_rc::BridgeRcKind`] does. An approval, an outage cause, a
+//!   provider state or a prompt outcome minted by a newer agent renders
+//!   neutrally instead of vanishing. Each is a fielded enum, so a Dart sealed
+//!   class whose `other(raw)` case is the escape arm.
+//! * **Strict, outbound**: [`BridgeLaneDecision`], [`BridgeSendMode`],
+//!   [`BridgeLaneAnswer`], and plan 025's [`BridgeLaneSettingChange`] and
+//!   [`BridgeLaneCreateRequest`] have NO escape arm at all. Dart cannot construct
+//!   an unrecognized decision, mode, answer, setting change or create field —
+//!   the mirror of "serde refuses it" is "the type does not admit it", which is
+//!   a stronger guarantee than a runtime refusal and is what keeps a user's
+//!   "allow" from becoming a silent no-op.
 //! * [`BridgeLaneError`] is strict too, and for the reason the contract gives:
 //!   the controller BRANCHES on it. That is also why it is a sealed enum with one
 //!   case per [`LaneError`] variant — the [`super::error::BridgeError`] shape —
@@ -41,13 +47,34 @@
 //! are quoted at length in `shed_core::lane`. A Dart re-implementation would be
 //! a third reading of prose that the crate exists to stop.
 //!
+//! # Two levels, one mirror (plan 025 §3.2)
+//!
+//! The contract split an agent into a SOURCE — a machine's sessions, what can
+//! be created there, and creating one — and a session-scoped LANE. Both
+//! levels' DTOs are mirrored here, in the commit that re-pinned onto the split
+//! (CM2), even where no bridge function hands one over yet: the source half is
+//! what the phone's craze source (CM3) and its create sheet (CM4) put on the
+//! wire, and the settings change is what the settings sheet (CM6) sends.
+//! Those types carry `#[frb(unignore)]` for the [`BridgeLaneSession`]
+//! precedent this file set before: the codegen prunes a type no function
+//! names, and mirroring the contract whole now keeps each later slice a
+//! feature rather than a feature plus a codegen change.
+//!
+//! **Capabilities, settings and the session row ride the snapshot.** They are
+//! per session and can change with an incarnation, so they are stream state
+//! like activity (`shed_core::lane`'s module doc, "Capabilities and settings
+//! ride the stream") — there is no capabilities getter on a lane to cache, and
+//! [`BridgeLaneSnapshot`] carries the latest of each.
+//!
 //! # What is NOT here
 //!
 //! [`shed_core::lane::LaneEvent`] does not cross. It is folded in Rust by
-//! [`shed_app::lane_view::LaneView`] and `Reset`/`Ready`/`Down`/`Unknown` never
-//! reach Dart at all — the phone gets a nudge and pulls one atomic
-//! [`BridgeLaneSnapshot`]. `LaneHistory` does not cross either: no phone verb
-//! needs a page of transcript that is not already in the view.
+//! [`shed_app::lane_view::LaneView`] and `Reset`/`Ready`/`Stale`/`Down`/
+//! `Capabilities`/`Settings`/`Unknown` never reach Dart as frames — the phone
+//! gets a nudge and pulls one atomic [`BridgeLaneSnapshot`]. A source's
+//! `SourceEvent` will not cross either, for the same reason: the phone folds it
+//! in Rust and reads a snapshot (CM3). `LaneHistory` does not cross: no phone
+//! verb needs a page of transcript that is not already in the view.
 //! `LaneSubscription`/`LaneStop` are handles, and handles stay in
 //! [`super::lane`].
 
@@ -55,7 +82,10 @@ use flutter_rust_bridge::frb;
 use shed_app::lane_view::LaneViewSnapshot;
 use shed_core::lane::{
     LaneAnswer, LaneApproval, LaneApprovalKind, LaneApprovalOption, LaneApprovalStatus,
-    LaneCapabilities, LaneDecision, LaneError, LaneQuestion, LaneSession, SendMode,
+    LaneCapabilities, LaneChoice, LaneCreateOptions, LaneCreateRequest, LaneCreated, LaneDecision,
+    LaneError, LanePromptOutcome, LaneProvider, LaneProviderState, LaneQuestion, LaneSession,
+    LaneSetting, LaneSettingChange, LaneSettings, LaneUsage, SendMode, SourceCapabilities,
+    SourceOffline,
 };
 use shed_core::roost::AgentLaneStamp;
 
@@ -109,15 +139,17 @@ impl From<AgentLaneStamp> for BridgeAgentLaneStamp {
 /// opencode mapping never emits `NeedsApproval`, so a client that keys its
 /// blocked badge off `activity` alone misses every opencode approval.
 ///
-/// `#[frb(unignore)]` because **no `pub` bridge function takes or returns one
-/// yet**, and the codegen prunes an unreferenced type. It is mirrored anyway
-/// because it is part of the contract §3.9 pins, and because the reason nothing
-/// returns one is a property of the FOLD, not a decision about the row:
-/// `shed_app::lane_view::LaneViewSnapshot` projects only the session's
-/// `activity`, so the phone's snapshot has nowhere to carry the rest. Marking it
-/// keeps the Dart mirror complete for the row-level verbs that follow instead of
-/// making the next slice a codegen change as well as a feature.
-#[frb(unignore)]
+/// It crosses on [`BridgeLaneSnapshot::session`] — the stream's LIVE row — and,
+/// from the craze source on, as a machine's craze rows. It used to carry
+/// `#[frb(unignore)]` because nothing returned one: before plan 025 the fold
+/// projected only the session's `activity`. `shed_app::lane_view` now projects
+/// the whole row, so the codegen reaches it through the snapshot.
+///
+/// The fields after `last_change_unix_ms` are plan 025's: what a craze roster
+/// row says about a session beyond its activity. Every one is optional and
+/// `None` on a row from an adapter that knows none of them (opencode's), and
+/// each is the contract's own field, mirrored as it stands
+/// (`shed_core::lane::LaneSession`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeLaneSession {
     pub id: String,
@@ -132,6 +164,35 @@ pub struct BridgeLaneSession {
     pub approximate: bool,
     pub parent_id: Option<String>,
     pub last_change_unix_ms: Option<i64>,
+    /// The agent provider driving the session (craze's `cursor`, `grok`, …);
+    /// `None` where the adapter IS the provider (opencode).
+    pub provider: Option<String>,
+    /// The model the session runs, as the agent names it.
+    pub model: Option<String>,
+    /// What the session is doing right now, one line.
+    pub doing: Option<String>,
+    /// The oldest open approval's one-line summary — what the session is
+    /// blocked on, for a row with no room for the approval itself.
+    pub head_ask_summary: Option<String>,
+    /// The head of the agent's last reply, one line.
+    pub last_reply: Option<String>,
+    /// Unix epoch milliseconds since the session has been in its current state.
+    pub since_unix_ms: Option<i64>,
+    /// How many clients are attached to the session right now.
+    pub attached: Option<u32>,
+    /// Why the session failed to start, when it did — shown as it is.
+    pub start_error: Option<String>,
+    /// The PROVIDER's own session id behind this row — the key a roost tab
+    /// running the same session carries, and so the key a client folds that
+    /// tab into this row by (plan 025 D4). Never an address any verb takes.
+    pub provider_session_id: Option<String>,
+    /// The agent's permission posture (craze's `"bypass"` | `"prompt"`) for the
+    /// transcript header. An open string: a newer agent's posture renders as
+    /// its own word.
+    pub permission_mode: Option<String>,
+    /// The roost tab this row was merged with — set ONLY by the client-side
+    /// merge (plan 025 §3.6.3), never by a source or a lane.
+    pub tab_id: Option<i64>,
 }
 
 impl From<LaneSession> for BridgeLaneSession {
@@ -145,6 +206,17 @@ impl From<LaneSession> for BridgeLaneSession {
             approximate: s.approximate,
             parent_id: s.parent_id,
             last_change_unix_ms: s.last_change_unix_ms,
+            provider: s.provider,
+            model: s.model,
+            doing: s.doing,
+            head_ask_summary: s.head_ask_summary,
+            last_reply: s.last_reply,
+            since_unix_ms: s.since_unix_ms,
+            attached: s.attached,
+            start_error: s.start_error,
+            provider_session_id: s.provider_session_id,
+            permission_mode: s.permission_mode,
+            tab_id: s.tab_id,
         }
     }
 }
@@ -593,26 +665,37 @@ impl From<SendMode> for BridgeSendMode {
 // capabilities and the snapshot
 // ---------------------------------------------------------------------------
 
-/// What this adapter can actually do (mirrors `lane::LaneCapabilities`) —
+/// What this SESSION can do, now (mirrors `lane::LaneCapabilities`) —
 /// advertised, so the panel greys out an affordance instead of discovering the
 /// refusal on a tap.
 ///
-/// opencode answers
-/// `{kind: "opencode", interject: false, create: true, cancel: true, approvals: true, history_cursor: false}`;
-/// gx answers the same with `interject` and `history_cursor` true. Those are
-/// exactly the two flags a UI branches on, which is why the flags exist.
+/// **Per session, and read from the snapshot, never cached at open** (plan 025
+/// §3.2.1). Capabilities ride the lane's stream (`LaneEvent::Capabilities`, in
+/// every seed before its `Ready` and again on change), so a craze session's can
+/// change with its incarnation; [`BridgeLaneSnapshot::capabilities`] carries
+/// the live generation's. opencode answers `{kind: "opencode", interject:
+/// false, cancel: true, approvals: true, history_cursor: false, settings:
+/// false, stop: false}` in every seed.
+///
+/// `create` left this type in plan 025 — creating is a machine-level act, and
+/// it is [`BridgeSourceCapabilities::create`] now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeLaneCapabilities {
     pub kind: String,
     pub interject: bool,
-    pub create: bool,
     pub cancel: bool,
     pub approvals: bool,
-    /// The adapter honors a history cursor — and therefore a **silent resume**
-    /// is possible on its stream: a reconnect may leave no trace at all. It is
-    /// why Dart must not count brackets to count connections; it never sees them
-    /// anyway (the fold is Rust's).
+    /// The STREAM may resume from a cursor silently: a reconnect may leave no
+    /// `Reset` behind, only a stale mark that a lone `Ready` clears. Since plan
+    /// 025 it speaks for the stream alone — `history`'s cursor is advisory.
+    /// Dart never counts brackets anyway (the fold is Rust's); it is here so a
+    /// panel can know a "reconnecting…" banner may clear without a reseed.
     pub history_cursor: bool,
+    /// The session has settings to show and change, and its snapshots carry
+    /// [`BridgeLaneSnapshot::settings`].
+    pub settings: bool,
+    /// The session can be ended from this client (a Stop button).
+    pub stop: bool,
 }
 
 impl From<LaneCapabilities> for BridgeLaneCapabilities {
@@ -620,10 +703,11 @@ impl From<LaneCapabilities> for BridgeLaneCapabilities {
         BridgeLaneCapabilities {
             kind: c.kind,
             interject: c.interject,
-            create: c.create,
             cancel: c.cancel,
             approvals: c.approvals,
             history_cursor: c.history_cursor,
+            settings: c.settings,
+            stop: c.stop,
         }
     }
 }
@@ -637,6 +721,13 @@ impl From<LaneCapabilities> for BridgeLaneCapabilities {
 /// Reading it is also the NUDGE ACKNOWLEDGEMENT — it clears the dirty bit, which
 /// is what makes a burst of a hundred frames one nudge rather than a hundred.
 /// See [`super::lane::lane_snapshot`].
+///
+/// **`stale` is not `ended`** (plan 025 §3.2.4). `stale` is the banner: the
+/// stream behind these rows is not live, for a reason. `ended` is the
+/// lifecycle: the subscription ENDED, and it is the only thing Dart re-opens a
+/// lane on. A silent resume sets `stale` and clears it again without ever
+/// setting `ended`, and a client that re-opened on `stale` would throw away the
+/// cursor that resume exists to keep.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeLaneSnapshot {
     /// Every row of the current generation, or just the rows after the cursor
@@ -646,16 +737,36 @@ pub struct BridgeLaneSnapshot {
     /// should REPLACE what it holds; `false` when it is a delta to append.
     pub full: bool,
     pub activity: BridgeRcActivity,
+    /// The session ROW as of the live generation — the stream's latest
+    /// `Session`, `None` until a seed carrying one has completed. **This, not
+    /// the row a lane was opened from, is the session's current state**: for a
+    /// session opened the moment it was created, the open's row carries none
+    /// of what the live stream says (its permission posture, plan 025 §3.6.5),
+    /// so a header reads its facts from here once it is `Some`.
+    pub session: Option<BridgeLaneSession>,
     /// The generation `messages` belong to — Rust's own counter, monotonic, and
     /// it moves only when a seed COMPLETES. A number that moved when one
     /// started would tell a client to discard the generation still on its
     /// screen.
     pub generation: u64,
-    /// `Some(reason)` when the transport is gone and these rows are the last
-    /// complete generation. **"Stale, re-open me"** — the controller's cue to
-    /// call [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
-    /// reconnect job Dart has: Rust owns every other retry.
+    /// The banner: `Some(reason)` when the stream behind these rows is not live
+    /// — the transport is gone and the adapter is retrying (a `Stale`), or the
+    /// subscription ended (a `Down`). Cleared by the `Ready` that brings it
+    /// back. **Not** a cue to re-open: see [`Self::ended`].
     pub stale: Option<String>,
+    /// The lifecycle: `true` once the subscription ENDED (a `Down`), and only
+    /// then. **"Ended, re-open me"** — the controller's cue to call
+    /// [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
+    /// reconnect job Dart has: Rust owns every other retry, a silent resume
+    /// included.
+    pub ended: bool,
+    /// What the session can do, as of the live generation — `None` until a
+    /// seed carrying them has completed. A panel gates its affordances on this
+    /// and on nothing it cached at open.
+    pub capabilities: Option<BridgeLaneCapabilities>,
+    /// The session's settings, as of the live generation; `None` when it has
+    /// none to show (its capabilities say `settings: false`).
+    pub settings: Option<BridgeLaneSettings>,
     /// The asks still waiting on the human, oldest first, id as the tiebreak.
     /// Pending only, by [`lane_status_is_pending`]'s rule.
     pub approvals: Vec<BridgeLaneApproval>,
@@ -669,9 +780,432 @@ impl BridgeLaneSnapshot {
             messages: snap.messages.into_iter().map(Into::into).collect(),
             full: snap.full,
             activity: snap.activity.into(),
+            session: snap.session.map(Into::into),
             generation: snap.generation,
             stale: snap.stale,
+            ended: snap.ended,
+            capabilities: snap.capabilities.map(Into::into),
+            settings: snap.settings.map(Into::into),
             approvals: snap.approvals.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// settings (the lane's half, plan 025 D7)
+// ---------------------------------------------------------------------------
+
+/// A session's settings, rendered generically (mirrors `lane::LaneSettings`):
+/// the model and the models it can move to, the mode and the modes, the
+/// model's own options, and how full its context is. Inbound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneSettings {
+    /// The current model's id.
+    pub model: Option<String>,
+    /// The models a [`BridgeLaneSettingChange::Model`] can name, in the order a
+    /// client shows them.
+    pub models: Vec<BridgeLaneChoice>,
+    /// The current mode's id.
+    pub mode: Option<String>,
+    pub modes: Vec<BridgeLaneChoice>,
+    /// The current model's own options (an effort level, a fast mode, …).
+    pub options: Vec<BridgeLaneSetting>,
+    pub usage: Option<BridgeLaneUsage>,
+}
+
+impl From<LaneSettings> for BridgeLaneSettings {
+    fn from(s: LaneSettings) -> Self {
+        BridgeLaneSettings {
+            model: s.model,
+            models: s.models.into_iter().map(Into::into).collect(),
+            mode: s.mode,
+            modes: s.modes.into_iter().map(Into::into).collect(),
+            options: s.options.into_iter().map(Into::into).collect(),
+            usage: s.usage.map(Into::into),
+        }
+    }
+}
+
+/// One selectable value — a model, a mode, or one option's value (mirrors
+/// `lane::LaneChoice`). `id` is opaque and round-tripped into a
+/// [`BridgeLaneSettingChange`]; `name` is what a client shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneChoice {
+    pub id: String,
+    pub name: String,
+    /// The agent's own ordering hint, when it gives one (lower first).
+    pub rank: Option<u32>,
+    pub description: Option<String>,
+}
+
+impl From<LaneChoice> for BridgeLaneChoice {
+    fn from(c: LaneChoice) -> Self {
+        BridgeLaneChoice {
+            id: c.id,
+            name: c.name,
+            rank: c.rank,
+            description: c.description,
+        }
+    }
+}
+
+/// One of a model's options (mirrors `lane::LaneSetting`). `current` and each
+/// value are strings, and `category` an open string, exactly as the contract
+/// has them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneSetting {
+    /// What [`BridgeLaneSettingChange::Config`]'s `id` names.
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub current: String,
+    pub values: Vec<BridgeLaneChoice>,
+}
+
+impl From<LaneSetting> for BridgeLaneSetting {
+    fn from(s: LaneSetting) -> Self {
+        BridgeLaneSetting {
+            id: s.id,
+            name: s.name,
+            category: s.category,
+            current: s.current,
+            values: s.values.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// How full the session's context is, when the agent says (mirrors
+/// `lane::LaneUsage`). `u64`s, so Dart `BigInt`s.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneUsage {
+    pub context_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+}
+
+impl From<LaneUsage> for BridgeLaneUsage {
+    fn from(u: LaneUsage) -> Self {
+        BridgeLaneUsage {
+            context_tokens: u.context_tokens,
+            context_window: u.context_window,
+        }
+    }
+}
+
+/// One change to a session's settings (mirrors `lane::LaneSettingChange`) —
+/// what the settings sheet sends (CM6).
+///
+/// **Strict**, with no escape arm: a change this build cannot name is a
+/// command it cannot honour. `Config`, not `Option`, as the contract spells it.
+///
+/// `for_model` on `Config` is the model the client DISPLAYED the option for
+/// (plan 025 Amendment A13): an adapter binds the change to it, so a session
+/// that has already left that model refuses the change instead of applying an
+/// option chosen for one model to another. `None` lets the adapter bind the
+/// model its own fold shows.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeLaneSettingChange {
+    /// Move to the model with this [`BridgeLaneChoice::id`].
+    Model { id: String },
+    /// Move to the mode with this [`BridgeLaneChoice::id`].
+    Mode { id: String },
+    /// Set the option [`BridgeLaneSetting::id`] to the value
+    /// [`BridgeLaneChoice::id`].
+    Config {
+        id: String,
+        value: String,
+        for_model: Option<String>,
+    },
+}
+
+impl From<BridgeLaneSettingChange> for LaneSettingChange {
+    fn from(c: BridgeLaneSettingChange) -> Self {
+        match c {
+            BridgeLaneSettingChange::Model { id } => LaneSettingChange::Model { id },
+            BridgeLaneSettingChange::Mode { id } => LaneSettingChange::Mode { id },
+            BridgeLaneSettingChange::Config {
+                id,
+                value,
+                for_model,
+            } => LaneSettingChange::Config {
+                id,
+                value,
+                for_model,
+            },
+        }
+    }
+}
+
+impl From<LaneSettingChange> for BridgeLaneSettingChange {
+    fn from(c: LaneSettingChange) -> Self {
+        match c {
+            LaneSettingChange::Model { id } => BridgeLaneSettingChange::Model { id },
+            LaneSettingChange::Mode { id } => BridgeLaneSettingChange::Mode { id },
+            LaneSettingChange::Config {
+                id,
+                value,
+                for_model,
+            } => BridgeLaneSettingChange::Config {
+                id,
+                value,
+                for_model,
+            },
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// sources and creating (the machine's half, plan 025 D3/D5/D6)
+// ---------------------------------------------------------------------------
+
+/// What a source can do (mirrors `lane::SourceCapabilities`) — the
+/// machine-level half of the capabilities: whether a create, and its options,
+/// will be honoured on THIS source. A client hides the create sheet on a source
+/// that says no rather than discovering the refusal on a tap.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSourceCapabilities {
+    /// The same agent token [`BridgeLaneCapabilities::kind`] carries.
+    pub kind: String,
+    pub create: bool,
+    pub create_options: bool,
+}
+
+impl From<SourceCapabilities> for BridgeSourceCapabilities {
+    fn from(c: SourceCapabilities) -> Self {
+        BridgeSourceCapabilities {
+            kind: c.kind,
+            create: c.create,
+            create_options: c.create_options,
+        }
+    }
+}
+
+/// Why a source is offline (mirrors `lane::SourceOffline`).
+///
+/// **Tolerant**: `Other { raw }` preserves an unrecognized cause verbatim. What
+/// each cause MEANS is the UI's to decide (`shed_core::lane`'s module doc,
+/// "Sources"): `NotInstalled` is quiet — the machine simply has no such agent —
+/// while `TooOld` asks the person to update it there.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSourceOffline {
+    NotInstalled,
+    TooOld,
+    Unreachable,
+    Failed,
+    Other { raw: String },
+}
+
+impl From<SourceOffline> for BridgeSourceOffline {
+    fn from(o: SourceOffline) -> Self {
+        match o {
+            SourceOffline::NotInstalled => BridgeSourceOffline::NotInstalled,
+            SourceOffline::TooOld => BridgeSourceOffline::TooOld,
+            SourceOffline::Unreachable => BridgeSourceOffline::Unreachable,
+            SourceOffline::Failed => BridgeSourceOffline::Failed,
+            SourceOffline::Other(raw) => BridgeSourceOffline::Other { raw },
+        }
+    }
+}
+
+impl From<BridgeSourceOffline> for SourceOffline {
+    fn from(o: BridgeSourceOffline) -> Self {
+        match o {
+            BridgeSourceOffline::NotInstalled => SourceOffline::NotInstalled,
+            BridgeSourceOffline::TooOld => SourceOffline::TooOld,
+            BridgeSourceOffline::Unreachable => SourceOffline::Unreachable,
+            BridgeSourceOffline::Failed => SourceOffline::Failed,
+            BridgeSourceOffline::Other { raw } => SourceOffline::Other(raw),
+        }
+    }
+}
+
+/// What a create can start on a machine (mirrors `lane::LaneCreateOptions`):
+/// the providers and whether each can start, the default, and the directories
+/// sessions last ran in. Providers keep the agent's own order (plan 025 D5: a
+/// provider that cannot start is dimmed, not hidden).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneCreateOptions {
+    pub providers: Vec<BridgeLaneProvider>,
+    /// May name a provider that is not listed or not ready — a client
+    /// preselects it only when it is listed AND `Ready`.
+    pub default_provider: Option<String>,
+    /// Newest first.
+    pub recent_dirs: Vec<String>,
+}
+
+impl From<LaneCreateOptions> for BridgeLaneCreateOptions {
+    fn from(o: LaneCreateOptions) -> Self {
+        BridgeLaneCreateOptions {
+            providers: o.providers.into_iter().map(Into::into).collect(),
+            default_provider: o.default_provider,
+            recent_dirs: o.recent_dirs,
+        }
+    }
+}
+
+/// One provider a create can name (mirrors `lane::LaneProvider`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneProvider {
+    /// What [`BridgeLaneCreateRequest::provider`] takes.
+    pub id: String,
+    pub label: String,
+    pub state: BridgeLaneProviderState,
+    /// Why it cannot start — present exactly when `state` is not `Ready`.
+    pub reason: Option<String>,
+    /// What to do about it, one line.
+    pub fix: Option<String>,
+}
+
+impl From<LaneProvider> for BridgeLaneProvider {
+    fn from(p: LaneProvider) -> Self {
+        BridgeLaneProvider {
+            id: p.id,
+            label: p.label,
+            state: p.state.into(),
+            reason: p.reason,
+            fix: p.fix,
+        }
+    }
+}
+
+/// Whether a provider can start here (mirrors `lane::LaneProviderState`).
+///
+/// **Tolerant**: `Other { raw }` preserves an unrecognized state, and a client
+/// treats it as not ready — it cannot know the state permits a start.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeLaneProviderState {
+    Ready,
+    NeedsSetup,
+    Unavailable,
+    Other { raw: String },
+}
+
+impl From<LaneProviderState> for BridgeLaneProviderState {
+    fn from(s: LaneProviderState) -> Self {
+        match s {
+            LaneProviderState::Ready => BridgeLaneProviderState::Ready,
+            LaneProviderState::NeedsSetup => BridgeLaneProviderState::NeedsSetup,
+            LaneProviderState::Unavailable => BridgeLaneProviderState::Unavailable,
+            LaneProviderState::Other(raw) => BridgeLaneProviderState::Other { raw },
+        }
+    }
+}
+
+impl From<BridgeLaneProviderState> for LaneProviderState {
+    fn from(s: BridgeLaneProviderState) -> Self {
+        match s {
+            BridgeLaneProviderState::Ready => LaneProviderState::Ready,
+            BridgeLaneProviderState::NeedsSetup => LaneProviderState::NeedsSetup,
+            BridgeLaneProviderState::Unavailable => LaneProviderState::Unavailable,
+            BridgeLaneProviderState::Other { raw } => LaneProviderState::Other(raw),
+        }
+    }
+}
+
+/// A create, as the phone asks for it (mirrors `lane::LaneCreateRequest`) — a
+/// provider, a directory and an optional first prompt, nothing else (plan 025
+/// D6).
+///
+/// **Strict**: a plain struct with exactly the contract's fields, so Dart
+/// cannot attach one the adapter would have to drop. `request_id` is reused
+/// ONLY while the outcome of the create that carried it is unknown, and minted
+/// fresh after any definite answer (plan 025 §3.8).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneCreateRequest {
+    /// Absolute, and existing on the machine.
+    pub cwd: String,
+    /// A [`BridgeLaneProvider::id`]; `None` for the agent's own default.
+    pub provider: Option<String>,
+    /// The first prompt; `None` creates an idle session.
+    pub prompt: Option<String>,
+    pub request_id: String,
+}
+
+impl From<BridgeLaneCreateRequest> for LaneCreateRequest {
+    fn from(r: BridgeLaneCreateRequest) -> Self {
+        LaneCreateRequest {
+            cwd: r.cwd,
+            provider: r.provider,
+            prompt: r.prompt,
+            request_id: r.request_id,
+        }
+    }
+}
+
+impl From<LaneCreateRequest> for BridgeLaneCreateRequest {
+    fn from(r: LaneCreateRequest) -> Self {
+        BridgeLaneCreateRequest {
+            cwd: r.cwd,
+            provider: r.provider,
+            prompt: r.prompt,
+            request_id: r.request_id,
+        }
+    }
+}
+
+/// What a create answered (mirrors `lane::LaneCreated`): the new session's row
+/// and what became of its first prompt. The session exists whenever this is
+/// returned — a refused or lost prompt is not a failed create.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneCreated {
+    pub session: BridgeLaneSession,
+    pub prompt: BridgeLanePromptOutcome,
+    /// Why the prompt was refused, or why its answer was lost.
+    pub prompt_error: Option<String>,
+}
+
+impl From<LaneCreated> for BridgeLaneCreated {
+    fn from(c: LaneCreated) -> Self {
+        BridgeLaneCreated {
+            session: c.session.into(),
+            prompt: c.prompt.into(),
+            prompt_error: c.prompt_error,
+        }
+    }
+}
+
+/// What became of a create's first prompt (mirrors `lane::LanePromptOutcome`).
+///
+/// **Tolerant**: `Other { raw }` preserves an unrecognized outcome. `Unknown`
+/// is a KNOWN outcome — the prompt was sent and its answer was lost, so the
+/// session may be working on it — and is not the escape arm.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeLanePromptOutcome {
+    None,
+    Accepted,
+    Unknown,
+    Refused,
+    Other { raw: String },
+}
+
+impl From<LanePromptOutcome> for BridgeLanePromptOutcome {
+    fn from(o: LanePromptOutcome) -> Self {
+        match o {
+            LanePromptOutcome::None => BridgeLanePromptOutcome::None,
+            LanePromptOutcome::Accepted => BridgeLanePromptOutcome::Accepted,
+            LanePromptOutcome::Unknown => BridgeLanePromptOutcome::Unknown,
+            LanePromptOutcome::Refused => BridgeLanePromptOutcome::Refused,
+            LanePromptOutcome::Other(raw) => BridgeLanePromptOutcome::Other { raw },
+        }
+    }
+}
+
+impl From<BridgeLanePromptOutcome> for LanePromptOutcome {
+    fn from(o: BridgeLanePromptOutcome) -> Self {
+        match o {
+            BridgeLanePromptOutcome::None => LanePromptOutcome::None,
+            BridgeLanePromptOutcome::Accepted => LanePromptOutcome::Accepted,
+            BridgeLanePromptOutcome::Unknown => LanePromptOutcome::Unknown,
+            BridgeLanePromptOutcome::Refused => LanePromptOutcome::Refused,
+            BridgeLanePromptOutcome::Other { raw } => LanePromptOutcome::Other(raw),
         }
     }
 }
@@ -998,12 +1532,11 @@ mod tests {
         assert!(lane_option_for(kindless, BridgeLaneDecision::Reject).is_none());
     }
 
-    /// The session row, the capabilities row and the stamp are flat mirrors;
-    /// this pins the field-for-field mapping so a reordered struct literal
-    /// cannot swap two same-typed fields silently.
-    #[test]
-    fn the_flat_rows_map_field_for_field() {
-        let session = LaneSession {
+    /// A session row with EVERY field set, each to a value no other field of
+    /// its type shares — so a mapping that swapped two same-typed fields, or
+    /// dropped one to its default, cannot pass.
+    fn full_session() -> LaneSession {
+        LaneSession {
             id: "ses_a".to_string(),
             title: "fix the thing".to_string(),
             cwd: "/home/shed/proj".to_string(),
@@ -1012,7 +1545,26 @@ mod tests {
             approximate: true,
             parent_id: Some("ses_root".to_string()),
             last_change_unix_ms: Some(42),
-        };
+            provider: Some("cursor".to_string()),
+            model: Some("composer-2".to_string()),
+            doing: Some("reading main.go".to_string()),
+            head_ask_summary: Some("run go test?".to_string()),
+            last_reply: Some("done: 3 files".to_string()),
+            since_unix_ms: Some(43),
+            attached: Some(2),
+            start_error: Some("no API key".to_string()),
+            provider_session_id: Some("prov-77".to_string()),
+            permission_mode: Some("bypass".to_string()),
+            tab_id: Some(9),
+        }
+    }
+
+    /// The session row, the capabilities row and the stamp are flat mirrors;
+    /// this pins the field-for-field mapping so a reordered struct literal
+    /// cannot swap two same-typed fields silently.
+    #[test]
+    fn the_flat_rows_map_field_for_field() {
+        let session = full_session();
         let bridged: BridgeLaneSession = session.clone().into();
         assert_eq!(bridged.id, session.id);
         assert_eq!(bridged.title, session.title);
@@ -1022,19 +1574,67 @@ mod tests {
         assert!(bridged.approximate);
         assert_eq!(bridged.parent_id.as_deref(), Some("ses_root"));
         assert_eq!(bridged.last_change_unix_ms, Some(42));
-
-        let caps: BridgeLaneCapabilities = LaneCapabilities {
-            kind: "gx".to_string(),
-            interject: true,
-            create: true,
-            cancel: true,
-            approvals: true,
-            history_cursor: true,
+        // Plan 025's row facts — every one of them, because a craze row that
+        // lost one would render a session with no model, no ask summary or no
+        // permission posture, and nothing would say a field was dropped.
+        assert_eq!(bridged.provider.as_deref(), Some("cursor"));
+        assert_eq!(bridged.model.as_deref(), Some("composer-2"));
+        assert_eq!(bridged.doing.as_deref(), Some("reading main.go"));
+        assert_eq!(bridged.head_ask_summary.as_deref(), Some("run go test?"));
+        assert_eq!(bridged.last_reply.as_deref(), Some("done: 3 files"));
+        assert_eq!(bridged.since_unix_ms, Some(43));
+        assert_eq!(bridged.attached, Some(2));
+        assert_eq!(bridged.start_error.as_deref(), Some("no API key"));
+        assert_eq!(bridged.provider_session_id.as_deref(), Some("prov-77"));
+        assert_eq!(bridged.permission_mode.as_deref(), Some("bypass"));
+        assert_eq!(bridged.tab_id, Some(9));
+        // And an opencode-shaped row — none of them known — crosses with every
+        // one `None`, not with a default invented on the way.
+        let bare: BridgeLaneSession = LaneSession {
+            id: "ses_b".to_string(),
+            ..LaneSession::default()
         }
         .into();
-        assert_eq!(caps.kind, "gx");
-        assert!(caps.interject && caps.create && caps.cancel && caps.approvals);
-        assert!(caps.history_cursor);
+        assert_eq!(bare.provider, None);
+        assert_eq!(bare.permission_mode, None);
+        assert_eq!(bare.attached, None);
+        assert_eq!(bare.tab_id, None);
+
+        // Each flag set to the opposite of its neighbour, so a swap shows.
+        let caps: BridgeLaneCapabilities = LaneCapabilities {
+            kind: "craze".to_string(),
+            interject: true,
+            cancel: false,
+            approvals: true,
+            history_cursor: false,
+            settings: true,
+            stop: false,
+        }
+        .into();
+        assert_eq!(
+            caps,
+            BridgeLaneCapabilities {
+                kind: "craze".to_string(),
+                interject: true,
+                cancel: false,
+                approvals: true,
+                history_cursor: false,
+                settings: true,
+                stop: false,
+            }
+        );
+        let flipped: BridgeLaneCapabilities = LaneCapabilities {
+            kind: "opencode".to_string(),
+            interject: false,
+            cancel: true,
+            approvals: false,
+            history_cursor: true,
+            settings: false,
+            stop: true,
+        }
+        .into();
+        assert!(!flipped.interject && flipped.cancel && !flipped.approvals);
+        assert!(flipped.history_cursor && !flipped.settings && flipped.stop);
 
         let stamp: BridgeAgentLaneStamp = AgentLaneStamp {
             kind: "opencode".to_string(),
@@ -1096,7 +1696,43 @@ mod tests {
         assert_eq!(seen.len(), 9, "two LaneError variants collapsed onto one");
     }
 
-    /// The snapshot is a projection of the fold's own output and nothing else.
+    fn choice(id: &str) -> LaneChoice {
+        LaneChoice {
+            id: id.to_string(),
+            name: format!("name of {id}"),
+            rank: Some(id.len() as u32),
+            description: Some(format!("about {id}")),
+        }
+    }
+
+    fn settings() -> LaneSettings {
+        LaneSettings {
+            model: Some("m-fast".to_string()),
+            models: vec![choice("m-fast"), choice("m-deep")],
+            mode: Some("plan".to_string()),
+            modes: vec![choice("plan"), choice("agent")],
+            options: vec![LaneSetting {
+                id: "effort".to_string(),
+                name: "Effort".to_string(),
+                category: "thought_level".to_string(),
+                current: "high".to_string(),
+                values: vec![choice("low"), choice("high")],
+            }],
+            usage: Some(LaneUsage {
+                context_tokens: Some(12_000),
+                context_window: Some(200_000),
+            }),
+        }
+    }
+
+    /// **The snapshot is a projection of the fold's own output and nothing
+    /// else** — every field of it, plan 025's four included.
+    ///
+    /// `stale` and `ended` are set to DIFFERENT answers on purpose (a stale
+    /// view that has not ended — a silent resume in progress): a projection
+    /// that derived one from the other would fail here, and that derivation is
+    /// exactly the bug the split exists to stop — a client that re-opened on
+    /// `stale` would throw away the cursor the resume is using.
     #[test]
     fn the_snapshot_projects_the_folds_output() {
         let view = LaneViewSnapshot {
@@ -1109,8 +1745,20 @@ mod tests {
             }],
             full: false,
             activity: RcActivity::Working,
+            session: Some(full_session()),
             generation: 3,
-            stale: Some("unknown_session".to_string()),
+            stale: Some("reconnecting".to_string()),
+            ended: false,
+            capabilities: Some(LaneCapabilities {
+                kind: "craze".to_string(),
+                interject: true,
+                cancel: true,
+                approvals: true,
+                history_cursor: true,
+                settings: true,
+                stop: true,
+            }),
+            settings: Some(settings()),
             approvals: vec![approval(vec![option("allow-once", None)])],
         };
         let snap = BridgeLaneSnapshot::from_view(view);
@@ -1120,8 +1768,278 @@ mod tests {
         assert!(!snap.full);
         assert_eq!(snap.activity, BridgeRcActivity::Working);
         assert_eq!(snap.generation, 3);
-        assert_eq!(snap.stale.as_deref(), Some("unknown_session"));
+        assert_eq!(snap.stale.as_deref(), Some("reconnecting"));
+        assert!(
+            !snap.ended,
+            "a stale view that has not ended must not read as ended"
+        );
+        assert_eq!(snap.session, Some(full_session().into()));
+        let caps = snap.capabilities.expect("the live capabilities cross");
+        assert_eq!(caps.kind, "craze");
+        assert!(caps.settings && caps.stop);
+        assert_eq!(snap.settings, Some(settings().into()));
         assert_eq!(snap.approvals.len(), 1);
         assert_eq!(snap.approvals[0].id, "per_1");
+
+        // The other half: an ENDED view, with nothing seeded yet — no row, no
+        // capabilities, no settings — crosses as exactly that, not as a
+        // default row or an all-false capabilities record a panel would
+        // render as "can do nothing".
+        let ended = BridgeLaneSnapshot::from_view(LaneViewSnapshot {
+            messages: Vec::new(),
+            full: true,
+            activity: RcActivity::Unknown,
+            session: None,
+            generation: 0,
+            stale: Some("unknown_session".to_string()),
+            ended: true,
+            capabilities: None,
+            settings: None,
+            approvals: Vec::new(),
+        });
+        assert!(ended.ended);
+        assert_eq!(ended.stale.as_deref(), Some("unknown_session"));
+        assert_eq!(ended.session, None);
+        assert_eq!(ended.capabilities, None);
+        assert_eq!(ended.settings, None);
+    }
+
+    /// The settings tree maps whole: the current model and mode, every choice
+    /// in order with its rank and description, the option with its own values,
+    /// and the usage `u64`s.
+    #[test]
+    fn settings_map_field_for_field() {
+        let bridged: BridgeLaneSettings = settings().into();
+        assert_eq!(bridged.model.as_deref(), Some("m-fast"));
+        assert_eq!(
+            bridged
+                .models
+                .iter()
+                .map(|c| c.id.as_str())
+                .collect::<Vec<_>>(),
+            ["m-fast", "m-deep"],
+            "the agent's order is the display order"
+        );
+        assert_eq!(bridged.models[1].name, "name of m-deep");
+        assert_eq!(bridged.models[1].rank, Some(6));
+        assert_eq!(
+            bridged.models[1].description.as_deref(),
+            Some("about m-deep")
+        );
+        assert_eq!(bridged.mode.as_deref(), Some("plan"));
+        assert_eq!(bridged.modes[1].id, "agent");
+        let effort = &bridged.options[0];
+        assert_eq!(effort.id, "effort");
+        assert_eq!(effort.name, "Effort");
+        assert_eq!(effort.category, "thought_level");
+        assert_eq!(effort.current, "high");
+        assert_eq!(effort.values[0].id, "low");
+        assert_eq!(
+            bridged.usage,
+            Some(BridgeLaneUsage {
+                context_tokens: Some(12_000),
+                context_window: Some(200_000),
+            })
+        );
+        // Nothing to show is nothing, not a fabricated empty usage.
+        let empty: BridgeLaneSettings = LaneSettings::default().into();
+        assert_eq!(empty.model, None);
+        assert!(empty.models.is_empty() && empty.options.is_empty());
+        assert_eq!(empty.usage, None);
+    }
+
+    /// **plan 025's three tolerant enums, the approval kinds' rule**: every
+    /// wire-producible value survives the round trip, and an unrecognized one
+    /// crosses as `Other { raw }` with its string verbatim — so an outage
+    /// cause, a provider state or a prompt outcome from a newer agent renders
+    /// neutrally instead of failing the value it rides in.
+    #[test]
+    fn plan_025s_tolerant_enums_round_trip_and_preserve_an_unknown_value() {
+        for original in [
+            SourceOffline::NotInstalled,
+            SourceOffline::TooOld,
+            SourceOffline::Unreachable,
+            SourceOffline::Failed,
+            SourceOffline::Other("rate_limited".to_string()),
+        ] {
+            let bridged: BridgeSourceOffline = original.clone().into();
+            assert_eq!(SourceOffline::from(bridged.clone()), original);
+            if let SourceOffline::Other(raw) = &original {
+                assert_eq!(bridged, BridgeSourceOffline::Other { raw: raw.clone() });
+            }
+        }
+        // The two causes the UI branches on must not collapse onto each other
+        // or onto the neutral arm: `NotInstalled` is quiet, `TooOld` asks for
+        // an update.
+        assert_eq!(
+            BridgeSourceOffline::from(SourceOffline::from_wire("too_old")),
+            BridgeSourceOffline::TooOld
+        );
+        assert_eq!(
+            BridgeSourceOffline::from(SourceOffline::from_wire("not_installed")),
+            BridgeSourceOffline::NotInstalled
+        );
+
+        for original in [
+            LaneProviderState::Ready,
+            LaneProviderState::NeedsSetup,
+            LaneProviderState::Unavailable,
+            LaneProviderState::Other("quota".to_string()),
+        ] {
+            let bridged: BridgeLaneProviderState = original.clone().into();
+            assert_eq!(LaneProviderState::from(bridged.clone()), original);
+            if let LaneProviderState::Other(raw) = &original {
+                assert_eq!(bridged, BridgeLaneProviderState::Other { raw: raw.clone() });
+            }
+        }
+
+        for original in [
+            LanePromptOutcome::None,
+            LanePromptOutcome::Accepted,
+            LanePromptOutcome::Unknown,
+            LanePromptOutcome::Refused,
+            LanePromptOutcome::Other("deferred".to_string()),
+        ] {
+            let bridged: BridgeLanePromptOutcome = original.clone().into();
+            assert_eq!(LanePromptOutcome::from(bridged.clone()), original);
+            if let LanePromptOutcome::Other(raw) = &original {
+                assert_eq!(bridged, BridgeLanePromptOutcome::Other { raw: raw.clone() });
+            }
+        }
+        // `Unknown` is a KNOWN outcome (the answer was lost), never the escape
+        // arm — a client that read it as "unrecognized" would drop the retry
+        // the create sheet offers for exactly that case.
+        assert_eq!(
+            BridgeLanePromptOutcome::from(LanePromptOutcome::from_wire("unknown")),
+            BridgeLanePromptOutcome::Unknown
+        );
+    }
+
+    /// **plan 025's two strict commands**: a setting change (all three kinds,
+    /// and `Config` both with and without the model it was displayed for —
+    /// Amendment A13) and a create request round-trip exactly, field for field.
+    #[test]
+    fn plan_025s_strict_commands_round_trip() {
+        for original in [
+            LaneSettingChange::Model {
+                id: "m-deep".to_string(),
+            },
+            LaneSettingChange::Mode {
+                id: "plan".to_string(),
+            },
+            LaneSettingChange::Config {
+                id: "effort".to_string(),
+                value: "high".to_string(),
+                for_model: Some("m-fast".to_string()),
+            },
+            LaneSettingChange::Config {
+                id: "effort".to_string(),
+                value: "low".to_string(),
+                for_model: None,
+            },
+        ] {
+            let bridged: BridgeLaneSettingChange = original.clone().into();
+            assert_eq!(LaneSettingChange::from(bridged), original);
+        }
+        // The displayed model reaches the contract — the guard A13 exists for
+        // cannot fire on a value the mirror dropped.
+        let sent = LaneSettingChange::from(BridgeLaneSettingChange::Config {
+            id: "effort".to_string(),
+            value: "high".to_string(),
+            for_model: Some("m-fast".to_string()),
+        });
+        assert_eq!(
+            serde_json::to_value(&sent).expect("a change serializes"),
+            serde_json::json!({
+                "kind": "config", "id": "effort", "value": "high", "for_model": "m-fast"
+            })
+        );
+
+        for original in [
+            LaneCreateRequest {
+                cwd: "/home/shed/proj".to_string(),
+                provider: Some("cursor".to_string()),
+                prompt: Some("fix the build".to_string()),
+                request_id: "req-1".to_string(),
+            },
+            LaneCreateRequest {
+                cwd: "/home/shed".to_string(),
+                provider: None,
+                prompt: None,
+                request_id: "req-2".to_string(),
+            },
+        ] {
+            let bridged: BridgeLaneCreateRequest = original.clone().into();
+            assert_eq!(LaneCreateRequest::from(bridged), original);
+        }
+    }
+
+    /// The source half maps whole: the source's capabilities, the create
+    /// options in the agent's own order (a provider that cannot start keeps its
+    /// place, its reason and its fix), and a create's answer with its row.
+    #[test]
+    fn the_source_half_maps_field_for_field() {
+        let caps: BridgeSourceCapabilities = SourceCapabilities {
+            kind: "craze".to_string(),
+            create: true,
+            create_options: false,
+        }
+        .into();
+        assert_eq!(
+            caps,
+            BridgeSourceCapabilities {
+                kind: "craze".to_string(),
+                create: true,
+                create_options: false,
+            }
+        );
+
+        let options: BridgeLaneCreateOptions = LaneCreateOptions {
+            providers: vec![
+                LaneProvider {
+                    id: "native".to_string(),
+                    label: "Native".to_string(),
+                    state: LaneProviderState::Ready,
+                    reason: None,
+                    fix: None,
+                },
+                LaneProvider {
+                    id: "cursor".to_string(),
+                    label: "Cursor".to_string(),
+                    state: LaneProviderState::NeedsSetup,
+                    reason: Some("not logged in".to_string()),
+                    fix: Some("run cursor-agent login".to_string()),
+                },
+            ],
+            default_provider: Some("cursor".to_string()),
+            recent_dirs: vec!["/home/shed/b".to_string(), "/home/shed/a".to_string()],
+        }
+        .into();
+        assert_eq!(
+            options
+                .providers
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>(),
+            ["native", "cursor"],
+            "a provider that cannot start is dimmed, not dropped or reordered"
+        );
+        let cursor = &options.providers[1];
+        assert_eq!(cursor.label, "Cursor");
+        assert_eq!(cursor.state, BridgeLaneProviderState::NeedsSetup);
+        assert_eq!(cursor.reason.as_deref(), Some("not logged in"));
+        assert_eq!(cursor.fix.as_deref(), Some("run cursor-agent login"));
+        assert_eq!(options.default_provider.as_deref(), Some("cursor"));
+        assert_eq!(options.recent_dirs, ["/home/shed/b", "/home/shed/a"]);
+
+        let created: BridgeLaneCreated = LaneCreated {
+            session: full_session(),
+            prompt: LanePromptOutcome::Refused,
+            prompt_error: Some("busy".to_string()),
+        }
+        .into();
+        assert_eq!(created.session, full_session().into());
+        assert_eq!(created.prompt, BridgeLanePromptOutcome::Refused);
+        assert_eq!(created.prompt_error.as_deref(), Some("busy"));
     }
 }

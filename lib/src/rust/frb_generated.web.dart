@@ -294,7 +294,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneCapabilities dco_decode_box_autoadd_bridge_lane_capabilities(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneSession dco_decode_box_autoadd_bridge_lane_session(dynamic raw);
+
+  @protected
+  BridgeLaneSettings dco_decode_box_autoadd_bridge_lane_settings(dynamic raw);
+
+  @protected
   BridgeLaneSpec dco_decode_box_autoadd_bridge_lane_spec(dynamic raw);
+
+  @protected
+  BridgeLaneUsage dco_decode_box_autoadd_bridge_lane_usage(dynamic raw);
 
   @protected
   BridgeMintOutcome dco_decode_box_autoadd_bridge_mint_outcome(dynamic raw);
@@ -444,10 +458,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneCapabilities dco_decode_bridge_lane_capabilities(dynamic raw);
 
   @protected
+  BridgeLaneChoice dco_decode_bridge_lane_choice(dynamic raw);
+
+  @protected
+  BridgeLaneCreateOptions dco_decode_bridge_lane_create_options(dynamic raw);
+
+  @protected
+  BridgeLaneCreateRequest dco_decode_bridge_lane_create_request(dynamic raw);
+
+  @protected
+  BridgeLaneCreated dco_decode_bridge_lane_created(dynamic raw);
+
+  @protected
   BridgeLaneDecision dco_decode_bridge_lane_decision(dynamic raw);
 
   @protected
   BridgeLaneError dco_decode_bridge_lane_error(dynamic raw);
+
+  @protected
+  BridgeLanePromptOutcome dco_decode_bridge_lane_prompt_outcome(dynamic raw);
+
+  @protected
+  BridgeLaneProvider dco_decode_bridge_lane_provider(dynamic raw);
+
+  @protected
+  BridgeLaneProviderState dco_decode_bridge_lane_provider_state(dynamic raw);
 
   @protected
   BridgeLaneQuestion dco_decode_bridge_lane_question(dynamic raw);
@@ -456,10 +491,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneSession dco_decode_bridge_lane_session(dynamic raw);
 
   @protected
+  BridgeLaneSetting dco_decode_bridge_lane_setting(dynamic raw);
+
+  @protected
+  BridgeLaneSettingChange dco_decode_bridge_lane_setting_change(dynamic raw);
+
+  @protected
+  BridgeLaneSettings dco_decode_bridge_lane_settings(dynamic raw);
+
+  @protected
   BridgeLaneSnapshot dco_decode_bridge_lane_snapshot(dynamic raw);
 
   @protected
   BridgeLaneSpec dco_decode_bridge_lane_spec(dynamic raw);
+
+  @protected
+  BridgeLaneUsage dco_decode_bridge_lane_usage(dynamic raw);
 
   @protected
   BridgeLiveCounters dco_decode_bridge_live_counters(dynamic raw);
@@ -537,6 +584,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShedStatus dco_decode_bridge_shed_status(dynamic raw);
 
   @protected
+  BridgeSourceCapabilities dco_decode_bridge_source_capabilities(dynamic raw);
+
+  @protected
+  BridgeSourceOffline dco_decode_bridge_source_offline(dynamic raw);
+
+  @protected
   BridgeSystemDiskUsage dco_decode_bridge_system_disk_usage(dynamic raw);
 
   @protected
@@ -573,7 +626,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeLaneChoice> dco_decode_list_bridge_lane_choice(dynamic raw);
+
+  @protected
+  List<BridgeLaneProvider> dco_decode_list_bridge_lane_provider(dynamic raw);
+
+  @protected
   List<BridgeLaneQuestion> dco_decode_list_bridge_lane_question(dynamic raw);
+
+  @protected
+  List<BridgeLaneSetting> dco_decode_list_bridge_lane_setting(dynamic raw);
 
   @protected
   List<BridgeOverviewShed> dco_decode_list_bridge_overview_shed(dynamic raw);
@@ -649,6 +711,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLaneApprovalOption?
   dco_decode_opt_box_autoadd_bridge_lane_approval_option(dynamic raw);
+
+  @protected
+  BridgeLaneCapabilities? dco_decode_opt_box_autoadd_bridge_lane_capabilities(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneSession? dco_decode_opt_box_autoadd_bridge_lane_session(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneSettings? dco_decode_opt_box_autoadd_bridge_lane_settings(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneUsage? dco_decode_opt_box_autoadd_bridge_lane_usage(dynamic raw);
 
   @protected
   BridgeRcActivity? dco_decode_opt_box_autoadd_bridge_rc_activity(dynamic raw);
@@ -952,7 +1032,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneCapabilities sse_decode_box_autoadd_bridge_lane_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSession sse_decode_box_autoadd_bridge_lane_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSettings sse_decode_box_autoadd_bridge_lane_settings(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneSpec sse_decode_box_autoadd_bridge_lane_spec(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneUsage sse_decode_box_autoadd_bridge_lane_usage(
     SseDeserializer deserializer,
   );
 
@@ -1162,12 +1262,45 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneChoice sse_decode_bridge_lane_choice(SseDeserializer deserializer);
+
+  @protected
+  BridgeLaneCreateOptions sse_decode_bridge_lane_create_options(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneCreateRequest sse_decode_bridge_lane_create_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneCreated sse_decode_bridge_lane_created(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneDecision sse_decode_bridge_lane_decision(
     SseDeserializer deserializer,
   );
 
   @protected
   BridgeLaneError sse_decode_bridge_lane_error(SseDeserializer deserializer);
+
+  @protected
+  BridgeLanePromptOutcome sse_decode_bridge_lane_prompt_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneProvider sse_decode_bridge_lane_provider(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneProviderState sse_decode_bridge_lane_provider_state(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BridgeLaneQuestion sse_decode_bridge_lane_question(
@@ -1180,12 +1313,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneSetting sse_decode_bridge_lane_setting(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSettingChange sse_decode_bridge_lane_setting_change(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSettings sse_decode_bridge_lane_settings(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneSnapshot sse_decode_bridge_lane_snapshot(
     SseDeserializer deserializer,
   );
 
   @protected
   BridgeLaneSpec sse_decode_bridge_lane_spec(SseDeserializer deserializer);
+
+  @protected
+  BridgeLaneUsage sse_decode_bridge_lane_usage(SseDeserializer deserializer);
 
   @protected
   BridgeLiveCounters sse_decode_bridge_live_counters(
@@ -1285,6 +1436,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShedStatus sse_decode_bridge_shed_status(SseDeserializer deserializer);
 
   @protected
+  BridgeSourceCapabilities sse_decode_bridge_source_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSourceOffline sse_decode_bridge_source_offline(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSystemDiskUsage sse_decode_bridge_system_disk_usage(
     SseDeserializer deserializer,
   );
@@ -1327,7 +1488,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeLaneChoice> sse_decode_list_bridge_lane_choice(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeLaneProvider> sse_decode_list_bridge_lane_provider(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BridgeLaneQuestion> sse_decode_list_bridge_lane_question(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeLaneSetting> sse_decode_list_bridge_lane_setting(
     SseDeserializer deserializer,
   );
 
@@ -1423,6 +1599,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeLaneApprovalOption?
   sse_decode_opt_box_autoadd_bridge_lane_approval_option(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneCapabilities? sse_decode_opt_box_autoadd_bridge_lane_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSession? sse_decode_opt_box_autoadd_bridge_lane_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSettings? sse_decode_opt_box_autoadd_bridge_lane_settings(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneUsage? sse_decode_opt_box_autoadd_bridge_lane_usage(
     SseDeserializer deserializer,
   );
 
@@ -1784,8 +1980,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_lane_capabilities(
+    BridgeLaneCapabilities self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_session(
+    BridgeLaneSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_settings(
+    BridgeLaneSettings self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_lane_spec(
     BridgeLaneSpec self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_usage(
+    BridgeLaneUsage self,
     SseSerializer serializer,
   );
 
@@ -2048,6 +2268,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_lane_choice(
+    BridgeLaneChoice self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_create_options(
+    BridgeLaneCreateOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_create_request(
+    BridgeLaneCreateRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_created(
+    BridgeLaneCreated self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_lane_decision(
     BridgeLaneDecision self,
     SseSerializer serializer,
@@ -2056,6 +2300,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_lane_error(
     BridgeLaneError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_prompt_outcome(
+    BridgeLanePromptOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_provider(
+    BridgeLaneProvider self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_provider_state(
+    BridgeLaneProviderState self,
     SseSerializer serializer,
   );
 
@@ -2072,6 +2334,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_lane_setting(
+    BridgeLaneSetting self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_setting_change(
+    BridgeLaneSettingChange self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_settings(
+    BridgeLaneSettings self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_lane_snapshot(
     BridgeLaneSnapshot self,
     SseSerializer serializer,
@@ -2080,6 +2360,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_lane_spec(
     BridgeLaneSpec self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_usage(
+    BridgeLaneUsage self,
     SseSerializer serializer,
   );
 
@@ -2219,6 +2505,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_source_capabilities(
+    BridgeSourceCapabilities self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_source_offline(
+    BridgeSourceOffline self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_system_disk_usage(
     BridgeSystemDiskUsage self,
     SseSerializer serializer,
@@ -2267,8 +2565,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_bridge_lane_choice(
+    List<BridgeLaneChoice> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_lane_provider(
+    List<BridgeLaneProvider> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_bridge_lane_question(
     List<BridgeLaneQuestion> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_lane_setting(
+    List<BridgeLaneSetting> self,
     SseSerializer serializer,
   );
 
@@ -2383,6 +2699,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bridge_lane_approval_option(
     BridgeLaneApprovalOption? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_lane_capabilities(
+    BridgeLaneCapabilities? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_lane_session(
+    BridgeLaneSession? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_lane_settings(
+    BridgeLaneSettings? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_lane_usage(
+    BridgeLaneUsage? self,
     SseSerializer serializer,
   );
 

@@ -1290,6 +1290,19 @@ mod tests {
             "BridgeLaneApprovalStatus_Resolved",
             "BridgeLaneApprovalStatus_Submitted",
             "BridgeLaneCapabilities",
+            // Plan 025 CM2 — the contract split's DTOs, both levels: a session's
+            // settings (model/mode/option ids and names, context token counts),
+            // the setting change the settings sheet sends, a machine source's
+            // capabilities and outage cause, and the create sheet's options,
+            // request and answer (provider ids and labels, directories, a first
+            // prompt, a request id, the new session's row). Agent-session
+            // material only, like the lane types around them — **no credential
+            // of any kind crosses**: craze reports a provider's `needs_setup`
+            // reason and fix as text, never the key or login it is missing.
+            "BridgeLaneChoice",
+            "BridgeLaneCreateOptions",
+            "BridgeLaneCreateRequest",
+            "BridgeLaneCreated",
             "BridgeLaneDecision",
             "BridgeLaneError",
             "BridgeLaneError_AlreadyResolved",
@@ -1303,11 +1316,37 @@ mod tests {
             "BridgeLaneError_UnknownApproval",
             "BridgeLaneError_UnknownSession",
             "BridgeLaneError_UnsupportedLane",
+            "BridgeLanePromptOutcome",
+            "BridgeLanePromptOutcome_Accepted",
+            "BridgeLanePromptOutcome_None",
+            "BridgeLanePromptOutcome_Other",
+            "BridgeLanePromptOutcome_Refused",
+            "BridgeLanePromptOutcome_Unknown",
+            "BridgeLaneProvider",
+            "BridgeLaneProviderState",
+            "BridgeLaneProviderState_NeedsSetup",
+            "BridgeLaneProviderState_Other",
+            "BridgeLaneProviderState_Ready",
+            "BridgeLaneProviderState_Unavailable",
             "BridgeLaneQuestion",
             "BridgeLaneSession",
+            "BridgeLaneSetting",
+            "BridgeLaneSettingChange",
+            "BridgeLaneSettingChange_Config",
+            "BridgeLaneSettingChange_Mode",
+            "BridgeLaneSettingChange_Model",
+            "BridgeLaneSettings",
             "BridgeLaneSnapshot",
             "BridgeLaneSpec",
+            "BridgeLaneUsage",
             "BridgeSendMode",
+            "BridgeSourceCapabilities",
+            "BridgeSourceOffline",
+            "BridgeSourceOffline_Failed",
+            "BridgeSourceOffline_NotInstalled",
+            "BridgeSourceOffline_Other",
+            "BridgeSourceOffline_TooOld",
+            "BridgeSourceOffline_Unreachable",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
@@ -1325,12 +1364,9 @@ mod tests {
             "BridgeRcKind",
             "BridgeRcKind_ClaudeBroker",
             "BridgeRcKind_ClaudeRc",
-            "BridgeRcKind_Codex",
-            "BridgeRcKind_Cursor",
-            // Plan 017's two grok kinds. Without them a gx row would cross the
-            // bridge as `BridgeRcKind_Other { raw: "gx" }`.
-            "BridgeRcKind_Grok",
-            "BridgeRcKind_Gx",
+            // Plan 025 retired codex, cursor, gx and grok (they cross as
+            // `BridgeRcKind_Other` with their raw source now) and added craze.
+            "BridgeRcKind_Craze",
             "BridgeRcKind_Opencode",
             "BridgeRcKind_Other",
             "BridgeRcKind_Shell",

@@ -27,11 +27,13 @@ abstract interface class LaneSource {
   /// same handle is refused Rust-side rather than splitting the nudges.
   Stream<bool> nudges(LaneHandle handle);
 
-  /// Cached at open, so it keeps answering after [close].
-  BridgeLaneCapabilities capabilities(LaneHandle handle);
-
   /// **The one read**, and the nudge acknowledgement: sync, atomic, and it
   /// clears the dirty bit. `sinceSeq` null asks for the whole generation.
+  ///
+  /// It is also where the session's capabilities, settings and live row are
+  /// read: they ride the lane's stream (plan 025 §3.2.1), so there is no
+  /// separate capabilities call to cache at open. It keeps answering after
+  /// [close], with the last view.
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq);
 
   Future<void> send(
@@ -62,10 +64,6 @@ class BridgeLaneSource implements LaneSource {
 
   @override
   Stream<bool> nudges(LaneHandle handle) => laneNudges(lane: _lane(handle));
-
-  @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) =>
-      laneCapabilities(lane: _lane(handle));
 
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) =>
