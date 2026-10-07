@@ -82,7 +82,7 @@ both run every file even after one fails.
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
-| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, and the feed's teardown |
+| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, the feed's teardown, and the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it) |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
@@ -133,6 +133,13 @@ craze its pinned shed tested.
   `~/.craze`, `~/.cache/craze` or the host's own craze.
 - **Skip or fail.** Without `SHED_CRAZE_BIN_DIR` the hub cells SKIP with a
   message; `SHED_CRAZE_REQUIRE=1` (CI) turns that into a failure.
+- **A lost answer, made on purpose.** The rig logs every `session.create` a
+  bridge carries (its request id), and with `dropCreates` set it relays the
+  create to the hub, relays nothing back, and kills that bridge a second later
+  — the hub has the create, the phone never sees its answer. That is how the
+  unknown-outcome cell proves "Try again" resumes the same request and one
+  session results; `setGrokAgent(scriptAgent('exit-two-lines'))` is how the
+  start-failure cell gets craze's real cause.
 
 Rules that matter when adding a cell:
 

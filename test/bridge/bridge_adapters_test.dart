@@ -117,6 +117,11 @@ void main() {
         'LANE_UNSUPPORTED_KIND',
         null,
       ),
+      (
+        BridgeLaneError.outcomeUnknown(msg: 'outcome unknown: lost twice'),
+        'LANE_OUTCOME_UNKNOWN',
+        null,
+      ),
     ];
 
     for (final (error, code, status) in cases) {

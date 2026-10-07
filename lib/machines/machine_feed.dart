@@ -344,12 +344,38 @@ List<MachineRow> machineRows({
 }
 
 /// What a machine's card SAYS about its craze, if anything (plan 025 §3.2.4,
-/// A2m): a craze too old for shed asks to be updated; every other state —
-/// not installed above all — is quiet. Branches on the offline CAUSE, never on
-/// the reason's text (which is copy).
+/// §3.8, A2m): a craze too old for shed asks to be updated, and so does a LIVE
+/// hub that cannot create (its `hello` lacks `createOptions` or
+/// `sessionCreate` — listing still works, the create screen does not offer
+/// craze there); every other state — not installed above all — is quiet.
+/// Branches on the offline CAUSE and the hub's capabilities, never on the
+/// reason's text (which is copy).
 String? crazeNoteFor(MachineFeedState state) =>
     state.craze?.offline?.cause is BridgeSourceOffline_TooOld
     ? 'craze on this machine is too old for shed; update it'
+    : crazeCreateUpdateNote(state.craze);
+
+/// **Whether a machine offers a craze create** (plan 025 §3.6.5, §3.8) — its
+/// craze source is LIVE and its hub can list providers and create. What the
+/// create screen's craze choice is gated on.
+///
+/// The desktop also offers it on a DORMANT machine (craze installed, no hub
+/// yet). The phone has no dormant phase: its craze tunnel runs `bridge --hub`,
+/// which starts a hub on connect (plan 025 §9), so a machine with craze is live
+/// within a second of being viewed. A live hub without those capabilities, a
+/// too-old craze, an offline or absent one offers nothing.
+bool crazeCreateOffered(BridgeCrazeSnapshot? craze) =>
+    craze != null &&
+    craze.live &&
+    (craze.caps?.create ?? false) &&
+    (craze.caps?.createOptions ?? false);
+
+/// The machine's line when its LIVE hub cannot create — listing still works,
+/// creating does not (§3.8's "update craze on this machine"). Null otherwise (a
+/// too-old craze has its own note).
+String? crazeCreateUpdateNote(BridgeCrazeSnapshot? craze) =>
+    craze != null && craze.live && !crazeCreateOffered(craze)
+    ? 'update craze on this machine to create sessions here'
     : null;
 
 /// [snapshot], no longer live: the same rows and cause, rendered stale — what a
@@ -644,6 +670,12 @@ typedef CrazeSourceOpen =
       required int port,
     });
 
+/// A craze source's nudge stream — `crazeSourceNudges`' own signature. A seam
+/// so a harness can DELAY the nudges and prove that what must not wait for one
+/// (a created session's row, [MachineFeed.crazeCreateSession]) does not.
+typedef CrazeSourceNudges =
+    Stream<bool> Function({required BridgeCrazeSource src});
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
@@ -699,10 +731,12 @@ class MachineFeed {
     WatcherSpawn? spawnWatcher,
     TunnelOpen? openTunnel,
     CrazeSourceOpen? openCrazeSource,
+    CrazeSourceNudges? crazeNudges,
     CrazeFoldPlanner? foldPlan,
   }) : _spawnWatcher = spawnWatcher ?? createRoostWatcher,
        _openTunnel = openTunnel ?? RoostTunnel.open,
        _openCrazeSource = openCrazeSource ?? crazeSourceOpen,
+       _crazeNudges = crazeNudges ?? crazeSourceNudges,
        _foldPlan = foldPlan ?? crazeFoldPlanner,
        _state = MachineFeedState(
          machine: machine,
@@ -742,6 +776,9 @@ class MachineFeed {
 
   /// How [start] opens the craze source — see [CrazeSourceOpen].
   final CrazeSourceOpen _openCrazeSource;
+
+  /// How [start] subscribes to the source's nudges — see [CrazeSourceNudges].
+  final CrazeSourceNudges _crazeNudges;
 
   /// The row merge every emitted state is folded with — see [machineRows].
   final CrazeFoldPlanner _foldPlan;
@@ -1042,7 +1079,7 @@ class MachineFeed {
           message: note.message,
         );
       }
-      _crazeSub = crazeSourceNudges(src: source).listen(
+      _crazeSub = _crazeNudges(src: source).listen(
         (_) => _pullCraze(generation),
         // A nudge stream that errors is still "something changed", and the
         // snapshot is the authority on what.
@@ -1117,9 +1154,18 @@ class MachineFeed {
     return crazeCreateOptions(src: source);
   }
 
-  /// Create a craze session — its own connection, owned by this feed. The new
-  /// session's row is listed at once (the source's created rows), so its
-  /// transcript opens before the roster has caught up.
+  /// Create a craze session — its own connection, owned by this feed.
+  ///
+  /// **The new session's row is in [state] when this returns** (plan 025
+  /// §3.6.4, §3.8): the source lists it at once (its created rows), and this
+  /// reads the source's snapshot right after the create rather than waiting
+  /// for the nudge it raised — so the transcript the create screen opens next,
+  /// whose lane resolves its row from [state] the moment it is built, finds
+  /// it, and a row this read does NOT list is a session craze answered for
+  /// that has already ended. The roster's own frame follows and replaces it.
+  ///
+  /// Throws a [StateError] — before anything is sent — while the machine has
+  /// no craze source.
   Future<BridgeLaneCreated> crazeCreateSession(
     BridgeLaneCreateRequest request,
   ) async {
@@ -1127,7 +1173,11 @@ class MachineFeed {
     if (source == null) {
       throw StateError('craze is not connected on ${machine.name}');
     }
-    return crazeCreate(src: source, request: request);
+    final created = await crazeCreate(src: source, request: request);
+    // Only through the source that created it: a restart's replacement has
+    // its own pull, and reading a retired handle would emit its last view.
+    if (identical(source, _crazeSource)) _pullCraze(_generation);
+    return created;
   }
 
   /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an

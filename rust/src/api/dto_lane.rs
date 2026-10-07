@@ -1246,7 +1246,8 @@ impl From<BridgeLanePromptOutcome> for LanePromptOutcome {
 
 /// What a lane op can fail with — one case per [`LaneError`] variant, plus the
 /// two failures the contract has no variant for because they are not the
-/// adapter's.
+/// adapter's, plus a create whose outcome is not known
+/// ([`BridgeLaneError::OutcomeUnknown`]).
 ///
 /// A **sealed enum**, the [`super::error::BridgeError`] shape rather than
 /// `roost.rs`'s `Result<_, String>`, because the controller BRANCHES on it:
@@ -1290,6 +1291,21 @@ pub enum BridgeLaneError {
     /// which a NEWER build may well be able to. `AgentLaneStamp`'s doc makes
     /// refusing by name the client's obligation for exactly that reason.
     UnsupportedLane { kind: String },
+    /// **A craze create whose answer was lost** (plan 025 §3.8) — written, and
+    /// never answered, twice (shed-craze's own retry under the same request id),
+    /// or cut short by the source's close while it was in flight. Whether it
+    /// started a session is not known.
+    ///
+    /// Its own variant, not [`BridgeLaneError::Failed`]'s text, because it is
+    /// the ONE refusal after which a create sheet KEEPS its request id: craze
+    /// answers a retry under that id with the session the first attempt started,
+    /// so a lost answer never makes a second session — while after any definite
+    /// refusal craze would replay that same refusal for ten minutes, so the id
+    /// must go. Recognised in Rust by `shed_craze::is_outcome_unknown` (one
+    /// implementation; no client string-matches it), and answered only by
+    /// `craze_create` in this build: a lane verb's lost answer is still
+    /// [`BridgeLaneError::Failed`].
+    OutcomeUnknown { msg: String },
 }
 
 impl From<LaneError> for BridgeLaneError {

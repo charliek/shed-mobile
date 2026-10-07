@@ -36,6 +36,28 @@
 //   bridge counter back to zero, the craze tunnel's port closed, and no wait on
 //   roost's next frame. And a restart closes the old source handle before the
 //   next one opens on the new port.
+//
+// ## The cells (CM4: create, §3.8)
+//
+// The create screen's craze choice, driven as a person would, against craze's
+// OWN createOptions and creates — the desktop's C10 cells:
+//
+// * **the sheet** — craze's providers in craze's order, cursor (no
+//   `cursor-agent` on the rig's PATH) and native (no key) dimmed with craze's
+//   reason and fix and refusing a tap, grok (craze's default) preselected; the
+//   recent directories craze sends; a first prompt craze takes; and the
+//   created session's transcript open AT ONCE in place of the screen, its
+//   prompt echoed.
+// * **folded at once** — with the source's nudges held back, the created row
+//   is in the feed's state the moment the create returns: what lets the
+//   transcript open before the roster (or any nudge) has caught up.
+// * **an unknown outcome** — the bridge carrying the create is cut once the hub
+//   has it (and so is shed-craze's own retry, under the same id): the screen
+//   says the outcome is unknown and HOLDS the id; Try again resumes it, and
+//   exactly one session results.
+// * **a start failure** — grok's agent dies at its start: craze's cause,
+//   verbatim, the form kept, no id held; with the config fixed, Try again
+//   sends a NEW id and one session results.
 import 'dart:async';
 import 'dart:io';
 
@@ -44,7 +66,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:shed_mobile/features/craze/craze_create.dart';
+import 'package:shed_mobile/features/craze/craze_create_sheet.dart';
+import 'package:shed_mobile/features/create/create_rc_target.dart';
+import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/machines/machine_sessions_view.dart';
+import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
@@ -716,6 +743,309 @@ void main() {
     skip: skip,
     timeout: _cell,
   );
+
+  // -------------------------------------------------------------------------
+  // create (CM4, §3.8)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the_sheet_renders_crazes_options_and_opens_the_transcript_at_once',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig, show: false);
+      final feed = screen.feed;
+
+      // A session craze already ran in `work`: its directory is a recent one
+      // once craze's session index has its row (written when the session is
+      // established, a moment after the create answers). Before the screen
+      // opens: the sheet reads its options when it opens, and only then.
+      await feed.crazeCreateSession(
+        BridgeLaneCreateRequest(
+          cwd: rig.work,
+          prompt: 'hello recent',
+          requestId: crazeNewRequestId(),
+        ),
+      );
+      final indexed = DateTime.now().add(const Duration(seconds: 30));
+      while (!(await feed.crazeOptions()).recentDirs.contains(rig.work)) {
+        if (DateTime.now().isAfter(indexed)) {
+          fail('craze never listed ${rig.work} as a recent directory');
+        }
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      final sheet = _mkdir('${rig.root}/w-sheet');
+      final before = rig.creates.length;
+
+      await _showCreateScreen(tester, screen.container);
+      await _chooseCraze(tester);
+      // craze's providers, in craze's order.
+      expect(_providerRows(), [
+        'craze-provider-cursor',
+        'craze-provider-grok',
+        'craze-provider-native',
+      ]);
+      expect(_textAt('craze-provider-state-cursor'), 'unavailable');
+      expect(
+        _textAt('craze-provider-reason-cursor'),
+        'cursor-agent not found on PATH',
+      );
+      expect(_textAt('craze-provider-fix-cursor'), contains('cursor-agent'));
+      expect(_textAt('craze-provider-state-native'), 'needs setup');
+      expect(_textAt('craze-provider-reason-native'), isNotEmpty);
+      expect(_textAt('craze-provider-fix-native'), isNotEmpty);
+      expect(
+        _providerSelected(tester, 'grok'),
+        isTrue,
+        reason: 'craze\'s default, ready',
+      );
+      // A dimmed provider refuses the tap.
+      await tester.tap(find.byKey(const ValueKey('craze-provider-cursor')));
+      await _pumps(tester);
+      expect(_providerSelected(tester, 'cursor'), isFalse);
+      expect(_providerSelected(tester, 'grok'), isTrue);
+
+      // craze's recent directories, one tap each.
+      final recent = _recentDirs();
+      expect(recent, contains(rig.work));
+      await tester.tap(
+        find.byKey(ValueKey('craze-recent-dir-${recent.indexOf(rig.work)}')),
+      );
+      await _pumps(tester);
+      expect(_fieldText(tester, 'craze-create-cwd'), rig.work);
+
+      // A fresh directory and a first prompt; Create.
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        sheet,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-prompt')),
+        'hello sheet',
+      );
+      await _pumps(tester);
+      await _press(tester);
+
+      // The transcript, AT ONCE, in place of the screen — its first prompt
+      // taken and echoed.
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the new session\'s transcript',
+      );
+      final made = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .lastCreated!;
+      expect(made.ended, isFalse);
+      expect(
+        made.created.prompt,
+        const BridgeLanePromptOutcome.accepted(),
+        reason: 'the first prompt, accepted',
+      );
+      expect(
+        tester.widget<LaneScreen>(find.byType(LaneScreen)).slug,
+        made.hostId,
+      );
+      final ref = (
+        machine: _local.name,
+        kind: crazeLaneKind,
+        slug: made.hostId,
+      );
+      bool shows(String text) =>
+          screen.container
+              .read(laneStateProvider(ref))
+              .value
+              ?.rows
+              .any((r) => r.text?.contains(text) ?? false) ??
+          false;
+      await _until(
+        tester,
+        () => shows('echo: hello sheet'),
+        what: 'the first prompt\'s echo in the transcript',
+      );
+      expect(
+        find.byKey(const ValueKey('craze-create-prompt-notice')),
+        findsNothing,
+      );
+      final sent = rig.creates.sublist(before);
+      expect(sent, hasLength(1));
+      expect(sent.single.dropped, isFalse);
+      await _exactlyOneIn(tester, feed, sheet);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_created_row_is_in_the_feed_state_when_the_create_returns',
+    (tester) async {
+      // The source's nudges held back half a second: only a feed that reads
+      // the source right after the create — not one that waits for the nudge
+      // the create raised — has the row when the create returns. The lane
+      // the screen opens next resolves its row from that state at once.
+      final rig = await _rig(bins!);
+      final feed = _feed(
+        rig,
+        crazeNudges: ({required src}) => crazeSourceNudges(src: src).asyncMap(
+          (n) =>
+              Future<bool>.delayed(const Duration(milliseconds: 500), () => n),
+        ),
+      );
+      addTearDown(() => _disposeFeed(tester, feed));
+      await feed.start();
+      await _until(
+        tester,
+        () => feed.state.craze?.live ?? false,
+        what: 'the craze feed live',
+      );
+      final created = await feed.crazeCreateSession(
+        BridgeLaneCreateRequest(
+          cwd: rig.work,
+          prompt: 'hello at once',
+          requestId: crazeNewRequestId(),
+        ),
+      );
+      // Synchronously, before any nudge could be delivered.
+      expect(
+        _row(feed.state, created.session.id),
+        isNotNull,
+        reason: 'the created row is folded in when the create returns',
+      );
+      expect(created.prompt, const BridgeLanePromptOutcome.accepted());
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_unknown_outcome_is_retried_under_the_same_id',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-unknown');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await _pumps(tester);
+      rig.dropCreates = true;
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-unknown'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the sheet to report an unknown outcome',
+        );
+      } finally {
+        rig.dropCreates = false;
+      }
+      final draft = screen.container.read(crazeDraftProvider(_local.name));
+      final held = draft.requestId;
+      expect(held, startsWith('shed-'));
+      expect(draft.phase, CrazePhase.unknown);
+      expect(_textAt('craze-create-unknown'), outcomeUnknownNote);
+      expect(_primaryLabel(tester), 'Try again');
+      expect(
+        rig.creates.sublist(before),
+        [(requestId: held, dropped: true), (requestId: held, dropped: true)],
+        reason: 'shed-craze\'s own retry, under the same id',
+      );
+
+      await _press(tester); // Try again
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the first attempt started, opened',
+      );
+      expect(rig.creates.sublist(before), [
+        (requestId: held, dropped: true),
+        (requestId: held, dropped: true),
+        (requestId: held, dropped: false),
+      ], reason: 'Try again resumed the same request');
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_start_failure_shows_crazes_cause_and_try_again_mints_a_new_id',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-fail');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-prompt')),
+        'this one will not start',
+      );
+      await _pumps(tester);
+      // grok's agent dies at its start, with two lines to say why.
+      rig.setGrokAgent(rig.scriptAgent('exit-two-lines'));
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-cause'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the start failure\'s cause',
+        );
+      } finally {
+        rig.setGrokAgent(rig.grokEcho);
+      }
+      final cause = _textAt('craze-create-cause');
+      expect(cause, contains('KEYCHAIN LOCKED'));
+      expect(cause, contains('Run unlock and retry.'));
+      final draft = screen.container.read(crazeDraftProvider(_local.name));
+      expect(draft.refusal?.message, cause, reason: 'craze\'s cause, verbatim');
+      expect(
+        draft.requestId,
+        isNull,
+        reason: 'a definite answer ends the id\'s life',
+      );
+      expect(_primaryLabel(tester), 'Try again');
+      expect(_fieldText(tester, 'craze-create-cwd'), dir);
+      expect(
+        _fieldText(tester, 'craze-create-prompt'),
+        'this one will not start',
+      );
+      await _until(
+        tester,
+        () => _rowsIn(screen.feed, dir).isEmpty,
+        what: 'the failed start to leave no session',
+      );
+
+      await _press(tester); // Try again, the config fixed
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the retry started, opened',
+      );
+      final sent = rig.creates.sublist(before);
+      expect(sent, hasLength(2));
+      expect(
+        sent[1].requestId,
+        isNot(sent[0].requestId),
+        reason: 'a NEW id after a definite failure',
+      );
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -738,15 +1068,197 @@ Future<CrazeRig> _rig(
 
 /// A feed on [_local] whose tunnels are [rig]'s. Built directly: no SSH key,
 /// no host keys, nothing dialled.
-MachineFeed _feed(CrazeRig rig, {CrazeSourceOpen? openCrazeSource}) =>
-    MachineFeed(
-      machine: _local,
-      identities: const [],
-      hostKeys: HostKeyStore(),
-      entitlements: RoostBootstrapEntitlements(),
-      openTunnel: rig.tunnelOpen,
-      openCrazeSource: openCrazeSource,
+MachineFeed _feed(
+  CrazeRig rig, {
+  CrazeSourceOpen? openCrazeSource,
+  CrazeSourceNudges? crazeNudges,
+}) => MachineFeed(
+  machine: _local,
+  identities: const [],
+  hostKeys: HostKeyStore(),
+  entitlements: RoostBootstrapEntitlements(),
+  openTunnel: rig.tunnelOpen,
+  openCrazeSource: openCrazeSource,
+  crazeNudges: crazeNudges,
+);
+
+/// The create screen on [_local], over the real provider graph with [rig]'s
+/// tunnels — the craze feed live before it returns. With [show] false the
+/// screen is not up yet ([_showCreateScreen] puts it up).
+///
+/// This harness has no roost, so craze is the only kind the screen offers and
+/// it opens straight onto the craze sheet — which reads its options then.
+Future<({ProviderContainer container, MachineFeed feed})> _createScreen(
+  WidgetTester tester,
+  CrazeRig rig, {
+  bool show = true,
+}) async {
+  final container = ProviderContainer(
+    retry: (_, _) => null,
+    overrides: [
+      machinesProvider.overrideWith((ref) async => const [_local]),
+      identitiesProvider.overrideWith((ref) async => <SSHKeyPair>[]),
+      machineTunnelOpenProvider.overrideWithValue(rig.tunnelOpen),
+    ],
+  );
+  addTearDown(() => _dispose(tester, container));
+  if (show) await _showCreateScreen(tester, container);
+  final feedState = container.listen(
+    machineFeedProvider(_local.name),
+    (_, _) {},
+    fireImmediately: true,
+  );
+  await _until(
+    tester,
+    () => feedState.read().value?.craze?.live ?? false,
+    what: 'the craze feed live',
+  );
+  return (
+    container: container,
+    feed: container.read(machineFeedControllerProvider(_local.name)),
+  );
+}
+
+Future<void> _showCreateScreen(
+  WidgetTester tester,
+  ProviderContainer container,
+) => tester.pumpWidget(
+  UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp(
+      theme: shedLightTheme,
+      home: CreateRcScreen(target: MachineRcTarget(machineName: _local.name)),
+    ),
+  ),
+);
+
+/// Pick the craze choice and wait for craze's providers.
+Future<void> _chooseCraze(WidgetTester tester) async {
+  const choice = ValueKey('createrc-kind-craze');
+  await _until(
+    tester,
+    () => find.byKey(choice).evaluate().isNotEmpty,
+    what: 'the craze choice offered',
+  );
+  await tester.tap(find.byKey(choice));
+  await _until(
+    tester,
+    () =>
+        find.byKey(const ValueKey('craze-provider-grok')).evaluate().isNotEmpty,
+    what: 'craze\'s providers on the sheet',
+  );
+}
+
+/// Press the sheet's primary button (Create / Try again).
+Future<void> _press(WidgetTester tester) async {
+  final button = find.byKey(const ValueKey('craze-create-submit'));
+  await tester.ensureVisible(button);
+  await _pumps(tester);
+  await tester.tap(button);
+  await _pumps(tester);
+}
+
+Future<void> _pumps(WidgetTester tester) async {
+  for (var i = 0; i < 4; i++) {
+    await tester.pump(const Duration(milliseconds: 30));
+  }
+}
+
+/// The provider rows' keys, in the order the sheet shows them.
+List<String> _providerRows() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> &&
+          RegExp(r'^craze-provider-[a-z]+$').hasMatch(k.value);
+    })
+    .evaluate()
+    .map((e) => (e.widget.key! as ValueKey<String>).value)
+    .toList();
+
+bool _providerSelected(WidgetTester tester, String provider) => tester
+    .widget<Semantics>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey('craze-provider-$provider')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    )
+    .properties
+    .selected!;
+
+/// craze's recent directories, as the sheet shows them.
+List<String> _recentDirs() {
+  final dirs = <String>[];
+  for (var i = 0; ; i++) {
+    final chip = find.byKey(ValueKey('craze-recent-dir-$i'));
+    if (chip.evaluate().isEmpty) return dirs;
+    dirs.add(
+      (find
+                  .descendant(of: chip, matching: find.byType(Text))
+                  .evaluate()
+                  .single
+                  .widget
+              as Text)
+          .data!,
     );
+  }
+}
+
+String _textAt(String key) {
+  final w = find.byKey(ValueKey(key)).evaluate().single.widget;
+  return switch (w) {
+    final Text t => t.data!,
+    final SelectableText t => t.data!,
+    final Container c => (c.child! as Text).data!,
+    _ => throw StateError('no text at $key'),
+  };
+}
+
+String _fieldText(WidgetTester tester, String key) =>
+    tester.widget<TextField>(find.byKey(ValueKey(key))).controller!.text;
+
+String _primaryLabel(WidgetTester tester) => tester
+    .widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('craze-create-submit')),
+        matching: find.byType(Text),
+      ),
+    )
+    .data!;
+
+String _mkdir(String path) {
+  Directory(path).createSync();
+  return path;
+}
+
+List<CrazeMachineRow> _rowsIn(MachineFeed feed, String cwd) => [
+  for (final r in feed.state.rows)
+    if (r is CrazeMachineRow && r.session.cwd == cwd) r,
+];
+
+/// The one craze session in [cwd] — waited for, then given two seconds for a
+/// second (which must never come) to be listed too.
+Future<void> _exactlyOneIn(
+  WidgetTester tester,
+  MachineFeed feed,
+  String cwd,
+) async {
+  await _until(
+    tester,
+    () => _rowsIn(feed, cwd).isNotEmpty,
+    what: 'the session in $cwd listed',
+  );
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  expect(
+    _rowsIn(feed, cwd).map((r) => r.session.id).toList(),
+    hasLength(1),
+    reason: 'exactly one session in $cwd',
+  );
+}
 
 /// Dispose [feed] and wait for every bridge counter to come back — so a cell
 /// never hands the next one a count of its own.

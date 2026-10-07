@@ -4236,6 +4236,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return BridgeLaneError_NoLane(msg: dco_decode_String(raw[1]));
       case 10:
         return BridgeLaneError_UnsupportedLane(kind: dco_decode_String(raw[1]));
+      case 11:
+        return BridgeLaneError_OutcomeUnknown(msg: dco_decode_String(raw[1]));
       default:
         throw Exception('unreachable');
     }
@@ -6885,6 +6887,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 10:
         var var_kind = sse_decode_String(deserializer);
         return BridgeLaneError_UnsupportedLane(kind: var_kind);
+      case 11:
+        var var_msg = sse_decode_String(deserializer);
+        return BridgeLaneError_OutcomeUnknown(msg: var_msg);
       default:
         throw UnimplementedError('');
     }
@@ -9930,6 +9935,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case BridgeLaneError_UnsupportedLane(kind: final kind):
         sse_encode_i_32(10, serializer);
         sse_encode_String(kind, serializer);
+      case BridgeLaneError_OutcomeUnknown(msg: final msg):
+        sse_encode_i_32(11, serializer);
+        sse_encode_String(msg, serializer);
     }
   }
 

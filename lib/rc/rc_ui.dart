@@ -95,7 +95,8 @@ const List<BridgeRcKind> rcKindValues = [
 /// kinds — what a roost tab can launch. craze is the lane for every provider
 /// but these two, and it is never one of them: a craze session is created
 /// through the machine's craze source, not a roost tab (`RcKind::Craze` is not
-/// in `RcKind::creatable`), and the phone's create form does not offer it yet.
+/// in `RcKind::creatable`), so the create form adds it beside these only where
+/// that source can create (`presentCapsView`'s `craze`, plan 025 O3).
 /// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind
 /// is never creatable, so both stay excluded. Mirrors `RcKind::creatable`
 /// minus shell (O3).

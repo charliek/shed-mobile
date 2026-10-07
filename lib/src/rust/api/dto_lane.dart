@@ -529,6 +529,23 @@ sealed class BridgeLaneError with _$BridgeLaneError implements FrbException {
   /// refusing by name the client's obligation for exactly that reason.
   const factory BridgeLaneError.unsupportedLane({required String kind}) =
       BridgeLaneError_UnsupportedLane;
+
+  /// **A craze create whose answer was lost** (plan 025 §3.8) — written, and
+  /// never answered, twice (shed-craze's own retry under the same request id),
+  /// or cut short by the source's close while it was in flight. Whether it
+  /// started a session is not known.
+  ///
+  /// Its own variant, not [`BridgeLaneError::Failed`]'s text, because it is
+  /// the ONE refusal after which a create sheet KEEPS its request id: craze
+  /// answers a retry under that id with the session the first attempt started,
+  /// so a lost answer never makes a second session — while after any definite
+  /// refusal craze would replay that same refusal for ten minutes, so the id
+  /// must go. Recognised in Rust by `shed_craze::is_outcome_unknown` (one
+  /// implementation; no client string-matches it), and answered only by
+  /// `craze_create` in this build: a lane verb's lost answer is still
+  /// [`BridgeLaneError::Failed`].
+  const factory BridgeLaneError.outcomeUnknown({required String msg}) =
+      BridgeLaneError_OutcomeUnknown;
 }
 
 @freezed

@@ -219,6 +219,36 @@ void main() {
       );
       expect(crazeNoteFor(MachineFeedState(machine: _mini3)), isNull);
     });
+
+    test('a live hub that cannot create asks for an update; one that can is '
+        'quiet', () {
+      MachineFeedState live({required bool create, required bool options}) =>
+          MachineFeedState(
+            machine: _mini3,
+            craze: BridgeCrazeSnapshot(
+              rows: const [],
+              live: true,
+              caps: BridgeSourceCapabilities(
+                kind: 'craze',
+                create: create,
+                createOptions: options,
+              ),
+              truncated: false,
+            ),
+          );
+      const update = 'update craze on this machine to create sessions here';
+      expect(crazeNoteFor(live(create: true, options: false)), update);
+      expect(crazeNoteFor(live(create: false, options: true)), update);
+      expect(crazeNoteFor(live(create: true, options: true)), isNull);
+      expect(
+        crazeCreateOffered(live(create: true, options: true).craze),
+        isTrue,
+      );
+      expect(
+        crazeCreateOffered(live(create: true, options: false).craze),
+        isFalse,
+      );
+    });
   });
 
   group('staleCraze', () {

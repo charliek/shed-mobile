@@ -1269,7 +1269,7 @@ extension BridgeLaneErrorPatterns on BridgeLaneError {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLaneError_Unauthorized value)?  unauthorized,TResult Function( BridgeLaneError_BadRequest value)?  badRequest,TResult Function( BridgeLaneError_UnknownSession value)?  unknownSession,TResult Function( BridgeLaneError_UnknownApproval value)?  unknownApproval,TResult Function( BridgeLaneError_AlreadySubmitted value)?  alreadySubmitted,TResult Function( BridgeLaneError_AlreadyResolved value)?  alreadyResolved,TResult Function( BridgeLaneError_NotAccepting value)?  notAccepting,TResult Function( BridgeLaneError_Unavailable value)?  unavailable,TResult Function( BridgeLaneError_Failed value)?  failed,TResult Function( BridgeLaneError_NoLane value)?  noLane,TResult Function( BridgeLaneError_UnsupportedLane value)?  unsupportedLane,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLaneError_Unauthorized value)?  unauthorized,TResult Function( BridgeLaneError_BadRequest value)?  badRequest,TResult Function( BridgeLaneError_UnknownSession value)?  unknownSession,TResult Function( BridgeLaneError_UnknownApproval value)?  unknownApproval,TResult Function( BridgeLaneError_AlreadySubmitted value)?  alreadySubmitted,TResult Function( BridgeLaneError_AlreadyResolved value)?  alreadyResolved,TResult Function( BridgeLaneError_NotAccepting value)?  notAccepting,TResult Function( BridgeLaneError_Unavailable value)?  unavailable,TResult Function( BridgeLaneError_Failed value)?  failed,TResult Function( BridgeLaneError_NoLane value)?  noLane,TResult Function( BridgeLaneError_UnsupportedLane value)?  unsupportedLane,TResult Function( BridgeLaneError_OutcomeUnknown value)?  outcomeUnknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized() when unauthorized != null:
@@ -1283,7 +1283,8 @@ return notAccepting(_that);case BridgeLaneError_Unavailable() when unavailable !
 return unavailable(_that);case BridgeLaneError_Failed() when failed != null:
 return failed(_that);case BridgeLaneError_NoLane() when noLane != null:
 return noLane(_that);case BridgeLaneError_UnsupportedLane() when unsupportedLane != null:
-return unsupportedLane(_that);case _:
+return unsupportedLane(_that);case BridgeLaneError_OutcomeUnknown() when outcomeUnknown != null:
+return outcomeUnknown(_that);case _:
   return orElse();
 
 }
@@ -1301,7 +1302,7 @@ return unsupportedLane(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLaneError_Unauthorized value)  unauthorized,required TResult Function( BridgeLaneError_BadRequest value)  badRequest,required TResult Function( BridgeLaneError_UnknownSession value)  unknownSession,required TResult Function( BridgeLaneError_UnknownApproval value)  unknownApproval,required TResult Function( BridgeLaneError_AlreadySubmitted value)  alreadySubmitted,required TResult Function( BridgeLaneError_AlreadyResolved value)  alreadyResolved,required TResult Function( BridgeLaneError_NotAccepting value)  notAccepting,required TResult Function( BridgeLaneError_Unavailable value)  unavailable,required TResult Function( BridgeLaneError_Failed value)  failed,required TResult Function( BridgeLaneError_NoLane value)  noLane,required TResult Function( BridgeLaneError_UnsupportedLane value)  unsupportedLane,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLaneError_Unauthorized value)  unauthorized,required TResult Function( BridgeLaneError_BadRequest value)  badRequest,required TResult Function( BridgeLaneError_UnknownSession value)  unknownSession,required TResult Function( BridgeLaneError_UnknownApproval value)  unknownApproval,required TResult Function( BridgeLaneError_AlreadySubmitted value)  alreadySubmitted,required TResult Function( BridgeLaneError_AlreadyResolved value)  alreadyResolved,required TResult Function( BridgeLaneError_NotAccepting value)  notAccepting,required TResult Function( BridgeLaneError_Unavailable value)  unavailable,required TResult Function( BridgeLaneError_Failed value)  failed,required TResult Function( BridgeLaneError_NoLane value)  noLane,required TResult Function( BridgeLaneError_UnsupportedLane value)  unsupportedLane,required TResult Function( BridgeLaneError_OutcomeUnknown value)  outcomeUnknown,}){
 final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized():
@@ -1315,7 +1316,8 @@ return notAccepting(_that);case BridgeLaneError_Unavailable():
 return unavailable(_that);case BridgeLaneError_Failed():
 return failed(_that);case BridgeLaneError_NoLane():
 return noLane(_that);case BridgeLaneError_UnsupportedLane():
-return unsupportedLane(_that);}
+return unsupportedLane(_that);case BridgeLaneError_OutcomeUnknown():
+return outcomeUnknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -1329,7 +1331,7 @@ return unsupportedLane(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLaneError_Unauthorized value)?  unauthorized,TResult? Function( BridgeLaneError_BadRequest value)?  badRequest,TResult? Function( BridgeLaneError_UnknownSession value)?  unknownSession,TResult? Function( BridgeLaneError_UnknownApproval value)?  unknownApproval,TResult? Function( BridgeLaneError_AlreadySubmitted value)?  alreadySubmitted,TResult? Function( BridgeLaneError_AlreadyResolved value)?  alreadyResolved,TResult? Function( BridgeLaneError_NotAccepting value)?  notAccepting,TResult? Function( BridgeLaneError_Unavailable value)?  unavailable,TResult? Function( BridgeLaneError_Failed value)?  failed,TResult? Function( BridgeLaneError_NoLane value)?  noLane,TResult? Function( BridgeLaneError_UnsupportedLane value)?  unsupportedLane,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLaneError_Unauthorized value)?  unauthorized,TResult? Function( BridgeLaneError_BadRequest value)?  badRequest,TResult? Function( BridgeLaneError_UnknownSession value)?  unknownSession,TResult? Function( BridgeLaneError_UnknownApproval value)?  unknownApproval,TResult? Function( BridgeLaneError_AlreadySubmitted value)?  alreadySubmitted,TResult? Function( BridgeLaneError_AlreadyResolved value)?  alreadyResolved,TResult? Function( BridgeLaneError_NotAccepting value)?  notAccepting,TResult? Function( BridgeLaneError_Unavailable value)?  unavailable,TResult? Function( BridgeLaneError_Failed value)?  failed,TResult? Function( BridgeLaneError_NoLane value)?  noLane,TResult? Function( BridgeLaneError_UnsupportedLane value)?  unsupportedLane,TResult? Function( BridgeLaneError_OutcomeUnknown value)?  outcomeUnknown,}){
 final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized() when unauthorized != null:
@@ -1343,7 +1345,8 @@ return notAccepting(_that);case BridgeLaneError_Unavailable() when unavailable !
 return unavailable(_that);case BridgeLaneError_Failed() when failed != null:
 return failed(_that);case BridgeLaneError_NoLane() when noLane != null:
 return noLane(_that);case BridgeLaneError_UnsupportedLane() when unsupportedLane != null:
-return unsupportedLane(_that);case _:
+return unsupportedLane(_that);case BridgeLaneError_OutcomeUnknown() when outcomeUnknown != null:
+return outcomeUnknown(_that);case _:
   return null;
 
 }
@@ -1360,7 +1363,7 @@ return unsupportedLane(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unauthorized,TResult Function( String msg)?  badRequest,TResult Function()?  unknownSession,TResult Function()?  unknownApproval,TResult Function()?  alreadySubmitted,TResult Function()?  alreadyResolved,TResult Function()?  notAccepting,TResult Function( String msg)?  unavailable,TResult Function( String msg)?  failed,TResult Function( String msg)?  noLane,TResult Function( String kind)?  unsupportedLane,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unauthorized,TResult Function( String msg)?  badRequest,TResult Function()?  unknownSession,TResult Function()?  unknownApproval,TResult Function()?  alreadySubmitted,TResult Function()?  alreadyResolved,TResult Function()?  notAccepting,TResult Function( String msg)?  unavailable,TResult Function( String msg)?  failed,TResult Function( String msg)?  noLane,TResult Function( String kind)?  unsupportedLane,TResult Function( String msg)?  outcomeUnknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized() when unauthorized != null:
 return unauthorized();case BridgeLaneError_BadRequest() when badRequest != null:
@@ -1373,7 +1376,8 @@ return notAccepting();case BridgeLaneError_Unavailable() when unavailable != nul
 return unavailable(_that.msg);case BridgeLaneError_Failed() when failed != null:
 return failed(_that.msg);case BridgeLaneError_NoLane() when noLane != null:
 return noLane(_that.msg);case BridgeLaneError_UnsupportedLane() when unsupportedLane != null:
-return unsupportedLane(_that.kind);case _:
+return unsupportedLane(_that.kind);case BridgeLaneError_OutcomeUnknown() when outcomeUnknown != null:
+return outcomeUnknown(_that.msg);case _:
   return orElse();
 
 }
@@ -1391,7 +1395,7 @@ return unsupportedLane(_that.kind);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unauthorized,required TResult Function( String msg)  badRequest,required TResult Function()  unknownSession,required TResult Function()  unknownApproval,required TResult Function()  alreadySubmitted,required TResult Function()  alreadyResolved,required TResult Function()  notAccepting,required TResult Function( String msg)  unavailable,required TResult Function( String msg)  failed,required TResult Function( String msg)  noLane,required TResult Function( String kind)  unsupportedLane,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unauthorized,required TResult Function( String msg)  badRequest,required TResult Function()  unknownSession,required TResult Function()  unknownApproval,required TResult Function()  alreadySubmitted,required TResult Function()  alreadyResolved,required TResult Function()  notAccepting,required TResult Function( String msg)  unavailable,required TResult Function( String msg)  failed,required TResult Function( String msg)  noLane,required TResult Function( String kind)  unsupportedLane,required TResult Function( String msg)  outcomeUnknown,}) {final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized():
 return unauthorized();case BridgeLaneError_BadRequest():
@@ -1404,7 +1408,8 @@ return notAccepting();case BridgeLaneError_Unavailable():
 return unavailable(_that.msg);case BridgeLaneError_Failed():
 return failed(_that.msg);case BridgeLaneError_NoLane():
 return noLane(_that.msg);case BridgeLaneError_UnsupportedLane():
-return unsupportedLane(_that.kind);}
+return unsupportedLane(_that.kind);case BridgeLaneError_OutcomeUnknown():
+return outcomeUnknown(_that.msg);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -1418,7 +1423,7 @@ return unsupportedLane(_that.kind);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unauthorized,TResult? Function( String msg)?  badRequest,TResult? Function()?  unknownSession,TResult? Function()?  unknownApproval,TResult? Function()?  alreadySubmitted,TResult? Function()?  alreadyResolved,TResult? Function()?  notAccepting,TResult? Function( String msg)?  unavailable,TResult? Function( String msg)?  failed,TResult? Function( String msg)?  noLane,TResult? Function( String kind)?  unsupportedLane,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unauthorized,TResult? Function( String msg)?  badRequest,TResult? Function()?  unknownSession,TResult? Function()?  unknownApproval,TResult? Function()?  alreadySubmitted,TResult? Function()?  alreadyResolved,TResult? Function()?  notAccepting,TResult? Function( String msg)?  unavailable,TResult? Function( String msg)?  failed,TResult? Function( String msg)?  noLane,TResult? Function( String kind)?  unsupportedLane,TResult? Function( String msg)?  outcomeUnknown,}) {final _that = this;
 switch (_that) {
 case BridgeLaneError_Unauthorized() when unauthorized != null:
 return unauthorized();case BridgeLaneError_BadRequest() when badRequest != null:
@@ -1431,7 +1436,8 @@ return notAccepting();case BridgeLaneError_Unavailable() when unavailable != nul
 return unavailable(_that.msg);case BridgeLaneError_Failed() when failed != null:
 return failed(_that.msg);case BridgeLaneError_NoLane() when noLane != null:
 return noLane(_that.msg);case BridgeLaneError_UnsupportedLane() when unsupportedLane != null:
-return unsupportedLane(_that.kind);case _:
+return unsupportedLane(_that.kind);case BridgeLaneError_OutcomeUnknown() when outcomeUnknown != null:
+return outcomeUnknown(_that.msg);case _:
   return null;
 
 }
@@ -1954,6 +1960,72 @@ class _$BridgeLaneError_UnsupportedLaneCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? kind = null,}) {
   return _then(BridgeLaneError_UnsupportedLane(
 kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneError_OutcomeUnknown extends BridgeLaneError {
+  const BridgeLaneError_OutcomeUnknown({required this.msg}): super._();
+  
+
+ final  String msg;
+
+/// Create a copy of BridgeLaneError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneError_OutcomeUnknownCopyWith<BridgeLaneError_OutcomeUnknown> get copyWith => _$BridgeLaneError_OutcomeUnknownCopyWithImpl<BridgeLaneError_OutcomeUnknown>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneError_OutcomeUnknown&&(identical(other.msg, msg) || other.msg == msg));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,msg);
+
+@override
+String toString() {
+  return 'BridgeLaneError.outcomeUnknown(msg: $msg)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneError_OutcomeUnknownCopyWith<$Res> implements $BridgeLaneErrorCopyWith<$Res> {
+  factory $BridgeLaneError_OutcomeUnknownCopyWith(BridgeLaneError_OutcomeUnknown value, $Res Function(BridgeLaneError_OutcomeUnknown) _then) = _$BridgeLaneError_OutcomeUnknownCopyWithImpl;
+@useResult
+$Res call({
+ String msg
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneError_OutcomeUnknownCopyWithImpl<$Res>
+    implements $BridgeLaneError_OutcomeUnknownCopyWith<$Res> {
+  _$BridgeLaneError_OutcomeUnknownCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneError_OutcomeUnknown _self;
+  final $Res Function(BridgeLaneError_OutcomeUnknown) _then;
+
+/// Create a copy of BridgeLaneError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? msg = null,}) {
+  return _then(BridgeLaneError_OutcomeUnknown(
+msg: null == msg ? _self.msg : msg // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }

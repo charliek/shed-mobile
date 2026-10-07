@@ -123,6 +123,18 @@ class CrazeRig {
   /// source installed and not yet SEEDED, for as long as a cell needs one.
   Completer<void>? holdCrazeDials;
 
+  /// Every `session.create` a craze bridge of this rig carried, in order:
+  /// its request id, and whether it was [dropCreates]-dropped. What the
+  /// create cells count sessions and ids by (the desktop rig's `creates.log`).
+  final List<({String? requestId, bool dropped})> creates = [];
+
+  /// **A lost answer, exactly** (the desktop rig's `drop-creates`): while set,
+  /// a bridge that carries a `session.create` relays it to the hub and then
+  /// relays nothing back, and a second later the bridge is killed. The hub has
+  /// the create — a client that disconnects does not cancel one — and the
+  /// client never sees its answer: an unknown outcome.
+  bool dropCreates = false;
+
   static int _next = 0;
 
   /// Start a namespace: the directories (0700, under `/tmp`, short — a socket
@@ -216,12 +228,57 @@ class CrazeRig {
           workingDirectory: root,
         );
         bridges.add(process);
-        return ProcessExecSession(process);
+        return ProcessExecSession(process, inspect: _clientLine);
       },
       remoteCommand: remoteCommand,
       machine: machine,
       onStderr: onStderr,
     );
+  }
+
+  /// One client→hub line on a craze bridge: a `session.create` is logged to
+  /// [creates], and cut ([dropCreates]) when asked.
+  bool _clientLine(String line) {
+    Object? msg;
+    try {
+      msg = jsonDecode(line);
+    } on FormatException {
+      return false;
+    }
+    if (msg is! Map || msg['method'] != 'session.create') return false;
+    final params = msg['params'];
+    final drop = dropCreates;
+    creates.add((
+      requestId: params is Map ? params['requestId'] as String? : null,
+      dropped: drop,
+    ));
+    return drop;
+  }
+
+  /// Point `[agents].grok` at [agent] (craze reads its config at every
+  /// create; grok stays the default provider).
+  void setGrokAgent(String agent) {
+    File('$crazeHome/config.toml').writeAsStringSync(
+      'provider = "grok"\nhost_idle_exit = "30s"\n\n[agents]\n'
+      'grok = "$agent"\n',
+    );
+  }
+
+  /// The fake agent this rig's grok runs by default.
+  String get grokEcho => '$pathDir/craze-fake-agent';
+
+  /// The fake agent running [script] (`exit-two-lines`, `hang`, …) behind a
+  /// two-line wrapper — `[agents]` names one binary and no arguments, and the
+  /// flag wins over the recipe's `CRAZE_FAKE_SCRIPT` (shed-craze's
+  /// `Recipe::script_agent`). It execs THIS rig's copy, so the agent it
+  /// becomes is one [teardown] finds.
+  String scriptAgent(String script) {
+    final path = '$root/$script-agent';
+    File(path).writeAsStringSync(
+      '#!/bin/sh\nexec \'$pathDir/craze-fake-agent\' -script $script "\$@"\n',
+    );
+    _chmod('0755', path);
+    return path;
   }
 
   /// Start a `craze-fake-host` listed in this namespace's registry as
@@ -386,7 +443,7 @@ class CrazeRig {
 /// A local [Process] as the tunnel's exec — the four things a byte pump needs,
 /// with the process's own names (`RoostExecSession`'s).
 ///
-/// **One thing is added: an SSH channel's ORDER.** An ssh exec's stdout, its
+/// **Two things are added.** The first is an SSH channel's ORDER. An ssh exec's stdout, its
 /// stderr and its end all ride one channel, so the far side's last stderr line
 /// always arrives before the EOF that ends the channel. A local process has two
 /// independent pipes, and its stdout can close — which ends the pump and
@@ -395,8 +452,13 @@ class CrazeRig {
 /// reaches the classifier, and a not-installed machine reads as unclassified
 /// for as long as the race keeps losing. So stdout's END waits (bounded) for
 /// stderr's, exactly the order a real channel gives.
+///
+/// The second is [inspect]: every line the client writes is shown to it after
+/// it is relayed, and an answer of true CUTS the exchange there — nothing more
+/// is relayed back, and a second later the process is killed (the rig's
+/// [CrazeRig.dropCreates]).
 class ProcessExecSession implements RoostExecSession {
-  ProcessExecSession(this.process) {
+  ProcessExecSession(this.process, {this.inspect}) {
     // A write after the process has gone is a closed pipe, which is the far
     // side ending — the pump learns it from `done`, not from an error here.
     process.stdin.done.catchError((Object _) {});
@@ -407,6 +469,7 @@ class ProcessExecSession implements RoostExecSession {
         } on Object {
           // As above.
         }
+        _look(chunk);
       },
       onDone: () => process.stdin.close().catchError((Object _) {}),
       cancelOnError: false,
@@ -421,7 +484,9 @@ class ProcessExecSession implements RoostExecSession {
       cancelOnError: false,
     );
     process.stdout.listen(
-      (chunk) => _stdout.add(_bytes(chunk)),
+      (chunk) {
+        if (!_cut) _stdout.add(_bytes(chunk));
+      },
       onDone: () async {
         await _stderrDone.future.timeout(
           const Duration(seconds: 2),
@@ -435,6 +500,36 @@ class ProcessExecSession implements RoostExecSession {
   }
 
   final Process process;
+
+  /// Shown every client line; true cuts the exchange (the class doc).
+  final bool Function(String line)? inspect;
+
+  /// The client's bytes since its last newline.
+  final List<int> _line = [];
+
+  /// Cut: nothing more reaches the client, and the process is on its way out.
+  bool _cut = false;
+
+  void _look(List<int> chunk) {
+    final look = inspect;
+    if (look == null || _cut) return;
+    for (final b in chunk) {
+      if (b != 0x0a) {
+        _line.add(b);
+        continue;
+      }
+      final line = utf8.decode(_line, allowMalformed: true);
+      _line.clear();
+      if (look(line)) {
+        _cut = true;
+        // A second for the hub to take what was relayed, then the far side
+        // goes — the connection ends with no answer on it.
+        Future<void>.delayed(const Duration(seconds: 1), process.kill);
+        return;
+      }
+    }
+  }
+
   final StreamController<Uint8List> _stdin = StreamController<Uint8List>();
   final StreamController<Uint8List> _stdout = StreamController<Uint8List>();
   final StreamController<Uint8List> _stderr = StreamController<Uint8List>();

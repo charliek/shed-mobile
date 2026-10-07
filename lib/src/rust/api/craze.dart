@@ -9,9 +9,9 @@ import 'dto_rc.dart';
 import 'lane.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `apply`, `call`, `closed_error`, `empty`, `empty`, `fold`, `forward_loop`, `is_closed`, `lock`, `new`, `offline`, `open_on`, `roster_pump`, `snapshot`, `spawn_forwarder`, `teardown`, `touch`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CrazeView`, `Pending`, `SourceInner`, `SourceState`, `SourceTasks`, `Staged`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `apply`, `apply`, `call`, `closed_error`, `create_failure`, `empty`, `empty`, `fold`, `forward_loop`, `is_closed`, `lock`, `new`, `offline`, `open_on`, `roster_pump`, `snapshot`, `spawn_forwarder`, `teardown`, `touch`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CrazeView`, `Cut`, `Pending`, `SourceInner`, `SourceState`, `SourceTasks`, `Staged`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// The command the craze tunnel execs on the far side, verbatim — craze's
 /// published ladder ending in `craze bridge --hub`, plus the exec-only PATH
@@ -125,6 +125,14 @@ Future<BridgeLaneCreateOptions> crazeCreateOptions({
 /// The new session's row is the source's at once (its created rows): this
 /// handle is nudged, so the row is listed — and a lane opens on its hostId —
 /// before the roster has caught up.
+///
+/// **What a refusal tells the caller about its request id** (plan 025 §3.8):
+/// [`BridgeLaneError::OutcomeUnknown`] — the answer was lost twice, or this
+/// handle was closed while the create was in flight — is the one refusal after
+/// which the caller keeps the id, because craze may have started the session
+/// and answers a retry under that id with it. Every other refusal is definite,
+/// a source closed before the create began included (nothing was sent): the
+/// next submission mints a new id.
 Future<BridgeLaneCreated> crazeCreate({
   required BridgeCrazeSource src,
   required BridgeLaneCreateRequest request,

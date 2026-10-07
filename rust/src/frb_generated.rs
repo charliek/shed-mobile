@@ -4738,6 +4738,10 @@ impl SseDecode for crate::api::dto_lane::BridgeLaneError {
                 let mut var_kind = <String>::sse_decode(deserializer);
                 return crate::api::dto_lane::BridgeLaneError::UnsupportedLane { kind: var_kind };
             }
+            11 => {
+                let mut var_msg = <String>::sse_decode(deserializer);
+                return crate::api::dto_lane::BridgeLaneError::OutcomeUnknown { msg: var_msg };
+            }
             _ => {
                 unimplemented!("");
             }
@@ -7855,6 +7859,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_lane::BridgeLaneError {
             crate::api::dto_lane::BridgeLaneError::UnsupportedLane { kind } => {
                 [10.into_dart(), kind.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::dto_lane::BridgeLaneError::OutcomeUnknown { msg } => {
+                [11.into_dart(), msg.into_into_dart().into_dart()].into_dart()
+            }
             _ => {
                 unimplemented!("");
             }
@@ -9993,6 +10000,10 @@ impl SseEncode for crate::api::dto_lane::BridgeLaneError {
             crate::api::dto_lane::BridgeLaneError::UnsupportedLane { kind } => {
                 <i32>::sse_encode(10, serializer);
                 <String>::sse_encode(kind, serializer);
+            }
+            crate::api::dto_lane::BridgeLaneError::OutcomeUnknown { msg } => {
+                <i32>::sse_encode(11, serializer);
+                <String>::sse_encode(msg, serializer);
             }
             _ => {
                 unimplemented!("");

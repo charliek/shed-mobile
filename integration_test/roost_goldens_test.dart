@@ -1,10 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shed_mobile/features/create/create_rc_target.dart';
+import 'package:shed_mobile/machines/machine_feed.dart';
+import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/rc/rc_ui.dart';
+import 'package:shed_mobile/src/rust/api/craze.dart';
+import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/roost.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 import 'package:shed_mobile/ssh/roost_reach.dart';
@@ -128,19 +133,37 @@ void main() {
   });
 
   testWidgets('the machine create form offers its own full set', (_) async {
-    // The form's set, pinned on its own (plan 025 P4): what `CreateRcScreen`
-    // offers on a reachable machine, through the same reduction it renders —
-    // `presentCapsView` over the capabilities a machine feed carries
-    // (`roostCapabilities()`, synthesized, never probed).
+    // The form's set, pinned on its own (plan 025 P4, O3): what
+    // `CreateRcScreen` offers on a reachable machine whose craze can create,
+    // through the very reduction it renders — `roostCapsView` over a feed
+    // state carrying the capabilities a machine feed carries
+    // (`roostCapabilities()`, synthesized, never probed) and a LIVE craze
+    // source whose hub offers `createOptions` and `sessionCreate`.
     //
-    // P4's full set is claude-rc, opencode AND craze. The create screen offers
-    // craze from CM4; until then this pins what it offers today.
-    // CM4 adds craze: this set becomes {'claude-rc', 'opencode', 'craze'}.
-    final form = presentCapsView(
-      roostCapabilities(),
+    // claude-rc and opencode are the roost-backed launch kinds the cell above
+    // ties to the golden; craze is the one the machine's craze source creates.
+    final state = MachineFeedState(
+      machine: const MachineRecord(name: 'mini3', host: 'mini3'),
+      reachable: true,
+      connectedOnce: true,
+      capabilities: roostCapabilities(),
+      craze: const BridgeCrazeSnapshot(
+        rows: [],
+        live: true,
+        caps: BridgeSourceCapabilities(
+          kind: 'craze',
+          create: true,
+          createOptions: true,
+        ),
+        truncated: false,
+      ),
+    );
+    final form = roostCapsView(
+      AsyncData(state),
+      subject: 'mini3',
     ).offered.map((k) => k.wire).toSet();
 
-    expect(form, {'claude-rc', 'opencode'});
+    expect(form, {'claude-rc', 'opencode', 'craze'});
   });
 
   testWidgets('a failed exec classifies the way roost classifies it', (

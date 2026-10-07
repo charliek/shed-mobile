@@ -169,6 +169,14 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     'LANE_UNSUPPORTED_KIND',
     'this build has no adapter for a "$kind" lane',
   ),
+  // A craze create whose answer was lost (plan 025 §3.8): NOT a failure — the
+  // session may well exist. The create sheet branches on the variant itself
+  // (it keeps its request id on this one alone); this arm is for any other
+  // caller that only shows a message.
+  BridgeLaneError_OutcomeUnknown(:final msg) => AppError(
+    'LANE_OUTCOME_UNKNOWN',
+    msg,
+  ),
 };
 
 /// Coerce any caught object from a bridge call into an [AppError] (bridge calls

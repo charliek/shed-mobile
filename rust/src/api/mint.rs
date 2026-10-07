@@ -1311,6 +1311,7 @@ mod tests {
             "BridgeLaneError_Failed",
             "BridgeLaneError_NoLane",
             "BridgeLaneError_NotAccepting",
+            "BridgeLaneError_OutcomeUnknown",
             "BridgeLaneError_Unauthorized",
             "BridgeLaneError_Unavailable",
             "BridgeLaneError_UnknownApproval",

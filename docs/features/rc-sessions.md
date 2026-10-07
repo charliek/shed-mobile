@@ -65,18 +65,45 @@ both as a connection that ended before `hello`, so the craze tunnel's stderr
 classifies them on the Dart side (`lib/ssh/craze_reach.dart`): the ladder's
 `craze: command not found` is not installed and shows nothing; craze v0.0.1's
 `unknown flag: --hub` is too old and the machine says "craze on this machine is
-too old for shed; update it".
+too old for shed; update it". A live hub that cannot create (its `hello` lacks
+`createOptions` or `sessionCreate`) still lists, and the machine says "update
+craze on this machine to create sessions here".
+
+### Creating a craze session
+
+The create screen offers **craze** beside Claude and opencode wherever the
+target's craze source is live and its hub can create (a machine with craze and
+no roost offers craze alone). Choosing it shows craze's own sheet
+(`lib/features/craze/craze_create_sheet.dart`, the desktop's create sheet as
+rules — `lib/features/craze/craze_create.dart`): a provider, a directory and an
+optional first prompt, nothing else — no model, effort or permission mode
+(craze's defaults; a sheet-created session runs `bypass`, which its transcript
+header says).
+
+| Part | Behaviour |
+|---|---|
+| Providers | Read from craze (`sessions.createOptions`) every time the sheet opens, in craze's order. A provider that is not `ready` is dimmed with craze's reason and fix and cannot be picked. craze's default is preselected only if it is ready, else the first ready one; with none ready the sheet says so and Create is disabled. |
+| Directory | craze's recent directories, one tap each, or a typed path, which must be absolute (craze checks that it exists and says so beside the field). |
+| First prompt | Optional, multi-line, sent exactly as typed. A prompt craze refused, or whose answer was lost, is said once the session exists. |
+| Request id | Minted per submission and **kept only while its outcome is unknown** (a lost answer): "Try again" then resumes the same request, so a lost answer never makes a second session. Any definite answer — a refusal, a start failure — ends it, because craze would replay that answer under the same id; the next try mints a new one. |
+| The form | Held per machine above the screen. No state clears it — loading, a failed options read, craze going offline or turning out too old, a refusal, an unknown outcome. Leaving the screen while a create runs keeps it running (the session simply appears as a row); coming back finds the same form and id. |
+| Created | The screen gives way to the session's transcript at once: the feed folds the created row in before the create returns, so the lane finds it before craze's roster has listed it. |
+
+A start failure shows craze's cause verbatim (monospace); craze's
+`bad_request` is shown beside the directory.
 
 ## Kinds
 
-What a target can launch comes from `roostCapabilities()` — **synthesized, not
-probed**: roost is a terminal multiplexer with agent adapters, not shed's guest
-agent, so there is nothing to ask. The create form offers exactly `claude-rc`
-and `opencode` (plan 025 O3) — the only two kinds the phone can start. A row
-running any other kind (`codex`, `cursor`, `gx`, `grok`) still shows up and
-reads as a plain row when it was launched some other way (the CLI, the
-desktop app); `shell` and `claude-broker` have no launch recipe and are
-refused by name rather than opening an empty tab.
+What a target can launch as a roost tab comes from `roostCapabilities()` —
+**synthesized, not probed**: roost is a terminal multiplexer with agent
+adapters, not shed's guest agent, so there is nothing to ask. The create form
+offers exactly `claude-rc` and `opencode` as roost tabs, plus `craze` where the
+target's craze source can create (plan 025 O3; see
+[Creating a craze session](#creating-a-craze-session)). A row running any other
+kind directly (`codex`, `cursor`, `gx`, `grok`) still shows up and reads as a
+plain row when it was launched some other way (the CLI, the desktop app);
+`shell` and `claude-broker` have no launch recipe and are refused by name
+rather than opening an empty tab.
 
 ## States
 

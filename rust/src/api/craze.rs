@@ -522,26 +522,40 @@ impl SourceInner {
     /// Run one source call on its own connection, counted, and **cut short by
     /// the handle's close** — the feed owns every `createOptions` and `create`
     /// in flight (plan 025 §3.7.2), so a torn-down feed never leaves one holding
-    /// a connection to a machine the phone has let go of. A create cut short is
-    /// an outcome the caller does not know; the caller's sheet is gone with the
-    /// feed.
-    async fn call<T, F, Fut>(&self, f: F) -> Result<T, BridgeLaneError>
+    /// a connection to a machine the phone has let go of.
+    ///
+    /// The call's own answer is the inner `Result`; a close answers [`Cut`],
+    /// saying WHEN, because for a create the two are different answers: closed
+    /// before it began, nothing was sent (a definite "try again"); closed while
+    /// it ran, craze may already have the request — an outcome the caller does
+    /// not know, and must retry under the same request id ([`craze_create`]).
+    async fn call<T, F, Fut>(&self, f: F) -> Result<Result<T, LaneError>, Cut>
     where
         F: FnOnce(CrazeSource) -> Fut,
         Fut: Future<Output = Result<T, LaneError>>,
     {
         let mut closed = self.closed.subscribe();
         if *closed.borrow() {
-            return Err(self.closed_error());
+            return Err(Cut::Before);
         }
         let _pending = Pending::new();
         let work = f(self.source.clone());
         tokio::select! {
             biased;
-            _ = closed.wait_for(|c| *c) => Err(self.closed_error()),
-            result = work => result.map_err(BridgeLaneError::from),
+            _ = closed.wait_for(|c| *c) => Err(Cut::During),
+            result = work => Ok(result),
         }
     }
+}
+
+/// How a [`SourceInner::call`] ended without an answer of its own: the handle
+/// was closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cut {
+    /// Before the call began — nothing was dialled, nothing was sent.
+    Before,
+    /// While the call was in flight — whatever it had already written stands.
+    During,
 }
 
 /// [`PENDING_CRAZE_CALLS`], held for one call: decremented however the call
@@ -791,10 +805,15 @@ pub async fn craze_create_options(
 ) -> Result<BridgeLaneCreateOptions, BridgeLaneError> {
     let inner = Arc::clone(&src.inner);
     on_bridge_rt(async move {
-        inner
+        match inner
             .call(|source| async move { source.create_options().await })
             .await
-            .map(Into::into)
+        {
+            Ok(answer) => answer.map(Into::into).map_err(Into::into),
+            // A read changes nothing on the far side: closed before or during
+            // it, the answer is the same quiet "try again".
+            Err(_) => Err(inner.closed_error()),
+        }
     })
     .await
 }
@@ -806,19 +825,48 @@ pub async fn craze_create_options(
 /// The new session's row is the source's at once (its created rows): this
 /// handle is nudged, so the row is listed — and a lane opens on its hostId —
 /// before the roster has caught up.
+///
+/// **What a refusal tells the caller about its request id** (plan 025 §3.8):
+/// [`BridgeLaneError::OutcomeUnknown`] — the answer was lost twice, or this
+/// handle was closed while the create was in flight — is the one refusal after
+/// which the caller keeps the id, because craze may have started the session
+/// and answers a retry under that id with it. Every other refusal is definite,
+/// a source closed before the create began included (nothing was sent): the
+/// next submission mints a new id.
 pub async fn craze_create(
     src: &BridgeCrazeSource,
     request: BridgeLaneCreateRequest,
 ) -> Result<BridgeLaneCreated, BridgeLaneError> {
     let inner = Arc::clone(&src.inner);
     on_bridge_rt(async move {
-        let created = inner
+        let answer = match inner
             .call(|source| async move { source.create(request.into()).await })
-            .await?;
+            .await
+        {
+            Ok(answer) => answer,
+            Err(Cut::Before) => return Err(inner.closed_error()),
+            Err(Cut::During) => Err(shed_craze::errors::outcome_unknown(&format!(
+                "the craze source for {} was closed while the create was in flight; it may have \
+                 started a session — check the session list, or try again with the same request \
+                 id, which craze answers with that session",
+                inner.machine
+            ))),
+        };
+        let created = answer.map_err(create_failure)?;
         inner.touch();
         Ok(created.into())
     })
     .await
+}
+
+/// A create's refusal for the phone: the contract's variant, except an
+/// outcome-unknown — recognised by shed-craze's own predicate, never by its
+/// text here — which is [`BridgeLaneError::OutcomeUnknown`].
+fn create_failure(e: LaneError) -> BridgeLaneError {
+    if shed_craze::is_outcome_unknown(&e) {
+        return BridgeLaneError::OutcomeUnknown { msg: e.to_string() };
+    }
+    e.into()
 }
 
 // ---------------------------------------------------------------------------
@@ -1468,7 +1516,9 @@ mod tests {
 
     /// **The feed owns a create in flight** (plan 025 §3.7.2): closing the
     /// source cuts it short — no create holds a connection to a machine the
-    /// phone has let go of — and the pending counter returns.
+    /// phone has let go of — and the pending counter returns. The hub HAS the
+    /// request by then, so the answer is an unknown outcome (§3.8: the caller
+    /// keeps its request id), never `Unavailable`'s definite "try again".
     #[tokio::test]
     async fn a_close_cuts_a_create_in_flight_short() {
         let _g = test_guard();
@@ -1491,11 +1541,96 @@ mod tests {
         .await
         .expect("a create in flight outlived its source's close");
         assert!(
-            matches!(answer, Err(BridgeLaneError::Unavailable { .. })),
-            "a create cut short by a close: {answer:?}"
+            matches!(answer, Err(BridgeLaneError::OutcomeUnknown { .. })),
+            "a create cut short by a close, after the hub took it: {answer:?}"
         );
         assert_eq!(live_counters().pending_craze_calls, 0);
         assert_eq!(live_counters().active_craze_sources, 0);
+    }
+
+    /// **The request id's rule, from the bridge's side** (plan 025 §3.8): a
+    /// create whose answer is lost on BOTH attempts — shed-craze retries once
+    /// under the same id — is [`BridgeLaneError::OutcomeUnknown`], the one
+    /// refusal after which the sheet keeps its id; a refusal craze answered is
+    /// the contract's own variant (definite: the next submission mints a new
+    /// id), and a start failure is `Failed` carrying craze's cause verbatim.
+    #[tokio::test]
+    async fn a_lost_create_is_an_unknown_outcome_and_a_refusal_is_definite() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = next_conn(&mut conns).await;
+
+        // Taken twice under one id, and never answered: each connection ends
+        // after the hub has the request.
+        let script = async {
+            let mut ids = Vec::new();
+            for _ in 0..2 {
+                let mut hub = next_conn(&mut conns).await;
+                hub.hello("epoch-1", full_hub_capabilities()).await;
+                let req = hub.expect("session.create").await;
+                ids.push(req["params"]["requestId"].clone());
+                hub.close().await;
+            }
+            ids
+        };
+        let (lost, ids) = tokio::time::timeout(Duration::from_secs(20), async {
+            tokio::join!(craze_create(&src, create_request("req-lost")), script)
+        })
+        .await
+        .expect("a lost create answered in time");
+        assert_eq!(ids, [json!("req-lost"), json!("req-lost")], "one retry, same id");
+        let Err(BridgeLaneError::OutcomeUnknown { msg }) = lost else {
+            panic!("a create lost twice: {lost:?}");
+        };
+        assert!(msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN), "{msg}");
+
+        // A refusal craze answered: definite.
+        let script = async {
+            let mut hub = next_conn(&mut conns).await;
+            hub.hello("epoch-1", full_hub_capabilities()).await;
+            let req = hub.expect("session.create").await;
+            hub.refuse(&req, "bad_request", "bad_cwd", json!({})).await;
+            hub
+        };
+        let (refused, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_create(&src, create_request("req-refused")), script)
+        })
+        .await
+        .expect("a refused create answered in time");
+        assert!(
+            matches!(refused, Err(BridgeLaneError::BadRequest { .. })),
+            "{refused:?}"
+        );
+
+        // A start failure: craze's cause, verbatim (P14).
+        let script = async {
+            let mut hub = next_conn(&mut conns).await;
+            hub.hello("epoch-1", full_hub_capabilities()).await;
+            let req = hub.expect("session.create").await;
+            hub.refuse(
+                &req,
+                "not_accepting",
+                "start_failed",
+                json!({"cause": "Error: KEYCHAIN LOCKED\nRun unlock and retry."}),
+            )
+            .await;
+            hub
+        };
+        let (failed, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_create(&src, create_request("req-failed")), script)
+        })
+        .await
+        .expect("a failed start answered in time");
+        assert_eq!(
+            failed,
+            Err(BridgeLaneError::Failed {
+                msg: "Error: KEYCHAIN LOCKED\nRun unlock and retry.".to_string()
+            })
+        );
+
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
     }
 
     /// A closed source refuses everything that would dial — a lane, a create —
@@ -1515,6 +1650,13 @@ mod tests {
             "transient — a lane racing its source's retirement retries: {err:?}"
         );
         let refused = craze_create_options(&src).await;
+        assert!(
+            matches!(refused, Err(BridgeLaneError::Unavailable { .. })),
+            "{refused:?}"
+        );
+        // A create on a source closed BEFORE it began sent nothing: a definite
+        // "try again", never the unknown outcome a create cut short mid-flight is.
+        let refused = craze_create(&src, create_request("req-closed")).await;
         assert!(
             matches!(refused, Err(BridgeLaneError::Unavailable { .. })),
             "{refused:?}"
