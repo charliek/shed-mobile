@@ -29,8 +29,13 @@
 //   over a loopback port, could only say `Unreachable`); not installed is
 //   quiet, too old says so.
 // * **restart** — an open craze transcript leaves a retired source at once and
-//   comes back live through its replacement (a send lands after); and no lane
-//   is ever opened through a source that has not seeded.
+//   comes back live through its replacement (a send lands after); no lane is
+//   ever opened through a source that has not seeded; a craze half that
+//   failed to start (its port, then its source) is retried by the next start
+//   alone, roost left running, its source a new epoch; and a stop + start
+//   landing while a start or a craze retry is in flight ends with the feed
+//   started at the new generation, one watcher — unless the stop came after
+//   the start was asked for.
 // * **teardown** — the feed disposed while its craze source is opening, a live
 //   feed disposed, and one disposed while its roost watcher is quiet: every
 //   bridge counter back to zero, the craze tunnel's port closed, and no wait on
@@ -136,6 +141,7 @@ import 'package:shed_mobile/src/rust/api/roost.dart';
 import 'package:shed_mobile/src/rust/frb_generated.dart';
 import 'package:shed_mobile/ssh/host_key_store.dart';
 import 'package:shed_mobile/ssh/roost_entitlement.dart';
+import 'package:shed_mobile/ssh/roost_tunnel.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 import 'support/craze_rig.dart';
@@ -790,6 +796,229 @@ void main() {
       final c = await liveCounters();
       expect(c.activeCrazeSources, BigInt.one, reason: 'ONE handle, never two');
       expect(c.activeCrazeForwarders, BigInt.one);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_failed_craze_start_is_retried_by_the_next_start_and_roost_is_left_alone',
+    (tester) async {
+      // craze's half failing at start — its tunnel not binding, then its
+      // source not opening — leaves roost running and craze absent. The NEXT
+      // start retries the craze half alone: roost's tunnel and watcher stay
+      // the first start's, and the source it brings up is a new epoch,
+      // announced as any replacement source is (CodeRabbit, shed-mobile#36).
+      final rig = await _rig(bins!);
+      var roostTunnels = 0;
+      var crazeTunnels = 0;
+      Future<RoostTunnel> tunnels({
+        required Future<SSHClient> Function() connect,
+        required String remoteCommand,
+        required String machine,
+        void Function(String)? onStderr,
+      }) async {
+        if (remoteCommand != crazeRemoteCommand()) {
+          roostTunnels++;
+        } else if (++crazeTunnels == 1) {
+          throw const SocketException('the craze port would not bind');
+        }
+        return rig.tunnelOpen(
+          connect: connect,
+          remoteCommand: remoteCommand,
+          machine: machine,
+          onStderr: onStderr,
+        );
+      }
+
+      var sourceOpens = 0;
+      Future<BridgeCrazeSource> sources({
+        required String machine,
+        required int port,
+      }) async {
+        if (++sourceOpens == 1) {
+          throw StateError('the craze source would not open');
+        }
+        return crazeSourceOpen(machine: machine, port: port);
+      }
+
+      final feed = _feed(rig, openTunnel: tunnels, openCrazeSource: sources);
+      addTearDown(() => _disposeFeed(tester, feed));
+      final announced = <int?>[];
+      final sub = feed.crazeSources.listen(announced.add);
+      addTearDown(sub.cancel);
+
+      // The craze port will not bind: roost runs, craze is absent.
+      await feed.start();
+      final roostPort = feed.tunnelPort;
+      expect(feed.isRunning, isTrue, reason: 'roost runs without craze');
+      expect(roostPort, isNotNull);
+      expect((roostTunnels, crazeTunnels, sourceOpens), (1, 1, 0));
+      expect(feed.crazeTunnelPort, isNull);
+      expect(feed.crazeLiveEpoch, isNull);
+
+      // The next start retries craze alone; its source will not open, and
+      // the tunnel that attempt bound goes with it.
+      await feed.start();
+      expect(
+        (roostTunnels, crazeTunnels, sourceOpens),
+        (1, 2, 1),
+        reason: 'the craze half retried, roost left alone',
+      );
+      expect(feed.crazeTunnelPort, isNull);
+      expect((await liveCounters()).activeCrazeSources, BigInt.zero);
+
+      // And the next brings craze up.
+      await feed.start();
+      await _until(
+        tester,
+        () => feed.state.craze?.live ?? false,
+        what: 'the craze feed live after the retry',
+      );
+      expect(
+        (roostTunnels, crazeTunnels, sourceOpens),
+        (1, 3, 2),
+        reason: 'roost was never restarted for craze',
+      );
+      expect(feed.tunnelPort, roostPort);
+      expect(feed.isRunning, isTrue);
+      final epoch = feed.crazeLiveEpoch;
+      expect(epoch, isNotNull);
+      expect(announced, [epoch], reason: 'announced: a new epoch');
+      final c = await liveCounters();
+      expect(c.activeWatchers, BigInt.one, reason: 'one roost watcher, still');
+      expect(c.activeCrazeSources, BigInt.one);
+      expect(c.activeCrazeForwarders, BigInt.one);
+
+      // Up: a further start changes nothing.
+      await feed.start();
+      expect((roostTunnels, crazeTunnels, sourceOpens), (1, 3, 2));
+      expect(feed.crazeLiveEpoch, epoch);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_start_asked_for_while_a_start_runs_is_run_after_it',
+    (tester) async {
+      // A roost install completing restarts the feed — `stop()`, then
+      // `start()` (`_entitle`). Landing while a start is still opening its
+      // craze source, that start used to return early on the guard; the start
+      // in flight, fenced off by the stop, built nothing more; and the feed
+      // stayed stopped (Cursor's review of the CodeRabbit fix,
+      // shed-mobile#36).
+      final rig = await _rig(bins!);
+      final gate = _HeldSources()..hold = Completer<void>();
+      final feed = _feed(rig, openCrazeSource: gate.open);
+      addTearDown(() => _disposeFeed(tester, feed));
+      final first = feed.start();
+      await _until(
+        tester,
+        () => gate.waiting,
+        what: 'the first start opening its craze source',
+      );
+      final before = feed.tunnelPort;
+      expect(before, isNotNull);
+
+      await feed.stop();
+      await feed.start(); // asked for while the first is still in flight
+      gate.release();
+      await first.timeout(const Duration(seconds: 20));
+      expect(feed.isRunning, isTrue, reason: 'the start asked for ran');
+      expect(
+        feed.tunnelPort,
+        allOf(isNotNull, isNot(before)),
+        reason: 'a new roost tunnel: the new generation',
+      );
+      await _until(
+        tester,
+        () => feed.state.craze?.live ?? false,
+        what: 'the restarted feed\'s craze live',
+      );
+      expect(gate.opens, 2);
+      final c = await liveCounters();
+      expect(c.activeWatchers, BigInt.one, reason: 'exactly one watcher');
+      expect(c.activeCrazeSources, BigInt.one);
+      expect(c.activeCrazeForwarders, BigInt.one);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_start_asked_for_while_a_craze_retry_runs_is_run_after_it',
+    (tester) async {
+      // The same restart landing while a start retries the craze half alone
+      // (roost up, craze's first start failed): the retry is fenced off by
+      // the stop, and the start asked for must still run.
+      final rig = await _rig(bins!);
+      final gate = _HeldSources()..failNext = true;
+      final feed = _feed(rig, openCrazeSource: gate.open);
+      addTearDown(() => _disposeFeed(tester, feed));
+      await feed.start();
+      expect(feed.isRunning, isTrue);
+      expect(feed.crazeTunnelPort, isNull, reason: 'craze\'s source failed');
+
+      gate.hold = Completer<void>();
+      final retry = feed.start(); // the craze half alone
+      await _until(
+        tester,
+        () => gate.waiting,
+        what: 'the craze retry opening its source',
+      );
+      final before = feed.tunnelPort;
+      expect(before, isNotNull);
+
+      await feed.stop();
+      await feed.start(); // asked for while the retry is still in flight
+      gate.release();
+      await retry.timeout(const Duration(seconds: 20));
+      expect(feed.isRunning, isTrue, reason: 'the start asked for ran');
+      expect(
+        feed.tunnelPort,
+        allOf(isNotNull, isNot(before)),
+        reason: 'a new roost tunnel: the new generation',
+      );
+      await _until(
+        tester,
+        () => feed.state.craze?.live ?? false,
+        what: 'the restarted feed\'s craze live',
+      );
+      expect(gate.opens, 3);
+      final c = await liveCounters();
+      expect(c.activeWatchers, BigInt.one, reason: 'exactly one watcher');
+      expect(c.activeCrazeSources, BigInt.one);
+      expect(c.activeCrazeForwarders, BigInt.one);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_start_asked_for_and_then_stopped_does_not_run',
+    (tester) async {
+      // The request is not a restart of its own: an owner that stops the
+      // feed AFTER asking for a start gets a stopped feed.
+      final rig = await _rig(bins!);
+      final gate = _HeldSources()..hold = Completer<void>();
+      final feed = _feed(rig, openCrazeSource: gate.open);
+      addTearDown(() => _disposeFeed(tester, feed));
+      final first = feed.start();
+      await _until(
+        tester,
+        () => gate.waiting,
+        what: 'the first start opening its craze source',
+      );
+
+      await feed.start(); // asked for while the first is in flight…
+      await feed.stop(); // …and then the feed is stopped
+      gate.release();
+      await first.timeout(const Duration(seconds: 20));
+      expect(feed.isRunning, isFalse, reason: 'the stop outranks the request');
+      expect(feed.tunnelPort, isNull);
+      expect(gate.opens, 1);
+      await _zero(tester, what: 'a feed stopped after a start was asked for');
     },
     skip: skip,
     timeout: _cell,
@@ -1965,6 +2194,7 @@ Future<CrazeRig> _rig(
 /// no host keys, nothing dialled.
 MachineFeed _feed(
   CrazeRig rig, {
+  TunnelOpen? openTunnel,
   CrazeSourceOpen? openCrazeSource,
   CrazeSourceNudges? crazeNudges,
 }) => MachineFeed(
@@ -1972,10 +2202,48 @@ MachineFeed _feed(
   identities: const [],
   hostKeys: HostKeyStore(),
   entitlements: RoostBootstrapEntitlements(),
-  openTunnel: rig.tunnelOpen,
+  openTunnel: openTunnel ?? rig.tunnelOpen,
   openCrazeSource: openCrazeSource,
   crazeNudges: crazeNudges,
 );
+
+/// A craze source seam whose opens can fail or wait: what the start-in-flight
+/// cells hold a start on. Past [failNext] and [hold], an open is the real one.
+class _HeldSources {
+  int opens = 0;
+
+  /// The next open throws, as a source that would not open.
+  bool failNext = false;
+
+  /// While set, every open waits on it ([waiting] says one is) — a start held
+  /// mid-flight for as long as a cell needs.
+  Completer<void>? hold;
+  bool waiting = false;
+
+  void release() {
+    final h = hold;
+    hold = null;
+    h?.complete();
+  }
+
+  Future<BridgeCrazeSource> open({
+    required String machine,
+    required int port,
+  }) async {
+    opens++;
+    if (failNext) {
+      failNext = false;
+      throw StateError('the craze source would not open');
+    }
+    final h = hold;
+    if (h != null) {
+      waiting = true;
+      await h.future;
+      waiting = false;
+    }
+    return crazeSourceOpen(machine: machine, port: port);
+  }
+}
 
 /// The create screen on [_local], over the real provider graph with [rig]'s
 /// tunnels — the craze feed live before it returns. With [show] false the

@@ -383,7 +383,11 @@ void main() {
     // A zero-width character in a label is invisible in a diff and changes
     // what an equality reads (CodeRabbit, C11). Every name a fixture here
     // offers is plain text.
-    final invisible = RegExp('[​-‍⁠﻿]');
+    final invisible = RegExp('[\u200B-\u200D\u2060\uFEFF]');
+    // The class itself is a guard: each of its characters must match.
+    for (final c in ['\u200B', '\u200C', '\u200D', '\u2060', '\uFEFF']) {
+      expect(invisible.hasMatch('a${c}b'), isTrue, reason: '${c.runes}');
+    }
     for (final s in [_grok46, _opus]) {
       final names = [
         ...s.models.map((m) => m.name),

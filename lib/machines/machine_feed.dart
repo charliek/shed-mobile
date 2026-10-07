@@ -791,6 +791,13 @@ class MachineFeed {
   StreamSubscription<BridgeRoostUpdate>? _sub;
   bool _starting = false;
 
+  /// A [start] was asked for while one was in flight: the in-flight start
+  /// runs it once it finishes ([_startIfAsked]). Cleared by [stop] and
+  /// [dispose] — an owner's stop after the request outranks it — and by
+  /// nothing else: a teardown the in-flight start runs on its own failure is
+  /// not the owner stopping the feed.
+  bool _startAgain = false;
+
   /// **The craze half** (plan 025 §3.7.2, P16): a second tunnel beside
   /// [_tunnel] whose every accepted connection execs `craze bridge --hub`, the
   /// source handle Rust reads the machine's hub through, and the handle's
@@ -906,8 +913,40 @@ class MachineFeed {
 
   /// Open the tunnels and start watching — roost's, then craze's
   /// ([_startCraze]). Idempotent, and safe to call on every foreground.
+  ///
+  /// **With roost already running, only a missing craze half is started.** A
+  /// craze half that failed (a port that would not bind, a source that would
+  /// not open) is torn down and leaves roost running; returning early on that
+  /// running watcher would leave the machine with no craze rows and no craze
+  /// create until the feed was rebuilt. So this call retries [_startCraze]
+  /// alone, at the current generation, under the same [_starting] guard.
+  /// Roost is not restarted for it; the source it installs is a new epoch,
+  /// announced on [crazeSources] like any replacement.
+  ///
+  /// **A start asked for while one is in flight is not dropped.** A roost
+  /// install restarts the feed — [stop], then [start] ([_entitle]) — and when
+  /// that lands while a start (or a craze retry) is still opening, the stop
+  /// has fenced the in-flight one off: it builds nothing more, and returning
+  /// early here as well would leave the feed stopped until some other start.
+  /// So the request is recorded ([_startAgain]) and the in-flight start runs
+  /// it once it finishes — unless the owner has stopped the feed since.
   Future<void> start() async {
-    if (_watcher != null || _starting) return;
+    if (_starting) {
+      _startAgain = true;
+      return;
+    }
+    if (_watcher != null) {
+      if (_crazeSource == null && _crazeTunnel == null) {
+        _starting = true;
+        try {
+          await _startCraze(_generation);
+        } finally {
+          _starting = false;
+          await _startIfAsked();
+        }
+      }
+      return;
+    }
     _starting = true;
     // The same fence `_connect` uses: a `stop()` during either await below has
     // already run `_teardown()`, so installing what this call built would put a
@@ -974,7 +1013,17 @@ class MachineFeed {
       _emit(_state.copyWith(reachable: false, detail: _describe(e)));
     } finally {
       _starting = false;
+      await _startIfAsked();
     }
+  }
+
+  /// Run the [start] asked for while the one finishing now was in flight —
+  /// once. [stop] and [dispose] cancel the request, so a feed its owner
+  /// stopped after asking stays stopped.
+  Future<void> _startIfAsked() async {
+    if (!_startAgain) return;
+    _startAgain = false;
+    await start();
   }
 
   /// Open (or reuse) the machine's SSH connection. Handed to [RoostTunnel],
@@ -1033,7 +1082,7 @@ class MachineFeed {
   ///
   /// A failure here (a port that will not bind, a source that will not open)
   /// leaves craze absent and roost running: [_teardownCraze] releases whatever
-  /// was installed, and the next [start] tries again.
+  /// was installed, and the next [start] tries this half again, alone.
   Future<void> _startCraze(int generation) async {
     try {
       final tunnel = await _openTunnel(
@@ -1261,6 +1310,8 @@ class MachineFeed {
   /// deliberate decision, not a tidy-up: a lane holding a
   /// [LaneForwardLease] has its forward closed and its lease invalidated here.
   Future<void> stop() async {
+    // A start asked for before this stop does not outlive it.
+    _startAgain = false;
     await _teardown();
     _emit(
       _state.copyWith(
@@ -1273,6 +1324,7 @@ class MachineFeed {
   }
 
   Future<void> dispose() async {
+    _startAgain = false;
     await _teardown();
     await _controller.close();
     await _crazeSources.close();

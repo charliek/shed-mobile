@@ -216,13 +216,19 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
   };
 
   /// The provider follows the options: a selection carried over from an
-  /// earlier open survives only while still ready, else the default rule. A
-  /// submission in flight is left alone (its controls are disabled).
+  /// earlier open survives only while still ready, else the default rule.
+  ///
+  /// **An IDLE draft only.** Re-picking is an edit, and an edit ends what the
+  /// draft holds from its last submission: one in flight is left alone (its
+  /// controls are disabled); one whose outcome is unknown keeps its provider
+  /// and its id, so Try again resends that request even when the provider
+  /// reads non-ready now ([replaysHeldRequest]) — a new id there could start
+  /// a second session; and a refused one keeps the refusal it shows.
   void _reconcile() {
     final load = _load;
     if (load is! _Ready) return;
     final draft = ref.read(crazeDraftProvider(widget.origin));
-    if (draft.phase == CrazePhase.submitting) return;
+    if (draft.phase != CrazePhase.idle) return;
     final want = reconcileProvider(draft.provider, load.options);
     if (want != draft.provider) _draft.edit(provider: want);
   }
@@ -253,7 +259,8 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
       if (created != null && !identical(created, prev?.lastCreated)) {
         widget.onCreated(created);
       }
-      // A submission settled: the provider rule applies again.
+      // A submission settled: the provider rule applies again (to a spent
+      // draft — an unknown or refused one keeps what it sent).
       if (prev?.phase == CrazePhase.submitting &&
           next.phase != CrazePhase.submitting) {
         Future.microtask(() {
@@ -266,13 +273,19 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
     final load = _load;
     final options = load is _Ready ? load.options : null;
     final submitting = draft.phase == CrazePhase.submitting;
+    // Try again resends the held request as it was sent: its provider is not
+    // re-checked against what craze lists now ([replaysHeldRequest]).
+    final replaying = replaysHeldRequest(draft);
     final machineNote = crazeSheetNote(craze, widget.machine);
     final providers = options?.providers ?? const <BridgeLaneProvider>[];
     final noneReady = options != null && !providers.any(providerSelectable);
-    final note = machineNote ?? (noneReady ? noProviderReady : null);
+    final note =
+        machineNote ?? (noneReady && !replaying ? noProviderReady : null);
     BridgeLaneProvider? selected;
     for (final p in providers) {
-      if (p.id == draft.provider && providerSelectable(p)) selected = p;
+      if (p.id == draft.provider && (replaying || providerSelectable(p))) {
+        selected = p;
+      }
     }
     final cwdProblem = draft.cwd.isEmpty && draft.phase == CrazePhase.idle
         ? null
@@ -280,7 +293,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
     final refusal = draft.refusal == null ? null : refusalView(draft.refusal!);
     final canCreate =
         options != null &&
-        selected != null &&
+        (selected != null || replaying) &&
         directoryProblem(draft.cwd) == null &&
         note == null &&
         !submitting;
@@ -354,7 +367,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
                 _ProviderRow(
                   key: ValueKey('craze-provider-${p.id}'),
                   provider: p,
-                  selected: providerSelectable(p) && p.id == draft.provider,
+                  selected: identical(p, selected),
                   enabled: !submitting,
                   onTap: () => _pick(p, submitting),
                 ),

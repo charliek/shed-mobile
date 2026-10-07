@@ -57,6 +57,33 @@ const _recipe = BridgeLaneCreateOptions(
   recentDirs: ['/home/u/proj', '/home/u/other'],
 );
 
+/// The recipe read again later: grok needs setup now, and native has its key.
+const _grokNotReady = BridgeLaneCreateOptions(
+  providers: [
+    BridgeLaneProvider(
+      id: 'cursor',
+      label: 'cursor',
+      state: BridgeLaneProviderState.unavailable(),
+      reason: 'cursor-agent not found on PATH',
+      fix: 'install cursor-agent',
+    ),
+    BridgeLaneProvider(
+      id: 'grok',
+      label: 'grok',
+      state: BridgeLaneProviderState.needsSetup(),
+      reason: 'grok has no key',
+      fix: 'craze auth login grok',
+    ),
+    BridgeLaneProvider(
+      id: 'native',
+      label: 'native',
+      state: BridgeLaneProviderState.ready(),
+    ),
+  ],
+  defaultProvider: 'grok',
+  recentDirs: ['/home/u/proj', '/home/u/other'],
+);
+
 const _live = BridgeCrazeSnapshot(
   rows: [],
   live: true,
@@ -693,6 +720,123 @@ void main() {
       reason: 'Try again resumed the SAME request',
     );
     expect(find.byType(LaneScreen), findsOneWidget);
+  });
+
+  testWidgets('CONTROL: an unknown outcome keeps its provider and id when a '
+      're-open reads that provider as not ready; Try again resends the SAME '
+      'request (CodeRabbit, shed-mobile#36)', (tester) async {
+    final feed = _FakeFeed()
+      ..answers.addAll([
+        const BridgeLaneError.outcomeUnknown(msg: 'lost'),
+        _created(),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/held');
+    await _submit(tester);
+    expect(container.read(crazeDraftProvider('mini3')).requestId, 'shed-id-1');
+
+    // A re-open reads the options again, and grok needs setup now: the held
+    // request is not re-picked onto native for the person.
+    feed.options = _grokNotReady;
+    await tester.pageBack();
+    await _settle(tester);
+    await _open(tester);
+    expect(feed.optionReads, 2, reason: 'read again on the re-open');
+    final draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.unknown);
+    expect(draft.requestId, 'shed-id-1', reason: 'the held id survives');
+    expect(draft.provider, 'grok');
+    expect(_text(tester, 'craze-create-unknown'), outcomeUnknownNote);
+    expect(_text(tester, 'craze-provider-state-grok'), 'needs setup');
+    expect(_selected(tester, 'grok'), isTrue, reason: 'what Try again resends');
+    expect(_selected(tester, 'native'), isFalse);
+    expect(_submitLabel(tester), 'Try again');
+    expect(
+      _submitEnabled(tester),
+      isTrue,
+      reason: 'a replay is not refused over its provider\'s state now',
+    );
+
+    await _submit(tester);
+    expect(
+      [for (final r in feed.requests) (r.requestId, r.provider)],
+      [('shed-id-1', 'grok'), ('shed-id-1', 'grok')],
+      reason: 'Try again resent the SAME request',
+    );
+    expect(find.byType(LaneScreen), findsOneWidget);
+  });
+
+  testWidgets('CONTROL: an unknown outcome is resendable when its provider is '
+      'no longer listed and none reads ready', (tester) async {
+    final feed = _FakeFeed()
+      ..answers.addAll([
+        const BridgeLaneError.outcomeUnknown(msg: 'lost'),
+        _created(),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/none');
+    await _submit(tester);
+
+    // Only cursor is listed now, and it is unavailable.
+    feed.options = BridgeLaneCreateOptions(
+      providers: [_recipe.providers[0]],
+      defaultProvider: 'grok',
+      recentDirs: const [],
+    );
+    await tester.pageBack();
+    await _settle(tester);
+    await _open(tester);
+    expect(container.read(crazeDraftProvider('mini3')).requestId, 'shed-id-1');
+    expect(
+      _key('craze-create-note'),
+      findsNothing,
+      reason: '"no provider is ready" does not gate a replay',
+    );
+    expect(_submitEnabled(tester), isTrue);
+    await _submit(tester);
+    expect(
+      [for (final r in feed.requests) (r.requestId, r.provider)],
+      [('shed-id-1', 'grok'), ('shed-id-1', 'grok')],
+    );
+  });
+
+  testWidgets('CONTROL: a refused draft keeps its refusal across a re-open '
+      'that reads its provider as not ready (CodeRabbit, shed-mobile#36)', (
+    tester,
+  ) async {
+    const cause = 'Error: KEYCHAIN LOCKED\nRun unlock and retry.';
+    final feed = _FakeFeed()
+      ..answers.add(const BridgeLaneError.failed(msg: cause));
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/refused');
+    await _submit(tester);
+    expect(_text(tester, 'craze-create-cause'), cause);
+
+    feed.options = _grokNotReady;
+    await tester.pageBack();
+    await _settle(tester);
+    await _open(tester);
+    await _chooseCraze(tester);
+    expect(feed.optionReads, 2, reason: 'read again on the re-open');
+    final draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.refused);
+    expect(draft.refusal, const CrazeRefusal('failed', cause));
+    expect(draft.provider, 'grok', reason: 'not re-picked for the person');
+    expect(_text(tester, 'craze-create-cause'), cause);
+    expect(_submitLabel(tester), 'Try again');
+    // No id is held, so Try again would be a NEW request on a provider that
+    // cannot start: it waits for a ready one, and picking one is the edit
+    // that clears the refusal.
+    expect(_submitEnabled(tester), isFalse);
+    await tester.tap(_key('craze-provider-native'));
+    await _settle(tester);
+    expect(container.read(crazeDraftProvider('mini3')).phase, CrazePhase.idle);
+    expect(_key('craze-create-cause'), findsNothing);
+    expect(_submitLabel(tester), 'Create');
+    expect(_submitEnabled(tester), isTrue);
   });
 
   testWidgets('CONTROL: a start failure shows craze\'s cause verbatim, keeps '

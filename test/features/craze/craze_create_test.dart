@@ -149,6 +149,26 @@ void main() {
     expect(d.requestId, first, reason: 'Try again resumes the SAME request');
   });
 
+  test('only an unknown outcome\'s held id is a replay (CodeRabbit, '
+      'shed-mobile#36)', () {
+    final mint = _minter();
+    const typed = CrazeDraft(provider: 'grok', cwd: '/w');
+    expect(replaysHeldRequest(typed), isFalse, reason: 'idle: no id');
+    final submitting = typed.beginSubmit(mint);
+    expect(replaysHeldRequest(submitting), isFalse, reason: 'in flight');
+    expect(
+      replaysHeldRequest(
+        submitting.settle(const CrazeRefusal('outcome_unknown', 'lost')),
+      ),
+      isTrue,
+    );
+    expect(
+      replaysHeldRequest(submitting.settle(const CrazeRefusal('failed', 'no'))),
+      isFalse,
+      reason: 'a definite answer holds no id: Try again is a new request',
+    );
+  });
+
   test('CONTROL: any definite answer ends the id, so Try again mints anew', () {
     final mint = _minter();
     for (final code in [

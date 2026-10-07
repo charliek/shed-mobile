@@ -40,9 +40,11 @@ second tunnel beside roost's, whose every accepted connection runs
 ladder, composed by shed-core and passed verbatim (`crazeRemoteCommand()`) —
 and the shared Rust core reads the hub through a craze source on that port.
 Both tunnels have the same lifecycle: they live while the feed has listeners,
-and die with it. The phone is **not** attach-only: viewing a machine with craze
-starts a hub there if none runs, which idles out about a minute after the phone
-lets go.
+and die with it. A craze half that fails to come up (its port will not bind,
+its source will not open) leaves roost running, and the feed's next start
+retries craze alone. The phone is **not** attach-only: viewing a machine with
+craze starts a hub there if none runs, which idles out about a minute after the
+phone lets go.
 
 **One row per session.** A craze session's status is craze's (plan 025 D4): with
 the craze feed live, a roost tab running a craze TUI is folded into the hub
@@ -85,7 +87,7 @@ header says).
 | Providers | Read from craze (`sessions.createOptions`) every time the sheet opens, in craze's order. A provider that is not `ready` is dimmed with craze's reason and fix and cannot be picked. craze's default is preselected only if it is ready, else the first ready one; with none ready the sheet says so and Create is disabled. |
 | Directory | craze's recent directories, one tap each, or a typed path, which must be absolute (craze checks that it exists and says so beside the field). |
 | First prompt | Optional, multi-line, sent exactly as typed. A prompt craze refused, or whose answer was lost, is said once the session exists. |
-| Request id | Minted per submission and **kept only while its outcome is unknown** (a lost answer): "Try again" then resumes the same request, so a lost answer never makes a second session. Any definite answer — a refusal, a start failure — ends it, because craze would replay that answer under the same id; the next try mints a new one. |
+| Request id | Minted per submission and **kept only while its outcome is unknown** (a lost answer): "Try again" then resumes the same request, so a lost answer never makes a second session. The sheet keeps that request's provider even if a later open reads it as not ready: craze answers the id with the session the first attempt started, or starts it then. Only an edit makes a new request. Any definite answer — a refusal, a start failure — ends it, because craze would replay that answer under the same id; the next try mints a new one. |
 | The form | Held per machine above the screen. No state clears it — loading, a failed options read, craze going offline or turning out too old, a refusal, an unknown outcome. Leaving the screen while a create runs keeps it running (the session simply appears as a row); coming back finds the same form and id. |
 | Created | The screen gives way to the session's transcript at once: the feed folds the created row in before the create returns, so the lane finds it before craze's roster has listed it. |
 

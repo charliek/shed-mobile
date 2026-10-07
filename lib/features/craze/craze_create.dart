@@ -39,7 +39,9 @@ String? preselectedProvider(BridgeLaneCreateOptions o) {
 }
 
 /// A selection carried over from an earlier open of the sheet, kept only while
-/// that provider is still listed and ready; else the preselection.
+/// that provider is still listed and ready; else the preselection. Applied to
+/// an IDLE draft only: one past its submission keeps the provider it sent (see
+/// [replaysHeldRequest]).
 String? reconcileProvider(String? current, BridgeLaneCreateOptions o) {
   for (final p in o.providers) {
     if (p.id == current && providerSelectable(p)) return p.id;
@@ -284,6 +286,21 @@ class CrazeDraft {
     lastCreated: lastCreated,
   );
 }
+
+/// **Try again after an unknown outcome RESENDS what was sent** (§3.8, the
+/// panel's Codex B): the draft holds the request id, and craze answers that id
+/// with the session the first attempt started, or starts it now. The provider
+/// is part of the request already sent, so it is not checked again against a
+/// later options read: one that reads non-ready now (or is not listed at all)
+/// still names that request. Refusing the replay would leave only an edit,
+/// which mints a new id, and so a second session if the first attempt landed.
+///
+/// The same reason keeps the sheet from re-picking a provider for any draft
+/// that is not idle (its `_reconcile`): an unknown one would lose its id, and
+/// a refused one the refusal it shows. (Not yet the desktop's rule: at shed
+/// `9a84ddf` its sheet re-picks for any draft not in flight.)
+bool replaysHeldRequest(CrazeDraft d) =>
+    d.phase == CrazePhase.unknown && d.requestId != null;
 
 /// The primary button's label.
 String primaryLabel(CrazeDraft d) => switch (d.phase) {
