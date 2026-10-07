@@ -323,6 +323,44 @@ class DuplexPump {
       cancelOnError: true,
     );
 
+    // The `try`/`catch` around `_socket.add` above only catches a SYNCHRONOUS
+    // write failure. Once the local peer has already closed, the write fails
+    // ASYNCHRONOUSLY instead: `Socket.done` completes with a `SocketException:
+    // Broken pipe` that the call to `add` above never sees. Left unobserved,
+    // that is an uncaught async error — seen live when one craze transcript
+    // was swapped for another while the remote bridge still had buffered
+    // bytes in flight. Observed here so it is handled exactly like the
+    // synchronous case above: logged, then torn down. A normal completion is
+    // the overwhelmingly common case and is a deliberate no-op — it must not
+    // disturb the `_onLocalDone`/`_onStreamDone`/`_abort` teardown triggers
+    // already wired above.
+    unawaited(
+      _socket.done.then<void>(
+        (_) {},
+        onError: (Object error) {
+          // "asynchronously" is load-bearing in the message, not decoration:
+          // it is what lets a test tell this handler apart from the
+          // synchronous catch above, which logs the same failure under a
+          // text that does not contain it.
+          _log('local socket write failed asynchronously: $error');
+          _abort();
+        },
+      ),
+    );
+
+    // The same asynchronous-failure shape exists on the channel's write half:
+    // `StreamSink.done` can fail after a synchronous `add` succeeded, for the
+    // same reason.
+    unawaited(
+      _channel.sink.done.then<void>(
+        (_) {},
+        onError: (Object error) {
+          _log('channel write failed asynchronously: $error');
+          _abort();
+        },
+      ),
+    );
+
     // Drained, never fatal for the listener: `client-bridge: no session` is a
     // per-connection answer (that host has no roost-session running), and the
     // Rust side classifies it from the stream ending, not from this text. A
