@@ -54,6 +54,7 @@ class LaneState {
     this.error,
     this.approvalErrors = const {},
     this.composerError,
+    this.stopError,
     this.retrying = false,
     this.abandoned = false,
     // `BigInt.zero` is not a compile-time constant, which is the only reason
@@ -121,6 +122,13 @@ class LaneState {
   /// render and the tap", which is only legible next to the button.
   final AppError? composerError;
 
+  /// A refused (or lost) Stop — the header's own error, beside the control
+  /// that raised it. Not [composerError]: Stop ends the SESSION, and its
+  /// refusal says nothing about what was typed. A stop that WORKED says
+  /// nothing here at all: its completion is the lane ending (`ended`, with
+  /// `session_closed`), which is the banner's.
+  final AppError? stopError;
+
   /// A re-open is waiting out its backoff. The screen says "reconnecting"
   /// rather than showing a dead lane as if it were live.
   final bool retrying;
@@ -141,11 +149,13 @@ class LaneState {
     AppError? error,
     Map<String, AppError>? approvalErrors,
     AppError? composerError,
+    AppError? stopError,
     bool? retrying,
     bool? abandoned,
     bool clearStale = false,
     bool clearError = false,
     bool clearComposerError = false,
+    bool clearStopError = false,
   }) => LaneState(
     rows: rows ?? this.rows,
     activity: activity ?? this.activity,
@@ -161,6 +171,7 @@ class LaneState {
     composerError: clearComposerError
         ? null
         : (composerError ?? this.composerError),
+    stopError: clearStopError ? null : (stopError ?? this.stopError),
     retrying: retrying ?? this.retrying,
     abandoned: abandoned ?? this.abandoned,
   );

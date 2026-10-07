@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
+import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
+import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
@@ -43,6 +45,11 @@ import '../../lanes/fake_lane_lease.dart';
 /// 5. **Capabilities and the header come from the SNAPSHOT** (plan 025): the
 ///    session's capabilities ride the lane's stream — there is no getter to
 ///    cache them from at open — and the header reads the live session row.
+/// 6. **Stop, Cancel and the banner** (plan 025 §3.7.3): Stop exists only when
+///    the capabilities say `stop` and asks before it ends the session; Cancel
+///    only when they say `cancel` (and a turn is running); the banner tells a
+///    lane reconnecting on its own (`stale`, not `ended`) from one that is
+///    over.
 void main() {
   group('the composer lifecycle', () {
     testWidgets('a send that lands after the screen is gone touches nothing', (
@@ -501,6 +508,75 @@ void main() {
       expect(find.textContaining('not accepting'), findsOneWidget);
     });
 
+    testWidgets('a send whose answer was LOST keeps its text and says so in '
+        'the desktop\'s words', (tester) async {
+      final rig = _Rig()
+        ..source.sendFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+      await _pump(tester, rig);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'did it land?',
+      );
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('lane-composer-error')))
+            .data,
+        laneSendOutcomeUnknown,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+            .controller!
+            .text,
+        'did it land?',
+        reason: 'never resent, never cleared: the person decides',
+      );
+    });
+
+    testWidgets('Cancel is gated on the snapshot\'s capabilities', (
+      tester,
+    ) async {
+      // A working session whose capabilities say `cancel: false` gets NO
+      // Cancel — a button whose only outcome is a refusal is worse than none.
+      final rig = _Rig(
+        snapshot: _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(interject: false, cancel: false),
+        ),
+      );
+      await _pump(tester, rig);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsNothing);
+      // The control: the same working session, saying `cancel`, gets one.
+      rig.bump(
+        _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(interject: false),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
+
+      // And before any seed has stated them, there is nothing to offer.
+      rig.bump(_snap(activity: BridgeRcActivity.working, capabilities: null));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsNothing);
+    });
+
+    test('laneCancelOffered: the capability AND a running turn', () {
+      const working = BridgeRcActivity.working;
+      expect(laneCancelOffered(_caps(), working), isTrue);
+      expect(laneCancelOffered(_caps(cancel: false), working), isFalse);
+      expect(laneCancelOffered(null, working), isFalse);
+      expect(laneCancelOffered(_caps(), BridgeRcActivity.idle), isFalse);
+    });
+
     testWidgets('Cancel is offered only while a turn is running', (
       tester,
     ) async {
@@ -680,6 +756,57 @@ void main() {
       expect(lanePermissionLine(null), isNull);
     });
 
+    test('the banner tells reconnecting from ended', () {
+      // Reconnecting: a craze lane resuming from its cursor — nothing is over.
+      expect(
+        laneStaleBannerText('hub connection lost', ended: false),
+        'reconnecting… · hub connection lost',
+      );
+      expect(
+        laneStaleBannerText('reconnecting', ended: false),
+        'reconnecting…',
+      );
+      expect(laneStaleBannerText('', ended: false), 'reconnecting…');
+      // Ended: the reason, as it always was — never "reconnecting".
+      expect(
+        laneStaleBannerText('session_closed', ended: true),
+        'session_closed',
+      );
+      expect(
+        laneStaleBannerText('unreachable', ended: true),
+        isNot(contains('reconnecting')),
+      );
+    });
+
+    testWidgets('a STALE lane that has not ended says reconnecting, and its '
+        'resume clears it', (tester) async {
+      final rig = _Rig(
+        snapshot: _snap(
+          rows: [_row(1, 'assistant', 'still here')],
+          stale: 'hub connection lost',
+        ),
+      );
+      await _pump(tester, rig);
+      expect(
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'reconnecting… · hub connection lost',
+      );
+      expect(find.byKey(const ValueKey('lane-note')), findsNothing);
+      expect(find.text('still here'), findsOneWidget);
+      // The input stays live: nothing is over.
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-send')))
+            .onPressed,
+        isNotNull,
+      );
+
+      // The silent resume lands: a lone same-generation Ready.
+      rig.bump(_snap(rows: [_row(1, 'assistant', 'still here')]));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+    });
+
     testWidgets('a stale lane names the reason, and a dead one says so', (
       tester,
     ) async {
@@ -690,7 +817,7 @@ void main() {
       final rig = _Rig(
         snapshot: _snap(
           rows: [_row(1, 'assistant', 'last thing I said')],
-          stale: 'down: unknown_session',
+          stale: 'unknown_session',
           ended: true,
         ),
       );
@@ -698,9 +825,11 @@ void main() {
 
       expect(find.byKey(const ValueKey('lane-stale')), findsOneWidget);
       expect(
-        find.textContaining('unknown_session'),
-        findsOneWidget,
-        reason: 'the reason, not a generic "disconnected"',
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'unknown_session',
+        reason:
+            'the reason, not a generic "disconnected" — and not '
+            '"reconnecting": this lane ENDED',
       );
       // The last complete generation is still readable.
       expect(find.text('last thing I said'), findsOneWidget);
@@ -721,6 +850,165 @@ void main() {
             .widget<IconButton>(find.byKey(const ValueKey('lane-send')))
             .onPressed,
         isNull,
+      );
+    });
+  });
+
+  group('Stop (plan 025 §3.7.3)', () {
+    testWidgets('is absent where the capabilities say no stop', (tester) async {
+      // Every opencode session, and a TUI-hosted craze one: `stop: false`.
+      final rig = _Rig(snapshot: _snap());
+      await _pump(tester, rig);
+      expect(find.byKey(const ValueKey('lane-stop')), findsNothing);
+      // The control: the same lane, once its capabilities say `stop`.
+      rig.bump(_snap(capabilities: _caps(stop: true)));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop')), findsOneWidget);
+    });
+
+    testWidgets('asks first: Keep stops nothing, Stop session stops it', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+      expect(
+        find.text('The agent ends; the transcript stays.'),
+        findsOneWidget,
+      );
+      expect(rig.source.stops, 0, reason: 'never one tap');
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      expect(rig.source.stops, 0, reason: 'Keep keeps');
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 1);
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+    });
+
+    testWidgets('a refused stop is said beside the header, not thrown', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)))
+        ..source.stopFailure = const BridgeLaneError.failed(
+          msg: 'unsupported: this host cannot stop its session',
+        );
+      await _pump(tester, rig);
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(
+        tester.widget<Text>(_bannerText('lane-stop-error')).data,
+        'unsupported: this host cannot stop its session',
+      );
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    });
+
+    testWidgets('a session that ENDS while the confirm is open is not '
+        'stopped: the answer is moot', (tester) async {
+      // Another client stops the session while this one's dialog sits open.
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+
+      rig.bump(
+        _snap(
+          capabilities: _caps(stop: true),
+          stale: 'session_closed',
+          ended: true,
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(rig.source.stops, 0, reason: 'nothing is sent');
+      expect(
+        find.byKey(const ValueKey('lane-stop-error')),
+        findsNothing,
+        reason: 'and nothing is refused: there was nothing left to stop',
+      );
+    });
+
+    testWidgets('a session that stops OFFERING stop while the confirm is open '
+        'is not stopped', (tester) async {
+      // A new incarnation whose capabilities say `stop: false` (a TUI host).
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+
+      rig.bump(_snap(capabilities: _caps()));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(
+        rig.source.stops,
+        0,
+        reason: 'the capability is the gate, then too',
+      );
+      expect(find.byKey(const ValueKey('lane-stop')), findsNothing);
+    });
+
+    test('laneStopOffered: the capability, on a lane that has not ended', () {
+      LaneState lane({
+        bool stop = true,
+        bool ended = false,
+        bool done = false,
+      }) => LaneState(
+        capabilities: _caps(stop: stop),
+        ended: ended,
+        abandoned: done,
+      );
+      expect(laneStopOffered(lane()), isTrue);
+      expect(laneStopOffered(lane(stop: false)), isFalse);
+      expect(laneStopOffered(lane(ended: true)), isFalse);
+      expect(laneStopOffered(lane(done: true)), isFalse);
+      expect(laneStopOffered(LaneState()), isFalse, reason: 'no seed yet');
+    });
+
+    testWidgets('goes quiet once the lane has ended', (tester) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-stop')))
+            .onPressed,
+        isNotNull,
+      );
+
+      rig.bump(
+        _snap(
+          capabilities: _caps(stop: true),
+          stale: 'session_closed',
+          ended: true,
+        ),
+      );
+      await _settle(tester);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-stop')))
+            .onPressed,
+        isNull,
+        reason: 'there is nothing left to stop',
+      );
+      expect(
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'session_closed',
       );
     });
   });
@@ -854,15 +1142,21 @@ BridgeLaneApproval _approval({
 BridgeLaneCapabilities _caps({
   String kind = 'opencode',
   bool interject = true,
+  bool cancel = true,
+  bool stop = false,
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
-  cancel: true,
+  cancel: cancel,
   approvals: true,
   historyCursor: true,
   settings: false,
-  stop: false,
+  stop: stop,
 );
+
+/// The [Text] inside the banner keyed [key].
+Finder _bannerText(String key) =>
+    find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(Text));
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
@@ -896,6 +1190,8 @@ class _FakeSource implements LaneSource {
   /// the controller turns into state rather than an exception.
   Object? sendFailure;
   Object? answerFailure;
+  Object? stopFailure;
+  int stops = 0;
 
   /// When set, `send` awaits this before returning, so a test can unmount the
   /// screen while the verb is still in flight.
@@ -956,6 +1252,13 @@ class _FakeSource implements LaneSource {
   }) async {
     answers.add((approvalId: approvalId, answer: answer));
     final failure = answerFailure;
+    if (failure != null) throw failure;
+  }
+
+  @override
+  Future<void> stop(LaneHandle handle) async {
+    stops++;
+    final failure = stopFailure;
     if (failure != null) throw failure;
   }
 

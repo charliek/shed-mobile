@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/bridge/bridge_adapters.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
@@ -24,8 +25,10 @@ import 'fake_lane_lease.dart';
 ///    nothing is listening on yet.
 /// 2. **The generation fence** — a nudge from a superseded handle is dropped,
 ///    not folded into the live view.
-/// 3. **`unknown_session` and a vanished row end the retries.** Both are
-///    answers that cannot change, and retrying them is a battery bill.
+/// 3. **A final `Down` and a vanished row end the retries.** A session that
+///    does not exist (`unknown_session`), was closed (`session_closed`, craze's
+///    end after a Stop) or never started (`start_failed: <cause>`) is an
+///    answer that cannot change, and retrying it is a battery bill.
 /// 4. **Only `ended` re-opens a lane, never `stale`** (plan 025 §3.2.4). An
 ///    adapter resuming from its cursor marks the view stale and clears it again
 ///    without the lane ending; a re-open there throws the cursor away.
@@ -153,8 +156,9 @@ void main() {
       );
       expect(rig.delays, isEmpty);
 
-      rig.bridge.onSnapshot = (_) =>
-          _snap(stale: 'session_closed', ended: true);
+      // An end that says nothing of the SESSION (its transport gave up): a
+      // `session_closed` is final, and re-opens nothing (the group below).
+      rig.bridge.onSnapshot = (_) => _snap(stale: 'unreachable', ended: true);
       rig.bridge.handles.single.nudges.deliver();
       rig.pumpFrame();
       await pumpEventQueue();
@@ -264,8 +268,8 @@ void main() {
         'retirement and a replacement', () async {
       final rig = crazeRig();
       await rig.controller.open();
-      rig.bridge.onSnapshot = (_) =>
-          _snap(stale: 'session_closed', ended: true);
+      // An end that is not final (a `session_closed` would be given up on).
+      rig.bridge.onSnapshot = (_) => _snap(stale: 'unreachable', ended: true);
       rig.bridge.handles.single.nudges.deliver();
       rig.pumpFrame();
       await pumpEventQueue();
@@ -409,10 +413,10 @@ void main() {
       expect(rig.controller.state.retrying, isFalse);
     });
 
-    test('unknown_session in the reason ENDS the retries', () async {
+    test('unknown_session ENDS the retries', () async {
       final rig = _Rig();
       rig.bridge.onSnapshot = (_) =>
-          _snap(stale: 'the agent reported unknown_session', ended: true);
+          _snap(stale: laneUnknownSession, ended: true);
       await rig.controller.open();
       await pumpEventQueue();
 
@@ -424,6 +428,84 @@ void main() {
       // And it stays ended: a later open() is a no-op.
       await rig.controller.open();
       expect(rig.bridge.opens, 1);
+    });
+  });
+
+  group('a final end (plan 025 §3.7.3) — never re-opened', () {
+    test('laneDownIsFinal is the desktop\'s down_is_final, word for word', () {
+      for (final reason in [
+        'unknown_session',
+        'session_closed',
+        'start_failed',
+        'start_failed: acp: agent exited',
+      ]) {
+        expect(laneDownIsFinal(reason), isTrue, reason: '$reason is final');
+      }
+      for (final reason in [
+        'unreachable',
+        're-attach bound',
+        'protocol: another host answered',
+        'the opencode event stream ended',
+        'closed',
+        'session_closed_soon',
+        'down: unknown_session',
+        '',
+      ]) {
+        expect(
+          laneDownIsFinal(reason),
+          isFalse,
+          reason: '$reason is worth another attempt',
+        );
+      }
+    });
+
+    for (final reason in [
+      'session_closed',
+      'start_failed: KEYCHAIN LOCKED',
+      'start_failed',
+    ]) {
+      test('a craze lane ended "$reason" is given up on, the transcript '
+          'kept', () async {
+        final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+        rig.bridge.onSnapshot = (_) => _snap(
+          messages: [_row(1, 'the last thing it said')],
+          stale: reason,
+          ended: true,
+          capabilities: _caps(kind: 'craze', stop: true),
+        );
+        await rig.controller.open();
+        await pumpEventQueue();
+
+        expect(rig.delays, isEmpty, reason: 'no re-open ladder at all');
+        expect(rig.controller.state.abandoned, isTrue);
+        expect(rig.controller.state.retrying, isFalse);
+        expect(rig.bridge.handles.single.closed, isTrue);
+        expect(
+          rig.controller.state.rows.single.text,
+          'the last thing it said',
+          reason: 'the transcript stays',
+        );
+        expect(rig.controller.state.stale, reason);
+
+        // And it stays ended: a later open() is a no-op.
+        await rig.controller.open();
+        expect(rig.bridge.crazeOpened, ['sess-1']);
+      });
+    }
+
+    test('the control: an end that is not final re-opens', () async {
+      // Exact words: a reason that merely CONTAINS a final one is not one.
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'session_closed_soon', ended: true);
+      await rig.controller.open();
+      await pumpEventQueue();
+
+      expect(rig.delays, [const Duration(seconds: 1)]);
+      expect(rig.controller.state.abandoned, isFalse);
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
     });
   });
 
@@ -613,7 +695,7 @@ void main() {
     test('a new stamp revives a lane that had been given up on', () async {
       final rig = _Rig();
       rig.bridge.onSnapshot = (_) =>
-          _snap(stale: 'gone: unknown_session', ended: true);
+          _snap(stale: laneUnknownSession, ended: true);
       await rig.controller.open();
       await pumpEventQueue();
       expect(rig.controller.state.abandoned, isTrue);
@@ -730,14 +812,74 @@ void main() {
     });
 
     test(
+      'stop reaches the bridge, and its refusal lands on the STOP',
+      () async {
+        final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+        await rig.controller.open();
+
+        await rig.controller.stop();
+        expect(rig.bridge.stops, 1);
+        expect(rig.controller.state.stopError, isNull);
+
+        rig.bridge.stopFailure = const BridgeLaneError.failed(
+          msg: 'unsupported: this host cannot stop its session',
+        );
+        await rig.controller.stop();
+        expect(rig.controller.state.stopError?.code, 'LANE_FAILED');
+        // Not the composer's, and not the lane's: Stop's own.
+        expect(rig.controller.state.composerError, isNull);
+        expect(rig.controller.state.error, isNull);
+        expect(rig.controller.state.approvalErrors, isEmpty);
+
+        // A stop that works clears it.
+        rig.bridge.stopFailure = null;
+        await rig.controller.stop();
+        expect(rig.controller.state.stopError, isNull);
+        expect(rig.bridge.stops, 3);
+      },
+    );
+
+    test('a SEND whose answer was lost says so in the desktop\'s words; a '
+        'refusal keeps its own', () async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      await rig.controller.open();
+      rig.bridge.sendFailure = const BridgeLaneError.outcomeUnknown(
+        msg:
+            'outcome unknown: the connection dropped with session.prompt in '
+            'flight',
+      );
+
+      await rig.controller.send('did this land?');
+      expect(rig.controller.state.composerError?.code, laneOutcomeUnknownCode);
+      expect(
+        rig.controller.state.composerError?.message,
+        laneSendOutcomeUnknown,
+      );
+      expect(
+        laneSendOutcomeUnknown,
+        'outcome unknown: the connection to craze dropped; check the '
+        'transcript before sending again',
+        reason: 'the desktop\'s SEND_OUTCOME_UNKNOWN',
+      );
+
+      // The control: a definite refusal is said as itself.
+      rig.bridge.sendFailure = const BridgeLaneError.notAccepting();
+      await rig.controller.send('again');
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_ACCEPTING');
+    });
+
+    test(
       'a verb with no lane open is refused without touching the bridge',
       () async {
         final rig = _Rig();
 
         await rig.controller.send('hello');
         await rig.controller.answer('appr-1', const BridgeLaneAnswer.reject());
+        await rig.controller.stop();
 
         expect(rig.controller.state.composerError?.code, 'LANE_NOT_OPEN');
+        expect(rig.controller.state.stopError?.code, 'LANE_NOT_OPEN');
+        expect(rig.bridge.stops, 0);
         expect(
           rig.controller.state.approvalErrors['appr-1']?.code,
           'LANE_NOT_OPEN',
@@ -946,6 +1088,8 @@ class _FakeLaneBridge implements LaneSource {
   Object? sendFailure;
   Object? cancelFailure;
   Object? answerFailure;
+  Object? stopFailure;
+  int stops = 0;
 
   /// Parks `lane_open` after the spec has been recorded, so a test can land a
   /// handle into a controller that has already torn down.
@@ -1021,6 +1165,13 @@ class _FakeLaneBridge implements LaneSource {
   }) async {
     answered.add(approvalId);
     final failure = answerFailure;
+    if (failure != null) throw failure;
+  }
+
+  @override
+  Future<void> stop(LaneHandle handle) async {
+    stops++;
+    final failure = stopFailure;
     if (failure != null) throw failure;
   }
 

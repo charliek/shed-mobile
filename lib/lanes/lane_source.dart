@@ -61,6 +61,12 @@ abstract interface class LaneSource {
     required BridgeLaneAnswer answer,
   });
 
+  /// End the SESSION, not just this lane (plan 025 §3.7.3): craze's
+  /// `session.stop`, answered on the host's receipt. The stop's completion
+  /// arrives on the stream — `Down{"session_closed"}`, which ends the lane for
+  /// good. Offered only when the snapshot's capabilities say `stop`.
+  Future<void> stop(LaneHandle handle);
+
   /// Synchronous teardown. Idempotent; Rust's `Drop` is the backstop.
   void close(LaneHandle handle);
 }
@@ -100,6 +106,9 @@ class BridgeLaneSource implements LaneSource {
     required String approvalId,
     required BridgeLaneAnswer answer,
   }) => laneAnswer(lane: _lane(handle), approvalId: approvalId, answer: answer);
+
+  @override
+  Future<void> stop(LaneHandle handle) => laneStop(lane: _lane(handle));
 
   @override
   void close(LaneHandle handle) {

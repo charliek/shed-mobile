@@ -58,6 +58,28 @@
 // * **a start failure** — grok's agent dies at its start: craze's cause,
 //   verbatim, the form kept, no id held; with the config fixed, Try again
 //   sends a NEW id and one session results.
+//
+// ## The cells (CM5: the transcript, §3.7.3)
+//
+// The transcript screen, driven as a person would, against craze's own lane —
+// the desktop's C9 lane cells, plus the phone's own resume:
+//
+// * **seed, send, stop** — a created session's transcript seeds (its first
+//   prompt echoed), its header reads the LIVE session row ("runs tools without
+//   asking": a create runs `bypass`), a send is echoed; Stop asks first, ends
+//   the SESSION (`session_closed`), the transcript stays, the lane is never
+//   re-opened, and the row leaves.
+// * **answers** — a permission, a question and a plan raised by the fake host
+//   are cards, answered on screen by the offered ids.
+// * **cancel** — offered only while a turn runs (the fake host holds one open,
+//   `hang_next`), and it ends the turn.
+// * **the silent resume** — the LANE's own connection process killed (not the
+//   feed tunnel's listener, not the roster's) and its redial held for a few
+//   seconds: the same lane handle, no reseed (no full read, the generation
+//   unchanged), "reconnecting…" shown and then cleared, then a send that lands.
+// * **the ghost row** (Amendment A16) — with the roster's own bridge FROZEN, so
+//   no roster frame can list or remove it, a session created and stopped at
+//   once leaves the rows: the source's `on_created_gone`, through the feed.
 import 'dart:async';
 import 'dart:io';
 
@@ -73,6 +95,8 @@ import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/machines/machine_sessions_view.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_source.dart';
+import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
@@ -1046,6 +1070,456 @@ void main() {
     skip: skip,
     timeout: _cell,
   );
+
+  // -------------------------------------------------------------------------
+  // the transcript (CM5, §3.7.3)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the_transcript_seeds_sends_and_stop_ends_the_session_after_a_confirm',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final t = await _transcript(tester, rig, prompt: 'hello transcript');
+      final host = t.host;
+      LaneController lane() => t.controller();
+      await _until(
+        tester,
+        () => _shows(lane().state, 'echo: hello transcript'),
+        what: 'the first prompt\'s echo in the transcript',
+      );
+
+      // What the session can do, from the SNAPSHOT.
+      final caps = lane().state.capabilities!;
+      expect(caps.kind, 'craze');
+      expect(caps.stop, isTrue, reason: 'a hub-created session can be stopped');
+      expect(caps.cancel, isTrue);
+      // The header reads the LIVE row: a created session runs `bypass`, and
+      // the row the create answered with says nothing of it (live leg 1).
+      await _until(
+        tester,
+        () =>
+            find.byKey(const ValueKey('lane-permission')).evaluate().isNotEmpty,
+        what: 'the live row\'s permission line',
+      );
+      expect(_textAt('lane-permission'), 'runs tools without asking');
+      expect(find.byKey(const ValueKey('lane-stop')), findsOneWidget);
+      // Idle: no turn to cancel.
+      expect(find.byKey(const ValueKey('lane-cancel')), findsNothing);
+
+      // A send, typed and tapped, is echoed.
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'again please',
+      );
+      await _pumps(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => _shows(lane().state, 'echo: again please'),
+        what: 'the send\'s echo',
+      );
+      final controller = lane();
+      final rowsBefore = controller.state.rows.length;
+      // Past a roster round (craze polls its hosts about once a second and
+      // flushes every 250 ms): this is the ROSTER-LISTED session's stop, whose
+      // row leaves at the roster's `Removed` — after the lane has read its own
+      // end. The never-listed one is the ghost-row cell's.
+      await _wait(tester, const Duration(seconds: 2));
+
+      // Stop asks first; Keep stops nothing.
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _pumps(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _pumps(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      expect(controller.state.ended, isFalse);
+
+      // Every state from the Stop on: a final end is given up on AT ONCE —
+      // never put on the re-open ladder first, which the row's later
+      // `Removed` would then cut short and hide.
+      final afterStop = <LaneState>[];
+      final watching = controller.updates.listen(afterStop.add);
+      addTearDown(watching.cancel);
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _pumps(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _until(
+        tester,
+        () => controller.state.abandoned,
+        what: 'the stopped session\'s lane to end for good',
+      );
+      expect(
+        afterStop.where((s) => s.retrying),
+        isEmpty,
+        reason: 'session_closed is final: no re-open was ever scheduled',
+      );
+      expect(controller.state.stale, laneSessionClosed);
+      expect(
+        _textAt('lane-stale'),
+        laneSessionClosed,
+        reason: 'ended — never "reconnecting…"',
+      );
+      expect(controller.state.stopError, isNull);
+      expect(
+        controller.state.rows.length,
+        greaterThanOrEqualTo(rowsBefore),
+        reason: 'the transcript stays',
+      );
+      await _until(
+        tester,
+        () => _row(t.feed.state, host) == null,
+        what: 'the stopped session\'s row to leave',
+      );
+      // Past the re-open ladder's first step: a final end re-opens nothing.
+      await _wait(tester, const Duration(seconds: 3));
+      expect(t.source.crazeOpens, [host], reason: 'never re-opened');
+      expect(controller.state.abandoned, isTrue);
+      expect((await liveCounters()).activeLanes, BigInt.zero);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'asks_are_answered_on_the_screen_by_their_offered_ids',
+    (tester) async {
+      final rig = await _rig(bins!);
+      await rig.fakeHost(_fake, _fakeSession);
+      final t = await _transcript(tester, rig, host: _fake);
+      LaneController lane() => t.controller();
+
+      rig.op({
+        'name': 'permission',
+        'id': 'perm-1',
+        'tool': 'Shell',
+        'options': [
+          {'optionId': 'allow', 'name': 'Allow', 'kind': 'allow_once'},
+          {'optionId': 'deny', 'name': 'Deny', 'kind': 'reject_once'},
+        ],
+      });
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('lane-option-deny'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the permission card',
+      );
+      expect(
+        find.byKey(const ValueKey('lane-option-allow')),
+        findsOneWidget,
+        reason: 'craze\'s options, in craze\'s order, by their own ids',
+      );
+      await tester.tap(find.byKey(const ValueKey('lane-option-deny')));
+      await _until(
+        tester,
+        () => lane().state.approvals.isEmpty,
+        what: 'the permission resolved',
+      );
+
+      rig.op({
+        'name': 'question',
+        'id': 'q-1',
+        'title': 'Pick',
+        'questions': [
+          {
+            'id': 'lang',
+            'prompt': 'Which language?',
+            'options': [
+              {'id': 'rs', 'label': 'Rust'},
+              {'id': 'go', 'label': 'Go'},
+            ],
+          },
+        ],
+      });
+      await _until(
+        tester,
+        () => lane().state.approvals.any((a) => a.id == 'q-1'),
+        what: 'the question card',
+      );
+      final question = lane().state.approvals.singleWhere((a) => a.id == 'q-1');
+      expect(question.questions.single.custom, isFalse);
+      // One question, one choice, no free text: one tap is the answer.
+      await tester.tap(find.widgetWithText(FilterChip, 'Rust'));
+      await _until(
+        tester,
+        () => _shows(lane().state, '? Which language? → Rust'),
+        what: 'the question\'s note',
+      );
+
+      rig.op({
+        'name': 'plan',
+        'id': 'plan-1',
+        'planName': 'Refactor',
+        'overview': 'Split it',
+        'plan': '1. split',
+      });
+      await _until(
+        tester,
+        () => lane().state.approvals.any((a) => a.id == 'plan-1'),
+        what: 'the plan card',
+      );
+      final plan = lane().state.approvals.singleWhere((a) => a.id == 'plan-1');
+      expect(plan.options.map((o) => o.id), contains('accept'));
+      await tester.tap(find.byKey(const ValueKey('lane-option-accept')));
+      await _until(
+        tester,
+        () => _shows(lane().state, 'plan Refactor → accepted'),
+        what: 'the plan\'s note',
+      );
+      expect(lane().state.approvals, isEmpty);
+      expect(lane().state.approvalErrors, isEmpty);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'cancel_is_offered_while_a_turn_runs_and_ends_it',
+    (tester) async {
+      final rig = await _rig(bins!);
+      await rig.fakeHost(_fake, _fakeSession);
+      final t = await _transcript(tester, rig, host: _fake);
+      LaneController lane() => t.controller();
+      expect(lane().state.capabilities?.cancel, isTrue);
+      expect(
+        find.byKey(const ValueKey('lane-cancel')),
+        findsNothing,
+        reason: 'idle: nothing to cancel',
+      );
+
+      rig.op({'name': 'hang_next'});
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'a long one',
+      );
+      await _pumps(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => find.byKey(const ValueKey('lane-cancel')).evaluate().isNotEmpty,
+        what: 'the running turn\'s Cancel',
+      );
+      expect(lane().state.activity, BridgeRcActivity.working);
+      await tester.tap(find.byKey(const ValueKey('lane-cancel')));
+      await _until(
+        tester,
+        () => lane().state.activity != BridgeRcActivity.working,
+        what: 'the cancelled turn to end',
+      );
+      expect(lane().state.composerError, isNull);
+      await _until(
+        tester,
+        () => find.byKey(const ValueKey('lane-cancel')).evaluate().isEmpty,
+        what: 'Cancel gone with the turn',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_killed_lane_connection_resumes_silently',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final t = await _transcript(tester, rig, prompt: 'before the drop');
+      final host = t.host;
+      final controller = t.controller();
+      await _until(
+        tester,
+        () =>
+            _shows(controller.state, 'echo: before the drop') &&
+            controller.state.stale == null,
+        what: 'the transcript seeded',
+      );
+      final handle = controller.handle;
+      expect(handle, isNotNull);
+      final generation = controller.state.generation;
+      final seqs = [for (final r in controller.state.rows) r.seq];
+      final readsBefore = t.source.reads.length;
+
+      // The LANE's own connection: the bridge its client asked the hub to
+      // splice to this host — not the feed tunnel's listener, not the roster.
+      final killed = rig.laneBridge(host);
+      expect(killed, isNot(same(rig.rosterBridge())));
+      rig.holdCrazeDials = Completer<void>();
+      try {
+        rig.killBridge(killed);
+        await killed.exitCode.timeout(const Duration(seconds: 10));
+        await _until(
+          tester,
+          () =>
+              controller.state.stale != null &&
+              find.byKey(const ValueKey('lane-stale')).evaluate().isNotEmpty,
+          what: 'the lane to say it is reconnecting',
+        );
+        expect(_textAt('lane-stale'), startsWith('reconnecting…'));
+        expect(controller.state.ended, isFalse);
+
+        // A few seconds with no way back: still the same lane, still waiting.
+        await _wait(tester, const Duration(seconds: 3));
+        expect(controller.state.ended, isFalse);
+        expect(controller.state.stale, isNotNull);
+        expect(_textAt('lane-stale'), startsWith('reconnecting…'));
+        expect(controller.handle, same(handle));
+      } finally {
+        rig.holdCrazeDials!.complete();
+        rig.holdCrazeDials = null;
+      }
+
+      await _until(
+        tester,
+        () => controller.state.stale == null,
+        what: 'the resume to clear the banner',
+      );
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+      expect(controller.handle, same(handle), reason: 'the SAME lane handle');
+      expect(t.source.crazeOpens, [host], reason: 'never re-opened');
+      expect(
+        controller.state.generation,
+        generation,
+        reason: 'no reseed: the generation is unchanged',
+      );
+      final reads = t.source.reads.sublist(readsBefore);
+      expect(
+        reads.where((r) => r.full),
+        isEmpty,
+        reason: 'no Reset: every read across the outage was a delta',
+      );
+      expect(reads.map((r) => r.generation).toSet(), {generation});
+      expect(
+        reads.any((r) => r.stale != null && !r.ended),
+        isTrue,
+        reason: 'the outage was read as stale, never as ended',
+      );
+      expect(
+        [for (final r in controller.state.rows) r.seq].take(seqs.length),
+        seqs,
+        reason: 'the rows read before the drop are the rows kept',
+      );
+      final redial = rig.laneBridge(host);
+      expect(
+        redial,
+        isNot(same(killed)),
+        reason: 'a new connection carries it',
+      );
+
+      // And it is live: a send lands.
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'after the drop',
+      );
+      await _pumps(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => _shows(controller.state, 'echo: after the drop'),
+        what: 'the send after the resume to land',
+      );
+      expect(controller.state.composerError, isNull);
+      expect(controller.handle, same(handle));
+      expect(controller.state.generation, generation);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_session_created_and_stopped_at_once_leaves_the_rows',
+    (tester) async {
+      // Amendment A16, the ghost row. A session stopped before any roster
+      // frame lists it gets no `Removed` (craze sends one only for a host it
+      // has sent), so only the source's `on_created_gone` — the lane telling
+      // the source its session ended — can take its created row away. The
+      // roster's own bridge is FROZEN for the whole create→stop, and the cell
+      // proves it: stopped (`/proc` state `T`) before the create begins, still
+      // alive and stopped at the moment the row leaves, and never replaced —
+      // so no roster frame can have listed the session or removed it.
+      final rig = await _rig(bins!);
+      final t = await _feedGraph(tester, rig);
+      final roster = rig.rosterBridge();
+      final rosterConnections = rig.rosterConnections;
+      await rig.pause(roster);
+      expect(
+        rig.isPaused(roster),
+        isTrue,
+        reason: 'the roster is frozen before the create begins',
+      );
+      late String host;
+      bool? frozenAtDeparture;
+      try {
+        final created = await t.feed.crazeCreateSession(
+          BridgeLaneCreateRequest(
+            cwd: rig.work,
+            requestId: crazeNewRequestId(),
+          ),
+        );
+        host = created.session.id;
+        expect(_row(t.feed.state, host), isNotNull, reason: 'listed at once');
+
+        // Its transcript, and Stop the moment there is one to press.
+        await _showLane(tester, t.container, host);
+        await _until(
+          tester,
+          () => find.byKey(const ValueKey('lane-stop')).evaluate().isNotEmpty,
+          what: 'the created session\'s Stop',
+        );
+        await tester.tap(find.byKey(const ValueKey('lane-stop')));
+        await _pumps(tester);
+        await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+        await _until(tester, () {
+          final gone = _row(t.feed.state, host) == null;
+          // Read at the very moment the departure is first seen.
+          if (gone) frozenAtDeparture ??= rig.isPaused(roster);
+          return gone;
+        }, what: 'the stopped session\'s row to leave with no roster frame');
+        expect(
+          frozenAtDeparture,
+          isTrue,
+          reason:
+              'the roster bridge was alive and STOPPED when the row left: '
+              'no roster frame carried the departure',
+        );
+        expect(
+          rig.rosterConnections,
+          rosterConnections,
+          reason: 'no replacement roster connection was opened',
+        );
+        expect(rig.rosterBridge(), same(roster));
+        final controller = t.container.read(
+          laneControllerProvider((
+            machine: _local.name,
+            kind: crazeLaneKind,
+            slug: host,
+          )),
+        );
+        await _until(
+          tester,
+          () => controller.state.abandoned,
+          what: 'the lane to end for good',
+        );
+        expect(t.source.crazeOpens, [
+          host,
+        ], reason: 'a stopped session is never re-opened');
+        expect(rig.isPaused(roster), isTrue, reason: 'frozen throughout');
+      } finally {
+        rig.resume(roster);
+      }
+
+      // The roster catches up: whatever it says now, the row stays gone.
+      await _wait(tester, const Duration(seconds: 3));
+      expect(_row(t.feed.state, host), isNull);
+      expect(
+        rig.rosterConnections,
+        rosterConnections,
+        reason: 'the same roster connection, resumed — never a replacement',
+      );
+      expect((await liveCounters()).activeLanes, BigInt.zero);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1356,3 +1830,193 @@ BridgeRcSession _tab(int tabId, BridgeRcKind kind, {String? rcId}) =>
       tabId: tabId,
       rcId: rcId,
     );
+
+/// The phone's lane bridge, recorded: every craze open (by hostId) and every
+/// read's shape — what the resume cell checks "no re-open" and "no reseed"
+/// against. A pass-through to [BridgeLaneSource] otherwise.
+class _RecordingSource implements LaneSource {
+  final _bridge = const BridgeLaneSource();
+
+  /// Every craze lane opened, by hostId, in order.
+  final crazeOpens = <String>[];
+
+  /// Every snapshot read, in order.
+  final reads = <({bool full, BigInt generation, String? stale, bool ended})>[];
+
+  @override
+  Future<LaneHandle> open(BridgeLaneSpec spec) => _bridge.open(spec);
+
+  @override
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) {
+    crazeOpens.add(hostId);
+    return _bridge.openCraze(open, hostId);
+  }
+
+  @override
+  Stream<bool> nudges(LaneHandle handle) => _bridge.nudges(handle);
+
+  @override
+  BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) {
+    final snap = _bridge.snapshot(handle, sinceSeq);
+    reads.add((
+      full: snap.full,
+      generation: snap.generation,
+      stale: snap.stale,
+      ended: snap.ended,
+    ));
+    return snap;
+  }
+
+  @override
+  Future<void> send(
+    LaneHandle handle, {
+    required String text,
+    required BridgeSendMode mode,
+  }) => _bridge.send(handle, text: text, mode: mode);
+
+  @override
+  Future<void> cancel(LaneHandle handle) => _bridge.cancel(handle);
+
+  @override
+  Future<void> answer(
+    LaneHandle handle, {
+    required String approvalId,
+    required BridgeLaneAnswer answer,
+  }) => _bridge.answer(handle, approvalId: approvalId, answer: answer);
+
+  @override
+  Future<void> stop(LaneHandle handle) => _bridge.stop(handle);
+
+  @override
+  void close(LaneHandle handle) => _bridge.close(handle);
+}
+
+/// The provider graph over [rig]'s tunnels, with the lane bridge recorded,
+/// and the craze feed live before it returns.
+Future<
+  ({ProviderContainer container, MachineFeed feed, _RecordingSource source})
+>
+_feedGraph(WidgetTester tester, CrazeRig rig) async {
+  final source = _RecordingSource();
+  final container = ProviderContainer(
+    retry: (_, _) => null,
+    overrides: [
+      machinesProvider.overrideWith((ref) async => const [_local]),
+      identitiesProvider.overrideWith((ref) async => <SSHKeyPair>[]),
+      machineTunnelOpenProvider.overrideWithValue(rig.tunnelOpen),
+      laneSourceProvider.overrideWithValue(source),
+    ],
+  );
+  addTearDown(() => _dispose(tester, container));
+  final feedState = container.listen(
+    machineFeedProvider(_local.name),
+    (_, _) {},
+    fireImmediately: true,
+  );
+  await _until(
+    tester,
+    () => feedState.read().value?.craze?.live ?? false,
+    what: 'the craze feed live',
+  );
+  return (
+    container: container,
+    feed: container.read(machineFeedControllerProvider(_local.name)),
+    source: source,
+  );
+}
+
+/// The transcript screen for [hostId], over [container]'s graph — what the
+/// session row's Transcript pill pushes.
+Future<void> _showLane(
+  WidgetTester tester,
+  ProviderContainer container,
+  String hostId,
+) => tester.pumpWidget(
+  UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp(
+      theme: shedLightTheme,
+      home: LaneScreen(
+        machine: _local.name,
+        kind: crazeLaneKind,
+        slug: hostId,
+        title: 'craze $hostId',
+      ),
+    ),
+  ),
+);
+
+/// A craze session's transcript on screen and SEEDED: [host]'s (a fake host's
+/// hostId), or — with [prompt] — a session created for the cell with that
+/// first prompt.
+Future<
+  ({
+    ProviderContainer container,
+    MachineFeed feed,
+    _RecordingSource source,
+    String host,
+    LaneController Function() controller,
+  })
+>
+_transcript(
+  WidgetTester tester,
+  CrazeRig rig, {
+  String? host,
+  String? prompt,
+}) async {
+  final g = await _feedGraph(tester, rig);
+  var id = host;
+  if (id == null) {
+    final created = await g.feed.crazeCreateSession(
+      BridgeLaneCreateRequest(
+        cwd: rig.work,
+        prompt: prompt,
+        requestId: crazeNewRequestId(),
+      ),
+    );
+    expect(created.prompt, const BridgeLanePromptOutcome.accepted());
+    id = created.session.id;
+  } else {
+    await _until(
+      tester,
+      () => _row(g.feed.state, host!) != null,
+      what: 'the row of $host',
+    );
+  }
+  final hostId = id;
+  await _showLane(tester, g.container, hostId);
+  LaneController controller() => g.container.read(
+    laneControllerProvider((
+      machine: _local.name,
+      kind: crazeLaneKind,
+      slug: hostId,
+    )),
+  );
+  await _until(
+    tester,
+    () =>
+        controller().isOpen &&
+        controller().state.generation > BigInt.zero &&
+        controller().state.capabilities != null,
+    what: 'the transcript of $hostId seeded',
+  );
+  return (
+    container: g.container,
+    feed: g.feed,
+    source: g.source,
+    host: hostId,
+    controller: controller,
+  );
+}
+
+/// Whether [state]'s transcript has a row containing [text].
+bool _shows(LaneState state, String text) =>
+    state.rows.any((r) => r.text?.contains(text) ?? false);
+
+/// Let [time] pass, pumping.
+Future<void> _wait(WidgetTester tester, Duration time) async {
+  final until = DateTime.now().add(time);
+  while (DateTime.now().isBefore(until)) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}

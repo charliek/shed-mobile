@@ -82,7 +82,7 @@ both run every file even after one fails.
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
-| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, the feed's teardown, and the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it) |
+| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, the feed's teardown, the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it), and the transcript (seed, send, answers, cancel, Stop behind its confirm, the silent resume after the lane's own connection is killed, and a session created and stopped at once leaving the rows) |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
@@ -140,6 +140,19 @@ craze its pinned shed tested.
   unknown-outcome cell proves "Try again" resumes the same request and one
   session results; `setGrokAgent(scriptAgent('exit-two-lines'))` is how the
   start-failure cell gets craze's real cause.
+- **One connection's own process.** The rig also logs what each bridge's
+  client asked the hub for — the roster's `sessions.subscribe`, a lane's
+  `session.connect{sessionId: <hostId>}` — so a cell finds one connection's
+  process by what it carries (`laneBridge(hostId)`, `rosterBridge()`), never
+  by the order the bridges started in. The silent-resume cell kills the LANE's
+  own bridge (not the feed tunnel's listener) with `holdCrazeDials` set, so its
+  redial waits a few seconds before the hub sees it; the ghost-row cell
+  freezes the roster's bridge (`pause`/`resume`: SIGSTOP/SIGCONT, continued
+  again by the teardown) so no roster frame can list or remove the session it
+  creates and stops. The freeze is proven, not assumed: `pause` throws unless
+  the signal was delivered and `/proc/<pid>/stat` then says `T` (stopped), and
+  the cell checks, at the moment the row leaves, that the same bridge is still
+  alive and stopped and that no replacement roster connection was opened.
 
 Rules that matter when adding a cell:
 

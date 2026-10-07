@@ -8,7 +8,7 @@ import 'dto_lane.dart';
 import 'dto_rc.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `build_client`, `client`, `forward_loop`, `lock`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_adapter`, `open_inner`, `spawn_forwarder`, `spawn_pump`, `teardown`
+// These functions are ignored because they are not marked as `pub`: `apply`, `build_client`, `client`, `down_is_final`, `forward_loop`, `lock`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_adapter`, `open_inner`, `spawn_forwarder`, `spawn_pump`, `teardown`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LaneInner`, `LaneState`, `LaneTasks`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
 
@@ -115,6 +115,20 @@ Future<void> laneAnswer({
   approvalId: approvalId,
   answer: answer,
 );
+
+/// **End the SESSION** (plan 025 §3.7.3) — not just this transcript: craze's
+/// `session.stop`, answered on the host's RECEIPT. The stop's completion is the
+/// stream's: the session's closing records, then `Down{"session_closed"}`, which
+/// ends this lane for good ([`down_is_final`]) — and, for a session no roster
+/// has listed yet, lets its created row go (Amendment A16), so the row leaves.
+///
+/// A session whose capabilities say `stop: false` (a TUI-hosted craze session,
+/// every opencode one) refuses it — [`BridgeLaneError::Failed`] naming the
+/// adapter — and a panel offers no Stop there. A receipt lost to a drop is
+/// [`BridgeLaneError::OutcomeUnknown`]: the session may already be closing, and
+/// the stream says whether it is.
+Future<void> laneStop({required BridgeLane lane}) =>
+    RustLib.instance.api.crateApiLaneLaneStop(lane: lane);
 
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.

@@ -169,15 +169,21 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     'LANE_UNSUPPORTED_KIND',
     'this build has no adapter for a "$kind" lane',
   ),
-  // A craze create whose answer was lost (plan 025 §3.8): NOT a failure — the
-  // session may well exist. The create sheet branches on the variant itself
-  // (it keeps its request id on this one alone); this arm is for any other
-  // caller that only shows a message.
+  // A craze request whose answer was lost (plan 025 §3.3.4, §3.8): NOT a
+  // failure — the create may have started a session, the verb may have run.
+  // The create sheet branches on the variant itself (it keeps its request id
+  // on this one alone); a lane verb's refusal lands under this code, which the
+  // lane controller reads to say a lost send in the desktop's words.
   BridgeLaneError_OutcomeUnknown(:final msg) => AppError(
-    'LANE_OUTCOME_UNKNOWN',
+    laneOutcomeUnknownCode,
     msg,
   ),
 };
+
+/// The [AppError.code] of a craze request whose answer was lost
+/// ([BridgeLaneError_OutcomeUnknown]) — what a caller holding only the
+/// [AppError] branches on, never the message.
+const laneOutcomeUnknownCode = 'LANE_OUTCOME_UNKNOWN';
 
 /// Coerce any caught object from a bridge call into an [AppError] (bridge calls
 /// throw [BridgeError] or [BridgeLaneError]; anything else is wrapped).

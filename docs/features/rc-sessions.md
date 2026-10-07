@@ -92,6 +92,23 @@ header says).
 A start failure shows craze's cause verbatim (monospace); craze's
 `bad_request` is shown beside the directory.
 
+### A craze session's transcript
+
+The transcript screen is the same one an opencode lane opens, and it takes
+everything a session can do from what the lane's stream last said about that
+session — its capabilities, its settings and its row — never from a copy taken
+when it opened.
+
+| Part | Behaviour |
+|---|---|
+| Header | The session's title and its permission posture, from the live session row: a session the create sheet started runs `bypass`, and says "runs tools without asking". |
+| Stop | Offered only when the session's capabilities say `stop` (a session hosted by a craze TUI has none), and never in one tap: it asks "Stop this session? The agent ends; the transcript stays." first — and if the session ended, or stopped offering Stop, while it was asking, the answer is moot and nothing is sent. It ends the SESSION — craze's `session.stop` — and the lane ends with it, its transcript kept; the row leaves. A refusal is said under the header. |
+| Cancel | Offered only when the capabilities say `cancel`, and only while a turn is running. |
+| Interject | Offered only when the capabilities say `interject`, and live only while a turn is running. |
+| Reconnecting | The lane's own connection dropped and craze is resuming it from where it was: the banner says "reconnecting…", the transcript stays on screen, and when the resume lands the banner goes — the same transcript, nothing re-read. |
+| Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened; any other end is re-opened on a backoff. |
+| A lost answer | A send whose answer was lost — the connection dropped while it was in flight — may or may not have started a turn and is never resent: the typed text stays, and the screen says to check the transcript before sending again. |
+
 ## Kinds
 
 What a target can launch as a roost tab comes from `roostCapabilities()` —

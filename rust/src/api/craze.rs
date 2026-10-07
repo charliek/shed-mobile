@@ -852,21 +852,14 @@ pub async fn craze_create(
                 inner.machine
             ))),
         };
-        let created = answer.map_err(create_failure)?;
+        // The contract's variant — an outcome-unknown included, which the one
+        // `From<LaneError>` makes [`BridgeLaneError::OutcomeUnknown`] by
+        // shed-craze's own predicate, for a create and a lane verb alike.
+        let created = answer.map_err(BridgeLaneError::from)?;
         inner.touch();
         Ok(created.into())
     })
     .await
-}
-
-/// A create's refusal for the phone: the contract's variant, except an
-/// outcome-unknown — recognised by shed-craze's own predicate, never by its
-/// text here — which is [`BridgeLaneError::OutcomeUnknown`].
-fn create_failure(e: LaneError) -> BridgeLaneError {
-    if shed_craze::is_outcome_unknown(&e) {
-        return BridgeLaneError::OutcomeUnknown { msg: e.to_string() };
-    }
-    e.into()
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +922,8 @@ mod tests {
     };
 
     use crate::api::bridge_rt::live_counters;
-    use crate::api::lane::{lane_close, lane_snapshot};
+    use crate::api::dto_lane::BridgeSendMode;
+    use crate::api::lane::{lane_close, lane_send, lane_snapshot, lane_stop, pump_finished};
     use crate::api::testsupport::test_guard;
 
     /// The host a scripted create answers with.
@@ -1512,6 +1506,250 @@ mod tests {
         assert_eq!(live_counters().active_lanes, 0);
         assert_eq!(live_counters().active_craze_sources, 0);
         assert_eq!(live_counters().active_craze_forwarders, 0);
+    }
+
+    /// The source's roster seeded with [`CREATED`]'s row and live — its hub end
+    /// handed back, to be KEPT: dropping it ends the roster connection, and the
+    /// source's redial would be a connection a cell did not ask for.
+    async fn listed_roster(
+        conns: &mut tokio::sync::mpsc::UnboundedReceiver<HubEnd>,
+        src: &BridgeCrazeSource,
+    ) -> HubEnd {
+        let mut roster = next_conn(conns).await;
+        roster.hello("epoch-1", full_hub_capabilities()).await;
+        let row = roster_row(
+            CREATED,
+            "session-created",
+            "/w/new",
+            json!({"activity": "idle", "pendingAsks": 0}),
+        );
+        roster.subscribed("sub-1", "epoch-1", json!([row])).await;
+        assert!(until(Duration::from_secs(10), || craze_source_snapshot(src).live).await);
+        roster
+    }
+
+    /// [`listed_roster`], and [`CREATED`]'s lane opened and seeded through a
+    /// connection of its own — the hub end of that connection handed back, the
+    /// attachment `s-1`.
+    async fn listed_lane(
+        conns: &mut tokio::sync::mpsc::UnboundedReceiver<HubEnd>,
+        src: &BridgeCrazeSource,
+    ) -> (BridgeLane, HubEnd, HubEnd) {
+        let roster = listed_roster(conns, src).await;
+        let lane = craze_lane_open(src, CREATED.to_string())
+            .await
+            .expect("the listed session's lane opens");
+        let mut hub = next_conn(conns).await;
+        hub.splice(CREATED).await;
+        hub.listed(host_session_row(&created_info(), json!({})))
+            .await;
+        hub.attached(attach_result(
+            "s-1",
+            &created_info(),
+            ("INC-1", 1),
+            Some(snapshot_at("INC-1", 1, json!({}))),
+            None,
+        ))
+        .await;
+        hub.synchronized("s-1", 1).await;
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None)
+                .generation
+                >= 1)
+            .await,
+            "the lane never seeded"
+        );
+        (lane, hub, roster)
+    }
+
+    /// No connection dialled within `within` — the lane's pump redialled
+    /// nothing.
+    async fn no_dial_within(
+        conns: &mut tokio::sync::mpsc::UnboundedReceiver<HubEnd>,
+        within: Duration,
+    ) -> bool {
+        tokio::time::timeout(within, conns.recv()).await.is_err()
+    }
+
+    /// **A stopped session's lane ends for good** (plan 025 §3.7.3, the
+    /// desktop's `down_is_final`): `lane_stop` is craze's `session.stop`,
+    /// answered on the host's receipt; the session's close then ends the lane
+    /// `Down{"session_closed"}` — and the pump STOPS. A resubscribe there would
+    /// dial a hub that answers "no such session", and before CM5 the phone's
+    /// pump did exactly that: it took only `unknown_session` as final.
+    #[tokio::test]
+    async fn a_stopped_lane_ends_for_good_and_redials_nothing() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let (lane, mut hub, _roster) = listed_lane(&mut conns, &src).await;
+        assert!(
+            lane_snapshot(&lane, None)
+                .capabilities
+                .is_some_and(|c| c.stop),
+            "a hub-created session can be stopped"
+        );
+
+        let (stopped, req) = tokio::join!(lane_stop(&lane), async {
+            let req = hub.expect("session.stop").await;
+            hub.reply(&req, json!({})).await;
+            req
+        });
+        stopped.expect("the host's receipt");
+        assert_eq!(req["params"]["sessionId"], "session-created");
+        assert!(
+            !lane_snapshot(&lane, None).ended,
+            "a receipt is not the end: the close follows on the stream"
+        );
+
+        hub.reset("s-1", "session_closed").await;
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None).ended).await,
+            "the session's close never ended the lane"
+        );
+        assert_eq!(
+            lane_snapshot(&lane, None).stale.as_deref(),
+            Some("session_closed")
+        );
+        assert!(
+            until(Duration::from_secs(5), || pump_finished(&lane)).await,
+            "the pump outlived a final Down"
+        );
+        assert!(
+            no_dial_within(&mut conns, Duration::from_millis(1500)).await,
+            "the pump redialled a session that closed"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+        assert_eq!(live_counters().active_craze_sources, 0);
+    }
+
+    /// **A session that never started ends its lane for good**: an attach
+    /// refused `not_accepting` + `start_failed` is `Down{"start_failed:
+    /// <cause>"}`, craze's cause in it, and the pump stops — asking the host
+    /// again would only hear the same cause.
+    #[tokio::test]
+    async fn a_start_failure_ends_the_lane_for_good() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = listed_roster(&mut conns, &src).await;
+        let lane = craze_lane_open(&src, CREATED.to_string())
+            .await
+            .expect("the listed session's lane opens");
+        let mut hub = next_conn(&mut conns).await;
+        hub.splice(CREATED).await;
+        hub.listed(host_session_row(&created_info(), json!({})))
+            .await;
+        let attach = hub.expect("session.attach").await;
+        hub.refuse(
+            &attach,
+            "not_accepting",
+            "start_failed",
+            json!({"cause": "KEYCHAIN LOCKED"}),
+        )
+        .await;
+
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None).ended).await,
+            "the start failure never ended the lane"
+        );
+        assert_eq!(
+            lane_snapshot(&lane, None).stale.as_deref(),
+            Some("start_failed: KEYCHAIN LOCKED"),
+            "craze's cause, in the reason"
+        );
+        assert!(
+            until(Duration::from_secs(5), || pump_finished(&lane)).await,
+            "the pump outlived a final Down"
+        );
+        assert!(
+            no_dial_within(&mut conns, Duration::from_millis(1500)).await,
+            "the pump redialled a session that never started"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// **The control: an end that says nothing of the SESSION is retried.** A
+    /// host that answers for another hostId is a protocol fault —
+    /// `Down{"protocol: …"}` — and the session may well be running, so the
+    /// pump resubscribes and the lane dials again. What makes the two cells
+    /// above mean something: the silence there is the rule, not a pump that
+    /// never redials anything.
+    #[tokio::test]
+    async fn an_end_that_is_not_final_redials() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = listed_roster(&mut conns, &src).await;
+        let lane = craze_lane_open(&src, CREATED.to_string())
+            .await
+            .expect("the listed session's lane opens");
+        let mut hub = next_conn(&mut conns).await;
+        hub.splice_answered_by(CREATED, "dddddddddddd").await;
+
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None).ended).await,
+            "the protocol fault never ended the subscription"
+        );
+        let reason = lane_snapshot(&lane, None).stale.unwrap_or_default();
+        assert!(reason.starts_with("protocol"), "{reason}");
+        let redial = tokio::time::timeout(Duration::from_secs(10), conns.recv())
+            .await
+            .expect("the pump resubscribed and the lane dialled again");
+        assert!(redial.is_some());
+        assert!(!pump_finished(&lane), "the pump is still the lane's");
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// **A lane verb whose answer was lost is an unknown outcome**, as the
+    /// desktop maps it (`LaneFailure::OutcomeUnknown`): a send in flight when
+    /// its connection drops may or may not have started a turn, and is never
+    /// resent — `BridgeLaneError::OutcomeUnknown`, never a `Failed` a client
+    /// would have to read text to tell from a refusal.
+    #[tokio::test]
+    async fn a_lane_verb_lost_to_a_drop_is_an_unknown_outcome() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let (lane, mut hub, _roster) = listed_lane(&mut conns, &src).await;
+
+        let (sent, ()) = tokio::join!(
+            lane_send(&lane, "hi".to_string(), BridgeSendMode::Queue),
+            async {
+                hub.expect("session.prompt").await;
+                hub.close().await;
+            }
+        );
+        let Err(BridgeLaneError::OutcomeUnknown { msg }) = sent else {
+            panic!("a send lost to a drop: {sent:?}");
+        };
+        assert!(
+            msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN),
+            "{msg}"
+        );
+        // A definite refusal stays its own variant: the control.
+        assert_eq!(
+            BridgeLaneError::from(LaneError::Failed(shed_craze::errors::craze_says(
+                "outcome unknown: craze's own words"
+            ))),
+            BridgeLaneError::Failed {
+                msg: "craze: outcome unknown: craze's own words".to_string()
+            },
+            "craze's words never wear shed's outcome unknown"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
     }
 
     /// **The feed owns a create in flight** (plan 025 §3.7.2): closing the

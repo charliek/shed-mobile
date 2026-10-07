@@ -1291,25 +1291,47 @@ pub enum BridgeLaneError {
     /// which a NEWER build may well be able to. `AgentLaneStamp`'s doc makes
     /// refusing by name the client's obligation for exactly that reason.
     UnsupportedLane { kind: String },
-    /// **A craze create whose answer was lost** (plan 025 §3.8) — written, and
-    /// never answered, twice (shed-craze's own retry under the same request id),
-    /// or cut short by the source's close while it was in flight. Whether it
-    /// started a session is not known.
+    /// **A craze request whose answer was lost** (plan 025 §3.3.4, §3.8) — it
+    /// was written and never answered: its connection dropped while it was in
+    /// flight, or its deadline passed. Whether it RAN is not known, and it is
+    /// never resent.
     ///
-    /// Its own variant, not [`BridgeLaneError::Failed`]'s text, because it is
-    /// the ONE refusal after which a create sheet KEEPS its request id: craze
-    /// answers a retry under that id with the session the first attempt started,
-    /// so a lost answer never makes a second session — while after any definite
-    /// refusal craze would replay that same refusal for ten minutes, so the id
-    /// must go. Recognised in Rust by `shed_craze::is_outcome_unknown` (one
-    /// implementation; no client string-matches it), and answered only by
-    /// `craze_create` in this build: a lane verb's lost answer is still
-    /// [`BridgeLaneError::Failed`].
+    /// Its own variant, not [`BridgeLaneError::Failed`]'s text, because a client
+    /// does something different about it than about a refusal, and must not
+    /// have to read a message to know which it got:
+    ///
+    /// * **a create** (`craze_create`: lost twice, shed-craze's own retry under
+    ///   the same request id included, or cut short by the source's close) — the
+    ///   ONE refusal after which a create sheet KEEPS its request id: craze
+    ///   answers a retry under that id with the session the first attempt
+    ///   started, so a lost answer never makes a second session, while after any
+    ///   definite refusal craze would replay that same refusal for ten minutes,
+    ///   so the id must go;
+    /// * **a lane verb** (`lane_send`, `lane_cancel`, `lane_answer`, `lane_stop`)
+    ///   — the transcript says whether it ran; a send's text stays in the box
+    ///   with the desktop's words for it (its `SEND_OUTCOME_UNKNOWN`, Dart's
+    ///   `laneSendOutcomeUnknown`), and the desktop's settings sheet shows such
+    ///   a change "not confirmed" until the next `Settings` says where the
+    ///   session is (§3.10).
+    ///
+    /// The desktop's `LaneFailure::OutcomeUnknown`, for the same reasons and
+    /// mapped the same way: by the one [`From<LaneError>`] every lane and create
+    /// refusal goes through, recognised by `shed_craze::is_outcome_unknown` (one
+    /// implementation; no client string-matches it).
     OutcomeUnknown { msg: String },
 }
 
 impl From<LaneError> for BridgeLaneError {
+    /// The adapter's refusal under its own variant — except an "outcome
+    /// unknown" (a craze request whose answer was lost), which is
+    /// [`BridgeLaneError::OutcomeUnknown`], recognised by shed-craze's own
+    /// predicate and never by reading text here. craze's OWN words that happen
+    /// to begin the same way are escaped by shed-craze (`craze_says`), so a
+    /// definite refusal can never land here as an unknown outcome.
     fn from(e: LaneError) -> Self {
+        if shed_craze::is_outcome_unknown(&e) {
+            return BridgeLaneError::OutcomeUnknown { msg: e.to_string() };
+        }
         match e {
             LaneError::Unauthorized => BridgeLaneError::Unauthorized,
             LaneError::BadRequest(msg) => BridgeLaneError::BadRequest { msg },

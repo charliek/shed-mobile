@@ -33,7 +33,8 @@
 //!   terminal `Down` (§3.11), and it re-opens only on the snapshot's `ended` —
 //!   never on `stale`, which an adapter's silent resume sets and clears again
 //!   without the lane ever ending (plan 025 §3.2.4). Re-opening there would
-//!   throw away the cursor the resume is using.
+//!   throw away the cursor the resume is using. Neither side retries a FINAL
+//!   end ([`down_is_final`]: the session is gone, closed, or never started).
 //!
 //! # The snapshot IS the nudge acknowledgement
 //!
@@ -104,13 +105,32 @@ const RESUBSCRIBE_BASE: Duration = Duration::from_millis(200);
 /// See [`RESUBSCRIBE_BASE`].
 const RESUBSCRIBE_MAX: Duration = Duration::from_secs(5);
 
-/// The [`LaneEvent::Down`] reason that means **stop trying**.
-///
-/// The adapter emits it when a reseed answers 404: the session was deleted, and
-/// no amount of reconnecting brings it back. Every other `Down` is worth another
-/// attempt (the agent restarted, the tunnel blipped) — which is why the pump
-/// ends on this one alone, exactly as the desktop's does.
+/// The [`LaneEvent::Down`] reason an adapter ends a lane with when the session
+/// does not exist (opencode: a reseed answered 404; craze: `unknown_session` on
+/// connect or attach) — and the one this pump writes itself when `subscribe`
+/// is refused that way.
 const DOWN_UNKNOWN_SESSION: &str = "unknown_session";
+
+/// Whether a lane that ENDED with this `Down` reason is gone for good — so the
+/// pump stops instead of resubscribing. **The desktop's `down_is_final`, word
+/// for word** (`desktop/tauri/src-tauri/src/lane.rs`), and Dart's
+/// `laneDownIsFinal` says the same.
+///
+/// `shed_core::lane`'s module doc (plan 025 §3.3.5) names three: the session
+/// does not exist (`unknown_session`), it was closed (`session_closed`, craze's
+/// end after a stop), or it never started (`start_failed:<cause>`). No amount
+/// of reconnecting changes any of them — a resubscribe after `session_closed`
+/// would dial a hub that answers "no such session", and one after a start
+/// failure would ask a host that already said why it could not start. Every
+/// other `Down` is worth another attempt (the agent restarted, the tunnel
+/// blipped, a bound ran out). Exact words, not substrings: `session_closed_soon`
+/// is not a session that closed.
+fn down_is_final(reason: &str) -> bool {
+    reason == DOWN_UNKNOWN_SESSION
+        || reason == "session_closed"
+        || reason == "start_failed"
+        || reason.starts_with("start_failed:")
+}
 
 /// Take a lock, ignoring poisoning — [`super::roost`]'s rule, for the same
 /// reason: every mutex here guards plain data, and turning one unrelated panic
@@ -413,7 +433,7 @@ async fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, Bridg
 /// local port is fixed and Dart re-establishes the SSH connection underneath the
 /// same socket (§3.10), so a dropped tunnel is an ordinary "the socket refused"
 /// the adapter retries through. Everything else is the same ladder, with the same
-/// two constants, ending on the same one terminal reason.
+/// two constants, ending on the same final reasons ([`down_is_final`]).
 fn spawn_pump(inner: Arc<LaneInner>, client: Arc<dyn AgentLane>) -> tokio::task::JoinHandle<()> {
     bridge_rt().spawn(async move {
         let mut backoff = RESUBSCRIBE_BASE;
@@ -457,7 +477,8 @@ fn spawn_pump(inner: Arc<LaneInner>, client: Arc<dyn AgentLane>) -> tokio::task:
                 inner.apply(&event);
             }
             drop(stop);
-            if down.as_deref() == Some(DOWN_UNKNOWN_SESSION) {
+            // The subscription ENDED. Replace it — unless it ended for good.
+            if down.as_deref().is_some_and(down_is_final) {
                 return;
             }
             tokio::time::sleep(backoff).await;
@@ -650,6 +671,22 @@ pub async fn lane_answer(
     .await
 }
 
+/// **End the SESSION** (plan 025 §3.7.3) — not just this transcript: craze's
+/// `session.stop`, answered on the host's RECEIPT. The stop's completion is the
+/// stream's: the session's closing records, then `Down{"session_closed"}`, which
+/// ends this lane for good ([`down_is_final`]) — and, for a session no roster
+/// has listed yet, lets its created row go (Amendment A16), so the row leaves.
+///
+/// A session whose capabilities say `stop: false` (a TUI-hosted craze session,
+/// every opencode one) refuses it — [`BridgeLaneError::Failed`] naming the
+/// adapter — and a panel offers no Stop there. A receipt lost to a drop is
+/// [`BridgeLaneError::OutcomeUnknown`]: the session may already be closing, and
+/// the stream says whether it is.
+pub async fn lane_stop(lane: &BridgeLane) -> Result<(), BridgeLaneError> {
+    let client = lane.inner.client()?;
+    on_bridge_rt(async move { client.stop().await.map_err(BridgeLaneError::from) }).await
+}
+
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.
 ///
@@ -658,6 +695,17 @@ pub async fn lane_answer(
 #[frb(sync)]
 pub fn lane_close(lane: &BridgeLane) {
     teardown(&lane.inner);
+}
+
+/// Whether the lane's pump has stopped for good — a final `Down`, or the lane
+/// closed. Test-only: what a cell reads to prove a final end resubscribes
+/// nothing, rather than inferring it from silence on the wire alone.
+#[cfg(test)]
+pub(super) fn pump_finished(lane: &BridgeLane) -> bool {
+    lock(&lane.inner.tasks)
+        .pump
+        .as_ref()
+        .is_none_or(|p| p.is_finished())
 }
 
 // ---------------------------------------------------------------------------
@@ -1206,6 +1254,39 @@ mod tests {
         }
         assert_eq!(live_counters().active_lanes, 0);
         assert_eq!(live_counters().active_lane_forwarders, 0);
+    }
+
+    /// **The `Down` reasons the pump never resubscribes after** — the three
+    /// plan 025 §3.3.5 names, and nothing else; the desktop's own table
+    /// (`only_a_final_down_stops_the_pump`), so the two clients agree on which
+    /// ends are for good. The pump-level proof, against craze's own lane, is
+    /// `api::craze`'s `a_final_down_ends_the_pump_and_redials_nothing`.
+    #[test]
+    fn only_a_final_down_stops_the_pump() {
+        for reason in [
+            "unknown_session",
+            "session_closed",
+            "start_failed",
+            "start_failed: acp: agent exited",
+        ] {
+            assert!(down_is_final(reason), "{reason:?} is final");
+        }
+        for reason in [
+            "unreachable",
+            "re-attach bound",
+            "protocol: another host answered",
+            "craze unavailable: not installed",
+            "the opencode event stream ended",
+            "closed",
+            "session_closed_soon",
+            "down: unknown_session",
+            "",
+        ] {
+            assert!(
+                !down_is_final(reason),
+                "{reason:?} is worth another attempt"
+            );
+        }
     }
 
     /// The backoff ladder doubles to the ceiling and stops there — the

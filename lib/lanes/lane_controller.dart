@@ -26,10 +26,46 @@ const laneRetryBase = Duration(seconds: 1);
 /// The ceiling on the re-open ladder.
 const laneRetryMax = Duration(seconds: 30);
 
-/// The `Down` reason that ends the retries: the agent does not know this
-/// session, so no number of re-opens will find it. The desktop's
-/// `DOWN_UNKNOWN_SESSION` rule.
+/// The `Down` reason a lane ends with when the agent does not know this
+/// session (opencode: a reseed answered 404; craze: `unknown_session` on
+/// connect or attach). One of the three [laneDownIsFinal] reasons.
 const laneUnknownSession = 'unknown_session';
+
+/// The `Down` reason a craze lane ends with when its session CLOSED — craze's
+/// end after a stop (`reset{session_closed}`). One of the three
+/// [laneDownIsFinal] reasons.
+const laneSessionClosed = 'session_closed';
+
+/// The `Down` reason a craze lane ends with when its session never started —
+/// `start_failed: <craze's cause>`. One of the three [laneDownIsFinal] reasons.
+const laneStartFailed = 'start_failed';
+
+/// **Whether a lane that ENDED with this `Down` reason is gone for good**, so
+/// nothing re-opens it — the desktop's `down_is_final`, word for word, and
+/// the phone's Rust pump says the same (`rust/src/api/lane.rs`).
+///
+/// `shed_core::lane`'s module doc (plan 025 §3.3.5) names three: the session
+/// does not exist ([laneUnknownSession]), it was closed ([laneSessionClosed],
+/// craze's end after a stop), or it never started ([laneStartFailed], with
+/// craze's cause after a colon). No number of re-opens changes any of them: a
+/// stopped session re-opened would only be told it is gone, and one that failed
+/// to start would only repeat why. Every other `Down` is worth another attempt
+/// (the agent restarted, the tunnel blipped, a bound ran out). Exact words, not
+/// substrings: `session_closed_soon` is not a session that closed.
+bool laneDownIsFinal(String reason) =>
+    reason == laneUnknownSession ||
+    reason == laneSessionClosed ||
+    reason == laneStartFailed ||
+    reason.startsWith('$laneStartFailed:');
+
+/// What the composer says when a SEND's answer was lost (an
+/// `LANE_OUTCOME_UNKNOWN`, plan 025 §3.3.4): the prompt may or may not have
+/// started a turn, it is never resent, and the typed text stays in the box —
+/// so the screen says plainly what to do before pressing Send again, and the
+/// person decides. The desktop's `SEND_OUTCOME_UNKNOWN`, word for word.
+const laneSendOutcomeUnknown =
+    'outcome unknown: the connection to craze dropped; check the transcript '
+    'before sending again';
 
 /// The stamp kind of a CRAZE session's lane (plan 025 §3.7.2).
 ///
@@ -258,6 +294,11 @@ class LaneController {
   @visibleForTesting
   bool get isOpen => _handle != null;
 
+  /// The lane handle held now, or null. Tests only: what a silent-resume cell
+  /// compares across the outage — the SAME handle, never a re-open.
+  @visibleForTesting
+  LaneHandle? get handle => _handle;
+
   /// **Open the lane: forward, `lane_open`, subscribe.** Idempotent and safe to
   /// call on every frame — a second call with a handle already held, an open
   /// in flight, or after [close]/an abandon, returns immediately.
@@ -473,13 +514,13 @@ class LaneController {
   }
 
   /// The lane's subscription ENDED on a terminal `Down`. Dart re-opens — unless
-  /// the reason says no re-open can ever succeed.
+  /// the reason says no re-open can ever succeed ([laneDownIsFinal]).
   void _onEnded(int generation, String reason) {
     if (_endHandled == generation) return;
     _endHandled = generation;
-    if (reason.contains(laneUnknownSession)) {
-      // The agent does not know this session. Re-opening would ask the same
-      // question and get the same answer, forever.
+    if (laneDownIsFinal(reason)) {
+      // The session is gone, closed, or never started. Re-opening would ask the
+      // same question and get the same answer, forever. The transcript stays.
       unawaited(_abandon());
       return;
     }
@@ -493,15 +534,39 @@ class LaneController {
   /// `not_accepting`, which lands on the composer as an inline error.
   ///
   /// Never throws: a refusal is state, because the control that raised it is
-  /// the only place it means anything.
+  /// the only place it means anything. A send whose answer was LOST is said in
+  /// the desktop's words ([laneSendOutcomeUnknown]) — never resent, its text
+  /// kept, the person decides.
   Future<void> send(
     String text, {
     BridgeSendMode mode = BridgeSendMode.queue,
-  }) => _composerVerb((handle) => source.send(handle, text: text, mode: mode));
+  }) => _guardedVerb(
+    (handle) => source.send(handle, text: text, mode: mode),
+    clearError: () => _emit(_state.copyWith(clearComposerError: true)),
+    setError: (error) => _emit(
+      _state.copyWith(
+        composerError: error.code == laneOutcomeUnknownCode
+            ? AppError(laneOutcomeUnknownCode, laneSendOutcomeUnknown)
+            : error,
+      ),
+    ),
+  );
 
   /// Stop the turn in flight. `not_accepting` here means the turn ended between
   /// the render and the tap — an inline error next to the button, not a toast.
   Future<void> cancel() => _composerVerb(source.cancel);
+
+  /// **End the SESSION** (plan 025 §3.7.3) — offered only when the snapshot's
+  /// capabilities say `stop`, behind a confirm. Its `Ok` is the host's
+  /// receipt, not the end: the session's close arrives on the stream as
+  /// `Down{"session_closed"}`, which ends this lane for good
+  /// ([laneDownIsFinal]) with the transcript kept. A refusal (or a lost
+  /// receipt) lands on [LaneState.stopError], beside the control.
+  Future<void> stop() => _guardedVerb(
+    source.stop,
+    clearError: () => _emit(_state.copyWith(clearStopError: true)),
+    setError: (error) => _emit(_state.copyWith(stopError: error)),
+  );
 
   /// Answer one approval. A refusal lands on THAT card
   /// ([LaneState.approvalErrors]), which is the only place it is legible: an

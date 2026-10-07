@@ -113,6 +113,22 @@ class CrazeRig {
   /// cell may need to find again (CM5's resume cell kills a lane's own).
   final List<Process> bridges = [];
 
+  /// What each bridge's client asked the hub for, in order: the roster's
+  /// `sessions.subscribe`, or a lane's `session.connect{sessionId: <hostId>}`
+  /// (the hub's splice). How a cell finds ONE connection's process —
+  /// [laneBridge], [rosterBridge] — rather than guessing from the order the
+  /// bridges happened to start in.
+  final List<({Process process, String method, String? hostId})> connections =
+      [];
+
+  /// The bridges this rig has SIGSTOPped and not yet continued — continued
+  /// first thing in [teardown], so its SIGTERM is not left pending.
+  final Set<Process> _stopped = {};
+
+  /// The bridges that have exited (their exit code is in) — so a pid read in
+  /// `/proc` is known to be the bridge's own, never a reused one.
+  final Set<Process> _exited = {};
+
   /// How many times the feed's ROOST tunnel was dialled — each one refused (no
   /// `roost-session` here), and each one a roost `Down` on the watcher's
   /// doubling backoff, which is what lets a cell know how long roost will now
@@ -120,7 +136,8 @@ class CrazeRig {
   int roostDials = 0;
 
   /// While set, every craze dial waits on it before its bridge runs — a
-  /// source installed and not yet SEEDED, for as long as a cell needs one.
+  /// source installed and not yet SEEDED, or a lane whose connection was
+  /// killed kept from redialling, for as long as a cell needs one.
   Completer<void>? holdCrazeDials;
 
   /// Every `session.create` a craze bridge of this rig carried, in order:
@@ -228,7 +245,11 @@ class CrazeRig {
           workingDirectory: root,
         );
         bridges.add(process);
-        return ProcessExecSession(process, inspect: _clientLine);
+        unawaited(process.exitCode.then((_) => _exited.add(process)));
+        return ProcessExecSession(
+          process,
+          inspect: (line) => _clientLine(line, process),
+        );
       },
       remoteCommand: remoteCommand,
       machine: machine,
@@ -236,23 +257,132 @@ class CrazeRig {
     );
   }
 
-  /// One client→hub line on a craze bridge: a `session.create` is logged to
+  /// One client→hub line on a craze bridge: a roster subscription or a lane's
+  /// splice is logged to [connections]; a `session.create` is logged to
   /// [creates], and cut ([dropCreates]) when asked.
-  bool _clientLine(String line) {
+  bool _clientLine(String line, Process process) {
     Object? msg;
     try {
       msg = jsonDecode(line);
     } on FormatException {
       return false;
     }
-    if (msg is! Map || msg['method'] != 'session.create') return false;
+    if (msg is! Map) return false;
+    final method = msg['method'];
     final params = msg['params'];
+    if (method == 'sessions.subscribe' || method == 'session.connect') {
+      connections.add((
+        process: process,
+        method: method as String,
+        hostId: params is Map ? params['sessionId'] as String? : null,
+      ));
+      return false;
+    }
+    if (method != 'session.create') return false;
     final drop = dropCreates;
     creates.add((
       requestId: params is Map ? params['requestId'] as String? : null,
       dropped: drop,
     ));
     return drop;
+  }
+
+  /// The bridge carrying [hostId]'s lane NOW — the latest connection whose
+  /// client asked the hub to splice it to that host. The lane's own process:
+  /// never the feed tunnel's listener, never the roster's.
+  Process laneBridge(String hostId) => connections
+      .lastWhere(
+        (c) => c.method == 'session.connect' && c.hostId == hostId,
+        orElse: () => throw StateError('no lane connection to $hostId yet'),
+      )
+      .process;
+
+  /// How many roster subscriptions this rig's bridges have carried — a
+  /// replacement roster connection (the source redialling) moves it.
+  int get rosterConnections =>
+      connections.where((c) => c.method == 'sessions.subscribe').length;
+
+  /// The bridge carrying the source's roster subscription now.
+  Process rosterBridge() => connections
+      .lastWhere(
+        (c) => c.method == 'sessions.subscribe',
+        orElse: () => throw StateError('no roster connection yet'),
+      )
+      .process;
+
+  /// **Kill** one of this rig's bridges (SIGTERM): its connection ends as a
+  /// dropped transport does — the far side gone, nothing said.
+  void killBridge(Process bridge) {
+    _guard(bridge);
+    bridge.kill();
+  }
+
+  /// **Freeze** one of this rig's bridges (SIGSTOP): its connection stays
+  /// open and carries nothing either way until [resume] — a roster that has
+  /// not flushed, for as long as a cell needs one.
+  ///
+  /// **Proven, not assumed**: it throws unless the signal was delivered (a
+  /// bridge that already exited takes none) and the kernel then reports the
+  /// process STOPPED (`/proc/<pid>/stat` state `T`) — so a cell that goes on
+  /// after it knows the connection is frozen. [isPaused] re-reads the same.
+  Future<void> pause(Process bridge) async {
+    _guard(bridge);
+    if (_exited.contains(bridge) || !bridge.kill(ProcessSignal.sigstop)) {
+      throw StateError(
+        'SIGSTOP not delivered: bridge ${bridge.pid} has exited',
+      );
+    }
+    _stopped.add(bridge);
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!isPaused(bridge)) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError(
+          'bridge ${bridge.pid} never stopped: /proc state '
+          '${procState(bridge.pid)}',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  /// Whether [bridge] is, right now, one this rig froze that is still alive
+  /// and STOPPED: [pause]d and not resumed, its exit code not in, and the
+  /// kernel's own state letter `T`.
+  bool isPaused(Process bridge) =>
+      _stopped.contains(bridge) &&
+      !_exited.contains(bridge) &&
+      procState(bridge.pid) == 'T';
+
+  /// Let a [pause]d bridge run again (SIGCONT). False when it had already
+  /// exited — the teardown's case, which is not an error there.
+  bool resume(Process bridge) {
+    _guard(bridge);
+    _stopped.remove(bridge);
+    return bridge.kill(ProcessSignal.sigcont);
+  }
+
+  /// A process's state letter from `/proc/<pid>/stat` — `T` stopped by a
+  /// signal, `S` sleeping, `R` running, `Z` exited and not yet reaped — or
+  /// null when there is no such process. Read after the LAST `)`: the command
+  /// name between the parentheses may hold anything, spaces and parentheses
+  /// included.
+  static String? procState(int pid) {
+    try {
+      final stat = File('/proc/$pid/stat').readAsStringSync();
+      final close = stat.lastIndexOf(')');
+      if (close < 0 || stat.length < close + 3) return null;
+      return stat.substring(close + 2, close + 3);
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// A bridge this rig started, and nothing else — never pid 0 or 1, never
+  /// this process.
+  void _guard(Process bridge) {
+    if (bridge.pid <= 1 || bridge.pid == pid || !bridges.contains(bridge)) {
+      throw StateError('not one of this rig\'s bridges: ${bridge.pid}');
+    }
   }
 
   /// Point `[agents].grok` at [agent] (craze reads its config at every
@@ -364,6 +494,9 @@ class CrazeRig {
   /// same again with the fake hosts; SIGKILL as the backstop. Answers what was
   /// still running at the end — nothing, normally.
   Future<List<String>> teardown() async {
+    for (final b in [..._stopped]) {
+      resume(b);
+    }
     for (final h in _fakeHosts) {
       await h.stdin.close().catchError((Object _) {});
     }
