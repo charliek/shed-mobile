@@ -118,6 +118,21 @@ jobs:
             exit 1
           fi
           test -f shed-sibling/desktop/tools/shedtest/fake_lane_server.py
+      # The craze binaries the craze cells drive (plan 025 §3.5, CM3): shed's
+      # OWN composite action, run from the pinned sibling, building `craze`,
+      # `craze-fake-host` and `craze-fake-agent` at the sibling's
+      # `craze-pin.env` CRAZE_TEST_SHA (plus the real v0.0.1, the too-old
+      # cell's) — so the phone tests exactly the craze its pinned shed tested,
+      # and the two CIs cannot drift onto different craze SHAs. A LOCAL action,
+      # legal only after the checkout above, which is why it sits here and not
+      # at the top. It reads the pin as data (never sourcing the file), asserts
+      # the SHA is a merged craze `main` commit, and exports SHED_CRAZE_BIN_DIR
+      # and SHED_CRAZE_REQUIRE=1 for every step after it.
+      - name: craze binaries at the sibling's pin
+        uses: ./shed-sibling/.github/actions/craze-binaries
+        with:
+          shed-path: shed-sibling
+          out-dir: ${{ runner.temp }}/craze-bin
       - name: Install the headless desktop deps
         run: sudo apt-get install -y xvfb dbus-x11
       # `dbus-run-session` is UNCONDITIONAL, not a fallback. The cells never
@@ -133,6 +148,11 @@ jobs:
       - name: Integration harness (Linux desktop, hermetic)
         env:
           SHED_CHECKOUT: ${{ github.workspace }}/shed-sibling
+          # The craze cells' binaries, and the rule that a craze cell may not
+          # SKIP here: the action above exported both; restated in `env:` (never
+          # interpolated into the script) so this step cannot lose them.
+          SHED_CRAZE_BIN_DIR: ${{ env.SHED_CRAZE_BIN_DIR }}
+          SHED_CRAZE_REQUIRE: "1"
         run: |
           set -uo pipefail
           failed=""

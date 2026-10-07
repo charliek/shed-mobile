@@ -1347,6 +1347,22 @@ mod tests {
             "BridgeSourceOffline_Other",
             "BridgeSourceOffline_TooOld",
             "BridgeSourceOffline_Unreachable",
+            // Plan 025 CM3 — the phone's craze source: a machine's craze
+            // SESSIONS as rows (hostIds, titles, workspaces, providers, models,
+            // one-line activity text), why the source is offline (a cause and
+            // craze's own sentence), and the row merge's inputs and answer
+            // (roost tab ids, and the provider session ids craze tabs claimed).
+            // Agent-session material only, like the lane types above — **no
+            // credential of any kind crosses**. `BridgeCrazeSource` is opaque
+            // and holds the source, its staged view and two abort handles; the
+            // SSH identity never reaches it: Dart owns the craze tunnel and
+            // hands Rust a loopback PORT, exactly as for the roost watcher.
+            "BridgeCrazeOffline",
+            "BridgeCrazeSnapshot",
+            "BridgeCrazeSource",
+            "BridgeFoldPlan",
+            "BridgeFoldedTab",
+            "BridgeRoostTabRef",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
@@ -1680,6 +1696,9 @@ mod tests {
             "PENDING_PREVIEW_CREDENTIALS",
             "ACTIVE_LANES",
             "ACTIVE_LANE_FORWARDERS",
+            "ACTIVE_CRAZE_SOURCES",
+            "ACTIVE_CRAZE_FORWARDERS",
+            "PENDING_CRAZE_CALLS",
             "submit_mint_result(",
             "install_sink_hook(",
             "install_mint_emitter(",
@@ -1740,7 +1759,7 @@ mod tests {
         }
 
         /// A deliberately DIFFERENT, much simpler counting strategy over the
-        /// same four files — a whole-line check rather than
+        /// same five files — a whole-line check rather than
         /// [`split_on_test_attrs`]'s char-indexed scan — so a bug shared by
         /// both (the real risk this test exists for) is the only way the two
         /// could agree on a wrong number. Counts every line, including the
@@ -1771,7 +1790,7 @@ mod tests {
         let mut async_checked = 0usize;
         let mut independent_sync = 0usize;
         let mut independent_async = 0usize;
-        for name in ["mint.rs", "preview.rs", "client.rs", "lane.rs"] {
+        for name in ["mint.rs", "preview.rs", "client.rs", "lane.rs", "craze.rs"] {
             let text = std::fs::read_to_string(src.join(name)).unwrap();
             let tests = text
                 .split_at(text.find("#[cfg(test)]").expect("a test module"))

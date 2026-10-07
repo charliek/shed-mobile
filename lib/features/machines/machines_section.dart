@@ -94,7 +94,12 @@ class _MachineCard extends ConsumerWidget {
     final feed = ref.watch(machineFeedProvider(machine.name));
     final state = feed.value;
     final reachable = state?.reachable ?? false;
-    final count = state?.sessions.length ?? 0;
+    // The merged rows (plan 025 §3.7.2) — roost's and craze's, a craze tab
+    // counted once — what the sessions list shows for this machine.
+    final count = state?.rows.length ?? 0;
+    // The machine's one craze line, when it has one: too old for shed. Not
+    // installed is quiet (plan 025 §3.2.4).
+    final crazeNote = state == null ? null : crazeNoteFor(state);
     // **The typed kind, never a substring of the reason** (plan 020 §3.8). The
     // whole decision is [roostOfferFor] — two of roost's four reach kinds name
     // something the phone could do about them, and the other two are reported
@@ -152,6 +157,14 @@ class _MachineCard extends ConsumerWidget {
                 // it without this card deciding anything.
                 if (offer != null)
                   RoostBootstrapOffer(machine: machine.name, offer: offer),
+                if (crazeNote != null)
+                  Text(
+                    crazeNote,
+                    key: ValueKey('machine-card-craze-note-${machine.name}'),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: c.fg3),
+                  ),
               ],
             ),
           ),

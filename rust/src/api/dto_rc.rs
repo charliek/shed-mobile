@@ -114,6 +114,21 @@ impl From<RcActivity> for BridgeRcActivity {
     }
 }
 
+/// The way back — for a row Dart hands to shared Rust
+/// (`super::craze::craze_fold_plan`). Total: the two enums are the same five
+/// words.
+impl From<BridgeRcActivity> for RcActivity {
+    fn from(a: BridgeRcActivity) -> Self {
+        match a {
+            BridgeRcActivity::Working => RcActivity::Working,
+            BridgeRcActivity::NeedsInput => RcActivity::NeedsInput,
+            BridgeRcActivity::NeedsApproval => RcActivity::NeedsApproval,
+            BridgeRcActivity::Idle => RcActivity::Idle,
+            BridgeRcActivity::Unknown => RcActivity::Unknown,
+        }
+    }
+}
+
 /// One agent's install-probe result (mirrors `rc::RcAgentInfo`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeRcAgentInfo {

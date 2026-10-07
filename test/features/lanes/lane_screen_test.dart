@@ -731,7 +731,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3.example');
-const _ref = (machine: 'mini3', slug: '7');
+const _ref = (machine: 'mini3', kind: 'opencode', slug: '7');
 
 /// Every option button on screen, whatever its id — the finder the
 /// placeholder-permission control needs. Asserting a SPECIFIC absent key would
@@ -768,7 +768,12 @@ Future<void> _pump(WidgetTester tester, _Rig rig) async {
       ],
       child: MaterialApp(
         theme: shedLightTheme,
-        home: const LaneScreen(machine: 'mini3', slug: '7', title: 'row7'),
+        home: const LaneScreen(
+          machine: 'mini3',
+          kind: 'opencode',
+          slug: '7',
+          title: 'row7',
+        ),
       ),
     ),
   );
@@ -904,6 +909,16 @@ class _FakeSource implements LaneSource {
   @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
     specs.add(spec);
+    return _FakeHandle();
+  }
+
+  /// A craze row's open — no spec, its hostId. Recorded, so a cell can say
+  /// which way a lane was opened.
+  final crazeOpens = <String>[];
+
+  @override
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async {
+    crazeOpens.add(hostId);
     return _FakeHandle();
   }
 

@@ -314,10 +314,32 @@ pub async fn lane_open(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneErr
 
 async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError> {
     let client = build_client(&spec).await?;
-    // The roster GET: it is also the call that fails on a password-protected
-    // agent, so a 404 here is an honest `unknown_session` the caller can
-    // render before the pump ever starts. (Opening the lane above was binding,
-    // not dialling — this is the first I/O.)
+    open_adapter(client, spec.session_id).await
+}
+
+/// **A lane around an adapter somebody else built** — everything [`lane_open`]
+/// does after its dispatch: the session read, the counted handle, the pump.
+///
+/// Two callers. [`open_inner`], for a row's stamp; and
+/// [`super::craze::craze_lane_open`], whose adapter is opened through a
+/// machine's craze SOURCE rather than built from a stamp (plan 025 §3.7.2: a
+/// craze session has no stamp and no URL — its lane is the source's to open,
+/// by hostId, over the source's own dial). Both end in the SAME handle, so
+/// `lane_snapshot`, `lane_send` and every other verb serve a craze lane
+/// unchanged.
+///
+/// Must run on [`bridge_rt`]: the pump it spawns outlives the call.
+pub(super) async fn open_adapter(
+    client: Arc<dyn AgentLane>,
+    session_id: String,
+) -> Result<BridgeLane, BridgeLaneError> {
+    // The session read before the pump starts. For opencode it is the roster
+    // GET — also the call that fails on a password-protected agent, so a 404
+    // here is an honest `unknown_session` the caller can render before the
+    // pump ever starts (opening the lane above was binding, not dialling: this
+    // is the first I/O). For craze it dials nothing: it answers the row the
+    // source opened the lane with, and `unknown_session` for a hostId the
+    // source has never listed.
     client.session().await.map_err(BridgeLaneError::from)?;
 
     let inner = Arc::new(LaneInner {
@@ -333,7 +355,7 @@ async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError>
             closed: false,
         }),
         wake: tokio::sync::Notify::new(),
-        session_id: spec.session_id.clone(),
+        session_id,
     });
 
     // Counted only once the lane exists and will be handed back. Every failure
@@ -649,7 +671,10 @@ pub fn lane_close(lane: &BridgeLane) {
 /// adapter's HTTP client and the pump it spawns outlive the call that made them,
 /// and `tokio::spawn` binds a task to whatever runtime is current. Built on
 /// FRB's per-call executor they would lose their reactor when the call returned.
-async fn on_bridge_rt<T, F>(fut: F) -> Result<T, BridgeLaneError>
+///
+/// Shared with [`super::craze`], whose calls answer in this module's error type
+/// for the reason a lane's do: the controller branches on it.
+pub(super) async fn on_bridge_rt<T, F>(fut: F) -> Result<T, BridgeLaneError>
 where
     F: Future<Output = Result<T, BridgeLaneError>> + Send + 'static,
     T: Send + 'static,

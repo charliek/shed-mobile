@@ -7,6 +7,9 @@ import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/servers/server_record.dart';
+import 'package:shed_mobile/src/rust/api/craze.dart';
+import 'package:shed_mobile/src/rust/api/dto_lane.dart';
+import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 const _mini2 = MachineRecord(name: 'mini2', host: 'mini2.example');
@@ -207,5 +210,117 @@ void main() {
     // No count suffix when there is nothing to count.
     expect(find.text('MACHINES (0)'), findsNothing);
     expect(find.byType(MachinesSection), findsOneWidget);
+  });
+
+  testWidgets('a machine card counts its MERGED rows, a craze tab once', (
+    tester,
+  ) async {
+    // Tab 7 runs one of the two craze sessions the hub lists: the merge
+    // folded it into its hub row, and the other session runs headless — so
+    // the machine has three sessions: roost's two tabs would say two, and
+    // every row there is would say four.
+    final tab7 = BridgeRcSession(
+      host: '',
+      shed: '',
+      slug: '7',
+      displayName: 'tui',
+      kind: const BridgeRcKind.craze(),
+      state: BridgeRcState.ready,
+      managed: true,
+      attention: false,
+      tabId: 7,
+      rcId: 'ses-x',
+    );
+    final tab8 = BridgeRcSession(
+      host: '',
+      shed: '',
+      slug: '8',
+      displayName: 'oc',
+      kind: const BridgeRcKind.opencode(),
+      state: BridgeRcState.ready,
+      managed: true,
+      attention: false,
+      tabId: 8,
+    );
+    const hub = BridgeLaneSession(
+      id: 'cccccccccccc',
+      title: 'craze',
+      cwd: '/w',
+      activity: BridgeRcActivity.idle,
+      pendingApprovals: 0,
+      approximate: false,
+      providerSessionId: 'ses-x',
+    );
+    const headless = BridgeLaneSession(
+      id: 'dddddddddddd',
+      title: 'headless',
+      cwd: '/w',
+      activity: BridgeRcActivity.idle,
+      pendingApprovals: 0,
+      approximate: false,
+    );
+    await tester.pumpWidget(
+      _app(
+        const [_mini3],
+        {
+          'mini3': MachineFeedState(
+            machine: _mini3,
+            reachable: true,
+            connectedOnce: true,
+            sessions: [tab7, tab8],
+            craze: const BridgeCrazeSnapshot(
+              rows: [hub, headless],
+              live: true,
+              truncated: false,
+            ),
+            foldedRows: [
+              MachineRow.roost(tab8),
+              const MachineRow.craze(session: hub, tabId: 7, stale: false),
+              const MachineRow.craze(session: headless, stale: false),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('3 sessions'), findsOneWidget);
+  });
+
+  testWidgets('craze too old says so on the machine card; not installed is '
+      'quiet', (tester) async {
+    MachineFeedState offline(MachineRecord m, BridgeSourceOffline cause) =>
+        MachineFeedState(
+          machine: m,
+          reachable: true,
+          connectedOnce: true,
+          craze: BridgeCrazeSnapshot(
+            rows: const [],
+            live: false,
+            offline: BridgeCrazeOffline(cause: cause, reason: 'said'),
+            truncated: false,
+          ),
+        );
+    await tester.pumpWidget(
+      _app(
+        const [_mini2, _mini3],
+        {
+          'mini2': offline(_mini2, const BridgeSourceOffline.notInstalled()),
+          'mini3': offline(_mini3, const BridgeSourceOffline.tooOld()),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('machine-card-craze-note-mini3')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('craze on this machine is too old for shed; update it'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('machine-card-craze-note-mini2')),
+      findsNothing,
+    );
   });
 }

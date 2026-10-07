@@ -1,8 +1,11 @@
 # Agent sessions
 
 An agent session is a **roost tab** — a pane on the `roost-session` daemon
-running on a shed or on a machine. The phone opens one SSH tunnel per origin,
-hands the shared Rust core a loopback port, and reads tabs off roost's own IPC.
+running on a shed or on a machine — or a **craze session**, listed by the
+machine's craze hub (see [Craze sessions](#craze-sessions)). The phone opens one
+SSH tunnel per origin for roost and a second one for craze, hands the shared
+Rust core a loopback port for each, and reads tabs off roost's own IPC and
+sessions off craze's hub.
 
 !!! note "This page used to describe the RC hub"
     Until shed 0.9.0 a shed's sessions were `rc-<slug>` tmux panes driven by the
@@ -27,6 +30,42 @@ A shed with no `roost-session` is **unreachable, not empty**: the feed keeps its
 last-known rows dimmed and shows roost's own reason ("…is reachable but has no
 roost session running…"), because "nothing is running here" and "this device's
 key is not authorized" have different fixes.
+
+## Craze sessions
+
+craze is the provider abstraction for cursor, grok, gx and native sessions
+(plan 025): one hub per machine lists every session there. The feed opens a
+second tunnel beside roost's, whose every accepted connection runs
+`craze bridge --hub` over the feed's one SSH connection — craze's published
+ladder, composed by shed-core and passed verbatim (`crazeRemoteCommand()`) —
+and the shared Rust core reads the hub through a craze source on that port.
+Both tunnels have the same lifecycle: they live while the feed has listeners,
+and die with it. The phone is **not** attach-only: viewing a machine with craze
+starts a hub there if none runs, which idles out about a minute after the phone
+lets go.
+
+**One row per session.** A craze session's status is craze's (plan 025 D4): with
+the craze feed live, a roost tab running a craze TUI is folded into the hub
+row it names (the rule is shed's own `shed_app::craze_rows::fold_plan`, called
+over the bridge — never re-derived in Dart), and its terminal actions — Peek and
+End tab — act on that tab by its id. With the feed down, nothing is folded:
+roost's tab stands alone again beside the hub row's last-known, dimmed copy.
+
+A craze row shows the provider and model, what the session is doing (or the head
+of its last reply), the asks it is blocked on with the first one's summary, how
+many clients are attached, and why it failed to start. Every craze row offers
+**Transcript**: the lane opens through the machine's craze source by the row's
+hostId, with no forward. It follows that source: when the feed restarts (a roost
+install completing does one), an open transcript leaves the retired source at
+once and re-opens through its replacement as soon as that one has read the
+roster.
+
+**Not installed is quiet; too old says so.** Rust, reading a loopback port, sees
+both as a connection that ended before `hello`, so the craze tunnel's stderr
+classifies them on the Dart side (`lib/ssh/craze_reach.dart`): the ladder's
+`craze: command not found` is not installed and shows nothing; craze v0.0.1's
+`unknown flag: --hub` is too old and the machine says "craze on this machine is
+too old for shed; update it".
 
 ## Kinds
 

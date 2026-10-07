@@ -1,6 +1,10 @@
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/lane.dart';
 
+/// How a craze session's lane is opened — by its machine's craze source, on
+/// the row's hostId. Production is `MachineFeed.openCrazeLane`.
+typedef CrazeLaneOpen = Future<BridgeLane> Function(String hostId);
+
 /// One open lane, as [LaneController] holds it — deliberately opaque.
 ///
 /// The controller never touches a `BridgeLane`: it holds a handle it got from a
@@ -22,6 +26,13 @@ abstract interface class LaneHandle {}
 /// and merges it by the `full` flag; the fold is Rust's (`shed_app::lane_view`).
 abstract interface class LaneSource {
   Future<LaneHandle> open(BridgeLaneSpec spec);
+
+  /// Open a CRAZE session's lane: [open] is the machine feed's
+  /// (`MachineFeed.openCrazeLane` — the lane its craze source opens on the
+  /// row's hostId, plan 025 §3.7.2), and the answer is the same [LaneHandle]
+  /// every other verb here takes. No spec and no forward: a craze lane reaches
+  /// its session through the source's own dial.
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId);
 
   /// One `true` per "something changed, take a snapshot". A second call on the
   /// same handle is refused Rust-side rather than splitting the nudges.
@@ -61,6 +72,10 @@ class BridgeLaneSource implements LaneSource {
   @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async =>
       _BridgeLaneHandle(await laneOpen(spec: spec));
+
+  @override
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async =>
+      _BridgeLaneHandle(await open(hostId));
 
   @override
   Stream<bool> nudges(LaneHandle handle) => laneNudges(lane: _lane(handle));

@@ -221,6 +221,36 @@ impl From<LaneSession> for BridgeLaneSession {
     }
 }
 
+/// The way back, field for field — for the one call that hands Dart's rows to
+/// shared Rust: [`super::craze::craze_fold_plan`], whose rule
+/// (`shed_app::craze_rows::fold_plan`) reads the contract's own row. Lossless:
+/// every field is the contract's, mirrored as it stands.
+impl From<BridgeLaneSession> for LaneSession {
+    fn from(s: BridgeLaneSession) -> Self {
+        LaneSession {
+            id: s.id,
+            title: s.title,
+            cwd: s.cwd,
+            activity: s.activity.into(),
+            pending_approvals: s.pending_approvals,
+            approximate: s.approximate,
+            parent_id: s.parent_id,
+            last_change_unix_ms: s.last_change_unix_ms,
+            provider: s.provider,
+            model: s.model,
+            doing: s.doing,
+            head_ask_summary: s.head_ask_summary,
+            last_reply: s.last_reply,
+            since_unix_ms: s.since_unix_ms,
+            attached: s.attached,
+            start_error: s.start_error,
+            provider_session_id: s.provider_session_id,
+            permission_mode: s.permission_mode,
+            tab_id: s.tab_id,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // approvals
 // ---------------------------------------------------------------------------

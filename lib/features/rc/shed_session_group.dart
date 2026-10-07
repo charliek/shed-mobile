@@ -4,10 +4,10 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../machines/machine_feed.dart';
 import '../../providers.dart';
-import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/host_groups.dart';
 import '../../widgets/status_badge.dart';
+import '../craze/craze_session_card.dart';
 import 'session_card.dart';
 
 /// **One shed's roost tabs, in the cross-host sessions list** (plan 022 S6).
@@ -54,12 +54,16 @@ class ShedSessionGroup extends ConsumerWidget {
     // the badge's optimistic "connecting".
     final startError = feed.hasError ? feed.error : null;
     final state = feed.value;
-    final sessions = state?.sessions ?? const <BridgeRcSession>[];
+    // The MERGED rows (plan 025 §3.7.2) — a shed runs craze too, and its craze
+    // tab is one row with the hub's — never `state.sessions`.
+    final rows = state?.rows ?? const <MachineRow>[];
     final reachable = state?.reachable ?? false;
     logDriveState(
       'shed-sessions server=$serverName shed=$shedName '
-      'reachable=$reachable count=${sessions.length} source=roost',
+      'reachable=$reachable count=${rows.length} source=roost '
+      'craze=${rows.whereType<CrazeMachineRow>().length}',
     );
+    final crazeNote = state == null ? null : crazeNoteFor(state);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -83,7 +87,12 @@ class ShedSessionGroup extends ConsumerWidget {
                     ),
                   ),
           ),
-          if (sessions.isEmpty)
+          if (crazeNote != null)
+            _ShedNote(
+              key: ValueKey('shed-craze-note-$serverName-$shedName'),
+              text: crazeNote,
+            ),
+          if (rows.isEmpty)
             _ShedNote(
               key: ValueKey('shed-empty-$serverName-$shedName'),
               text: shedSessionsEmptyText(
@@ -93,16 +102,28 @@ class ShedSessionGroup extends ConsumerWidget {
               ),
             )
           else
-            for (final s in sessions)
-              SessionCard(
-                key: ValueKey('all-session-$serverName-$shedName-${s.slug}'),
-                serverName: serverName,
-                shedName: shedName,
-                session: s,
-                state: state!,
-                // The group heading names the shed.
-                originIsImplied: true,
-              ),
+            for (final row in rows)
+              switch (row) {
+                RoostMachineRow(:final session) => SessionCard(
+                  key: ValueKey(
+                    'all-session-$serverName-$shedName-${session.slug}',
+                  ),
+                  serverName: serverName,
+                  shedName: shedName,
+                  session: session,
+                  state: state!,
+                  // The group heading names the shed.
+                  originIsImplied: true,
+                ),
+                CrazeMachineRow() => CrazeSessionCard(
+                  key: ValueKey(
+                    'craze-session-$serverName-$shedName-${row.key}',
+                  ),
+                  origin: origin,
+                  row: row,
+                  keySuffix: '$serverName-$shedName',
+                ),
+              },
         ],
       ),
     );

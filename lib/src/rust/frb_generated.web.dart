@@ -8,6 +8,7 @@
 
 import 'api/bridge_rt.dart';
 import 'api/client.dart';
+import 'api/craze.dart';
 import 'api/create_stream.dart';
 import 'api/dto.dart';
 import 'api/dto_lane.dart';
@@ -40,6 +41,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient;
 
   CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_BridgeCrazeSourcePtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource;
+
+  CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_BridgeCreateHandlePtr => wire
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCreateHandle;
 
@@ -69,6 +74,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeCrazeSource
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     dynamic raw,
   );
 
@@ -111,6 +122,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeCrazeSource
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     dynamic raw,
   );
 
@@ -161,6 +178,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeCrazeSource
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     dynamic raw,
   );
 
@@ -273,6 +296,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCrazeOffline dco_decode_box_autoadd_bridge_craze_offline(dynamic raw);
+
+  @protected
   BridgeCreateShedRequest dco_decode_box_autoadd_bridge_create_shed_request(
     dynamic raw,
   );
@@ -295,6 +321,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneCapabilities dco_decode_box_autoadd_bridge_lane_capabilities(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneCreateRequest dco_decode_box_autoadd_bridge_lane_create_request(
     dynamic raw,
   );
 
@@ -330,6 +361,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeShed dco_decode_box_autoadd_bridge_shed(dynamic raw);
+
+  @protected
+  BridgeSourceCapabilities dco_decode_box_autoadd_bridge_source_capabilities(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeSourceOffline dco_decode_box_autoadd_bridge_source_offline(dynamic raw);
 
   @protected
   BridgeSystemDiskUsage dco_decode_box_autoadd_bridge_system_disk_usage(
@@ -419,6 +458,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeControlBundle dco_decode_bridge_control_bundle(dynamic raw);
 
   @protected
+  BridgeCrazeOffline dco_decode_bridge_craze_offline(dynamic raw);
+
+  @protected
+  BridgeCrazeSnapshot dco_decode_bridge_craze_snapshot(dynamic raw);
+
+  @protected
   BridgeCreateShedRequest dco_decode_bridge_create_shed_request(dynamic raw);
 
   @protected
@@ -438,6 +483,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeError dco_decode_bridge_error(dynamic raw);
+
+  @protected
+  BridgeFoldPlan dco_decode_bridge_fold_plan(dynamic raw);
+
+  @protected
+  BridgeFoldedTab dco_decode_bridge_folded_tab(dynamic raw);
 
   @protected
   BridgeLaneAnswer dco_decode_bridge_lane_answer(dynamic raw);
@@ -560,6 +611,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeReachKind dco_decode_bridge_reach_kind(dynamic raw);
 
   @protected
+  BridgeRoostTabRef dco_decode_bridge_roost_tab_ref(dynamic raw);
+
+  @protected
   BridgeRoostUpdate dco_decode_bridge_roost_update(dynamic raw);
 
   @protected
@@ -618,6 +672,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<BridgeDiskEntry> dco_decode_list_bridge_disk_entry(dynamic raw);
 
   @protected
+  List<BridgeFoldedTab> dco_decode_list_bridge_folded_tab(dynamic raw);
+
+  @protected
   List<BridgeLaneApproval> dco_decode_list_bridge_lane_approval(dynamic raw);
 
   @protected
@@ -635,6 +692,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<BridgeLaneQuestion> dco_decode_list_bridge_lane_question(dynamic raw);
 
   @protected
+  List<BridgeLaneSession> dco_decode_list_bridge_lane_session(dynamic raw);
+
+  @protected
   List<BridgeLaneSetting> dco_decode_list_bridge_lane_setting(dynamic raw);
 
   @protected
@@ -648,6 +708,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BridgeRcSession> dco_decode_list_bridge_rc_session(dynamic raw);
+
+  @protected
+  List<BridgeRoostTabRef> dco_decode_list_bridge_roost_tab_ref(dynamic raw);
 
   @protected
   List<BridgeSession> dco_decode_list_bridge_session(dynamic raw);
@@ -709,6 +772,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCrazeOffline? dco_decode_opt_box_autoadd_bridge_craze_offline(
+    dynamic raw,
+  );
+
+  @protected
   BridgeLaneApprovalOption?
   dco_decode_opt_box_autoadd_bridge_lane_approval_option(dynamic raw);
 
@@ -743,6 +811,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeSessionRc? dco_decode_opt_box_autoadd_bridge_session_rc(dynamic raw);
 
   @protected
+  BridgeSourceCapabilities?
+  dco_decode_opt_box_autoadd_bridge_source_capabilities(dynamic raw);
+
+  @protected
   BridgeSystemDiskUsage? dco_decode_opt_box_autoadd_bridge_system_disk_usage(
     dynamic raw,
   );
@@ -758,6 +830,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  List<BridgeLaneSession>? dco_decode_opt_list_bridge_lane_session(dynamic raw);
 
   @protected
   (String, BridgeRcAgentInfo) dco_decode_record_string_bridge_rc_agent_info(
@@ -795,6 +870,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCrazeSource
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     SseDeserializer deserializer,
   );
 
@@ -837,6 +918,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCrazeSource
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     SseDeserializer deserializer,
   );
 
@@ -889,6 +976,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BridgeClient
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCrazeSource
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     SseDeserializer deserializer,
   );
 
@@ -1007,6 +1100,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCrazeOffline sse_decode_box_autoadd_bridge_craze_offline(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeCreateShedRequest sse_decode_box_autoadd_bridge_create_shed_request(
     SseDeserializer deserializer,
   );
@@ -1033,6 +1131,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneCapabilities sse_decode_box_autoadd_bridge_lane_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneCreateRequest sse_decode_box_autoadd_bridge_lane_create_request(
     SseDeserializer deserializer,
   );
 
@@ -1088,6 +1191,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeShed sse_decode_box_autoadd_bridge_shed(SseDeserializer deserializer);
+
+  @protected
+  BridgeSourceCapabilities sse_decode_box_autoadd_bridge_source_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSourceOffline sse_decode_box_autoadd_bridge_source_offline(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BridgeSystemDiskUsage sse_decode_box_autoadd_bridge_system_disk_usage(
@@ -1207,6 +1320,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCrazeOffline sse_decode_bridge_craze_offline(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCrazeSnapshot sse_decode_bridge_craze_snapshot(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeCreateShedRequest sse_decode_bridge_create_shed_request(
     SseDeserializer deserializer,
   );
@@ -1232,6 +1355,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeError sse_decode_bridge_error(SseDeserializer deserializer);
+
+  @protected
+  BridgeFoldPlan sse_decode_bridge_fold_plan(SseDeserializer deserializer);
+
+  @protected
+  BridgeFoldedTab sse_decode_bridge_folded_tab(SseDeserializer deserializer);
 
   @protected
   BridgeLaneAnswer sse_decode_bridge_lane_answer(SseDeserializer deserializer);
@@ -1410,6 +1539,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeReachKind sse_decode_bridge_reach_kind(SseDeserializer deserializer);
 
   @protected
+  BridgeRoostTabRef sse_decode_bridge_roost_tab_ref(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeRoostUpdate sse_decode_bridge_roost_update(
     SseDeserializer deserializer,
   );
@@ -1478,6 +1612,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeFoldedTab> sse_decode_list_bridge_folded_tab(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BridgeLaneApproval> sse_decode_list_bridge_lane_approval(
     SseDeserializer deserializer,
   );
@@ -1503,6 +1642,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeLaneSession> sse_decode_list_bridge_lane_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BridgeLaneSetting> sse_decode_list_bridge_lane_setting(
     SseDeserializer deserializer,
   );
@@ -1524,6 +1668,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BridgeRcSession> sse_decode_list_bridge_rc_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeRoostTabRef> sse_decode_list_bridge_roost_tab_ref(
     SseDeserializer deserializer,
   );
 
@@ -1597,6 +1746,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCrazeOffline? sse_decode_opt_box_autoadd_bridge_craze_offline(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneApprovalOption?
   sse_decode_opt_box_autoadd_bridge_lane_approval_option(
     SseDeserializer deserializer,
@@ -1643,6 +1797,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeSourceCapabilities?
+  sse_decode_opt_box_autoadd_bridge_source_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSystemDiskUsage? sse_decode_opt_box_autoadd_bridge_system_disk_usage(
     SseDeserializer deserializer,
   );
@@ -1658,6 +1818,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  List<BridgeLaneSession>? sse_decode_opt_list_bridge_lane_session(
+    SseDeserializer deserializer,
+  );
 
   @protected
   (String, BridgeRcAgentInfo) sse_decode_record_string_bridge_rc_agent_info(
@@ -1701,6 +1866,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     BridgeClient self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    BridgeCrazeSource self,
     SseSerializer serializer,
   );
 
@@ -1750,6 +1922,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     BridgeClient self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    BridgeCrazeSource self,
     SseSerializer serializer,
   );
 
@@ -1811,6 +1990,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
     BridgeClient self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    BridgeCrazeSource self,
     SseSerializer serializer,
   );
 
@@ -1950,6 +2136,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_craze_offline(
+    BridgeCrazeOffline self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_create_shed_request(
     BridgeCreateShedRequest self,
     SseSerializer serializer,
@@ -1982,6 +2174,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_bridge_lane_capabilities(
     BridgeLaneCapabilities self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_create_request(
+    BridgeLaneCreateRequest self,
     SseSerializer serializer,
   );
 
@@ -2048,6 +2246,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_bridge_shed(
     BridgeShed self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_source_capabilities(
+    BridgeSourceCapabilities self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_source_offline(
+    BridgeSourceOffline self,
     SseSerializer serializer,
   );
 
@@ -2193,6 +2403,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_craze_offline(
+    BridgeCrazeOffline self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_craze_snapshot(
+    BridgeCrazeSnapshot self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_create_shed_request(
     BridgeCreateShedRequest self,
     SseSerializer serializer,
@@ -2230,6 +2452,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bridge_error(BridgeError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bridge_fold_plan(
+    BridgeFoldPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_folded_tab(
+    BridgeFoldedTab self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bridge_lane_answer(
@@ -2466,6 +2700,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_roost_tab_ref(
+    BridgeRoostTabRef self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_roost_update(
     BridgeRoostUpdate self,
     SseSerializer serializer,
@@ -2553,6 +2793,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_bridge_folded_tab(
+    List<BridgeFoldedTab> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_bridge_lane_approval(
     List<BridgeLaneApproval> self,
     SseSerializer serializer,
@@ -2583,6 +2829,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_bridge_lane_session(
+    List<BridgeLaneSession> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_bridge_lane_setting(
     List<BridgeLaneSetting> self,
     SseSerializer serializer,
@@ -2609,6 +2861,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_bridge_rc_session(
     List<BridgeRcSession> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_roost_tab_ref(
+    List<BridgeRoostTabRef> self,
     SseSerializer serializer,
   );
 
@@ -2697,6 +2955,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_bridge_craze_offline(
+    BridgeCrazeOffline? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bridge_lane_approval_option(
     BridgeLaneApprovalOption? self,
     SseSerializer serializer,
@@ -2751,6 +3015,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_bridge_source_capabilities(
+    BridgeSourceCapabilities? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bridge_system_disk_usage(
     BridgeSystemDiskUsage? self,
     SseSerializer serializer,
@@ -2770,6 +3040,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_bridge_lane_session(
+    List<BridgeLaneSession>? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_record_string_bridge_rc_agent_info(
@@ -2826,6 +3102,22 @@ class RustLibWire implements BaseWire {
     int ptr,
   ) => wasmModule
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+        ptr,
+      );
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
         ptr,
       );
 
@@ -2939,6 +3231,16 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external void
   rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeClient(
+    int ptr,
+  );
+
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerBridgeCrazeSource(
     int ptr,
   );
 

@@ -61,9 +61,12 @@ lets it load the real Rust bridge:
 ```bash
 make test-integration-linux              # sibling shed checkout (../shed)
 SHED_CHECKOUT=/path/to/shed make test-integration-linux
+# with the craze cells (shed's `make craze-binaries` prints the dir):
+SHED_CRAZE_BIN_DIR=$HOME/.cache/shed/craze-<sha12> SHED_CRAZE_REQUIRE=1 \
+  make test-integration-linux
 ```
 
-Six files, **one `flutter test` invocation each** — and that is a constraint,
+Seven files, **one `flutter test` invocation each** — and that is a constraint,
 not a style choice. A single invocation naming several files relaunches the app
 per file, and on the Linux desktop device the *second* launch always fails with
 `Unable to start the app on the device`. It is positional rather than
@@ -79,6 +82,7 @@ both run every file even after one fails.
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
+| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, and the feed's teardown |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
@@ -106,6 +110,29 @@ control port. So it needs a **shed checkout** and `python3` — and nothing else
 - **The shed checkout must be the pinned rev.** The fakes and the adapters under
   test are one tree; CI checks out
   `scripts/check-lock-rev.sh --print-shed-rev` and asserts the sha.
+
+`craze_test.dart` drives the real craze hub (plan 025, shed-mobile#34) under
+craze's own hermetic recipe (`integration_test/support/craze_rig.dart`): the
+pinned `craze`, `craze-fake-host` and `craze-fake-agent`, plus the real
+`craze-0.0.1` for the too-old cell, from `SHED_CRAZE_BIN_DIR` — built by shed's
+`make craze-binaries` locally and, in CI, by shed's own `craze-binaries`
+composite action run from the pinned sibling, so the phone tests exactly the
+craze its pinned shed tested.
+
+- **The reach is the feed's own tunnel seam.** `machineTunnelOpenProvider` (or
+  `MachineFeed.openTunnel`) is overridden with a `RoostTunnel` whose SSH exec is
+  a local `/bin/sh` running the JAILED ladder (`crazeJailedBridgeArgv`: rungs
+  1–2 only, no exec PATH) under the recipe's six variables and nothing
+  inherited — so a craze installed on the machine running the tests
+  (`/usr/local/bin/craze`, a Homebrew one) can never answer a cell, and the
+  feed, the source handle and the row merge are all the shipped ones.
+- **Every craze process is the rig's own.** The binaries are copied into a
+  private `PATH` directory under a short `/tmp` root (craze refuses a runtime
+  dir under a group-writable ancestor), and teardown signals only processes
+  whose program is one of those copies, re-checked before each signal — never
+  `~/.craze`, `~/.cache/craze` or the host's own craze.
+- **Skip or fail.** Without `SHED_CRAZE_BIN_DIR` the hub cells SKIP with a
+  message; `SHED_CRAZE_REQUIRE=1` (CI) turns that into a failure.
 
 Rules that matter when adding a cell:
 

@@ -75,7 +75,7 @@ const _ocSession = 'ses_root';
 const _ocOther = 'ses_other';
 
 /// The lane's identity on the phone: the machine, and the ROW's slug.
-const _ref = (machine: 'local', slug: '7');
+const _ref = (machine: 'local', kind: 'opencode', slug: '7');
 
 /// The machine record the lane's feed is built from. Its host is loopback only
 /// because the fake really is on this device's loopback — it is NOT what makes
@@ -841,7 +841,12 @@ class _Rig {
         container: container,
         child: MaterialApp(
           theme: shedLightTheme,
-          home: const LaneScreen(machine: 'local', slug: '7', title: 'row7'),
+          home: const LaneScreen(
+            machine: 'local',
+            kind: 'opencode',
+            slug: '7',
+            title: 'row7',
+          ),
         ),
       ),
     );

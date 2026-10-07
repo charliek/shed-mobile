@@ -63,6 +63,25 @@ pub(crate) static ACTIVE_LANE_FORWARDERS: AtomicU64 = AtomicU64::new(0);
 /// outlived the consent it was opened under, which is the one thing
 /// [`super::roost_bootstrap::roost_bootstrap_close`] exists to make impossible.
 pub(crate) static ACTIVE_ROOST_BOOTSTRAPS: AtomicU64 = AtomicU64::new(0);
+/// Open craze sources ([`super::craze::BridgeCrazeSource`], plan 025 §3.7.2) —
+/// one per machine feed whose craze tunnel is up. Each owns a roster pump
+/// holding a connection through that tunnel, so a non-zero reading after every
+/// feed has been torn down is a hub connection nobody is reading — the thing
+/// [`super::craze::craze_source_close`] exists to make impossible. A feed
+/// restart closes the old handle BEFORE opening the new one, so a restarted
+/// feed still reads one here, never two.
+pub(crate) static ACTIVE_CRAZE_SOURCES: AtomicU64 = AtomicU64::new(0);
+/// A craze source's NUDGE forwarder, counted apart from the source for
+/// [`ACTIVE_LANE_FORWARDERS`]' reason: a source can be open with no nudge
+/// stream claimed, and a forwarder that self-tore-down after a cancelled Dart
+/// stream must read as one gone and one source gone.
+pub(crate) static ACTIVE_CRAZE_FORWARDERS: AtomicU64 = AtomicU64::new(0);
+/// A craze source's calls in flight — `createOptions` and `create`, each on a
+/// connection of its own. Closing the source cuts every one of them short
+/// (the feed owns them, plan 025 §3.7.2), so a non-zero reading after a
+/// teardown is a create still holding a connection to a machine the phone
+/// has let go of.
+pub(crate) static PENDING_CRAZE_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of the live-resource counters (plan AC#2). A Dart integration test
 /// asserts every field is 0 after disposing each slice's resources.
@@ -76,6 +95,9 @@ pub struct BridgeLiveCounters {
     pub active_lanes: u64,
     pub active_lane_forwarders: u64,
     pub active_roost_bootstraps: u64,
+    pub active_craze_sources: u64,
+    pub active_craze_forwarders: u64,
+    pub pending_craze_calls: u64,
 }
 
 /// Read the current live-resource counters.
@@ -90,6 +112,9 @@ pub fn live_counters() -> BridgeLiveCounters {
         active_lanes: ACTIVE_LANES.load(Ordering::SeqCst),
         active_lane_forwarders: ACTIVE_LANE_FORWARDERS.load(Ordering::SeqCst),
         active_roost_bootstraps: ACTIVE_ROOST_BOOTSTRAPS.load(Ordering::SeqCst),
+        active_craze_sources: ACTIVE_CRAZE_SOURCES.load(Ordering::SeqCst),
+        active_craze_forwarders: ACTIVE_CRAZE_FORWARDERS.load(Ordering::SeqCst),
+        pending_craze_calls: PENDING_CRAZE_CALLS.load(Ordering::SeqCst),
     }
 }
 

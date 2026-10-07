@@ -55,6 +55,7 @@ import '../rc/feed_rows.dart';
 class LaneScreen extends ConsumerStatefulWidget {
   const LaneScreen({
     required this.machine,
+    required this.kind,
     required this.slug,
     required this.title,
     super.key,
@@ -62,6 +63,11 @@ class LaneScreen extends ConsumerStatefulWidget {
 
   /// The machine whose feed owns the SSH connection this lane rides.
   final String machine;
+
+  /// The lane's kind — the row's stamp kind (`opencode`), or `craze` for a
+  /// craze row. Part of the lane's address ([LaneRef]): it is what keeps a
+  /// craze hostId and a roost tab id spelled alike from sharing a lane.
+  final String kind;
 
   /// The ROW's slug (roost's tab id) — the lane's identity, and deliberately
   /// not the agent session id, which is part of the stamp being reconciled.
@@ -101,7 +107,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   int _renderedRows = -1;
   BigInt? _renderedGeneration;
 
-  LaneRef get _ref => (machine: widget.machine, slug: widget.slug);
+  LaneRef get _ref =>
+      (machine: widget.machine, kind: widget.kind, slug: widget.slug);
 
   @override
   void dispose() {

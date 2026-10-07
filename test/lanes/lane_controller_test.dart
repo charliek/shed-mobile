@@ -114,6 +114,227 @@ void main() {
     });
   });
 
+  group('a craze lane (plan 025 §3.7.2)', () {
+    // A craze row's stamp is synthesized from its hostId — no URL: the lane
+    // is the machine's craze source's to open.
+    _Rig crazeRig() => _Rig(kind: crazeLaneKind, serverUrl: '');
+
+    test('opens through the craze source and acquires NO forward', () async {
+      final rig = crazeRig();
+      await rig.controller.open();
+
+      expect(
+        rig.acquired,
+        isEmpty,
+        reason:
+            'a craze session has no agent port: a lease would hold an '
+            'SSH channel to nothing',
+      );
+      expect(rig.log, ['openCraze:sess-1']);
+      expect(rig.bridge.specs, isEmpty, reason: 'and no stamped lane_open');
+      expect(
+        rig.bridge.crazeOpeners.single,
+        same(rig.controller.openCrazeLane),
+        reason: 'the machine feed\'s opener is the one the bridge is handed',
+      );
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.controller.state.capabilities?.kind, 'opencode');
+    });
+
+    test('re-opens only on ENDED, and never through a forward', () async {
+      final rig = crazeRig();
+      rig.bridge.onSnapshot = (_) => _snap(stale: 'reconnecting');
+      await rig.controller.open();
+      await pumpEventQueue();
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1'],
+        reason: 'stale is a silent resume in progress, not a re-open',
+      );
+      expect(rig.delays, isEmpty);
+
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'session_closed', ended: true);
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      await pumpEventQueue();
+      expect(rig.delays, [const Duration(seconds: 1)]);
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
+      expect(
+        rig.acquired,
+        isEmpty,
+        reason: 'a re-open forwards nothing either',
+      );
+    });
+
+    test('a retired craze source closes the lane, and its replacement '
+        're-opens it AT ONCE', () async {
+      // A feed restart (a roost bootstrap completing does one) closes the
+      // craze tunnel and source this lane rode, and the lane's own stream
+      // says nothing about it. Following the source is what keeps it from
+      // redialling a closed port for minutes.
+      final rig = crazeRig();
+      await rig.controller.open();
+      final first = rig.bridge.handles.single;
+
+      await rig.crazeSource(null);
+      expect(first.closed, isTrue, reason: 'the retired source\'s handle goes');
+      expect(rig.controller.isOpen, isFalse);
+      expect(rig.controller.state.retrying, isTrue);
+      expect(
+        rig.controller.state.abandoned,
+        isFalse,
+        reason: 'a source\'s retirement is not the session\'s end',
+      );
+      expect(rig.bridge.crazeOpened, ['sess-1'], reason: 'nothing to open yet');
+
+      await rig.crazeSource(2);
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.delays, isEmpty, reason: 'at once — not on the ended ladder');
+      expect(rig.acquired, isEmpty, reason: 'and still no forward');
+    });
+
+    test('the same source said live again re-opens nothing', () async {
+      final rig = crazeRig();
+      await rig.controller.open();
+      await rig.crazeSource(1);
+      expect(rig.bridge.crazeOpened, ['sess-1']);
+      expect(rig.bridge.handles.single.closed, isFalse);
+    });
+
+    test('a source replaced while an open was in flight moves the lane once '
+        'it lands', () async {
+      final rig = crazeRig();
+      final gate = Completer<void>();
+      rig.bridge.holdOpen = gate;
+      final opening = rig.controller.open();
+      await pumpEventQueue();
+      // The restart lands while the open (through epoch 1) is in flight.
+      await rig.crazeSource(2);
+      expect(rig.bridge.crazeOpened, ['sess-1'], reason: 'one open at a time');
+      rig.bridge.holdOpen = null;
+      gate.complete();
+      await opening;
+      await pumpEventQueue();
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1', 'sess-1'],
+        reason: 'the handle through the retired source moved to epoch 2',
+      );
+      expect(rig.bridge.handles.first.closed, isTrue);
+      expect(rig.controller.isOpen, isTrue);
+    });
+
+    test('a replacement that goes live WHILE the retired handle is being '
+        'dropped is not missed', () async {
+      // The drop awaits the nudge stream's cancel. A replacement that goes live
+      // in that window sends its only notification while the lane has no
+      // handle and has not finished leaving — so the lane must record the
+      // wait before the await, and re-read the CURRENT source after it.
+      final rig = crazeRig();
+      await rig.controller.open();
+      final first = rig.bridge.handles.single;
+      first.holdCancel = Completer<void>();
+
+      await rig.crazeSource(null);
+      expect(first.closed, isTrue, reason: 'lane_close ran; the drop is held');
+      await rig.crazeSource(2);
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1'],
+        reason: 'nothing opens while the old handle is still being dropped',
+      );
+
+      first.holdCancel!.complete();
+      await pumpEventQueue();
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1', 'sess-1'],
+        reason: 'the drop landed on a live replacement: open through it now',
+      );
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.controller.state.retrying, isFalse);
+      expect(rig.delays, isEmpty);
+    });
+
+    test('an ENDED lane on its backoff is left to its own ladder by a '
+        'retirement and a replacement', () async {
+      final rig = crazeRig();
+      await rig.controller.open();
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: 'session_closed', ended: true);
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      await pumpEventQueue();
+      expect(rig.delays, [const Duration(seconds: 1)], reason: 'on its ladder');
+
+      await rig.crazeSource(null);
+      await rig.crazeSource(2);
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1'],
+        reason:
+            'a lane with no handle for its OWN reason is not the '
+            'source\'s to re-open',
+      );
+
+      rig.bridge.onSnapshot = (_) => _snap();
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(
+        rig.bridge.crazeOpened,
+        ['sess-1', 'sess-1'],
+        reason: 'the ended ladder re-opens it, through the live source',
+      );
+      expect(rig.controller.isOpen, isTrue);
+    });
+
+    test('an open that fails because its source was retired under it waits '
+        'for the replacement, not the ladder', () async {
+      final rig = crazeRig();
+      final gate = Completer<void>();
+      rig.bridge.holdOpen = gate;
+      rig.bridge.openFailure = const BridgeLaneError.unavailable(
+        msg: 'the craze source for mini3 was closed',
+      );
+      final opening = rig.controller.open();
+      await pumpEventQueue();
+      await rig.crazeSource(null);
+      gate.complete();
+      await opening;
+      await pumpEventQueue();
+      expect(rig.delays, isEmpty, reason: 'not the ended/transient ladder');
+      expect(rig.controller.state.retrying, isTrue);
+
+      rig.bridge.holdOpen = null;
+      rig.bridge.openFailure = null;
+      await rig.crazeSource(2);
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
+      expect(rig.controller.isOpen, isTrue);
+    });
+
+    test('a craze stamp with no craze opener is refused at construction', () {
+      expect(
+        () => LaneController(
+          machine: 'mini3',
+          slug: 'cccccccccccc',
+          stamp: BridgeAgentLaneStamp(
+            kind: crazeLaneKind,
+            sessionId: 'cccccccccccc',
+            serverUrl: '',
+          ),
+          source: _FakeLaneBridge([]),
+          reach: LaneReach.machine,
+          acquireForward: (_) async => FakeLaneLease(1),
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('ended — the one re-open Dart owns', () {
     test('re-opens on the 1s → 30s ladder, keeping the lease', () async {
       final rig = _Rig();
@@ -601,7 +822,11 @@ void main() {
 
 /// Everything a [LaneController] needs, faked, plus the levers each test pulls.
 class _Rig {
-  _Rig({String kind = 'opencode', this.reach = LaneReach.machine}) {
+  _Rig({
+    String kind = 'opencode',
+    this.reach = LaneReach.machine,
+    String serverUrl = 'http://127.0.0.1:2421',
+  }) {
     bridge = _FakeLaneBridge(log);
     stamps = StreamController<BridgeAgentLaneStamp?>();
     controller = LaneController(
@@ -610,11 +835,14 @@ class _Rig {
       stamp: BridgeAgentLaneStamp(
         kind: kind,
         sessionId: 'sess-1',
-        serverUrl: 'http://127.0.0.1:2421',
+        serverUrl: serverUrl,
       ),
       source: bridge,
       reach: reach,
       acquireForward: _acquire,
+      openCrazeLane: openCrazeLane,
+      crazeSourceEpoch: () => liveEpoch,
+      crazeSources: crazeSources.stream,
       stamps: stamps.stream,
       schedulePull: _frames.add,
       delay: _delay,
@@ -622,10 +850,24 @@ class _Rig {
     addTearDown(() async {
       await stamps.close();
       await controller.close();
+      await crazeSources.close();
     });
   }
 
   final LaneReach reach;
+
+  /// The machine feed's craze source as a craze lane sees it: the epoch it
+  /// opens through now (null while there is none), and the transitions.
+  int? liveEpoch = 1;
+  final StreamController<int?> crazeSources =
+      StreamController<int?>.broadcast();
+
+  /// Retire the source, or bring a new one live — the feed's two transitions.
+  Future<void> crazeSource(int? epoch) async {
+    liveEpoch = epoch;
+    crazeSources.add(epoch);
+    await pumpEventQueue();
+  }
 
   /// The ORDERED record of what the open path did. The order is the claim.
   final List<String> log = [];
@@ -663,6 +905,12 @@ class _Rig {
     delays.add(wait);
     return _delayGate.future;
   }
+
+  /// What the controller is handed as the machine feed's craze opener — the
+  /// identity a craze open must pass through to the bridge. The fake bridge
+  /// never calls it (a `BridgeLane` needs the native library).
+  Future<BridgeLane> openCrazeLane(String hostId) =>
+      throw StateError('the fake bridge never opens a real lane');
 
   Future<LaneLease> _acquire(int remotePort) async {
     log.add('forward:$remotePort');
@@ -709,6 +957,24 @@ class _FakeLaneBridge implements LaneSource {
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
     log.add('open');
     specs.add(spec);
+    final gate = holdOpen;
+    if (gate != null) await gate.future;
+    final failure = openFailure;
+    if (failure != null) throw failure;
+    final handle = _FakeHandle();
+    handles.add(handle);
+    return handle;
+  }
+
+  /// Every craze open: the hostId, and the opener it was handed.
+  final List<String> crazeOpened = [];
+  final List<CrazeLaneOpen> crazeOpeners = [];
+
+  @override
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async {
+    log.add('openCraze:$hostId');
+    crazeOpened.add(hostId);
+    crazeOpeners.add(open);
     final gate = holdOpen;
     if (gate != null) await gate.future;
     final failure = openFailure;
@@ -769,8 +1035,13 @@ class _FakeLaneBridge implements LaneSource {
 }
 
 class _FakeHandle implements LaneHandle {
-  final _StubbornNudges nudges = _StubbornNudges();
+  late final _StubbornNudges nudges = _StubbornNudges(this);
   bool closed = false;
+
+  /// While set, cancelling this handle's nudge stream — the await inside the
+  /// controller's handle drop — parks on it, so a cell can land a source
+  /// event while a drop is still in flight.
+  Completer<void>? holdCancel;
 }
 
 /// A nudge stream whose `cancel` is a NO-OP.
@@ -780,6 +1051,9 @@ class _FakeHandle implements LaneHandle {
 /// handle's nudge is never delivered at all, so a controller that had NO fence
 /// would pass. This one delivers it anyway.
 class _StubbornNudges extends Stream<bool> {
+  _StubbornNudges(this._handle);
+
+  final _FakeHandle _handle;
   final List<void Function(bool)> _listeners = [];
 
   void deliver() {
@@ -796,13 +1070,17 @@ class _StubbornNudges extends Stream<bool> {
     bool? cancelOnError,
   }) {
     if (onData != null) _listeners.add(onData);
-    return _DeafSubscription();
+    return _DeafSubscription(_handle);
   }
 }
 
 class _DeafSubscription implements StreamSubscription<bool> {
+  _DeafSubscription(this._handle);
+
+  final _FakeHandle _handle;
+
   @override
-  Future<void> cancel() async {}
+  Future<void> cancel() => _handle.holdCancel?.future ?? Future<void>.value();
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

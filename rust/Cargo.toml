@@ -101,6 +101,14 @@ shed-core = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e
 # the whole point: the thing under test is the bridge's dispatch, its roster GET
 # and its pump, and a hand-rolled fake adapter would test none of them.
 shed-opencode = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e", features = ["test-support"] }
+# The craze adapter's scripted hub (`shed_craze::testing::ScriptedDial`: every
+# connection an in-memory duplex the test plays craze on), behind the same
+# non-default `test-support` feature and the SAME git+rev — `test-support = []`,
+# so no package joins the lock. It is what lets `api/craze.rs`'s tests drive the
+# REAL `CrazeSource` — its roster pump, its created rows, a lane opened through
+# it and the session's end said back to it (plan 025 Amendment A16) — instead
+# of a re-implementation of one.
+shed-craze = { git = "https://github.com/charliek/shed", rev = "9a84ddfe57827498e31080e1d5fdd7b73184e42e", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

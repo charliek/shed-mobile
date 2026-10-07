@@ -7,6 +7,7 @@ import 'package:shed_mobile/lanes/lane_source.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
+import 'package:shed_mobile/src/rust/api/craze.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/lane.dart';
@@ -90,7 +91,11 @@ void main() {
 
       expect(
         () => container.read(
-          laneControllerProvider((machine: 'mini3', slug: '9')),
+          laneControllerProvider((
+            machine: 'mini3',
+            kind: 'opencode',
+            slug: '9',
+          )),
         ),
         // Riverpod wraps a build failure, so the assertion is on the sentence
         // rather than the type.
@@ -131,9 +136,17 @@ void main() {
   group('laneStampFor', () {
     test('finds the row\'s stamp, and answers null for a row with none', () {
       final state = _state();
-      expect(laneStampFor(state, '7')?.sessionId, 'sess-7');
-      expect(laneStampFor(state, '9'), isNull, reason: 'the row carries none');
-      expect(laneStampFor(state, 'nope'), isNull, reason: 'no such row');
+      expect(laneStampFor(state, 'opencode', '7')?.sessionId, 'sess-7');
+      expect(
+        laneStampFor(state, 'opencode', '9'),
+        isNull,
+        reason: 'the row carries none',
+      );
+      expect(
+        laneStampFor(state, 'opencode', 'nope'),
+        isNull,
+        reason: 'no such row',
+      );
     });
   });
 
@@ -144,6 +157,7 @@ void main() {
       final cold = MachineFeedState(machine: _mini3);
       final stamps = laneStamps(
         Stream<MachineFeedState>.fromIterable([cold, _state()]),
+        'opencode',
         '7',
       );
 
@@ -165,6 +179,7 @@ void main() {
           gone,
           present,
         ]),
+        'opencode',
         '7',
       );
 
@@ -175,6 +190,137 @@ void main() {
       expect(seen[0], isNotNull);
       expect(seen[1], isNull);
       expect(seen[2], isNotNull);
+    });
+  });
+
+  group('a craze row (plan 025 §3.7.2)', () {
+    test('laneStampFor answers a craze row its own stamp, by hostId — and an '
+        'absorbed tab\'s old key nothing', () {
+      final state = _crazeState(live: true);
+      expect(laneStampFor(state, crazeLaneKind, _host), crazeLaneStamp(_host));
+      expect(laneStampFor(state, crazeLaneKind, _host)?.kind, crazeLaneKind);
+      expect(
+        laneStampFor(state, 'opencode', '7'),
+        isNull,
+        reason: 'tab 7 is the craze row now, not a row of its own',
+      );
+      expect(laneStampFor(state, 'opencode', '8')?.sessionId, 'sess-8');
+    });
+
+    test('the provider opens a craze row through the craze source, and '
+        'reserves NO forward', () async {
+      final feed = _FakeFeed(stateOverride: _crazeState(live: true));
+      final source = _FakeSource();
+      final container = _container(feed, source: source);
+      addTearDown(container.dispose);
+
+      final sub = container.listen(
+        laneStateProvider((machine: 'mini3', kind: crazeLaneKind, slug: _host)),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      await pumpEventQueue();
+
+      expect(source.crazeOpened, [_host]);
+      expect(feed.acquired, isEmpty, reason: 'a craze lane has no forward');
+      expect(source.specs, isEmpty, reason: 'and no stamped lane_open');
+      expect(sub.read().value?.capabilities?.kind, 'opencode');
+    });
+
+    test(
+      'a craze hostId spelled like a roost tab id opens ITS OWN lane',
+      () async {
+        // A hostId is twelve hex digits and may well be all decimal — the very
+        // spelling of a roost tab id. The kind in the lane's key keeps them
+        // apart: each row resolves its own stamp and opens its own lane.
+        const id = '123456789012';
+        final tab = BridgeRcSession(
+          host: '',
+          shed: '',
+          slug: id,
+          displayName: 'oc',
+          kind: const BridgeRcKind.opencode(),
+          state: BridgeRcState.ready,
+          managed: true,
+          attention: false,
+          tabId: 123456789012,
+          agentLane: BridgeAgentLaneStamp(
+            kind: 'opencode',
+            sessionId: 'sess-oc',
+            serverUrl: 'http://127.0.0.1:2421',
+          ),
+        );
+        const hub = BridgeLaneSession(
+          id: id,
+          title: 'craze',
+          cwd: '/w',
+          activity: BridgeRcActivity.idle,
+          pendingApprovals: 0,
+          approximate: false,
+        );
+        final state = MachineFeedState(
+          machine: _mini3,
+          connectedOnce: true,
+          reachable: true,
+          sessions: [tab],
+          craze: const BridgeCrazeSnapshot(
+            rows: [hub],
+            live: true,
+            truncated: false,
+          ),
+          foldedRows: [
+            MachineRow.roost(tab),
+            const MachineRow.craze(session: hub, stale: false),
+          ],
+        );
+        expect(laneStampFor(state, 'opencode', id)?.sessionId, 'sess-oc');
+        expect(laneStampFor(state, crazeLaneKind, id), crazeLaneStamp(id));
+
+        final feed = _FakeFeed(stateOverride: state);
+        final source = _FakeSource();
+        final container = _container(feed, source: source);
+        addTearDown(container.dispose);
+        const ocRef = (machine: 'mini3', kind: 'opencode', slug: id);
+        const crazeRef = (machine: 'mini3', kind: crazeLaneKind, slug: id);
+        container.listen(laneStateProvider(ocRef), (_, _) {});
+        container.listen(laneStateProvider(crazeRef), (_, _) {});
+        await pumpEventQueue();
+
+        expect(
+          container.read(laneControllerProvider(ocRef)),
+          isNot(same(container.read(laneControllerProvider(crazeRef)))),
+          reason: 'two rows, two lanes',
+        );
+        expect(
+          source.specs.single.sessionId,
+          'sess-oc',
+          reason: 'the roost row opened its opencode lane, through a forward',
+        );
+        expect(feed.acquired, [2421]);
+        expect(
+          source.crazeOpened,
+          [id],
+          reason: 'and the craze row its craze lane, through the source',
+        );
+      },
+    );
+
+    test('a craze lane reconciles only against a LIVE craze feed', () async {
+      // A source that has not seeded yet (a restarted tunnel's) lists nothing,
+      // and an offline one keeps its rows: neither is evidence the session
+      // left. Only a live roster without the row is.
+      final stamps = laneStamps(
+        Stream<MachineFeedState>.fromIterable([
+          _crazeState(live: false, rows: false),
+          _crazeState(live: true),
+          _crazeState(live: false),
+          _crazeState(live: false, rows: false),
+          _crazeState(live: true, rows: false),
+        ]),
+        crazeLaneKind,
+        _host,
+      );
+      expect(await stamps.toList(), [crazeLaneStamp(_host), null]);
     });
   });
 
@@ -256,8 +402,8 @@ void main() {
   });
 }
 
-const _seven = (machine: 'mini3', slug: '7');
-const _eight = (machine: 'mini3', slug: '8');
+const _seven = (machine: 'mini3', kind: 'opencode', slug: '7');
+const _eight = (machine: 'mini3', kind: 'opencode', slug: '8');
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3');
 
 ProviderContainer _container(
@@ -295,6 +441,54 @@ MachineFeedState _state({List<BridgeRcSession>? sessions}) => MachineFeedState(
       ],
 );
 
+const _host = 'cccccccccccc';
+
+/// A machine running one craze session inside roost tab 7 (owned `(craze,
+/// ses-x)`) beside an opencode tab 8 — as the feed folds it: with the craze
+/// feed live, tab 7 is absorbed into the hub row. [rows] false is a source
+/// whose roster does not list the session (yet, or any more).
+MachineFeedState _crazeState({required bool live, bool rows = true}) {
+  const hub = BridgeLaneSession(
+    id: _host,
+    title: 'craze work',
+    cwd: '/w',
+    activity: BridgeRcActivity.idle,
+    pendingApprovals: 0,
+    approximate: false,
+    providerSessionId: 'ses-x',
+  );
+  final tab7 = BridgeRcSession(
+    host: '',
+    shed: '',
+    slug: '7',
+    displayName: 'tui',
+    kind: const BridgeRcKind.craze(),
+    state: BridgeRcState.ready,
+    managed: true,
+    attention: false,
+    tabId: 7,
+    rcId: 'ses-x',
+  );
+  final tab8 = _row('8', 'sess-8');
+  return MachineFeedState(
+    machine: _mini3,
+    connectedOnce: true,
+    reachable: true,
+    sessions: [tab7, tab8],
+    craze: BridgeCrazeSnapshot(
+      rows: rows ? const [hub] : const [],
+      live: live,
+      truncated: false,
+    ),
+    foldedRows: [
+      MachineRow.roost(tab8),
+      if (rows)
+        MachineRow.craze(session: hub, tabId: live ? 7 : null, stale: !live),
+      if (!live) MachineRow.roost(tab7),
+    ],
+  );
+}
+
 BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
   host: '',
   shed: '',
@@ -319,7 +513,10 @@ BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
 /// a unit test at all. `noSuchMethod` guards every member this fake does not
 /// know about.
 class _FakeFeed implements MachineFeed {
-  _FakeFeed({this.machine = _mini3});
+  _FakeFeed({this.machine = _mini3, this.stateOverride});
+
+  /// What [state] answers when a test needs more than the default rows.
+  final MachineFeedState? stateOverride;
 
   final List<int> acquired = [];
 
@@ -329,7 +526,7 @@ class _FakeFeed implements MachineFeed {
   final MachineRecord machine;
 
   @override
-  MachineFeedState get state => _state();
+  MachineFeedState get state => stateOverride ?? _state();
 
   @override
   Stream<MachineFeedState> get updates =>
@@ -341,12 +538,28 @@ class _FakeFeed implements MachineFeed {
     return FakeLaneLease(41000);
   }
 
+  /// A seeded craze source, steady: what a craze lane follows.
+  @override
+  int? get crazeLiveEpoch => 1;
+
+  @override
+  Stream<int?> get crazeSources => const Stream<int?>.empty();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeSource implements LaneSource {
   final List<BridgeLaneSpec> specs = [];
+
+  /// Every craze open, by hostId.
+  final List<String> crazeOpened = [];
+
+  @override
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async {
+    crazeOpened.add(hostId);
+    return _FakeHandle();
+  }
 
   @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {

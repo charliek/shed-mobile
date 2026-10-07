@@ -4,10 +4,10 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../machines/machine_feed.dart';
 import '../../providers.dart';
-import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../widgets/app_bar_count_title.dart';
 import '../../widgets/empty_state.dart';
+import '../craze/craze_session_card.dart';
 import '../create/create_rc_target.dart';
 import 'create_rc_screen.dart';
 import 'session_card.dart';
@@ -45,13 +45,15 @@ class ShedDetailScreen extends ConsumerWidget {
     // so there is nothing else to show them.
     final error = feed.hasError ? feed.error : null;
     final state = feed.value;
-    final sessions = state?.sessions ?? const <BridgeRcSession>[];
+    // The MERGED rows (plan 025 §3.7.2): the shed's roost tabs and its craze
+    // sessions, one row per session — never `state.sessions`.
+    final rows = state?.rows ?? const <MachineRow>[];
     return Scaffold(
       key: const ValueKey('rc-screen'),
       appBar: AppBar(
         title: AppBarCountTitle(
           title: shedName,
-          count: state == null ? null : sessions.length,
+          count: state == null ? null : rows.length,
           noun: 'session',
         ),
         actions: [
@@ -85,14 +87,15 @@ class ShedDetailScreen extends ConsumerWidget {
         icon: const Icon(Icons.add, size: 20),
         label: const Text('New session'),
       ),
-      body: _body(context, state, sessions, error),
+      body: _body(context, origin, state, rows, error),
     );
   }
 
   Widget _body(
     BuildContext context,
+    String origin,
     MachineFeedState? state,
-    List<BridgeRcSession> sessions,
+    List<MachineRow> rows,
     Object? error,
   ) {
     if (error != null) {
@@ -102,10 +105,10 @@ class ShedDetailScreen extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
     logDriveState(
-      'screen=rc server=$serverName shed=$shedName count=${sessions.length} '
+      'screen=rc server=$serverName shed=$shedName count=${rows.length} '
       'reachable=${state.reachable}',
     );
-    if (sessions.isEmpty) {
+    if (rows.isEmpty) {
       return EmptyState(
         key: const ValueKey('rc-empty'),
         title: state.reachable ? 'No sessions' : 'No sessions to show',
@@ -116,22 +119,27 @@ class ShedDetailScreen extends ConsumerWidget {
     }
     return ListView.separated(
       padding: const EdgeInsets.only(bottom: 96),
-      itemCount: sessions.length,
+      itemCount: rows.length,
       separatorBuilder: (_, _) => Divider(height: 1, color: context.shed.line),
-      itemBuilder: (_, i) {
-        final s = sessions[i];
+      itemBuilder: (_, i) => switch (rows[i]) {
         // Identity key (server-shed-slug) so each row's SessionCard keeps its
         // own busy state across list rebuilds — matches the cross-host
         // Sessions view's scheme (all_sessions_view.dart).
-        return SessionCard(
-          key: ValueKey('all-session-$serverName-$shedName-${s.slug}'),
+        RoostMachineRow(:final session) => SessionCard(
+          key: ValueKey('all-session-$serverName-$shedName-${session.slug}'),
           serverName: serverName,
           shedName: shedName,
-          session: s,
+          session: session,
           state: state,
           // This screen's app bar already names the shed.
           originIsImplied: true,
-        );
+        ),
+        final CrazeMachineRow row => CrazeSessionCard(
+          key: ValueKey('craze-session-$serverName-$shedName-${row.key}'),
+          origin: origin,
+          row: row,
+          keySuffix: '$serverName-$shedName',
+        ),
       },
     );
   }
