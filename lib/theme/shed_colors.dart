@@ -41,8 +41,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
     required this.btnDark,
     required this.btnDarkFg,
     required this.kindClaude,
-    required this.kindCodex,
-    required this.kindCursor,
     required this.kindOpencode,
     required this.kindShell,
     required this.sidebar,
@@ -85,8 +83,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
 
   // Agent-kind accents (left border on the kind chip, terminal `[kind]`).
   final Color kindClaude;
-  final Color kindCodex;
-  final Color kindCursor;
   final Color kindOpencode;
   final Color kindShell;
 
@@ -131,8 +127,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
   static const _dotIdle = Color(0xFFA0A4AC);
   static const _dotErr = Color(0xFFE5484D);
   static const _kindClaude = Color(0xFFF2541B);
-  static const _kindCodex = Color(0xFF10A37F);
-  static const _kindCursor = Color(0xFF6E56CF);
   static const _kindOpencode = Color(0xFF3B82F6);
   static const _kindShell = Color(0xFF7A828C);
 
@@ -162,8 +156,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
     btnDark: Color(0xFF15181E),
     btnDarkFg: Color(0xFFFFFFFF),
     kindClaude: _kindClaude,
-    kindCodex: _kindCodex,
-    kindCursor: _kindCursor,
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
     sidebar: Color(0xFFF2F0EB),
@@ -199,8 +191,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
     btnDark: Color(0xFF000000),
     btnDarkFg: Color(0xFFECEEF2),
     kindClaude: _kindClaude,
-    kindCodex: _kindCodex,
-    kindCursor: _kindCursor,
     kindOpencode: _kindOpencode,
     kindShell: _kindShell,
     sidebar: Color(0xFF171A21),
@@ -237,8 +227,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
     Color? btnDark,
     Color? btnDarkFg,
     Color? kindClaude,
-    Color? kindCodex,
-    Color? kindCursor,
     Color? kindOpencode,
     Color? kindShell,
     Color? sidebar,
@@ -273,8 +261,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
       btnDark: btnDark ?? this.btnDark,
       btnDarkFg: btnDarkFg ?? this.btnDarkFg,
       kindClaude: kindClaude ?? this.kindClaude,
-      kindCodex: kindCodex ?? this.kindCodex,
-      kindCursor: kindCursor ?? this.kindCursor,
       kindOpencode: kindOpencode ?? this.kindOpencode,
       kindShell: kindShell ?? this.kindShell,
       sidebar: sidebar ?? this.sidebar,
@@ -315,8 +301,6 @@ class ShedColors extends ThemeExtension<ShedColors> {
       btnDark: c(btnDark, other.btnDark),
       btnDarkFg: c(btnDarkFg, other.btnDarkFg),
       kindClaude: c(kindClaude, other.kindClaude),
-      kindCodex: c(kindCodex, other.kindCodex),
-      kindCursor: c(kindCursor, other.kindCursor),
       kindOpencode: c(kindOpencode, other.kindOpencode),
       kindShell: c(kindShell, other.kindShell),
       sidebar: c(sidebar, other.sidebar),

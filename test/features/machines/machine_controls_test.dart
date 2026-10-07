@@ -47,22 +47,16 @@ const _roostFeatures = BridgeRcKindFeatures(
   attach: 'native-remote',
 );
 
-/// What a roost-backed machine advertises — synthesized, never probed.
+/// What a roost-backed machine advertises — synthesized, never probed. Two
+/// kinds since plan 025 retired codex/cursor/gx/grok from the palette.
 final _roostCaps = BridgeRcCapabilities(
   rcVersion: 2,
-  kinds: const [
-    BridgeRcKind.claudeRc(),
-    BridgeRcKind.codex(),
-    BridgeRcKind.opencode(),
-    BridgeRcKind.cursor(),
-  ],
+  kinds: const [BridgeRcKind.claudeRc(), BridgeRcKind.opencode()],
   agents: const {},
   features: const ['contract-v2'],
   kindFeatures: const {
     'claude-rc': _roostFeatures,
-    'codex': _roostFeatures,
     'opencode': _roostFeatures,
-    'cursor': _roostFeatures,
     // `shell` is deliberately ABSENT — a plain shell tab is not a session at
     // all on the roost path, and an entry that says no must behave exactly as
     // no entry does.
@@ -161,7 +155,8 @@ void main() {
       _app(
         _live([
           _session('1', const BridgeRcKind.opencode()),
-          _session('2', const BridgeRcKind.codex()),
+          // A codex tab run directly: a plain `Other` row since plan 025.
+          _session('2', const BridgeRcKind.other(raw: 'codex')),
           _session('3', const BridgeRcKind.claudeRc()),
         ], caps: _roostCaps),
       ),

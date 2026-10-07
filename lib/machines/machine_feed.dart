@@ -5,9 +5,13 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../rc/rc_ui.dart';
+import '../src/rust/api/craze.dart';
+import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
+import '../src/rust/api/lane.dart';
 import '../src/rust/api/roost.dart';
 import '../src/rust/api/roost_bootstrap.dart';
+import '../ssh/craze_reach.dart';
 import '../ssh/exec_bytes.dart';
 import '../ssh/host_key_store.dart';
 import '../ssh/lane_forward.dart';
@@ -16,7 +20,6 @@ import '../ssh/roost_entitlement.dart';
 import '../ssh/roost_reach.dart';
 import '../ssh/roost_tunnel.dart';
 import '../ssh/ssh_connection.dart';
-import '../ssh/ssh_runner.dart';
 import 'machine_record.dart';
 
 /// One machine's live view, as the UI renders it.
@@ -30,6 +33,8 @@ class MachineFeedState {
     this.connectedOnce = false,
     this.capabilities,
     this.downKind,
+    this.craze,
+    this.foldedRows,
   });
 
   final MachineRecord machine;
@@ -103,6 +108,36 @@ class MachineFeedState {
   /// happening now.
   final BridgeReachKind? downKind;
 
+  /// **The machine's craze source, as its last snapshot said it** (plan 025
+  /// §3.7.2) — the sessions craze's hub lists here, whether that list is live,
+  /// and why not when it is not. Null while the feed has opened no craze
+  /// source, or the source has not been read yet.
+  ///
+  /// Kept across a [MachineFeed.stop] for [sessions]' reason, and marked not
+  /// live there: the last known craze rows stay on screen, stale, until the
+  /// next source says what is true now.
+  final BridgeCrazeSnapshot? craze;
+
+  /// The rows the feed FOLDED for this state — null on a state built by hand.
+  /// Read [rows], which falls back for exactly that case.
+  final List<MachineRow>? foldedRows;
+
+  /// **This machine's rows, merged — what every view renders** (plan 025
+  /// §3.7.2): its roost tabs and its craze sessions, one row per session.
+  ///
+  /// The merge is `shed_app::craze_rows::fold_plan` over the bridge
+  /// (`crazeFoldPlan`, applied by [machineRows]): with the craze feed LIVE,
+  /// every roost tab craze owns is absorbed into the hub row it names (that row
+  /// then carries the tab's id) or hidden, and the hub row is the row (D4);
+  /// with the feed down, nothing is absorbed and roost's craze tabs stand
+  /// alone. **Every state [MachineFeed] emits carries rows from that fold.** A
+  /// state built by hand — a test, the feed's first frame — folds nothing: its
+  /// rows are its roost rows and its craze rows side by side, which is the
+  /// fold's own answer whenever the craze feed is not live.
+  List<MachineRow> get rows =>
+      foldedRows ??
+      machineRows(sessions: sessions, craze: craze, plan: _foldsNothing);
+
   MachineFeedState copyWith({
     List<BridgeRcSession>? sessions,
     Map<String, MachinePatch>? overlay,
@@ -111,6 +146,8 @@ class MachineFeedState {
     bool? connectedOnce,
     BridgeRcCapabilities? capabilities,
     BridgeReachKind? downKind,
+    BridgeCrazeSnapshot? craze,
+    List<MachineRow>? rows,
     bool clearDetail = false,
     bool clearDownKind = false,
   }) => MachineFeedState(
@@ -122,6 +159,12 @@ class MachineFeedState {
     connectedOnce: connectedOnce ?? this.connectedOnce,
     capabilities: capabilities ?? this.capabilities,
     downKind: clearDownKind ? null : (downKind ?? this.downKind),
+    craze: craze ?? this.craze,
+    // Folded rows survive a change that cannot move them (reachability, a
+    // detail); a new roost or craze list voids them, and the feed folds again
+    // before it emits.
+    foldedRows:
+        rows ?? ((sessions == null && craze == null) ? foldedRows : null),
   );
 
   /// The affordances for a session's kind, or null when unknown.
@@ -176,6 +219,177 @@ class MachinePatch {
     lastSeq: other.lastSeq ?? lastSeq,
   );
 }
+
+/// **One row of a machine's sessions list** (plan 025 §3.7.2) — a roost tab,
+/// or a craze session. Sealed, so a view that renders rows renders both kinds
+/// or does not compile.
+sealed class MachineRow {
+  const MachineRow();
+
+  /// A roost tab, as roost's watcher reported it.
+  const factory MachineRow.roost(BridgeRcSession session) = RoostMachineRow;
+
+  /// A craze session, as the machine's craze hub lists it.
+  const factory MachineRow.craze({
+    required BridgeLaneSession session,
+    int? tabId,
+    required bool stale,
+  }) = CrazeMachineRow;
+
+  /// The row's identity within its machine — what a list keys it by and a
+  /// lane is addressed by (`LaneRef`'s `slug`): roost's slug (its tab id), or
+  /// craze's hostId (P11). The two never collide: a hostId is twelve hex
+  /// digits, and roost's tab ids are its own small counter.
+  String get key;
+}
+
+/// One roost tab (an opencode or Claude session, or any agent tab roost
+/// reports), unchanged from roost's watcher.
+final class RoostMachineRow extends MachineRow {
+  const RoostMachineRow(this.session);
+
+  final BridgeRcSession session;
+
+  @override
+  String get key => session.slug;
+}
+
+/// **One craze session** — its status is craze's (D4): provider, model, what
+/// it is doing, what it is blocked on, who is attached, why it failed to start.
+final class CrazeMachineRow extends MachineRow {
+  const CrazeMachineRow({
+    required this.session,
+    this.tabId,
+    required this.stale,
+  });
+
+  /// The hub's row: `id` is the hostId, which is what its transcript opens on.
+  final BridgeLaneSession session;
+
+  /// The roost tab the merge attached to this row — the craze TUI the session
+  /// runs in, when it runs in one. Its terminal actions (Peek, End) act on THIS
+  /// tab, never on the row's key: a hostId is not a tab id.
+  final int? tabId;
+
+  /// The craze feed is not live: this is the LAST KNOWN row (§3.6.2).
+  final bool stale;
+
+  @override
+  String get key => session.id;
+}
+
+/// The row merge, over the bridge — `crazeFoldPlan` in production. A seam so
+/// the merge's application ([machineRows]) is testable without the native
+/// library; the RULE is never re-derived on this side.
+typedef CrazeFoldPlanner =
+    BridgeFoldPlan Function(
+      List<BridgeRoostTabRef> roost,
+      List<BridgeLaneSession>? hub,
+    );
+
+/// The production [CrazeFoldPlanner]: `shed_app::craze_rows::fold_plan`.
+BridgeFoldPlan crazeFoldPlanner(
+  List<BridgeRoostTabRef> roost,
+  List<BridgeLaneSession>? hub,
+) => crazeFoldPlan(roost: roost, hub: hub);
+
+/// The plan that absorbs nothing — the fold's own answer whenever the craze
+/// feed is not live, and what a hand-built state's [MachineFeedState.rows]
+/// falls back to.
+BridgeFoldPlan _foldsNothing(
+  List<BridgeRoostTabRef> roost,
+  List<BridgeLaneSession>? hub,
+) => const BridgeFoldPlan(folded: []);
+
+/// A machine's roost tabs, as the merge reads them.
+///
+/// `craze_owner` is set **only** for a tab roost reports as craze's — the
+/// one-line rule of "only craze ownership folds": an opencode tab whose session
+/// id happens to equal a craze session's provider id is never absorbed. A craze
+/// tab's owner is its row's `rc_id` (roost's ownership session id); an empty
+/// one is still a craze tab, and with the feed live it folds silently, exactly
+/// as the desktop's does.
+List<BridgeRoostTabRef> roostTabRefs(List<BridgeRcSession> sessions) => [
+  for (final s in sessions)
+    if (s.tabId case final tabId?)
+      BridgeRoostTabRef(
+        tabId: tabId,
+        crazeOwner: s.kind is BridgeRcKind_Craze ? (s.rcId ?? '') : null,
+      ),
+];
+
+/// **Build a machine's rows** — roost's, then craze's — from [plan]'s answer
+/// for this machine (plan 025 §3.6.3, §3.7.2).
+///
+/// The feed calls this once per update with the real fold. It passes the hub's
+/// rows only while the craze feed is LIVE — a feed that is down absorbs
+/// nothing — and every craze row the source holds while it is not live is
+/// stamped [CrazeMachineRow.stale].
+List<MachineRow> machineRows({
+  required List<BridgeRcSession> sessions,
+  required BridgeCrazeSnapshot? craze,
+  required CrazeFoldPlanner plan,
+}) {
+  final live = craze?.live ?? false;
+  final hub = craze?.rows ?? const <BridgeLaneSession>[];
+  final folded = plan(roostTabRefs(sessions), live ? hub : null).folded;
+  final gone = <int>{for (final t in folded) t.tabId};
+  final tabOf = <String, int>{for (final t in folded) ?t.hostId: t.tabId};
+  return [
+    for (final s in sessions)
+      if (!gone.contains(s.tabId)) MachineRow.roost(s),
+    for (final r in hub)
+      MachineRow.craze(session: r, tabId: tabOf[r.id], stale: !live),
+  ];
+}
+
+/// What a machine's card SAYS about its craze, if anything (plan 025 §3.2.4,
+/// §3.8, A2m): a craze too old for shed asks to be updated, and so does a LIVE
+/// hub that cannot create (its `hello` lacks `createOptions` or
+/// `sessionCreate` — listing still works, the create screen does not offer
+/// craze there); every other state — not installed above all — is quiet.
+/// Branches on the offline CAUSE and the hub's capabilities, never on the
+/// reason's text (which is copy).
+String? crazeNoteFor(MachineFeedState state) =>
+    state.craze?.offline?.cause is BridgeSourceOffline_TooOld
+    ? 'craze on this machine is too old for shed; update it'
+    : crazeCreateUpdateNote(state.craze);
+
+/// **Whether a machine offers a craze create** (plan 025 §3.6.5, §3.8) — its
+/// craze source is LIVE and its hub can list providers and create. What the
+/// create screen's craze choice is gated on.
+///
+/// The desktop also offers it on a DORMANT machine (craze installed, no hub
+/// yet). The phone has no dormant phase: its craze tunnel runs `bridge --hub`,
+/// which starts a hub on connect (plan 025 §9), so a machine with craze is live
+/// within a second of being viewed. A live hub without those capabilities, a
+/// too-old craze, an offline or absent one offers nothing.
+bool crazeCreateOffered(BridgeCrazeSnapshot? craze) =>
+    craze != null &&
+    craze.live &&
+    (craze.caps?.create ?? false) &&
+    (craze.caps?.createOptions ?? false);
+
+/// The machine's line when its LIVE hub cannot create — listing still works,
+/// creating does not (§3.8's "update craze on this machine"). Null otherwise (a
+/// too-old craze has its own note).
+String? crazeCreateUpdateNote(BridgeCrazeSnapshot? craze) =>
+    craze != null && craze.live && !crazeCreateOffered(craze)
+    ? 'update craze on this machine to create sessions here'
+    : null;
+
+/// [snapshot], no longer live: the same rows and cause, rendered stale — what a
+/// stopped feed keeps.
+BridgeCrazeSnapshot? staleCraze(BridgeCrazeSnapshot? snapshot) =>
+    snapshot == null || !snapshot.live
+    ? snapshot
+    : BridgeCrazeSnapshot(
+        rows: snapshot.rows,
+        live: false,
+        offline: snapshot.offline,
+        caps: snapshot.caps,
+        truncated: snapshot.truncated,
+      );
 
 /// Fold one roost update into the feed's state — **the whole reconciliation,
 /// as a pure function** (plan 013 S3m).
@@ -428,6 +642,40 @@ typedef WatcherSpawn =
       required bool bootstrapped,
     });
 
+/// Opening one of the feed's tunnels — `RoostTunnel.open`'s own signature,
+/// named as a type for [WatcherSpawn]'s reason (a drift is a compile error
+/// here).
+///
+/// **The seam the craze harness needs** (plan 025 §3.7.2): `start()` used to
+/// call `RoostTunnel.open` directly, so an integration test could not put a
+/// local process where the SSH exec goes. Production is `RoostTunnel.open`
+/// (through `machineTunnelOpenProvider`); the hermetic harness hands in
+/// `RoostTunnel.openWithExec` over a local `Process` running the JAILED craze
+/// ladder. One seam for both tunnels: the feed opens its roost tunnel and its
+/// craze tunnel through it, and tells them apart only by the command.
+typedef TunnelOpen =
+    Future<RoostTunnel> Function({
+      required Future<SSHClient> Function() connect,
+      required String remoteCommand,
+      required String machine,
+      void Function(String)? onStderr,
+    });
+
+/// Opening one machine's craze source on the craze tunnel's port —
+/// `crazeSourceOpen`'s own signature. A seam so the teardown harness can hold
+/// an open in flight while the feed is disposed underneath it.
+typedef CrazeSourceOpen =
+    Future<BridgeCrazeSource> Function({
+      required String machine,
+      required int port,
+    });
+
+/// A craze source's nudge stream — `crazeSourceNudges`' own signature. A seam
+/// so a harness can DELAY the nudges and prove that what must not wait for one
+/// (a created session's row, [MachineFeed.crazeCreateSession]) does not.
+typedef CrazeSourceNudges =
+    Stream<bool> Function({required BridgeCrazeSource src});
+
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
@@ -453,6 +701,17 @@ typedef WatcherSpawn =
 ///   are gated correctly from the very first frame rather than after a round
 ///   trip that could fail.
 ///
+/// ## The craze half (plan 025 §3.7.2)
+///
+/// Beside roost's tunnel the feed holds a SECOND one, whose every accepted
+/// connection execs `craze bridge --hub` (craze's published ladder,
+/// `crazeRemoteCommand()`), and a craze source handle Rust reads the machine's
+/// hub through — with exactly the roost half's lifecycle: built by [start],
+/// torn down by [_teardown], fenced by the same generation. Every state the
+/// feed emits carries [MachineFeedState.rows], the two halves merged by shed's
+/// own row rule over the bridge ([machineRows]); a lane on a craze row opens
+/// through the source ([openCrazeLane]), never through a forward.
+///
 /// ## Backgrounding is a STOP, not a stall
 ///
 /// [stop] tears the tunnel and the watcher down; [start] rebuilds both. That is
@@ -470,7 +729,15 @@ class MachineFeed {
     required this.hostKeys,
     required this.entitlements,
     WatcherSpawn? spawnWatcher,
+    TunnelOpen? openTunnel,
+    CrazeSourceOpen? openCrazeSource,
+    CrazeSourceNudges? crazeNudges,
+    CrazeFoldPlanner? foldPlan,
   }) : _spawnWatcher = spawnWatcher ?? createRoostWatcher,
+       _openTunnel = openTunnel ?? RoostTunnel.open,
+       _openCrazeSource = openCrazeSource ?? crazeSourceOpen,
+       _crazeNudges = crazeNudges ?? crazeSourceNudges,
+       _foldPlan = foldPlan ?? crazeFoldPlanner,
        _state = MachineFeedState(
          machine: machine,
          // Synchronous, and therefore present on the FIRST state the UI sees:
@@ -504,6 +771,18 @@ class MachineFeed {
   /// whole commit exists for.
   final WatcherSpawn _spawnWatcher;
 
+  /// How [start] opens both tunnels — see [TunnelOpen].
+  final TunnelOpen _openTunnel;
+
+  /// How [start] opens the craze source — see [CrazeSourceOpen].
+  final CrazeSourceOpen _openCrazeSource;
+
+  /// How [start] subscribes to the source's nudges — see [CrazeSourceNudges].
+  final CrazeSourceNudges _crazeNudges;
+
+  /// The row merge every emitted state is folded with — see [machineRows].
+  final CrazeFoldPlanner _foldPlan;
+
   final _controller = StreamController<MachineFeedState>.broadcast();
   MachineFeedState _state;
 
@@ -511,6 +790,40 @@ class MachineFeed {
   BridgeRoostWatcher? _watcher;
   StreamSubscription<BridgeRoostUpdate>? _sub;
   bool _starting = false;
+
+  /// A [start] was asked for while one was in flight: the in-flight start
+  /// runs it once it finishes ([_startIfAsked]). Cleared by [stop] and
+  /// [dispose] — an owner's stop after the request outranks it — and by
+  /// nothing else: a teardown the in-flight start runs on its own failure is
+  /// not the owner stopping the feed.
+  bool _startAgain = false;
+
+  /// **The craze half** (plan 025 §3.7.2, P16): a second tunnel beside
+  /// [_tunnel] whose every accepted connection execs `craze bridge --hub`, the
+  /// source handle Rust reads the machine's hub through, and the handle's
+  /// nudge stream — owned in that order, built in that order by [start], and
+  /// torn down by [_teardownCraze] with exactly the roost feed's lifecycle.
+  RoostTunnel? _crazeTunnel;
+  BridgeCrazeSource? _crazeSource;
+  StreamSubscription<bool>? _crazeSub;
+
+  /// The craze source's epoch — bumped at every source handle this feed
+  /// installs, so a lane can tell the handle it was opened through from its
+  /// replacement after a restart (see [crazeLiveEpoch]).
+  int _crazeEpoch = 0;
+
+  /// Whether the installed source has swapped a roster seed in yet. A lane is
+  /// opened only through a SEEDED source: one that has not seeded lists no row,
+  /// and a lane bound there would read its own session as unknown.
+  bool _crazeSeeded = false;
+
+  final _crazeSources = StreamController<int?>.broadcast();
+
+  /// What the craze tunnel's stderr last proved about this machine's craze
+  /// (not installed, too old) — Dart's pre-`hello` class (see
+  /// `craze_reach.dart`). Handed to every source this feed opens, and spent
+  /// once a snapshot is live: only a seed proves the far side answers.
+  CrazeReachNote? _crazeNote;
 
   /// The SSH connection every exec on this machine rides. Owned HERE, because
   /// [RoostTunnel] deliberately does not close what it did not open.
@@ -578,10 +891,62 @@ class MachineFeed {
   /// simply looking at a session.
   int? get tunnelPort => _tunnel?.port;
 
-  /// Open the tunnel and start watching. Idempotent, and safe to call on every
-  /// foreground.
+  /// The craze tunnel's local port, or null while it is down — what a teardown
+  /// cell dials to prove the tunnel went with the feed.
+  @visibleForTesting
+  int? get crazeTunnelPort => _crazeTunnel?.port;
+
+  /// **The epoch of the craze source a lane may open through NOW**, or null
+  /// while there is none: no source installed (a stopped feed, a restart in
+  /// progress), or one that has not seeded yet. A craze lane records it at
+  /// open and follows [crazeSources] from then on (`LaneController`'s craze
+  /// source rule).
+  int? get crazeLiveEpoch =>
+      (_crazeSource != null && _crazeSeeded) ? _crazeEpoch : null;
+
+  /// **Every change of [crazeLiveEpoch]** — null when the source a lane rode
+  /// is retired (a [stop], the first half of a restart), the new epoch once
+  /// its replacement has seeded. What lets an open craze transcript leave a
+  /// retired source at once and re-open through the next one, instead of
+  /// redialling a closed port (plan 025 §3.7.2, the CM3 review).
+  Stream<int?> get crazeSources => _crazeSources.stream;
+
+  /// Open the tunnels and start watching — roost's, then craze's
+  /// ([_startCraze]). Idempotent, and safe to call on every foreground.
+  ///
+  /// **With roost already running, only a missing craze half is started.** A
+  /// craze half that failed (a port that would not bind, a source that would
+  /// not open) is torn down and leaves roost running; returning early on that
+  /// running watcher would leave the machine with no craze rows and no craze
+  /// create until the feed was rebuilt. So this call retries [_startCraze]
+  /// alone, at the current generation, under the same [_starting] guard.
+  /// Roost is not restarted for it; the source it installs is a new epoch,
+  /// announced on [crazeSources] like any replacement.
+  ///
+  /// **A start asked for while one is in flight is not dropped.** A roost
+  /// install restarts the feed — [stop], then [start] ([_entitle]) — and when
+  /// that lands while a start (or a craze retry) is still opening, the stop
+  /// has fenced the in-flight one off: it builds nothing more, and returning
+  /// early here as well would leave the feed stopped until some other start.
+  /// So the request is recorded ([_startAgain]) and the in-flight start runs
+  /// it once it finishes — unless the owner has stopped the feed since.
   Future<void> start() async {
-    if (_watcher != null || _starting) return;
+    if (_starting) {
+      _startAgain = true;
+      return;
+    }
+    if (_watcher != null) {
+      if (_crazeSource == null && _crazeTunnel == null) {
+        _starting = true;
+        try {
+          await _startCraze(_generation);
+        } finally {
+          _starting = false;
+          await _startIfAsked();
+        }
+      }
+      return;
+    }
     _starting = true;
     // The same fence `_connect` uses: a `stop()` during either await below has
     // already run `_teardown()`, so installing what this call built would put a
@@ -589,7 +954,7 @@ class MachineFeed {
     // point, so this call closes what it made rather than leaking it.
     final generation = _generation;
     try {
-      final tunnel = await RoostTunnel.open(
+      final tunnel = await _openTunnel(
         connect: _connect,
         // Opaque, and composed by roost itself — the phone is out of the
         // argv business entirely (see `roostRemoteCommand`).
@@ -636,6 +1001,10 @@ class MachineFeed {
         onError: (Object e) =>
             _emit(_state.copyWith(reachable: false, detail: 'feed error: $e')),
       );
+      // The machine's craze hub, beside its roost (plan 025 §3.7.2). It can
+      // fail without taking roost down with it: a machine with roost and no
+      // usable craze tunnel is still a machine with sessions to show.
+      await _startCraze(generation);
     } catch (e) {
       // Binding the port failed — the machine itself is not dialled here at
       // all (the tunnel execs per accepted connection), so an asleep or
@@ -644,7 +1013,17 @@ class MachineFeed {
       _emit(_state.copyWith(reachable: false, detail: _describe(e)));
     } finally {
       _starting = false;
+      await _startIfAsked();
     }
+  }
+
+  /// Run the [start] asked for while the one finishing now was in flight —
+  /// once. [stop] and [dispose] cancel the request, so a feed its owner
+  /// stopped after asking stays stopped.
+  Future<void> _startIfAsked() async {
+    if (!_startAgain) return;
+    _startAgain = false;
+    await start();
   }
 
   /// Open (or reuse) the machine's SSH connection. Handed to [RoostTunnel],
@@ -696,6 +1075,160 @@ class MachineFeed {
     }
   }
 
+  /// **Open the craze half**: the craze tunnel, then the source handle on its
+  /// port, then the handle's nudge stream — each await fenced by the
+  /// generation, so a [stop] or [dispose] that lands mid-open releases what
+  /// this call built instead of installing it behind the feed's back.
+  ///
+  /// A failure here (a port that will not bind, a source that will not open)
+  /// leaves craze absent and roost running: [_teardownCraze] releases whatever
+  /// was installed, and the next [start] tries this half again, alone.
+  Future<void> _startCraze(int generation) async {
+    try {
+      final tunnel = await _openTunnel(
+        connect: _connect,
+        // Opaque, and composed by shed-core — craze's published ladder ending
+        // in `craze bridge --hub` (plan 025 §3.4). Dart composes no part of it.
+        remoteCommand: crazeRemoteCommand(),
+        machine: machine.name,
+        onStderr: _observeCrazeStderr,
+      );
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: tunnel,
+        release: (t) => t.close(),
+      )) {
+        return;
+      }
+      _crazeTunnel = tunnel;
+
+      // Rust is handed the PORT and nothing else, exactly as the watcher is.
+      final source = await _openCrazeSource(
+        machine: machine.name,
+        port: tunnel.port,
+      );
+      if (await releaseIfStopped(
+        startedAt: generation,
+        current: _generation,
+        resource: source,
+        release: (s) async => _closeCrazeSource(s),
+      )) {
+        return;
+      }
+      _crazeSource = source;
+      _crazeEpoch++;
+      _crazeSeeded = false;
+      // What an earlier tunnel's stderr already proved about this machine.
+      final note = _crazeNote;
+      if (note != null) {
+        crazeSourceNoteReach(
+          src: source,
+          cause: note.cause,
+          message: note.message,
+        );
+      }
+      _crazeSub = _crazeNudges(src: source).listen(
+        (_) => _pullCraze(generation),
+        // A nudge stream that errors is still "something changed", and the
+        // snapshot is the authority on what.
+        onError: (Object _) => _pullCraze(generation),
+      );
+      // The source may already have something to say (Dart's own note above).
+      _pullCraze(generation);
+    } catch (_) {
+      if (generation == _generation) await _teardownCraze();
+    }
+  }
+
+  /// Read the source's snapshot into the state — the nudge's acknowledgement.
+  void _pullCraze(int generation) {
+    if (generation != _generation) return;
+    final source = _crazeSource;
+    if (source == null) return;
+    final snapshot = crazeSourceSnapshot(src: source);
+    // Only a seed proves craze answers here — the one thing that spends what
+    // the tunnel's stderr said (the roost reach's rule, `_apply`).
+    if (snapshot.live) _crazeNote = null;
+    _emit(_state.copyWith(craze: snapshot));
+    // The first seed through THIS source: lanes may open through it now, and
+    // a lane the last restart left waiting re-opens here.
+    if (snapshot.live && !_crazeSeeded) {
+      _crazeSeeded = true;
+      if (!_crazeSources.isClosed) _crazeSources.add(_crazeEpoch);
+    }
+  }
+
+  /// The craze tunnel exec's stderr TAIL — the only place the phone learns
+  /// that a machine has no craze, or a craze too old for shed. See
+  /// [crazeNoteForExec] for what is recorded and what deliberately is not.
+  void _observeCrazeStderr(String text) {
+    final note = crazeNoteForExec(stderr: text);
+    if (note == null) return;
+    _crazeNote = note;
+    final source = _crazeSource;
+    if (source != null) {
+      crazeSourceNoteReach(
+        src: source,
+        cause: note.cause,
+        message: note.message,
+      );
+    }
+  }
+
+  /// **Open one craze session's transcript** — the lane the machine's craze
+  /// source opens on `hostId` (plan 025 §3.7.2): no forward and no stamp URL,
+  /// the source's own dial. Throws while the craze half is down; a lane treats
+  /// that as transient and retries on its ladder.
+  Future<BridgeLane> openCrazeLane(String hostId) async {
+    final source = _crazeSource;
+    // Not before the source has SEEDED: a source that has not read its roster
+    // yet holds no row, and a lane bound through it would answer
+    // `unknown_session` — permanent — for a session that is right there. A
+    // restart's replacement source is in exactly that state for its first
+    // second.
+    if (source == null || !_crazeSeeded) {
+      throw StateError('craze is not connected on ${machine.name}');
+    }
+    return crazeLaneOpen(src: source, hostId: hostId);
+  }
+
+  /// What a craze create can start on this machine — its own connection,
+  /// owned by this feed: a [dispose] cuts it short.
+  Future<BridgeLaneCreateOptions> crazeOptions() async {
+    final source = _crazeSource;
+    if (source == null) {
+      throw StateError('craze is not connected on ${machine.name}');
+    }
+    return crazeCreateOptions(src: source);
+  }
+
+  /// Create a craze session — its own connection, owned by this feed.
+  ///
+  /// **The new session's row is in [state] when this returns** (plan 025
+  /// §3.6.4, §3.8): the source lists it at once (its created rows), and this
+  /// reads the source's snapshot right after the create rather than waiting
+  /// for the nudge it raised — so the transcript the create screen opens next,
+  /// whose lane resolves its row from [state] the moment it is built, finds
+  /// it, and a row this read does NOT list is a session craze answered for
+  /// that has already ended. The roster's own frame follows and replaces it.
+  ///
+  /// Throws a [StateError] — before anything is sent — while the machine has
+  /// no craze source.
+  Future<BridgeLaneCreated> crazeCreateSession(
+    BridgeLaneCreateRequest request,
+  ) async {
+    final source = _crazeSource;
+    if (source == null) {
+      throw StateError('craze is not connected on ${machine.name}');
+    }
+    final created = await crazeCreate(src: source, request: request);
+    // Only through the source that created it: a restart's replacement has
+    // its own pull, and reading a retired handle would emit its last view.
+    if (identical(source, _crazeSource)) _pullCraze(_generation);
+    return created;
+  }
+
   /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an
   /// agent lane reaches a server bound to the machine's own loopback.
   ///
@@ -715,38 +1248,6 @@ class MachineFeed {
   Future<LaneLease> acquireForward(int remotePort) async {
     if (_tunnel == null) throw StateError('the machine is not connected');
     return _forwards.acquire(remotePort);
-  }
-
-  /// **Run one already-composed command on this machine and return its raw
-  /// stdout** — the production [ProbeRunner] for an agent lane's gx credential
-  /// probe (plan 018 §3.11).
-  ///
-  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
-  /// every lane forward use, so a probe costs no second SSH link and inherits
-  /// the dial's dedupe and generation fencing.
-  ///
-  /// **Bytes, never a string.** The gx probe's stdout carries a bearer token.
-  /// It is handed straight across the bridge, parsed by Rust and dropped there;
-  /// nothing here decodes it, logs it, keeps it, or puts any part of it in the
-  /// error below — which is why the failure message is a fixed sentence with
-  /// only the exit code in it, and why stderr is discarded rather than
-  /// surfaced.
-  ///
-  /// A null exit code is "unknown", not "failed": dartssh2 occasionally drops
-  /// the `exit-status` request even on success. So the only refusal is the one
-  /// that is unambiguous — a non-zero status with nothing on stdout, which is a
-  /// probe that did not run (no `gx`, no `$GROK_HOME`) rather than one whose
-  /// output Rust can judge for itself.
-  Future<Uint8List> probe(String wireCommand) async {
-    final client = await _connect();
-    final result = await execOn(client, wireCommand);
-    final code = result.exitCode;
-    if (code != null && code != 0 && result.stdout.isEmpty) {
-      throw StateError(
-        'the discovery probe on ${machine.name} exited $code with no output',
-      );
-    }
-    return result.stdout;
   }
 
   /// Start a session on this machine — roost's `tab.open`.
@@ -809,18 +1310,29 @@ class MachineFeed {
   /// deliberate decision, not a tidy-up: a lane holding a
   /// [LaneForwardLease] has its forward closed and its lease invalidated here.
   Future<void> stop() async {
+    // A start asked for before this stop does not outlive it.
+    _startAgain = false;
     await _teardown();
-    _emit(_state.copyWith(reachable: false, detail: 'paused'));
+    _emit(
+      _state.copyWith(
+        reachable: false,
+        detail: 'paused',
+        // The craze rows stay, last known — as the roost rows do.
+        craze: staleCraze(_state.craze),
+      ),
+    );
   }
 
   Future<void> dispose() async {
+    _startAgain = false;
     await _teardown();
     await _controller.close();
+    await _crazeSources.close();
   }
 
   Future<void> _teardown() async {
     _generation++;
-    await _sub?.cancel();
+    final sub = _sub;
     _sub = null;
     final watcher = _watcher;
     _watcher = null;
@@ -829,8 +1341,18 @@ class MachineFeed {
       // forwarder even while they are parked.
       await stopRoostWatcher(handle: watcher);
     }
+    // **The stop FIRST, the cancel after it** — the lane's deadlock rule
+    // (`LaneController._dropHandle`), which this teardown used to break. An
+    // FRB stream's cancel completes only once the Rust side sends its next
+    // frame or closes its sink, so a cancel awaited before the stop waited for
+    // the watcher's NEXT update: forever on a quiet machine, and every step
+    // below it — the tunnel, the craze half, the connection — with it. The
+    // craze harness's teardown cells caught it as a dispose that hung until
+    // the next roost `Down` (plan 025 CM3).
+    await sub?.cancel();
     await _tunnel?.close();
     _tunnel = null;
+    await _teardownCraze();
     // Every lane forward on this connection goes with it, and every lease is
     // invalidated: a lane holding one must re-acquire rather than keep writing
     // into a local port that no longer reaches the machine.
@@ -841,6 +1363,51 @@ class MachineFeed {
     _client = null;
     _dialDetail = null;
   }
+
+  /// **The craze half's teardown, in its one safe order** (plan 025 §3.7.2):
+  /// the source handle FIRST — `crazeSourceClose` aborts its roster pump and
+  /// its nudge forwarder and cuts short any create in flight — and only then
+  /// the nudge subscription's cancel, because an FRB stream's cancel does not
+  /// complete while the Rust side still holds it (the lane's deadlock,
+  /// `LaneController._dropHandle`); then the tunnel, whose port and execs go
+  /// with it. A restart therefore never holds two source handles: the old one
+  /// is closed here before [start] opens the next on the new port.
+  Future<void> _teardownCraze() async {
+    final source = _crazeSource;
+    _crazeSource = null;
+    final sub = _crazeSub;
+    _crazeSub = null;
+    if (source != null) _closeCrazeSource(source);
+    await sub?.cancel();
+    final tunnel = _crazeTunnel;
+    _crazeTunnel = null;
+    await tunnel?.close();
+    // The source is retired: say so, so a lane opened through it closes now
+    // and waits for the replacement ([crazeSources]).
+    final wasLive = _crazeSeeded;
+    _crazeSeeded = false;
+    if (source != null && wasLive && !_crazeSources.isClosed) {
+      _crazeSources.add(null);
+    }
+  }
+
+  /// Close a source handle and let go of this side's reference — the sync
+  /// close is the teardown; the dispose releases the opaque explicitly rather
+  /// than waiting on its finalizer (`BridgeLaneSource.close`'s precedent). Both
+  /// are idempotent.
+  static void _closeCrazeSource(BridgeCrazeSource source) {
+    crazeSourceClose(src: source);
+    if (!source.isDisposed) source.dispose();
+  }
+
+  /// Fold [update] as if the roost watcher had pushed it.
+  ///
+  /// The hermetic craze harness's way to put a craze-owned roost tab beside a
+  /// LIVE craze feed (plan 025 §3.7.4's "a fake roost row") without a
+  /// `roost-session` to report one — so the row merge it asserts is the one
+  /// every real update goes through ([_apply] → [_emit]).
+  @visibleForTesting
+  void applyRoostUpdateForTest(BridgeRoostUpdate update) => _apply(update);
 
   void _apply(BridgeRoostUpdate update) {
     // **A `Snapshot` is the only thing that clears the observation**, exactly
@@ -877,9 +1444,9 @@ class MachineFeed {
   /// [BootstrapExec] for a [RoostBootstrapRunner] (plan 020 §3.8).
   ///
   /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
-  /// every lane forward use, exactly as [probe] and [acquireForward] do: a
-  /// bootstrap costs no second SSH link and inherits the dial's dedupe and
-  /// generation fencing.
+  /// every lane forward use, exactly as [acquireForward] does: a bootstrap
+  /// costs no second SSH link and inherits the dial's dedupe and generation
+  /// fencing.
   ///
   /// Every cap comes from the step; nothing here invents one. The command is
   /// roost's own composition and is passed verbatim — see `exec_bytes.dart`.
@@ -963,9 +1530,18 @@ class MachineFeed {
     );
   }
 
+  /// Publish [next] — **folded**: every state the feed emits carries its rows
+  /// from the row merge ([machineRows] over [_foldPlan], once per update), so
+  /// no view ever merges roost and craze rows for itself.
   void _emit(MachineFeedState next) {
-    _state = next;
-    if (!_controller.isClosed) _controller.add(next);
+    _state = next.copyWith(
+      rows: machineRows(
+        sessions: next.sessions,
+        craze: next.craze,
+        plan: _foldPlan,
+      ),
+    );
+    if (!_controller.isClosed) _controller.add(_state);
   }
 
   /// A transport failure as a short, human reason — never the raw exception,

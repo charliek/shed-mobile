@@ -1,11 +1,13 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
+import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
+import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
@@ -41,6 +43,20 @@ import '../../lanes/fake_lane_lease.dart';
 ///    interject. Collapsing the two hides a capability or offers a refusal.
 /// 4. **The send MODE is recomputed at send time.** A turn that ended between
 ///    the render and the tap must send `Queue`, whatever the toggle still says.
+/// 5. **Capabilities and the header come from the SNAPSHOT** (plan 025): the
+///    session's capabilities ride the lane's stream — there is no getter to
+///    cache them from at open — and the header reads the live session row.
+/// 6. **Stop, Cancel and the banner** (plan 025 §3.7.3): Stop exists only when
+///    the capabilities say `stop` and asks before it ends the session; Cancel
+///    only when they say `cancel` (and a turn is running); the banner tells a
+///    lane reconnecting on its own (`stale`, not `ended`) from one that is
+///    over.
+/// 7. **The settings chip and sheet** (plan 025 §3.10): offered only where the
+///    capabilities say `settings`, drawn from the session's own settings and
+///    re-drawn from its next `Settings` (a model change redraws the options, a
+///    change from another client appears in the open sheet), a refusal inline
+///    on its row, and a change lost to a drop "not confirmed" — never shown as
+///    applied — until the next `Settings`.
 void main() {
   group('the composer lifecycle', () {
     testWidgets('a send that lands after the screen is gone touches nothing', (
@@ -499,6 +515,75 @@ void main() {
       expect(find.textContaining('not accepting'), findsOneWidget);
     });
 
+    testWidgets('a send whose answer was LOST keeps its text and says so in '
+        'the desktop\'s words', (tester) async {
+      final rig = _Rig()
+        ..source.sendFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+      await _pump(tester, rig);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'did it land?',
+      );
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('lane-composer-error')))
+            .data,
+        laneSendOutcomeUnknown,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+            .controller!
+            .text,
+        'did it land?',
+        reason: 'never resent, never cleared: the person decides',
+      );
+    });
+
+    testWidgets('Cancel is gated on the snapshot\'s capabilities', (
+      tester,
+    ) async {
+      // A working session whose capabilities say `cancel: false` gets NO
+      // Cancel — a button whose only outcome is a refusal is worse than none.
+      final rig = _Rig(
+        snapshot: _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(interject: false, cancel: false),
+        ),
+      );
+      await _pump(tester, rig);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsNothing);
+      // The control: the same working session, saying `cancel`, gets one.
+      rig.bump(
+        _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(interject: false),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
+
+      // And before any seed has stated them, there is nothing to offer.
+      rig.bump(_snap(activity: BridgeRcActivity.working, capabilities: null));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-cancel')), findsNothing);
+    });
+
+    test('laneCancelOffered: the capability AND a running turn', () {
+      const working = BridgeRcActivity.working;
+      expect(laneCancelOffered(_caps(), working), isTrue);
+      expect(laneCancelOffered(_caps(cancel: false), working), isFalse);
+      expect(laneCancelOffered(null, working), isFalse);
+      expect(laneCancelOffered(_caps(), BridgeRcActivity.idle), isFalse);
+    });
+
     testWidgets('Cancel is offered only while a turn is running', (
       tester,
     ) async {
@@ -528,8 +613,10 @@ void main() {
       // toggle promises a capability that will never light up.
       final rig = _Rig(
         kind: 'opencode',
-        capabilities: _caps(kind: 'opencode', interject: false),
-        snapshot: _snap(activity: BridgeRcActivity.working),
+        snapshot: _snap(
+          activity: BridgeRcActivity.working,
+          capabilities: _caps(kind: 'opencode', interject: false),
+        ),
       );
       await _pump(tester, rig);
 
@@ -539,24 +626,30 @@ void main() {
       expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
     });
 
-    testWidgets('is present but DISABLED for gx while nothing is running', (
-      tester,
-    ) async {
-      final rig = _Rig(snapshot: _snap(activity: BridgeRcActivity.idle));
-      await _pump(tester, rig);
+    testWidgets(
+      'is present but DISABLED for an interject-capable adapter while '
+      'nothing is running',
+      (tester) async {
+        final rig = _Rig(snapshot: _snap(activity: BridgeRcActivity.idle));
+        await _pump(tester, rig);
 
-      final chip = find.byKey(const ValueKey('lane-interject'));
-      expect(chip, findsOneWidget, reason: 'gx advertises interject');
-      expect(
-        tester.widget<FilterChip>(chip).onSelected,
-        isNull,
-        reason: 'there is no turn to interject into',
-      );
+        final chip = find.byKey(const ValueKey('lane-interject'));
+        expect(
+          chip,
+          findsOneWidget,
+          reason: 'the fixture session advertises interject — in its SNAPSHOT',
+        );
+        expect(
+          tester.widget<FilterChip>(chip).onSelected,
+          isNull,
+          reason: 'there is no turn to interject into',
+        );
 
-      rig.bump(_snap(activity: BridgeRcActivity.working));
-      await _settle(tester);
-      expect(tester.widget<FilterChip>(chip).onSelected, isNotNull);
-    });
+        rig.bump(_snap(activity: BridgeRcActivity.working));
+        await _settle(tester);
+        expect(tester.widget<FilterChip>(chip).onSelected, isNotNull);
+      },
+    );
 
     testWidgets('the send mode is recomputed at SEND time', (tester) async {
       // The toggle records an intent. A turn that ended between the render
@@ -612,10 +705,113 @@ void main() {
       // The activity chip, in the shared activity colours.
       expect(find.byKey(const ValueKey('lane-activity')), findsOneWidget);
       expect(find.text('idle'), findsOneWidget);
-      // The row's own name is the title — a lane's snapshot carries no session
-      // title at all (the fold projects only `activity`).
+      // No live session row yet, so the row's own name is the title.
       expect(find.text('row7'), findsOneWidget);
       expect(find.text('7'), findsOneWidget);
+    });
+
+    testWidgets('the header reads the LIVE session row — its title and its '
+        'permission posture', (tester) async {
+      // Plan 025 §3.6.5: the row the lane was opened from is whatever the
+      // machine listed at that instant; the stream's row is the session's
+      // current state. A sheet-created craze session runs `bypass`, and the
+      // header is where that consequence is visible.
+      final rig = _Rig(snapshot: _snap());
+      await _pump(tester, rig);
+      // Before a seed carries a row: the machine feed's name, no posture.
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'row7',
+      );
+      expect(find.byKey(const ValueKey('lane-permission')), findsNothing);
+
+      rig.bump(
+        _snap(
+          session: _session(
+            title: 'fix the flaky test',
+            permissionMode: 'bypass',
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'fix the flaky test',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-permission'))).data,
+        'runs tools without asking',
+      );
+
+      // The live row is the newer truth about what it does NOT say, too: a
+      // row with no posture takes the line away, and one with no title falls
+      // back to the row's name rather than an empty subtitle.
+      rig.bump(_snap(session: _session(title: '')));
+      await _settle(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('lane-title'))).data,
+        'row7',
+      );
+      expect(find.byKey(const ValueKey('lane-permission')), findsNothing);
+    });
+
+    test('the permission line speaks the desktop\'s words', () {
+      expect(lanePermissionLine('bypass'), 'runs tools without asking');
+      expect(lanePermissionLine('prompt'), 'asks before running tools');
+      expect(lanePermissionLine('auto-edits'), 'permissions: auto-edits');
+      expect(lanePermissionLine('  '), isNull);
+      expect(lanePermissionLine(null), isNull);
+    });
+
+    test('the banner tells reconnecting from ended', () {
+      // Reconnecting: a craze lane resuming from its cursor — nothing is over.
+      expect(
+        laneStaleBannerText('hub connection lost', ended: false),
+        'reconnecting… · hub connection lost',
+      );
+      expect(
+        laneStaleBannerText('reconnecting', ended: false),
+        'reconnecting…',
+      );
+      expect(laneStaleBannerText('', ended: false), 'reconnecting…');
+      // Ended: the reason, as it always was — never "reconnecting".
+      expect(
+        laneStaleBannerText('session_closed', ended: true),
+        'session_closed',
+      );
+      expect(
+        laneStaleBannerText('unreachable', ended: true),
+        isNot(contains('reconnecting')),
+      );
+    });
+
+    testWidgets('a STALE lane that has not ended says reconnecting, and its '
+        'resume clears it', (tester) async {
+      final rig = _Rig(
+        snapshot: _snap(
+          rows: [_row(1, 'assistant', 'still here')],
+          stale: 'hub connection lost',
+        ),
+      );
+      await _pump(tester, rig);
+      expect(
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'reconnecting… · hub connection lost',
+      );
+      expect(find.byKey(const ValueKey('lane-note')), findsNothing);
+      expect(find.text('still here'), findsOneWidget);
+      // The input stays live: nothing is over.
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-send')))
+            .onPressed,
+        isNotNull,
+      );
+
+      // The silent resume lands: a lone same-generation Ready.
+      rig.bump(_snap(rows: [_row(1, 'assistant', 'still here')]));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
     });
 
     testWidgets('a stale lane names the reason, and a dead one says so', (
@@ -628,16 +824,19 @@ void main() {
       final rig = _Rig(
         snapshot: _snap(
           rows: [_row(1, 'assistant', 'last thing I said')],
-          stale: 'down: unknown_session',
+          stale: 'unknown_session',
+          ended: true,
         ),
       );
       await _pump(tester, rig);
 
       expect(find.byKey(const ValueKey('lane-stale')), findsOneWidget);
       expect(
-        find.textContaining('unknown_session'),
-        findsOneWidget,
-        reason: 'the reason, not a generic "disconnected"',
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'unknown_session',
+        reason:
+            'the reason, not a generic "disconnected" — and not '
+            '"reconnecting": this lane ENDED',
       );
       // The last complete generation is still readable.
       expect(find.text('last thing I said'), findsOneWidget);
@@ -661,6 +860,682 @@ void main() {
       );
     });
   });
+
+  group('Stop (plan 025 §3.7.3)', () {
+    testWidgets('is absent where the capabilities say no stop', (tester) async {
+      // Every opencode session, and a TUI-hosted craze one: `stop: false`.
+      final rig = _Rig(snapshot: _snap());
+      await _pump(tester, rig);
+      expect(find.byKey(const ValueKey('lane-stop')), findsNothing);
+      // The control: the same lane, once its capabilities say `stop`.
+      rig.bump(_snap(capabilities: _caps(stop: true)));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop')), findsOneWidget);
+    });
+
+    testWidgets('asks first: Keep stops nothing, Stop session stops it', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+      expect(
+        find.text('The agent ends; the transcript stays.'),
+        findsOneWidget,
+      );
+      expect(rig.source.stops, 0, reason: 'never one tap');
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      expect(rig.source.stops, 0, reason: 'Keep keeps');
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 1);
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+    });
+
+    testWidgets('a refused stop is said beside the header, not thrown', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)))
+        ..source.stopFailure = const BridgeLaneError.failed(
+          msg: 'unsupported: this host cannot stop its session',
+        );
+      await _pump(tester, rig);
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(
+        tester.widget<Text>(_bannerText('lane-stop-error')).data,
+        'unsupported: this host cannot stop its session',
+      );
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    });
+
+    testWidgets('a session that ENDS while the confirm is open is not '
+        'stopped: the answer is moot', (tester) async {
+      // Another client stops the session while this one's dialog sits open.
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+
+      rig.bump(
+        _snap(
+          capabilities: _caps(stop: true),
+          stale: 'session_closed',
+          ended: true,
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(rig.source.stops, 0, reason: 'nothing is sent');
+      expect(
+        find.byKey(const ValueKey('lane-stop-error')),
+        findsNothing,
+        reason: 'and nothing is refused: there was nothing left to stop',
+      );
+    });
+
+    testWidgets('a session that stops OFFERING stop while the confirm is open '
+        'is not stopped', (tester) async {
+      // A new incarnation whose capabilities say `stop: false` (a TUI host).
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+
+      rig.bump(_snap(capabilities: _caps()));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+
+      expect(
+        rig.source.stops,
+        0,
+        reason: 'the capability is the gate, then too',
+      );
+      expect(find.byKey(const ValueKey('lane-stop')), findsNothing);
+    });
+
+    test('laneStopOffered: the capability, on a lane that has not ended', () {
+      LaneState lane({
+        bool stop = true,
+        bool ended = false,
+        bool done = false,
+      }) => LaneState(
+        capabilities: _caps(stop: stop),
+        ended: ended,
+        abandoned: done,
+      );
+      expect(laneStopOffered(lane()), isTrue);
+      expect(laneStopOffered(lane(stop: false)), isFalse);
+      expect(laneStopOffered(lane(ended: true)), isFalse);
+      expect(laneStopOffered(lane(done: true)), isFalse);
+      expect(laneStopOffered(LaneState()), isFalse, reason: 'no seed yet');
+    });
+
+    testWidgets('goes quiet once the lane has ended', (tester) async {
+      final rig = _Rig(snapshot: _snap(capabilities: _caps(stop: true)));
+      await _pump(tester, rig);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-stop')))
+            .onPressed,
+        isNotNull,
+      );
+
+      rig.bump(
+        _snap(
+          capabilities: _caps(stop: true),
+          stale: 'session_closed',
+          ended: true,
+        ),
+      );
+      await _settle(tester);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-stop')))
+            .onPressed,
+        isNull,
+        reason: 'there is nothing left to stop',
+      );
+      expect(
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'session_closed',
+      );
+    });
+  });
+
+  group('the settings chip and sheet (plan 025 §3.10)', () {
+    const chip = ValueKey('lane-settings-chip');
+    const sheet = ValueKey('lane-settings');
+
+    /// A tall surface, so the whole sheet lays out and every row is on screen.
+    void tall(WidgetTester tester) {
+      tester.view.physicalSize = const Size(900, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    Future<void> openSheet(WidgetTester tester) async {
+      await tester.tap(find.byKey(chip));
+      await _settle(tester);
+      expect(find.byKey(sheet), findsOneWidget);
+    }
+
+    testWidgets('CONTROL: offered only where the capabilities say settings — '
+        'no chip, and no sheet to reach, otherwise', (tester) async {
+      tall(tester);
+      // Every opencode session: `settings: false`, even with a settings tree
+      // a producer sent against the contract.
+      final rig = _Rig(snapshot: _snap(settings: _grok46));
+      await _pump(tester, rig);
+      expect(find.byKey(chip), findsNothing);
+      expect(find.byKey(sheet), findsNothing);
+
+      // The control: the same lane once its capabilities say `settings`.
+      rig.bump(_snap(capabilities: _settingsCaps, settings: _grok46));
+      await _settle(tester);
+      expect(find.byKey(chip), findsOneWidget);
+      expect(_chipText(tester), 'Grok 4.6 · High · fast');
+    });
+
+    testWidgets('CONTROL: an open sheet LEAVES when the session stops offering '
+        'settings — hidden, never disabled', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      // A new incarnation whose capabilities say `settings: false`.
+      rig.bump(_snap(capabilities: _caps(kind: 'craze')));
+      await _settle(tester);
+      expect(find.byKey(sheet), findsNothing);
+      expect(find.byKey(chip), findsNothing);
+      expect(find.byKey(const ValueKey('lane-screen')), findsOneWidget);
+    });
+
+    testWidgets('before the first Settings: a "Settings" chip and an empty '
+        'sheet', (tester) async {
+      tall(tester);
+      final rig = _Rig(snapshot: _snap(capabilities: _settingsCaps));
+      await _pump(tester, rig);
+      expect(_chipText(tester), 'Settings');
+      await openSheet(tester);
+      expect(find.byKey(const ValueKey('lane-settings-empty')), findsOneWidget);
+    });
+
+    testWidgets('the sheet draws the session\'s rows: the model a list, the '
+        'options and the mode segmented, the current values selected', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      expect(_rowKeys(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ]);
+      for (final m in ['grok-4.6', 'composer-2.5', 'claude-opus-5']) {
+        expect(find.byKey(ValueKey('lane-setting-model:model-$m')), findsOne);
+      }
+      expect(_selected(tester, 'model:model', 'grok-4.6'), isTrue);
+      expect(_selected(tester, 'model:model', 'composer-2.5'), isFalse);
+      // A list line is checked; a segment is not a list line.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-model:model-grok-4.6')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-config:effort-high')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsNothing,
+        reason: 'four values: a segmented control',
+      );
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      expect(_selected(tester, 'config:fast', 'true'), isTrue);
+      expect(_selected(tester, 'mode:mode', 'agent'), isTrue);
+      expect(find.byKey(const ValueKey('lane-settings-meter')), findsNothing);
+    });
+
+    testWidgets('a press is pending — "applying…", no optimistic value, no '
+        'second press — and sends the option bound to the model SHOWN', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      rig.source.holdSet = Completer<void>();
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-low')),
+      );
+      await _settle(tester);
+      expect(_markText('config:effort'), pendingText);
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-medium')),
+      );
+      await _settle(tester);
+      expect(
+        rig.source.sets,
+        [
+          const BridgeLaneSettingChange.config(
+            id: 'effort',
+            value: 'low',
+            forModel: 'grok-4.6',
+          ),
+        ],
+        reason: 'one change, bound to the model this sheet drew (A13)',
+      );
+
+      // craze's delta, ahead of its answer.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, effort: 'low'),
+          settingsFrames: 1,
+        ),
+      );
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-setting-mark-config:effort')),
+        findsNothing,
+      );
+      expect(_selected(tester, 'config:effort', 'low'), isTrue);
+      expect(_chipText(tester), 'Grok 4.6 · Low · fast');
+    });
+
+    testWidgets('CONTROL: a model change re-renders the options from the NEXT '
+        'Settings — never from the press', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-model:model-claude-opus-5')),
+      );
+      await _settle(tester);
+      expect(rig.source.sets, [
+        const BridgeLaneSettingChange.model(id: 'claude-opus-5'),
+      ]);
+      expect(_rowKeys(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ], reason: 'grok-4.6\'s options until the session says otherwise');
+
+      rig.bump(
+        _snap(capabilities: _settingsCaps, settings: _opus, settingsFrames: 1),
+      );
+      await _settle(tester);
+      expect(_rowKeys(), [
+        'model:model',
+        'config:thinking',
+        'config:effort',
+        'config:context',
+        'config:fast',
+        'mode:mode',
+      ], reason: 'claude-opus-5\'s OWN options');
+      expect(_selected(tester, 'model:model', 'claude-opus-5'), isTrue);
+      // Five effort values now: a list.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-config:effort-max')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(_chipText(tester), 'Claude Opus 5 · Max');
+    });
+
+    testWidgets('CONTROL: a change made by another client appears in the open '
+        'sheet', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+      expect(_selected(tester, 'mode:mode', 'agent'), isTrue);
+
+      // Nobody pressed anything here: an attached TUI moved the mode.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, mode: 'plan'),
+          settingsFrames: 1,
+        ),
+      );
+      await _settle(tester);
+      expect(_selected(tester, 'mode:mode', 'plan'), isTrue);
+      expect(_selected(tester, 'mode:mode', 'agent'), isFalse);
+      expect(rig.source.sets, isEmpty);
+    });
+
+    testWidgets('CONTROL: a refusal is shown inline on ITS row', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      )..source.setFailure = const BridgeLaneError.notAccepting();
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-low')),
+      );
+      await _settle(tester);
+      expect(_markText('config:effort'), staleModelText);
+      for (final other in ['model:model', 'config:fast', 'mode:mode']) {
+        expect(
+          find.byKey(ValueKey('lane-setting-mark-$other')),
+          findsNothing,
+          reason: 'only the row that was refused',
+        );
+      }
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    });
+
+    testWidgets('CONTROL: a change lost to a drop is "not confirmed" — never '
+        'shown as applied — until the next Settings', (tester) async {
+      tall(tester);
+      final rig =
+          _Rig(
+              snapshot: _snap(
+                capabilities: _settingsCaps,
+                settings: _grok46,
+                settingsFrames: 2,
+              ),
+            )
+            ..source.setFailure = const BridgeLaneError.outcomeUnknown(
+              msg: 'outcome unknown: the connection to craze dropped',
+            );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:fast-false')),
+      );
+      await _settle(tester);
+      expect(_markText('config:fast'), notConfirmedText);
+      expect(
+        _selected(tester, 'config:fast', 'true'),
+        isTrue,
+        reason: 'the old value until the session says otherwise',
+      );
+
+      // A read with nothing new to say: still not confirmed.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _grok46,
+          settingsFrames: 2,
+        ),
+      );
+      await _settle(tester);
+      expect(_markText('config:fast'), notConfirmedText);
+
+      // The next Settings: the change DID run.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, fast: 'false'),
+          settingsFrames: 3,
+        ),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-setting-mark-config:fast')),
+        findsNothing,
+      );
+      expect(_selected(tester, 'config:fast', 'false'), isTrue);
+      expect(rig.source.sets, hasLength(1), reason: 'never resent');
+    });
+
+    testWidgets('closing the sheet mid-change loses nothing: the mark is the '
+        'lane\'s', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      rig.source.holdSet = Completer<void>();
+      await _pump(tester, rig);
+      await openSheet(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-mode:mode-ask')),
+      );
+      await _settle(tester);
+      expect(_markText('mode:mode'), pendingText);
+
+      Navigator.of(tester.element(find.byKey(sheet))).pop();
+      await _settle(tester);
+      expect(find.byKey(sheet), findsNothing);
+      await openSheet(tester);
+      expect(_markText('mode:mode'), pendingText, reason: 'still in flight');
+
+      rig.source.setFailure = const BridgeLaneError.failed(msg: 'nope');
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(_markText('mode:mode'), 'nope');
+    });
+
+    testWidgets('a context meter only when the usage has tokens AND a window', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(
+          capabilities: _settingsCaps,
+          settings: _with(
+            _grok46,
+            usage: BridgeLaneUsage(
+              contextTokens: BigInt.from(68000),
+              contextWindow: BigInt.from(200000),
+            ),
+          ),
+        ),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+      expect(find.byKey(const ValueKey('lane-settings-meter')), findsOneWidget);
+      expect(find.text('68k / 200k tokens · 34%'), findsOneWidget);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// the settings fixtures (craze's permodel cursor, as shed-craze orders it)
+// ---------------------------------------------------------------------------
+
+/// A craze session that offers settings.
+final _settingsCaps = _caps(kind: 'craze', settings: true);
+
+List<BridgeLaneChoice> _offOn(String on) => [
+  const BridgeLaneChoice(id: 'false', name: 'Off'),
+  BridgeLaneChoice(id: 'true', name: on),
+];
+
+const _models = [
+  BridgeLaneChoice(id: 'grok-4.6', name: 'Grok 4.6'),
+  BridgeLaneChoice(id: 'composer-2.5', name: 'Composer 2.5'),
+  BridgeLaneChoice(id: 'claude-opus-5', name: 'Claude Opus 5'),
+  BridgeLaneChoice(id: 'glm-5.2', name: 'GLM 5.2'),
+];
+
+const _modes = [
+  BridgeLaneChoice(id: 'agent', name: 'Agent'),
+  BridgeLaneChoice(id: 'plan', name: 'Plan'),
+  BridgeLaneChoice(id: 'ask', name: 'Ask'),
+];
+
+/// grok-4.6: effort (four values) and fast.
+final _grok46 = _with(
+  const BridgeLaneSettings(models: _models, modes: _modes, options: []),
+);
+
+/// claude-opus-5: thinking, effort (five values), context and fast.
+final _opus = BridgeLaneSettings(
+  model: 'claude-opus-5',
+  models: _models,
+  mode: 'agent',
+  modes: _modes,
+  options: [
+    BridgeLaneSetting(
+      id: 'thinking',
+      name: 'Thinking',
+      category: 'thought_level',
+      current: 'true',
+      values: _offOn('On'),
+    ),
+    const BridgeLaneSetting(
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      current: 'max',
+      values: [
+        BridgeLaneChoice(id: 'low', name: 'Low'),
+        BridgeLaneChoice(id: 'medium', name: 'Medium'),
+        BridgeLaneChoice(id: 'high', name: 'High'),
+        BridgeLaneChoice(id: 'xhigh', name: 'Extra High'),
+        BridgeLaneChoice(id: 'max', name: 'Max'),
+      ],
+    ),
+    const BridgeLaneSetting(
+      id: 'context',
+      name: 'Context',
+      category: 'model_config',
+      current: '300k',
+      values: [
+        BridgeLaneChoice(id: '300k', name: '300K'),
+        BridgeLaneChoice(id: '1m', name: '1M'),
+      ],
+    ),
+    BridgeLaneSetting(
+      id: 'fast',
+      name: 'Fast',
+      category: 'model_config',
+      current: 'false',
+      values: _offOn('Fast'),
+    ),
+  ],
+);
+
+/// A grok-4.6 session with the values given.
+BridgeLaneSettings _with(
+  BridgeLaneSettings base, {
+  String effort = 'high',
+  String fast = 'true',
+  String mode = 'agent',
+  BridgeLaneUsage? usage,
+}) => BridgeLaneSettings(
+  model: 'grok-4.6',
+  models: base.models,
+  mode: mode,
+  modes: base.modes,
+  options: [
+    BridgeLaneSetting(
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      current: effort,
+      values: const [
+        BridgeLaneChoice(id: 'low', name: 'Low'),
+        BridgeLaneChoice(id: 'medium', name: 'Medium'),
+        BridgeLaneChoice(id: 'high', name: 'High'),
+        BridgeLaneChoice(id: 'xhigh', name: 'Extra High'),
+      ],
+    ),
+    BridgeLaneSetting(
+      id: 'fast',
+      name: 'Fast',
+      category: 'model_config',
+      current: fast,
+      values: _offOn('Fast'),
+    ),
+  ],
+  usage: usage,
+);
+
+/// The chip's words.
+String _chipText(WidgetTester tester) => tester
+    .widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('lane-settings-chip')),
+        matching: find.byType(Text),
+      ),
+    )
+    .data!;
+
+/// The sheet's rows, by key, in the order drawn.
+List<String> _rowKeys() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> &&
+          RegExp(r'^lane-setting-[a-z]+:[^-]+$').hasMatch(k.value);
+    })
+    .evaluate()
+    .map(
+      (e) => (e.widget.key! as ValueKey<String>).value.substring(
+        'lane-setting-'.length,
+      ),
+    )
+    .toList();
+
+/// Whether [row]'s [value] is the one it shows as current.
+bool _selected(WidgetTester tester, String row, String value) => tester
+    .widget<Semantics>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey('lane-setting-$row-$value')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    )
+    .properties
+    .selected!;
+
+/// The mark [row] shows inline, or null when it shows none.
+String? _markText(String row) {
+  final mark = find.byKey(ValueKey('lane-setting-mark-$row')).evaluate();
+  return mark.isEmpty ? null : (mark.single.widget as Text).data;
 }
 
 // ---------------------------------------------------------------------------
@@ -668,7 +1543,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3.example');
-const _ref = (machine: 'mini3', slug: '7');
+const _ref = (machine: 'mini3', kind: 'opencode', slug: '7');
 
 /// Every option button on screen, whatever its id — the finder the
 /// placeholder-permission control needs. Asserting a SPECIFIC absent key would
@@ -705,7 +1580,12 @@ Future<void> _pump(WidgetTester tester, _Rig rig) async {
       ],
       child: MaterialApp(
         theme: shedLightTheme,
-        home: const LaneScreen(machine: 'mini3', slug: '7', title: 'row7'),
+        home: const LaneScreen(
+          machine: 'mini3',
+          kind: 'opencode',
+          slug: '7',
+          title: 'row7',
+        ),
       ),
     ),
   );
@@ -720,21 +1600,54 @@ BridgeRcFeedMessage _row(int seq, String role, String text) =>
       text: text,
     );
 
+/// The fixture session's capabilities: interject-capable, so the interject
+/// cells have something to gate on. They ride the snapshot, as a real seed's
+/// do — an explicit `capabilities: null` is "no seed yet".
+const _fixtureCaps = BridgeLaneCapabilities(
+  kind: 'opencode',
+  interject: true,
+  cancel: true,
+  approvals: true,
+  historyCursor: true,
+  settings: false,
+  stop: false,
+);
+
 BridgeLaneSnapshot _snap({
   List<BridgeRcFeedMessage> rows = const [],
   BridgeRcActivity activity = BridgeRcActivity.idle,
   List<BridgeLaneApproval> approvals = const [],
   String? stale,
+  bool ended = false,
+  BridgeLaneSession? session,
+  BridgeLaneCapabilities? capabilities = _fixtureCaps,
+  BridgeLaneSettings? settings,
+  int settingsFrames = 0,
   int generation = 1,
 }) => BridgeLaneSnapshot(
   messages: rows,
   full: true,
   activity: activity,
+  session: session,
   generation: BigInt.from(generation),
   stale: stale,
+  ended: ended,
+  capabilities: capabilities,
+  settings: settings,
+  settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
-  needsCredentials: false,
 );
+
+BridgeLaneSession _session({required String title, String? permissionMode}) =>
+    BridgeLaneSession(
+      id: 'sess-7',
+      title: title,
+      cwd: '/home/shed/proj',
+      activity: BridgeRcActivity.idle,
+      pendingApprovals: 0,
+      approximate: false,
+      permissionMode: permissionMode,
+    );
 
 BridgeLaneApproval _approval({
   required BridgeLaneApprovalKind kind,
@@ -754,27 +1667,31 @@ BridgeLaneApproval _approval({
   requestJson: requestJson,
 );
 
-BridgeLaneCapabilities _caps({String kind = 'gx', bool interject = true}) =>
-    BridgeLaneCapabilities(
-      kind: kind,
-      interject: interject,
-      create: true,
-      cancel: true,
-      approvals: true,
-      historyCursor: true,
-    );
+BridgeLaneCapabilities _caps({
+  String kind = 'opencode',
+  bool interject = true,
+  bool cancel = true,
+  bool stop = false,
+  bool settings = false,
+}) => BridgeLaneCapabilities(
+  kind: kind,
+  interject: interject,
+  cancel: cancel,
+  approvals: true,
+  historyCursor: true,
+  settings: settings,
+  stop: stop,
+);
+
+/// The [Text] inside the banner keyed [key].
+Finder _bannerText(String key) =>
+    find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(Text));
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
-  _Rig({
-    BridgeLaneSnapshot? snapshot,
-    BridgeLaneCapabilities? capabilities,
-    String kind = 'gx',
-  }) : source = _FakeSource(
-         current: snapshot ?? _snap(),
-         caps: capabilities ?? _caps(),
-       ),
-       feed = _FakeFeed(kind: kind);
+  _Rig({BridgeLaneSnapshot? snapshot, String kind = 'opencode'})
+    : source = _FakeSource(current: snapshot ?? _snap()),
+      feed = _FakeFeed(kind: kind);
 
   final _FakeSource source;
   final _FakeFeed feed;
@@ -785,12 +1702,12 @@ class _Rig {
 }
 
 class _FakeSource implements LaneSource {
-  _FakeSource({required this.current, required this.caps});
+  _FakeSource({required this.current});
 
-  /// What the next `snapshot()` will answer with. `current`, not `snapshot` —
-  /// that name is a method on [LaneSource].
+  /// What the next `snapshot()` will answer with — the session's capabilities
+  /// included, since that is where they ride. `current`, not `snapshot` — that
+  /// name is a method on [LaneSource].
   BridgeLaneSnapshot current;
-  final BridgeLaneCapabilities caps;
   final _nudges = StreamController<bool>.broadcast();
 
   final specs = <BridgeLaneSpec>[];
@@ -802,6 +1719,8 @@ class _FakeSource implements LaneSource {
   /// the controller turns into state rather than an exception.
   Object? sendFailure;
   Object? answerFailure;
+  Object? stopFailure;
+  int stops = 0;
 
   /// When set, `send` awaits this before returning, so a test can unmount the
   /// screen while the verb is still in flight.
@@ -813,19 +1732,23 @@ class _FakeSource implements LaneSource {
   }
 
   @override
-  String gxProbeCommand() => "sh -c 'probe'";
-
-  @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async {
     specs.add(spec);
     return _FakeHandle();
   }
 
-  @override
-  Stream<bool> nudges(LaneHandle handle) => _nudges.stream;
+  /// A craze row's open — no spec, its hostId. Recorded, so a cell can say
+  /// which way a lane was opened.
+  final crazeOpens = <String>[];
 
   @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) => caps;
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async {
+    crazeOpens.add(hostId);
+    return _FakeHandle();
+  }
+
+  @override
+  Stream<bool> nudges(LaneHandle handle) => _nudges.stream;
 
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) => current;
@@ -862,10 +1785,27 @@ class _FakeSource implements LaneSource {
   }
 
   @override
-  Future<void> refreshCredentials(
-    LaneHandle handle,
-    Uint8List gxProbeStdout,
-  ) async {}
+  Future<void> stop(LaneHandle handle) async {
+    stops++;
+    final failure = stopFailure;
+    if (failure != null) throw failure;
+  }
+
+  /// Every settings change sent, in order.
+  final sets = <BridgeLaneSettingChange>[];
+  Object? setFailure;
+
+  /// When set, `set` awaits it — a change held PENDING.
+  Completer<void>? holdSet;
+
+  @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) async {
+    sets.add(change);
+    final hold = holdSet;
+    if (hold != null) await hold.future;
+    final failure = setFailure;
+    if (failure != null) throw failure;
+  }
 
   @override
   void close(LaneHandle handle) {}
@@ -895,7 +1835,7 @@ class _FakeFeed implements MachineFeed {
         shed: '',
         slug: _ref.slug,
         displayName: 'row7',
-        kind: const BridgeRcKind.gx(),
+        kind: const BridgeRcKind.opencode(),
         state: BridgeRcState.ready,
         managed: true,
         attention: false,
@@ -912,10 +1852,6 @@ class _FakeFeed implements MachineFeed {
   @override
   Stream<MachineFeedState> get updates =>
       const Stream<MachineFeedState>.empty();
-
-  @override
-  Future<Uint8List> probe(String wireCommand) async =>
-      Uint8List.fromList([9, 9]);
 
   @override
   Future<LaneLease> acquireForward(int remotePort) async =>

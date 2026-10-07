@@ -173,14 +173,20 @@ void main() {
       state: _state(
         caps: _caps(const [
           BridgeRcKind.opencode(),
-          BridgeRcKind.codex(),
+          // A codex tab is an unknown kind since plan 025 — and even
+          // advertised, an unknown kind is never creatable.
+          BridgeRcKind.other(raw: 'codex'),
           BridgeRcKind.shell(),
         ]),
       ),
     );
     expect(find.text('New session · mini3'), findsOneWidget);
     expect(find.text('opencode'), findsOneWidget);
-    expect(find.text('codex'), findsOneWidget);
+    // The negative control (plan 025 O3): codex and shell are advertised and
+    // their agents are installed, but neither is in `rcCreatableKinds`, so
+    // neither renders.
+    expect(find.text('codex'), findsNothing);
+    expect(find.text('shell'), findsNothing);
   });
 
   testWidgets('an unreachable machine offers no kinds, and says why', (
@@ -199,8 +205,9 @@ void main() {
   testWidgets('a machine with no capabilities falls back to the base kinds', (
     tester,
   ) async {
-    // An old `sx` cannot advertise. claude + shell have always existed, so the
-    // base set is honest — and a retry can genuinely self-heal a probe miss.
+    // An old `sx` cannot advertise. claude has always existed, so the base
+    // set is honest — and a retry can genuinely self-heal a probe miss. No
+    // shell (plan 025 O3): the base set is claude-rc alone now.
     await _pumpCreate(
       tester,
       const MachineRcTarget(machineName: 'mini3'),
@@ -208,7 +215,7 @@ void main() {
     );
     expect(find.textContaining('unavailable on mini3'), findsOneWidget);
     expect(find.text('claude-rc'), findsOneWidget);
-    expect(find.text('shell'), findsOneWidget);
+    expect(find.text('shell'), findsNothing);
   });
 
   testWidgets(
@@ -229,12 +236,7 @@ void main() {
             machinesProvider.overrideWith((ref) async => const [_mini3]),
             machineFeedProvider('mini3').overrideWith(
               (ref) => Stream.value(
-                _state(
-                  caps: _caps(const [
-                    BridgeRcKind.opencode(),
-                    BridgeRcKind.shell(),
-                  ]),
-                ),
+                _state(caps: _caps(const [BridgeRcKind.opencode()])),
               ),
             ),
           ],

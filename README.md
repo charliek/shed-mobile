@@ -47,8 +47,10 @@ Regenerating the bridge glue is a two-step codegen — `make frb-gen` (see below
 
 The client core is shared Rust (`rust/src/api/*.rs`), depending on four shed
 crates pinned to the same git rev — `shed-core` + `shed-app`, plus the two
-agent-lane adapters `shed-opencode` (plan 015) and `shed-gx` (plan 017) —
-reached over `flutter_rust_bridge` **2.13.0-beta.5**. FRB 2.13 renders
+agent-lane adapters `shed-opencode` (plan 015) and `shed-craze` (plan 025; the
+`shed-gx` adapter from plan 017 was retired in the same plan) — reached over
+`flutter_rust_bridge`
+**2.13.0-beta.5**. FRB 2.13 renders
 fielded Rust enums as Dart **sealed classes** (via `freezed`), so regenerating is
 TWO steps, always in this order after any `rust/src/api` change:
 

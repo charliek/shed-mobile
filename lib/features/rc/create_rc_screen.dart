@@ -2,16 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
+import '../craze/craze_create.dart';
+import '../craze/craze_create_sheet.dart';
 import '../create/create_rc_target.dart';
+import '../lanes/lane_screen.dart';
+import '../../lanes/lane_controller.dart';
 import '../../rc/rc_ui.dart';
 import '../../src/rust/api/dto_rc.dart';
 import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/primary_button.dart';
 
-/// Create one RC session: pick the kind, optionally set a name / workdir /
-/// kickoff prompt / permission mode, then create with `--wait` so the result
-/// already carries the derived state (and URL, for claude kinds).
+/// Create one session: pick the kind, then fill in what that kind takes.
+///
+/// **Exactly three kinds** (plan 025 O3): Claude and opencode, launched as
+/// roost tabs (a workdir and nothing else — see [CreateRcTarget.acceptsKickoff]),
+/// and **craze** — offered where the target's craze source is live and can
+/// create — whose own sheet ([CrazeCreateSheet]) takes the provider, the
+/// directory and an optional first prompt. A craze session created here opens
+/// its transcript at once, in place of this screen.
 class CreateRcScreen extends ConsumerStatefulWidget {
   const CreateRcScreen({required this.target, super.key});
 
@@ -25,6 +34,14 @@ class CreateRcScreen extends ConsumerStatefulWidget {
 
 class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   BridgeRcKind _kind = defaultRcKind;
+
+  /// The craze sheet has been on screen — chosen, the only kind offered, or a
+  /// craze create still in flight to come back to. While true, the craze
+  /// choice stays on screen even when the machine's craze stops offering a
+  /// create under it — the sheet then says why and keeps the typed form (plan
+  /// 025 §3.8), rather than the choice silently vanishing and taking the form
+  /// off screen with it. Picking another kind clears it.
+  bool _crazeChosen = false;
   final _name = TextEditingController();
   final _workdir = TextEditingController();
   final _prompt = TextEditingController();
@@ -37,6 +54,60 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   // second in-flight probe before the provider transitions to loading; cleared
   // (via `ref.listen` in build) once the overview reload settles.
   bool _retrying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // A craze create still running — or one whose outcome is unknown, which
+    // only "Try again" here can resolve — reopens on the craze choice, so the
+    // same form and the same request id are what the person sees.
+    final origin = widget.target.crazeOrigin;
+    if (origin != null) {
+      final phase = ref.read(crazeDraftProvider(origin)).phase;
+      if (phase == CrazePhase.submitting || phase == CrazePhase.unknown) {
+        _kind = const BridgeRcKind.craze();
+        _crazeChosen = true;
+      }
+    }
+  }
+
+  /// A craze create landed while its sheet was on screen (plan 025 §3.8):
+  /// this screen gives way to the new session's transcript — at once, the row
+  /// is already listed — and says what became of a first prompt craze did not
+  /// take. A session that has already ended has no transcript to open.
+  void _crazeCreated(String origin, CrazeCreated c) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final navigator = Navigator.of(context);
+    logDriveState(
+      'screen=craze-create created=${c.hostId} ended=${c.ended} '
+      'prompt=${c.created.prompt}',
+    );
+    if (c.ended) {
+      messenger?.showSnackBar(const SnackBar(content: Text(crazeCreatedEnded)));
+      navigator.pop();
+      return;
+    }
+    final notice = promptNotice(c.created);
+    if (notice != null) {
+      messenger?.showSnackBar(
+        SnackBar(
+          key: const ValueKey('craze-create-prompt-notice'),
+          content: Text(notice.join('\n')),
+        ),
+      );
+    }
+    navigator.pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => LaneScreen(
+          machine: origin,
+          kind: crazeLaneKind,
+          slug: c.hostId,
+          title: c.created.session.title,
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -53,9 +124,9 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   /// [_permissionMode] from riding along to it); otherwise the
   /// (already capability-gated) claude dropdown value for a claude kind
   /// (nullable → claude's own default); a fixed autonomous `auto` for the
-  /// other agent kinds (codex/cursor/opencode), which have no dropdown and are
-  /// only offered when capabilities are present; null for shell (no posture).
-  /// The service re-drops it for a posture-less kind.
+  /// other agent kinds (opencode), which have no dropdown and are only offered
+  /// when capabilities are present; null for shell (no posture). The service
+  /// re-drops it for a posture-less kind.
   String? _modeFor(BridgeRcKind kind, String? claudeMode) {
     if (!widget.target.acceptsKickoff) return null;
     if (kind.runsClaude) return claudeMode;
@@ -124,15 +195,36 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
         (_permissionMode != null && modes.contains(_permissionMode))
         ? _permissionMode
         : null;
+    // craze, once chosen, stays a choice while its source cannot create — the
+    // sheet says why, and the typed form stays on screen (plan 025 §3.8).
+    final crazeOrigin = widget.target.crazeOrigin;
+    const craze = BridgeRcKind.craze();
+    final kinds = [
+      ...offered,
+      if (crazeOrigin != null &&
+          _crazeChosen &&
+          _kind == craze &&
+          !offered.contains(craze))
+        craze,
+    ];
     // The effective selection: keep the user's pick when still offered, else fall
     // to the first offered kind (or null when the shed offers none).
-    final BridgeRcKind? selected = offered.contains(_kind)
+    final BridgeRcKind? selected = kinds.contains(_kind)
         ? _kind
-        : (offered.isEmpty ? null : offered.first);
+        : (kinds.isEmpty ? null : kinds.first);
+    final crazeSelected = crazeOrigin != null && selected == craze;
+    // The craze sheet is on screen — chosen, or the only kind there is (a
+    // machine with craze and no roost): from here on it stays, exactly as a
+    // chosen one does, until another kind is picked. A field, not state: this
+    // build already renders it, so nothing needs to rebuild for it.
+    if (crazeSelected) {
+      _kind = craze;
+      _crazeChosen = true;
+    }
     logDriveState(
       'screen=create-rc caps=${view.logToken} '
       'kind=${selected?.wire ?? '-'} '
-      'offered=${offered.map((k) => k.wire).join(',')}',
+      'offered=${kinds.map((k) => k.wire).join(',')}',
     );
     return Scaffold(
       key: const ValueKey('create-rc-screen'),
@@ -175,17 +267,22 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                   ],
                 ),
               )
-            else if (offered.isNotEmpty)
+            else if (kinds.isNotEmpty)
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final k in offered)
+                  for (final k in kinds)
                     _KindChip(
                       key: ValueKey('createrc-kind-${k.wire}'),
                       label: k.wire,
                       selected: selected == k,
-                      onTap: _busy ? null : () => setState(() => _kind = k),
+                      onTap: _busy
+                          ? null
+                          : () => setState(() {
+                              _kind = k;
+                              _crazeChosen = k == craze;
+                            }),
                     ),
                 ],
               )
@@ -223,11 +320,21 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             ],
             const SizedBox(height: 16),
+            // craze's own sheet in place of the roost launch form: what to
+            // start is craze's question (its providers, its recent
+            // directories), and it creates through the machine's craze source.
+            if (crazeSelected)
+              CrazeCreateSheet(
+                key: ValueKey('craze-create-$crazeOrigin'),
+                origin: crazeOrigin,
+                machine: widget.target.label,
+                onCreated: (c) => _crazeCreated(crazeOrigin, c),
+              ),
             // The optional detail fields, offered only where the target can
             // actually carry them: a roost-backed machine titles its own tab
             // and takes no kickoff prompt or posture, and a field whose
             // contents would be dropped is worse than no field at all.
-            if (widget.target.acceptsKickoff) ...[
+            if (!crazeSelected && widget.target.acceptsKickoff) ...[
               TextField(
                 key: const ValueKey('createrc-name'),
                 controller: _name,
@@ -238,16 +345,19 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            TextField(
-              key: const ValueKey('createrc-workdir'),
-              controller: _workdir,
-              enabled: !_busy,
-              decoration: InputDecoration(
-                labelText: widget.target.workdirFieldLabel,
+            if (!crazeSelected) ...[
+              TextField(
+                key: const ValueKey('createrc-workdir'),
+                controller: _workdir,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: widget.target.workdirFieldLabel,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            if (widget.target.acceptsKickoff &&
+              const SizedBox(height: 12),
+            ],
+            if (!crazeSelected &&
+                widget.target.acceptsKickoff &&
                 selected != null &&
                 selected.acceptsPrompt)
               TextField(
@@ -262,7 +372,8 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
               ),
             // The full permission-mode picker is claude-only; the other agent
             // kinds run under an autonomous `auto` default (no dropdown).
-            if (widget.target.acceptsKickoff &&
+            if (!crazeSelected &&
+                widget.target.acceptsKickoff &&
                 selected != null &&
                 selected.runsClaude) ...[
               const SizedBox(height: 12),
@@ -286,15 +397,17 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                     : (v) => setState(() => _permissionMode = v),
               ),
             ],
-            const SizedBox(height: 28),
-            PrimaryButton(
-              key: const ValueKey('createrc-submit'),
-              label: _busy ? 'Creating…' : 'Create',
-              onPressed: (_busy || selected == null)
-                  ? null
-                  : () => _create(selected, claudeMode),
-            ),
-            if (_error != null) ...[
+            if (!crazeSelected) ...[
+              const SizedBox(height: 28),
+              PrimaryButton(
+                key: const ValueKey('createrc-submit'),
+                label: _busy ? 'Creating…' : 'Create',
+                onPressed: (_busy || selected == null)
+                    ? null
+                    : () => _create(selected, claudeMode),
+              ),
+            ],
+            if (!crazeSelected && _error != null) ...[
               const SizedBox(height: 16),
               Text(
                 _error!,

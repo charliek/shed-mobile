@@ -387,9 +387,11 @@ pub async fn roost_tab_close(local_port: u16, tab_id: i64) -> Result<(), String>
 ///
 /// The argv is [`shed_app::roost::launch_argv`]'s and nothing else (plan 013
 /// §4: prompts and permission modes are a later slice). An unrecognized kind —
-/// or a kind roost has no launch recipe for, `shell` and `grok` included — is
-/// refused BY NAME here rather than opening an empty tab somebody has to notice
-/// and close.
+/// or a kind roost has no launch recipe for, `shell` and `craze` included, and
+/// since plan 025 the four retired direct-agent kinds (codex, cursor, gx,
+/// grok), which decode as unknown kinds now — is refused BY NAME here rather
+/// than opening an empty tab somebody has to notice and close. A craze session
+/// is created through the machine's craze source, never through `tab.open`.
 ///
 /// `project_id: 0` asks roost for its default project; `cols`/`rows` are left at
 /// zero so roost picks its own initial geometry (the phone never renders this
@@ -951,11 +953,23 @@ mod tests {
     /// connection is attempted — so the failure names the mistake instead of
     /// timing out against a machine that was never the problem.
     ///
-    /// `grok` used to sit in this list and does not any more (plan 017): it is a
-    /// launchable kind with its own binary, lane-less by design.
+    /// Plan 025 moved the line twice: `craze` joins the refused list (its
+    /// sessions are created through craze's own source, never a roost tab),
+    /// and so do the four retired direct-agent kinds — `gx` and `grok` were
+    /// the newest launch recipes before that plan and are unknown kinds now.
     #[tokio::test]
     async fn opening_a_tab_for_an_unlaunchable_kind_is_refused_by_name() {
-        for kind in ["gpt-next", "shell", "claude-broker", ""] {
+        for kind in [
+            "gpt-next",
+            "shell",
+            "claude-broker",
+            "",
+            "craze",
+            "codex",
+            "cursor",
+            "gx",
+            "grok",
+        ] {
             // Port 1 is deliberately dead: reaching it would mean the kind check
             // did not happen first.
             let err = roost_tab_open(1, "mini3".into(), kind.to_string(), "/home/shed".into())
@@ -972,11 +986,9 @@ mod tests {
         }
 
         // The control: a launchable kind gets PAST the check and fails on the
-        // transport instead, so the test above is not passing vacuously. `grok`
-        // and `gx` are in here because they are the two newest recipes — a
-        // client that still carried the old "grok is unlaunchable" belief would
-        // refuse a launch the host would have accepted.
-        for kind in ["opencode", "gx", "grok"] {
+        // transport instead, so the test above is not passing vacuously. Both
+        // of the palette's two kinds, since plan 025 shrank it to them.
+        for kind in ["claude-rc", "opencode"] {
             let err = roost_tab_open(1, "mini3".into(), kind.into(), "/home/shed".into())
                 .await
                 .expect_err("nothing is listening on port 1");
@@ -1041,12 +1053,15 @@ mod tests {
     ///
     /// **`feed` is a KIND CEILING, not a row promise** (S6, plan 022 §3.2).
     /// `roost_kind_features(kind, lane_attached)` answers `"messages"` exactly
-    /// when a lane adapter exists for the kind — so `opencode` and `gx` claim
-    /// the transcript their adapters produce, and a bare-TUI kind like `grok`
-    /// claims the activity dimension it does carry. **Never `"none"`**: with
-    /// the hub gone there is no producer of that word left anywhere, and a
-    /// roost row always carries an activity dimension folded out of
-    /// `agent_lifecycle`.
+    /// when a lane adapter exists for the kind — so `opencode` claims the
+    /// transcript its adapter produces, and `claude-rc` claims the activity
+    /// dimension it does carry. **Never `"none"`**: with the hub gone there is
+    /// no producer of that word left anywhere, and a roost row always carries
+    /// an activity dimension folded out of `agent_lifecycle`.
+    ///
+    /// Two kinds since plan 025 (shed#390): codex, cursor, gx and grok left
+    /// the palette, and a roost tab running one of them directly is a plain
+    /// `Other` row that this block names no features for.
     ///
     /// The consequence a renderer must not get wrong, and the reason this test
     /// is explicit about it: a card offers a transcript on
@@ -1057,7 +1072,7 @@ mod tests {
         let caps = roost_capabilities();
         // Every roost kind, ceiling or not: the attach affordance is the peek
         // and nothing steers.
-        for kind in ["claude-rc", "codex", "opencode", "cursor", "gx", "grok"] {
+        for kind in ["claude-rc", "opencode"] {
             let f = caps
                 .kind_features
                 .get(kind)
@@ -1069,23 +1084,24 @@ mod tests {
             assert!(f.input.is_empty(), "{kind}");
             assert_ne!(f.feed, "none", "{kind}: the hub's word has no producer left");
         }
-        // The two kinds an agent-lane adapter exists for claim the feed the
-        // adapter produces; every other kind claims the activity dimension.
-        for kind in ["opencode", "gx"] {
-            let f = &caps.kind_features[kind];
-            assert_eq!(f.feed, "messages", "{kind}: a lane adapter exists");
-            assert!(f.watch, "{kind}: watch is feed==messages, in lockstep");
-        }
-        for kind in ["claude-rc", "codex", "cursor", "grok"] {
-            let f = &caps.kind_features[kind];
-            assert_eq!(f.feed, "activity", "{kind}: no lane adapter");
-            assert!(!f.watch, "{kind}: watch is feed==messages, in lockstep");
-        }
-        assert!(caps.kinds.contains(&BridgeRcKind::Opencode));
-        // The two grok kinds map through the bridge as themselves, not as
-        // `Other { raw: "gx" }` — the gate that would otherwise fail silently.
-        assert!(caps.kinds.contains(&BridgeRcKind::Gx));
-        assert!(caps.kinds.contains(&BridgeRcKind::Grok));
+        // The kind an agent-lane adapter exists for claims the feed the adapter
+        // produces; the other claims the activity dimension.
+        let f = &caps.kind_features["opencode"];
+        assert_eq!(f.feed, "messages", "opencode: a lane adapter exists");
+        assert!(f.watch, "opencode: watch is feed==messages, in lockstep");
+        let f = &caps.kind_features["claude-rc"];
+        assert_eq!(f.feed, "activity", "claude-rc: no lane adapter");
+        assert!(!f.watch, "claude-rc: watch is feed==messages, in lockstep");
+        // Exactly the two-kind palette, and nothing retired left behind under a
+        // name the app would still render a feature row for.
+        assert_eq!(
+            caps.kinds,
+            vec![BridgeRcKind::ClaudeRc, BridgeRcKind::Opencode],
+            "the roost palette is claude-rc and opencode (plan 025)"
+        );
+        let mut named: Vec<&str> = caps.kind_features.keys().map(String::as_str).collect();
+        named.sort_unstable();
+        assert_eq!(named, ["claude-rc", "opencode"]);
         // contract v2 is what tells a client to READ `attach` rather than assume
         // tmux — without it the gate would fall back to the old behaviour.
         assert_eq!(caps.rc_version, 2);

@@ -4,6 +4,7 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../core/app_error.dart';
 import '../../lanes/lane_controller.dart';
+import '../../lanes/lane_settings.dart';
 import '../../lanes/lane_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
@@ -14,14 +15,16 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/feed_rows.dart';
+import 'lane_settings_sheet.dart';
 
 /// **One agent lane, on a phone** (plan 018 §3.12).
 ///
-/// The transcript of a `gx`/`opencode` session running on a machine, the asks it
-/// is blocked on, and the two things a person does about them: answer, or say
-/// something. Reached from a machine session row that carries an `agentLane`
-/// stamp — and ONLY from such a row, because [laneControllerProvider] refuses a
-/// row with no stamp rather than opening a lane that can never connect.
+/// The transcript of an agent session running on a machine (an `opencode` lane
+/// today; plan 025 adds craze's), the asks it is blocked on, and the two things
+/// a person does about them: answer, or say something. Reached from a machine
+/// session row that carries an `agentLane` stamp — and ONLY from such a row,
+/// because [laneControllerProvider] refuses a row with no stamp rather than
+/// opening a lane that can never connect.
 ///
 /// The layout follows [SessionWatchScreen] deliberately: a lane's rows ARE
 /// `RcFeedMessage`s, so the same [RcMessageTile] renders them and a transcript
@@ -47,13 +50,31 @@ import '../rc/feed_rows.dart';
 ///   card, which says it is waiting for details and offers only Reject.
 /// * **A refusal is state, not an exception.** [LaneController]'s verbs never
 ///   throw; the screen reads [LaneState.composerError] /
-///   [LaneState.approvalErrors] after the await and renders it beside the
-///   control that raised it, because `not_accepting` on a cancel means "the
-///   turn ended between the render and the tap" and that is only legible next
-///   to the button.
+///   [LaneState.approvalErrors] / [LaneState.stopError] after the await and
+///   renders it beside the control that raised it, because `not_accepting` on
+///   a cancel means "the turn ended between the render and the tap" and that is
+///   only legible next to the button.
+///
+/// ## What the session can do is the SNAPSHOT's (plan 025 §3.7.3)
+///
+/// Every affordance below is gated on the capabilities the lane's stream last
+/// stated ([LaneState.capabilities]), never on the kind and never on a copy
+/// taken at open: **Stop** exists only when they say `stop` (a TUI-hosted craze
+/// session, every opencode one, has none) and is never one tap — it ends the
+/// SESSION, so it asks first; **Cancel** exists only when they say `cancel`,
+/// and only while a turn is running; **Interject** only when they say
+/// `interject`. And the banner tells a lane that is RECONNECTING on its own
+/// (`stale`, not `ended`: a craze lane resuming from its cursor) from one that
+/// is over (`ended`) — [laneStaleBannerText].
+///
+/// **The settings chip** (plan 025 §3.10) rides the AppBar on a session whose
+/// capabilities say `settings` — and nowhere else, hidden, never disabled: the
+/// current model, effort and fast ([settingsChip]), and a tap opens the
+/// session's settings sheet ([LaneSettingsSheet]).
 class LaneScreen extends ConsumerStatefulWidget {
   const LaneScreen({
     required this.machine,
+    required this.kind,
     required this.slug,
     required this.title,
     super.key,
@@ -62,17 +83,22 @@ class LaneScreen extends ConsumerStatefulWidget {
   /// The machine whose feed owns the SSH connection this lane rides.
   final String machine;
 
+  /// The lane's kind — the row's stamp kind (`opencode`), or `craze` for a
+  /// craze row. Part of the lane's address ([LaneRef]): it is what keeps a
+  /// craze hostId and a roost tab id spelled alike from sharing a lane.
+  final String kind;
+
   /// The ROW's slug (roost's tab id) — the lane's identity, and deliberately
   /// not the agent session id, which is part of the stamp being reconciled.
   final String slug;
 
-  /// The row's display name, from the machine feed.
+  /// The row's display name, from the machine feed — the header's title until
+  /// the lane's LIVE session row has one.
   ///
-  /// Passed in rather than read from the lane: the bridge's snapshot projects
-  /// only the session's `activity` (`shed_app::lane_view` has nowhere to carry
-  /// the rest), so `BridgeLaneSession.title`/`cwd` are mirrored but unreachable
-  /// from a lane. The row's own name is the honest answer and costs no round
-  /// trip.
+  /// Since plan 025 the snapshot carries the session row the stream last sent
+  /// ([LaneState.session]), and the header reads its title from there once it
+  /// is seeded (see [laneHeaderTitle]). This is what renders before that, and
+  /// what a row whose session has no title of its own keeps.
   final String title;
 
   @override
@@ -95,12 +121,17 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// leaving the others enabled would offer a tap that silently does nothing.
   bool _answering = false;
 
+  /// A Stop is in flight — the confirm's own button, and the header's, go
+  /// quiet until the receipt (or the refusal) is back.
+  bool _stopping = false;
+
   /// What the transcript was showing last frame, so a new row scrolls the view
   /// only when the reader was already at the bottom.
   int _renderedRows = -1;
   BigInt? _renderedGeneration;
 
-  LaneRef get _ref => (machine: widget.machine, slug: widget.slug);
+  LaneRef get _ref =>
+      (machine: widget.machine, kind: widget.kind, slug: widget.slug);
 
   @override
   void dispose() {
@@ -199,6 +230,64 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     },
   );
 
+  /// **Stop the SESSION — after asking.** Stop ends the agent, not just this
+  /// transcript, so it is never one tap: a dialog says what it does and
+  /// offers Keep. The stop's completion is the lane ending (`session_closed`,
+  /// the banner's); a refusal or a lost receipt lands beside the header.
+  ///
+  /// **The answer is checked against the lane as it is AFTER the dialog**, not
+  /// as it was when the dialog opened: the dialog can sit open for as long as
+  /// the person likes, and meanwhile another client may stop the session (the
+  /// lane ends) or the session may stop offering `stop` (a new incarnation's
+  /// capabilities). Either way a "Stop session" tap is moot, and nothing is
+  /// sent ([laneStopOffered], the same rule the header's button reads).
+  Future<void> _confirmStop() async {
+    if (_stopping) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('lane-stop-confirm'),
+        title: const Text('Stop this session?'),
+        content: const Text('The agent ends; the transcript stays.'),
+        actions: [
+          TextButton(
+            key: const ValueKey('lane-stop-keep'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            key: const ValueKey('lane-stop-session'),
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.shed.errBg,
+              foregroundColor: context.shed.errFg,
+            ),
+            child: const Text('Stop session'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final LaneState live;
+    try {
+      live = _controller.state;
+    } on StateError {
+      // The row is gone (laneControllerProvider's refusal): nothing to stop.
+      return;
+    }
+    if (!laneStopOffered(live)) return;
+    await _guarded(
+      busy: _stopping,
+      setBusy: (v) => _stopping = v,
+      logKey: 'lane-stop',
+      run: () async {
+        final controller = _controller;
+        await controller.stop();
+        return controller.state.stopError;
+      },
+    );
+  }
+
   Future<void> _answer(String approvalId, BridgeLaneAnswer answer) => _guarded(
     busy: _answering,
     setBusy: (v) => _answering = v,
@@ -218,6 +307,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     final state = async.value;
     if (state == null) {
       return _shell(
+        state: null,
         child: async.hasError
             ? _centered('lane-unavailable', 'This lane is gone: ${async.error}')
             : const Center(
@@ -232,6 +322,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
     final approvals = state.approvals;
     return _shell(
+      state: state,
       child: Column(
         children: [
           _statusStrip(context, state),
@@ -246,7 +337,14 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               ShedStatusTone.err,
               'This lane is gone: ${async.error}',
             ),
-          if (state.stale != null) _staleBanner(context, state.stale!),
+          if (state.stale != null) _staleBanner(context, state),
+          if (state.stopError case final error?)
+            _banner(
+              context,
+              'lane-stop-error',
+              ShedStatusTone.err,
+              error.message,
+            ),
           if (_laneNote(state) case final note?) _noteBanner(context, note),
           Expanded(child: _transcript(context, state)),
           if (approvals.isNotEmpty)
@@ -272,11 +370,31 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     );
   }
 
-  Widget _shell({required Widget child}) => Scaffold(
+  Widget _shell({required LaneState? state, required Widget child}) => Scaffold(
     key: const ValueKey('lane-screen'),
     appBar: AppBar(
+      // Stop exists only when the session's streamed capabilities offer it,
+      // and goes quiet once the lane is over — there is nothing left to stop.
+      actions: [
+        if (state != null && (state.capabilities?.stop ?? false))
+          IconButton(
+            key: const ValueKey('lane-stop'),
+            tooltip: 'Stop the session',
+            color: context.shed.errFg,
+            icon: const Icon(Icons.dangerous_outlined),
+            onPressed: !_stopping && laneStopOffered(state)
+                ? _confirmStop
+                : null,
+          ),
+      ],
+      // The settings chip, under the title so a long model name never
+      // squeezes it: only where the session's capabilities say `settings`.
+      bottom: state != null && settingsOffered(state.capabilities)
+          ? _settingsChip(state)
+          : null,
       // Two lines, like the watch screen: the slug is what you came looking
-      // for, and the row's name answers "which session is this".
+      // for, and the session's name answers "which session is this" — from the
+      // LIVE session row once the stream has sent one (plan 025 §3.6.5).
       titleSpacing: 0,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,7 +402,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
         children: [
           Text(widget.slug, style: const TextStyle(fontSize: 17)),
           Text(
-            widget.title,
+            laneHeaderTitle(state?.session, widget.title),
+            key: const ValueKey('lane-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11.5, color: context.shed.fg3),
@@ -293,6 +412,39 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ),
     ),
     body: child,
+  );
+
+  /// The AppBar's settings chip: `<model> · <effort> · fast` from the current
+  /// values ([settingsChip]), "Settings" before the first `Settings` arrives.
+  /// A tap opens the sheet, which reads this same lane.
+  PreferredSizeWidget _settingsChip(LaneState state) => PreferredSize(
+    preferredSize: const Size.fromHeight(40),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+        child: ActionChip(
+          key: const ValueKey('lane-settings-chip'),
+          avatar: Icon(Icons.tune, size: 16, color: context.shed.accent),
+          label: Text(
+            settingsChip(state.settings ?? noSettings),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: sansStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: context.shed.accent,
+            ),
+          ),
+          backgroundColor: context.shed.accentSoft,
+          side: BorderSide.none,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          tooltip: 'Session settings: model, options, mode',
+          onPressed: () => showLaneSettingsSheet(context, _ref),
+        ),
+      ),
+    ),
   );
 
   Widget _centered(String key, String text) => Center(
@@ -349,9 +501,15 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// A lane has no lifecycle dimension of its own, so there is no
   /// lifecycle-trumps-activity gate to apply here: `stale` is the lane's answer
   /// to "is this current", and it has its own banner.
+  ///
+  /// The session's permission posture rides here too, from the LIVE row
+  /// (plan 025 §3.6.5): a session the craze create sheet started runs
+  /// `bypass`, and this is where that consequence is visible. A row that
+  /// states no posture (every opencode row) renders nothing for it.
   Widget _statusStrip(BuildContext context, LaneState state) {
     final c = context.shed;
     final display = rcActivityDisplay(state.activity);
+    final permission = lanePermissionLine(state.session?.permissionMode);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -375,6 +533,19 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               style: monoStyle(fontSize: 11, color: c.fg3),
             ),
           const Spacer(),
+          if (permission != null)
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Text(
+                  permission,
+                  key: const ValueKey('lane-permission'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: sansStyle(fontSize: 11.5, color: c.fg2),
+                ),
+              ),
+            ),
           if (state.capabilities?.kind case final kind?)
             Text(kind, style: monoStyle(fontSize: 11, color: c.fg3)),
         ],
@@ -385,9 +556,14 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// The transport is gone and these rows are the last complete generation.
   /// **With the reason** — "the machine is asleep" and "the agent restarted"
   /// are different problems, and flattening them to "disconnected" throws away
-  /// the only actionable part.
-  Widget _staleBanner(BuildContext context, String reason) =>
-      _banner(context, 'lane-stale', ShedStatusTone.warn, reason);
+  /// the only actionable part — and with WHICH kind of gone it is
+  /// ([laneStaleBannerText]): reconnecting on its own, or over.
+  Widget _staleBanner(BuildContext context, LaneState state) => _banner(
+    context,
+    'lane-stale',
+    ShedStatusTone.warn,
+    laneStaleBannerText(state.stale!, ended: state.ended),
+  );
 
   /// A lane-level note that is not staleness: an open that was refused, a
   /// credential refresh that failed, a re-open waiting out its backoff, or a
@@ -535,6 +711,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     final c = context.shed;
     final working = state.activity == BridgeRcActivity.working;
     final canInterject = state.capabilities?.interject ?? false;
+    final canCancel = laneCancelOffered(state.capabilities, state.activity);
     final enabled = !state.abandoned && !_sending;
     final error = state.composerError;
     return SafeArea(
@@ -548,7 +725,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (canInterject || working)
+            if (canInterject || canCancel)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -567,7 +744,11 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
                             : null,
                       ),
                     const Spacer(),
-                    if (working)
+                    // Offered only when the session's capabilities say
+                    // `cancel`, and only while a turn is running
+                    // ([laneCancelOffered]) — a button whose only outcome is
+                    // a refusal is worse than none.
+                    if (canCancel)
                       OutlinedButton.icon(
                         key: const ValueKey('lane-cancel'),
                         onPressed: enabled ? _cancel : null,
@@ -631,6 +812,73 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ),
     );
   }
+}
+
+/// The header's title: the LIVE session row's, once the stream has sent one
+/// with a title, and the machine feed's row name until then.
+///
+/// **The live row, not the one the lane was opened from** (plan 025 §3.6.5):
+/// a session opened the moment it was created was opened from the create's
+/// own row, and only the stream's row carries what the session says about
+/// itself now. A live row with an EMPTY title falls back too — an empty
+/// subtitle says less than the row's own name.
+@visibleForTesting
+String laneHeaderTitle(BridgeLaneSession? live, String rowTitle) {
+  final title = live?.title ?? '';
+  return title.isEmpty ? rowTitle : title;
+}
+
+/// **What the stale banner says** (plan 025 §3.7.3): a lane that is
+/// RECONNECTING on its own — `stale` and not `ended`, a craze lane resuming
+/// from its cursor — says "reconnecting…" (with the reason, when it names one):
+/// nothing is over, and the transcript catches up by itself. A lane that ENDED
+/// says its reason, as it always has, and the note below it says whether it is
+/// re-opening or given up on. Collapsing the two would tell a person who is
+/// watching a resume that the session went away, or one whose session closed
+/// that it is coming back.
+@visibleForTesting
+String laneStaleBannerText(String stale, {required bool ended}) {
+  if (ended) return stale;
+  final reason = stale.trim();
+  // A craze lane's own `Stale` says just this (shed-craze's watcher, and a
+  // lane that left a retired craze source), and saying it twice
+  // ("reconnecting… · reconnecting") would be noise.
+  if (reason.isEmpty || reason == 'reconnecting') return 'reconnecting…';
+  return 'reconnecting… · $reason';
+}
+
+/// **Whether Stop can be pressed** — the header's button, and the confirm's
+/// answer re-checked after its dialog closes: the session's streamed
+/// capabilities say `stop`, and the lane has not ended (or been given up on) —
+/// there is nothing left to stop then.
+@visibleForTesting
+bool laneStopOffered(LaneState state) =>
+    (state.capabilities?.stop ?? false) && !state.ended && !state.abandoned;
+
+/// **Whether Cancel is offered**: the session's streamed capabilities say
+/// `cancel` (null — no seed yet — says nothing), and a turn is running — a
+/// cancel with nothing to cancel is a refusal the agent would make. The
+/// desktop's `laneVerbs` gate, with the phone's "only while working" shape.
+@visibleForTesting
+bool laneCancelOffered(
+  BridgeLaneCapabilities? capabilities,
+  BridgeRcActivity activity,
+) => (capabilities?.cancel ?? false) && activity == BridgeRcActivity.working;
+
+/// The header's line for a session's permission posture (craze's `bypass` |
+/// `prompt`, plan 025 §3.6.5) — the desktop's `permissionLine`, word for word,
+/// so a sheet-created session says out loud on both clients that it runs tools
+/// without asking. An unknown word renders as itself; none at all renders
+/// nothing.
+@visibleForTesting
+String? lanePermissionLine(String? mode) {
+  final m = (mode ?? '').trim();
+  if (m.isEmpty) return null;
+  return switch (m) {
+    'bypass' => 'runs tools without asking',
+    'prompt' => 'asks before running tools',
+    _ => 'permissions: $m',
+  };
 }
 
 /// The frame every approval card shares: the agent's own title and detail, the

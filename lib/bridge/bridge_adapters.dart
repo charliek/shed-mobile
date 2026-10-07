@@ -154,7 +154,7 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     409,
   ),
   BridgeLaneError_NotAccepting() => AppError(
-    'LANE_NOT_ACCEPTING',
+    laneNotAcceptingCode,
     'the session is not accepting that right now',
     409,
   ),
@@ -169,7 +169,27 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     'LANE_UNSUPPORTED_KIND',
     'this build has no adapter for a "$kind" lane',
   ),
+  // A craze request whose answer was lost (plan 025 §3.3.4, §3.8): NOT a
+  // failure — the create may have started a session, the verb may have run.
+  // The create sheet branches on the variant itself (it keeps its request id
+  // on this one alone); a lane verb's refusal lands under this code, which the
+  // lane controller reads to say a lost send in the desktop's words.
+  BridgeLaneError_OutcomeUnknown(:final msg) => AppError(
+    laneOutcomeUnknownCode,
+    msg,
+  ),
 };
+
+/// The [AppError.code] of a lane verb the session refused because it is not
+/// accepting that right now ([BridgeLaneError_NotAccepting]) — on a settings
+/// option, craze's `stale_model`: the session left the model the option was
+/// chosen for (plan 025 §3.10), which the settings sheet words as such.
+const laneNotAcceptingCode = 'LANE_NOT_ACCEPTING';
+
+/// The [AppError.code] of a craze request whose answer was lost
+/// ([BridgeLaneError_OutcomeUnknown]) — what a caller holding only the
+/// [AppError] branches on, never the message.
+const laneOutcomeUnknownCode = 'LANE_OUTCOME_UNKNOWN';
 
 /// Coerce any caught object from a bridge call into an [AppError] (bridge calls
 /// throw [BridgeError] or [BridgeLaneError]; anything else is wrapped).

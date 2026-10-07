@@ -13,9 +13,10 @@ any app store.
 - **Browse and manage sheds** on each server: list, start, stop, delete, and
   create (with live SSE progress).
 - **Manage agent sessions** — the **roost tabs** running on a shed's or a
-  machine's `roost-session`, read over an SSH tunnel: launch a `claude-rc` /
-  `codex` / `opencode` / `cursor` / `gx` / `grok` tab, watch its live state, peek
-  at its pane, read an agent lane's transcript, and close it.
+  machine's `roost-session`, read over an SSH tunnel: launch a `claude-rc` or
+  `opencode` tab, watch any tab's live state (including one launched
+  elsewhere, e.g. `codex` / `cursor` / `grok`), peek at its pane, read an
+  agent lane's transcript, and close it.
 
 Everything happens on the device: it mints its own control tokens over SSH, pins
 each server's self-signed TLS certificate, and pins each server's SSH host key.

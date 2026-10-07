@@ -1,7 +1,9 @@
-import 'dart:typed_data';
-
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/lane.dart';
+
+/// How a craze session's lane is opened — by its machine's craze source, on
+/// the row's hostId. Production is `MachineFeed.openCrazeLane`.
+typedef CrazeLaneOpen = Future<BridgeLane> Function(String hostId);
 
 /// One open lane, as [LaneController] holds it — deliberately opaque.
 ///
@@ -23,23 +25,26 @@ abstract interface class LaneHandle {}
 /// Note what is NOT here: anything that folds. Dart pulls one atomic snapshot
 /// and merges it by the `full` flag; the fold is Rust's (`shed_app::lane_view`).
 abstract interface class LaneSource {
-  /// The command Dart execs on the far side to read gx's discovery, **verbatim
-  /// and composed entirely in Rust**. Dart must never build any part of it: SSH
-  /// has no argv API, so this crosses as one string the far side re-parses, and
-  /// shed's `tests/machine-transport` owns that wire line as a golden.
-  String gxProbeCommand();
-
   Future<LaneHandle> open(BridgeLaneSpec spec);
+
+  /// Open a CRAZE session's lane: [open] is the machine feed's
+  /// (`MachineFeed.openCrazeLane` — the lane its craze source opens on the
+  /// row's hostId, plan 025 §3.7.2), and the answer is the same [LaneHandle]
+  /// every other verb here takes. No spec and no forward: a craze lane reaches
+  /// its session through the source's own dial.
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId);
 
   /// One `true` per "something changed, take a snapshot". A second call on the
   /// same handle is refused Rust-side rather than splitting the nudges.
   Stream<bool> nudges(LaneHandle handle);
 
-  /// Cached at open, so it keeps answering after [close].
-  BridgeLaneCapabilities capabilities(LaneHandle handle);
-
   /// **The one read**, and the nudge acknowledgement: sync, atomic, and it
   /// clears the dirty bit. `sinceSeq` null asks for the whole generation.
+  ///
+  /// It is also where the session's capabilities, settings and live row are
+  /// read: they ride the lane's stream (plan 025 §3.2.1), so there is no
+  /// separate capabilities call to cache at open. It keeps answering after
+  /// [close], with the last view.
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq);
 
   Future<void> send(
@@ -56,13 +61,18 @@ abstract interface class LaneSource {
     required BridgeLaneAnswer answer,
   });
 
-  /// Hand a FRESH probe's stdout to a waiting gx discovery. Pinning resumes in
-  /// place — no `Down`, no re-open, the generation and the ring intact.
-  ///
-  /// **These bytes are one `cat` away from being a bearer token.** They are
-  /// parsed in Rust and dropped there; nothing on this side decodes, logs or
-  /// interpolates them.
-  Future<void> refreshCredentials(LaneHandle handle, Uint8List gxProbeStdout);
+  /// End the SESSION, not just this lane (plan 025 §3.7.3): craze's
+  /// `session.stop`, answered on the host's receipt. The stop's completion
+  /// arrives on the stream — `Down{"session_closed"}`, which ends the lane for
+  /// good. Offered only when the snapshot's capabilities say `stop`.
+  Future<void> stop(LaneHandle handle);
+
+  /// Change one of the session's settings (plan 025 §3.10): craze's
+  /// `session.set`, a new command per call. The change itself arrives on the
+  /// stream ahead of the answer (a `Settings` in the next snapshot); a config
+  /// change carries the model the sheet DISPLAYED (Amendment A13). Offered
+  /// only when the snapshot's capabilities say `settings`.
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change);
 
   /// Synchronous teardown. Idempotent; Rust's `Drop` is the backstop.
   void close(LaneHandle handle);
@@ -73,18 +83,15 @@ class BridgeLaneSource implements LaneSource {
   const BridgeLaneSource();
 
   @override
-  String gxProbeCommand() => gxProbeRemoteCommand();
-
-  @override
   Future<LaneHandle> open(BridgeLaneSpec spec) async =>
       _BridgeLaneHandle(await laneOpen(spec: spec));
 
   @override
-  Stream<bool> nudges(LaneHandle handle) => laneNudges(lane: _lane(handle));
+  Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async =>
+      _BridgeLaneHandle(await open(hostId));
 
   @override
-  BridgeLaneCapabilities capabilities(LaneHandle handle) =>
-      laneCapabilities(lane: _lane(handle));
+  Stream<bool> nudges(LaneHandle handle) => laneNudges(lane: _lane(handle));
 
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) =>
@@ -108,8 +115,11 @@ class BridgeLaneSource implements LaneSource {
   }) => laneAnswer(lane: _lane(handle), approvalId: approvalId, answer: answer);
 
   @override
-  Future<void> refreshCredentials(LaneHandle handle, Uint8List gxProbeStdout) =>
-      laneRefreshCredentials(lane: _lane(handle), gxProbeStdout: gxProbeStdout);
+  Future<void> stop(LaneHandle handle) => laneStop(lane: _lane(handle));
+
+  @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) =>
+      laneSet(lane: _lane(handle), change: change);
 
   @override
   void close(LaneHandle handle) {

@@ -46,10 +46,10 @@ typedef SshRunWire =
 
 /// One command's outcome on an already-open connection, output UNDECODED.
 ///
-/// Bytes, not strings, because the one caller that reaches for [execOn]
-/// directly is the gx credential probe, whose stdout carries a bearer token
-/// that is parsed in Rust and must never be decoded, logged or interpolated on
-/// this side of the bridge (plan 018 §3.11).
+/// Bytes, not strings: [execOn] is the seam a direct caller reaches for when a
+/// remote command's stdout may carry something — a credential, a token — that
+/// must never be decoded, logged or interpolated on this side of the bridge.
+/// [SshRunner._exec] decodes it to [SshResult] for its own ordinary callers.
 class SshExecResult {
   const SshExecResult({
     required this.exitCode,
@@ -71,8 +71,8 @@ class SshExecResult {
 ///
 /// The connection is neither opened nor closed here: this is the half of
 /// [SshRunner] that a long-lived consumer needs, where one client is shared by
-/// a roost tunnel, a lane's forwards and a one-shot probe, and closing it after
-/// a command would take the others down with it.
+/// a roost tunnel, a lane's forwards and a bootstrap exec, and closing it
+/// after a command would take the others down with it.
 ///
 /// Both output streams are drained to completion **before** `done` is awaited:
 /// dartssh2 can complete `done` while stdout still holds buffered data, and
@@ -116,10 +116,10 @@ Future<SshExecResult> execOn(
   // Either band can complete with an ERROR, and the first `await` below would
   // then throw straight past the other band's subscription and past the
   // session, leaving a live channel behind on the shared client. That matters
-  // more now than it did when this was private to `SshRunner`: the gx probe
-  // runs through here, on the one `SSHClient` a machine feed owns for
-  // everything, so a leaked channel is a leak for the whole app rather than
-  // for one call. Normal completion still falls through untouched.
+  // more now than it did when this was private to `SshRunner`: a direct
+  // caller may run through here on the one `SSHClient` a machine feed owns
+  // for everything, so a leaked channel is a leak for the whole app rather
+  // than for one call. Normal completion still falls through untouched.
   // **Registered BEFORE the first await, and that ordering is the whole point.**
   // An error handed to a `Completer` whose future has no listener YET is
   // reported to the zone as UNHANDLED at that instant — which fails the

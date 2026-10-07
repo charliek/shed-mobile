@@ -33,8 +33,8 @@
 ///
 /// ## `exit: None` follows shed-core, not either Dart precedent
 ///
-/// See [resolveBootstrapExit]. `SshRunner._resolveCode` and `MachineFeed.probe`
-/// keep their own rules for their own callers; this seam adopts neither.
+/// See [resolveBootstrapExit]. `SshRunner._resolveCode` keeps its own rule for
+/// its own callers; this seam adopts neither.
 library;
 
 import 'dart:async';
@@ -56,8 +56,8 @@ import 'roost_reach.dart';
 const int kSourceChunkBytes = 64 * 1024;
 
 /// Performing one `Step::Exec` on the far side. `MachineFeed.bootstrapExec` is
-/// the production one — it rides the feed's ONE `SSHClient`, like `probe()` and
-/// `acquireForward()` do, and never opens a second link.
+/// the production one — it rides the feed's ONE `SSHClient`, like
+/// `acquireForward()` does, and never opens a second link.
 typedef BootstrapExec =
     Future<ExecBytesOutcome> Function(
       String command,

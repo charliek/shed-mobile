@@ -60,7 +60,7 @@ cargo-test:
 	  root=$$(pwd); \
 	  cp "$$root/rust/Cargo.lock" "$$root/rust/.Cargo.lock.canonical"; \
 	  trap 'mv -f "$$root/rust/.Cargo.lock.canonical" "$$root/rust/Cargo.lock"' EXIT INT TERM; \
-	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode -p shed-gx && cargo test ); \
+	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode -p shed-craze && cargo test ); \
 	else \
 	  cd rust && cargo test --locked; \
 	fi
@@ -81,10 +81,13 @@ test:
 # The hermetic integration harness on the Flutter LINUX DESKTOP build
 # (integration_test/ — the agent-lane cells plus the two FRB-surface files).
 #
-# It drives the real bridge against shed's own gx/opencode fakes, hosted by
+# It drives the real bridge against shed's own opencode fake, hosted by
 # $(SHED_CHECKOUT)/desktop/tools/shedtest/fake_lane_server.py — so it needs a
 # shed checkout (a sibling by default) and `python3`, but no sshd, no network
-# and no agent.
+# and no agent. The craze cells (integration_test/craze_test.dart) also need
+# craze's pinned binaries: export SHED_CRAZE_BIN_DIR (shed's `make
+# craze-binaries` prints it) — they SKIP without it, and SHED_CRAZE_REQUIRE=1
+# makes that a failure, as CI does.
 #
 # `dbus-run-session` is unconditional rather than a fallback: the cells never
 # touch flutter_secure_storage (no `main()`, no MachineStore), but plugin

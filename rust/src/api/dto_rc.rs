@@ -22,20 +22,27 @@ use super::dto_lane::BridgeAgentLaneStamp;
 
 /// The kind of agent a session runs (mirrors `rc::RcKind`, unknown-kind policy
 /// preserved via `Other`). A fielded enum → a Dart sealed class.
+///
+/// **Plan 025 retired four kinds and added one** (shed#390), and this mirror
+/// moves with the pinned core: `Codex`, `Cursor`, `Gx` and `Grok` are gone — a
+/// roost tab running one of those agents directly now decodes as
+/// [`BridgeRcKind::Other`] with its raw source (`"codex"`, `"grok"`, …), which
+/// is exactly the plain row the retirement promises — and [`BridgeRcKind::Craze`]
+/// is new. The `From` below is exhaustive against `RcKind`, so a core that
+/// grows or drops a variant fails to compile here rather than folding it into
+/// `Other` unnoticed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeRcKind {
     ClaudeRc,
     ClaudeBroker,
-    Codex,
     Opencode,
-    Cursor,
-    /// grok's `gx` agent **with a remote lane bound** — the row shed promotes
-    /// once a roost tab's `gx.remote` metadata key appears (plan 017). roost
-    /// never says `gx`; its adapter reports `source: "grok"` either way.
-    Gx,
-    /// grok's `gx` agent with **no** lane: status through roost, no transcript.
-    /// Lane-less by design, not a degraded `Gx`.
-    Grok,
+    /// A craze-owned session — the lane craze provides for every agent but
+    /// Claude and opencode (plan 025). Not creatable through roost (craze's
+    /// own create sheet is that path), and it carries no permission-mode
+    /// posture of the roost kind (craze's settings are the mode surface) —
+    /// both are `shed_core::rc::RcKind::Craze`'s own answers, mirrored in
+    /// Dart's `BridgeRcKindUi`.
+    Craze,
     Shell,
     /// An unrecognized wire kind, raw string preserved.
     Other { raw: String },
@@ -46,11 +53,8 @@ impl From<RcKind> for BridgeRcKind {
         match k {
             RcKind::ClaudeRc => BridgeRcKind::ClaudeRc,
             RcKind::ClaudeBroker => BridgeRcKind::ClaudeBroker,
-            RcKind::Codex => BridgeRcKind::Codex,
             RcKind::Opencode => BridgeRcKind::Opencode,
-            RcKind::Cursor => BridgeRcKind::Cursor,
-            RcKind::Gx => BridgeRcKind::Gx,
-            RcKind::Grok => BridgeRcKind::Grok,
+            RcKind::Craze => BridgeRcKind::Craze,
             RcKind::Shell => BridgeRcKind::Shell,
             RcKind::Other(raw) => BridgeRcKind::Other { raw },
         }
@@ -106,6 +110,21 @@ impl From<RcActivity> for BridgeRcActivity {
             RcActivity::NeedsApproval => BridgeRcActivity::NeedsApproval,
             RcActivity::Idle => BridgeRcActivity::Idle,
             RcActivity::Unknown => BridgeRcActivity::Unknown,
+        }
+    }
+}
+
+/// The way back — for a row Dart hands to shared Rust
+/// (`super::craze::craze_fold_plan`). Total: the two enums are the same five
+/// words.
+impl From<BridgeRcActivity> for RcActivity {
+    fn from(a: BridgeRcActivity) -> Self {
+        match a {
+            BridgeRcActivity::Working => RcActivity::Working,
+            BridgeRcActivity::NeedsInput => RcActivity::NeedsInput,
+            BridgeRcActivity::NeedsApproval => RcActivity::NeedsApproval,
+            BridgeRcActivity::Idle => RcActivity::Idle,
+            BridgeRcActivity::Unknown => RcActivity::Unknown,
         }
     }
 }
@@ -322,7 +341,24 @@ impl BridgeRcSession {
         let mut row = BridgeRcSession::from(RcSession::from_dto(dto, "", ""));
         row.attention = session.attention;
         row.tab_id = Some(session.tab_id);
-        row.agent_lane = session.agent_lane().map(Into::into);
+        // **This build's kind filter, not roost's.** `RoostSession::agent_lane`
+        // answers whatever shed-core knows how to stamp, but this build only
+        // has an adapter for the kinds in `super::lane::LANE_KINDS`. Under the
+        // previous pin shed-core still stamped `gx` rows, and without this
+        // filter one crossed the bridge with a stamp Dart could tap: it would
+        // acquire a forward and open a `LaneScreen`, and only THEN hear
+        // `lane_open`'s `UnsupportedLane` refusal — a dead Transcript action
+        // and a wasted round trip. At the current pin shed-core stamps
+        // `opencode` alone (plan 025 retired gx there too), so the filter
+        // drops nothing today; it stays as the belt for the next time the two
+        // lists disagree, since dropping here makes the row a plain one,
+        // exactly as if roost had never stamped it. A craze session is not a
+        // stamp at all (its lane comes from the machine's craze source, plan
+        // 025 D4), so craze never needs to join `LANE_KINDS` for its rows.
+        row.agent_lane = session
+            .agent_lane()
+            .map(BridgeAgentLaneStamp::from)
+            .filter(|stamp| super::lane::LANE_KINDS.contains(&stamp.kind.as_str()));
         row
     }
 }
@@ -371,25 +407,12 @@ mod tests {
         for (raw, want) in [
             (RcKind::ClaudeRc, BridgeRcKind::ClaudeRc),
             (RcKind::ClaudeBroker, BridgeRcKind::ClaudeBroker),
-            (RcKind::Codex, BridgeRcKind::Codex),
             (RcKind::Opencode, BridgeRcKind::Opencode),
-            (RcKind::Cursor, BridgeRcKind::Cursor),
-            // Without these two rows every gx/grok row would cross the bridge as
-            // `Other { raw: "gx" }` and render neutrally — the failure the
-            // unknown-kind policy is designed to make survivable, and therefore
-            // the one that would go unnoticed.
-            (RcKind::Gx, BridgeRcKind::Gx),
-            (RcKind::Grok, BridgeRcKind::Grok),
+            (RcKind::Craze, BridgeRcKind::Craze),
             (RcKind::Shell, BridgeRcKind::Shell),
         ] {
             assert_eq!(BridgeRcKind::from(raw), want);
         }
-        // The wire spellings, decoded through the core's own parser.
-        assert_eq!(BridgeRcKind::from(RcKind::from_wire("gx")), BridgeRcKind::Gx);
-        assert_eq!(
-            BridgeRcKind::from(RcKind::from_wire("grok")),
-            BridgeRcKind::Grok
-        );
         assert_eq!(
             BridgeRcKind::from(RcKind::Other("weird".into())),
             BridgeRcKind::Other { raw: "weird".into() }
@@ -399,6 +422,49 @@ mod tests {
             BridgeRcKind::from(RcKind::from_wire("gpt-next")),
             BridgeRcKind::Other { raw: "gpt-next".into() }
         );
+    }
+
+    /// **A craze row crosses as `Craze`, decoded through the core's own wire
+    /// parser** (plan 025 CM2).
+    ///
+    /// The arm that matters is the one the unknown-kind policy would otherwise
+    /// make survivable and therefore invisible: without it a craze-owned roost
+    /// tab (`source: "craze"`) would cross as `Other { raw: "craze" }` and
+    /// render as a neutral, affordance-less row — no error anywhere, just a
+    /// craze session the phone cannot name. So the assertion is on the WIRE
+    /// spelling through `RcKind::from_wire`, which is what a roost tab's source
+    /// goes through, and not only on a hand-built `RcKind::Craze`.
+    #[test]
+    fn a_craze_row_crosses_as_craze() {
+        assert_eq!(
+            BridgeRcKind::from(RcKind::from_wire("craze")),
+            BridgeRcKind::Craze
+        );
+        assert_ne!(
+            BridgeRcKind::from(RcKind::from_wire("craze")),
+            BridgeRcKind::Other {
+                raw: "craze".into()
+            },
+            "a craze row must not fall through to the neutral unknown-kind render"
+        );
+    }
+
+    /// **The four retired kinds are plain rows now** (plan 025, shed#390).
+    ///
+    /// A roost tab running codex, cursor, grok or gx directly still exists —
+    /// roost runs whatever it is asked to — and the retirement's promise is that
+    /// it renders as a plain row with roost's activity and directory, not that
+    /// it disappears. Through the bridge that is `Other` with the raw source
+    /// kept verbatim, which is the unknown-kind policy's neutral render.
+    #[test]
+    fn the_retired_kinds_cross_as_plain_other_rows() {
+        for wire in ["codex", "cursor", "grok", "gx"] {
+            assert_eq!(
+                BridgeRcKind::from(RcKind::from_wire(wire)),
+                BridgeRcKind::Other { raw: wire.into() },
+                "{wire} must cross as a plain Other row with its raw source"
+            );
+        }
     }
 
     #[test]
@@ -644,6 +710,93 @@ mod tests {
         // this the phone would happily dial an agent's control surface on
         // another host.
         assert_eq!(row_with("http://10.0.0.4:4096").agent_lane, None);
+    }
+
+    /// **A former gx tab is a plain row with no lane** (plan 025 CM1 finding
+    /// 3, re-scoped at the CM2 re-pin).
+    ///
+    /// Under the previous pin `RoostSession::agent_lane` still stamped a `gx`
+    /// lane off a `grok`-sourced tab with a `gx.remote` metadata key, and the
+    /// phone dropped it with its own `super::lane::LANE_KINDS` filter. At the
+    /// current pin shed-core no longer promotes that tab at all: it is a plain
+    /// `Other("grok")` row and stamps nothing, so the row reaches Dart with
+    /// no Transcript affordance and no forward, whichever side would have
+    /// refused it. The opencode row is the control — same shape, and its
+    /// stamp survives whole, so neither shed-core nor the filter catches a
+    /// kind this build CAN open.
+    #[test]
+    fn a_roost_row_drops_a_lane_stamp_this_build_cannot_open() {
+        use shed_core::roost::RoostSession;
+
+        fn row_with(source: &str, metadata: serde_json::Value) -> BridgeRcSession {
+            let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
+                "id": "7",
+                "project_id": "2",
+                "title": "lane",
+                "cwd": "/home/shed/work",
+                "state": "idle",
+                "has_notification": false,
+                "is_active": true,
+                "user_titled": false,
+                "position": 1,
+                "created_at": 1788769906_i64,
+                "last_active": 1788769906_i64,
+                "hook_active": true,
+                "shell_state": "unknown",
+                "agent_lifecycle": "working",
+                "ownership": {
+                    "source": source,
+                    "session_id": "ses_abc",
+                    "last_event_at": 1788769939_i64,
+                    "detail": "",
+                    "metadata": metadata
+                }
+            }))
+            .expect("the tab decodes");
+            let project = roost_ipc::messages::Project {
+                id: 2,
+                name: "Roost".into(),
+                cwd: "/home/shed".into(),
+                position: 0,
+                created_at: 1788769854,
+                tabs: Vec::new(),
+            };
+            BridgeRcSession::from_roost(&RoostSession::from_tab("mini3", &project, &tab))
+        }
+
+        // A `grok`-sourced tab with a `gx.remote` metadata key is exactly how
+        // the previous pin stamped a gx lane (`roost/model.rs:agent_kind`'s
+        // grok→gx promotion, retired in plan 025). Now a plain row.
+        let gx_row = row_with(
+            "grok",
+            serde_json::json!({"gx.remote": "http://127.0.0.1:2421"}),
+        );
+        assert_eq!(
+            gx_row.agent_lane, None,
+            "a gx stamp must not cross — this build has no adapter for it"
+        );
+        assert_eq!(
+            gx_row.kind,
+            BridgeRcKind::Other {
+                raw: "grok".into()
+            },
+            "a former gx tab is a plain row under its raw source"
+        );
+
+        // The control: an opencode stamp, same shape, survives whole.
+        let oc_row = row_with(
+            "opencode",
+            serde_json::json!({"server_url": "http://127.0.0.1:4096"}),
+        );
+        assert_eq!(
+            oc_row.agent_lane,
+            Some(BridgeAgentLaneStamp {
+                kind: "opencode".into(),
+                session_id: "ses_abc".into(),
+                server_url: "http://127.0.0.1:4096".into(),
+            }),
+            "the filter must not also catch a kind this build CAN open"
+        );
     }
 
     #[test]

@@ -18,6 +18,7 @@ import '../../widgets/open_pill.dart';
 import '../lanes/lane_screen.dart';
 import '../terminal/roost_peek_screen.dart';
 import '../../widgets/status_badge.dart';
+import '../craze/craze_session_card.dart';
 
 /// **Machine sessions, beside shed sessions** (plan 012, roadmap R4; re-sourced
 /// onto roost by plan 013 S3m).
@@ -69,7 +70,10 @@ class _MachineGroup extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(machineFeedProvider(machine.name));
     final state = feed.value;
-    final sessions = state?.sessions ?? const <BridgeRcSession>[];
+    // The MERGED rows (plan 025 §3.7.2): roost's tabs and the machine's craze
+    // sessions, a craze tab folded into the hub row it names — never
+    // `state.sessions`, which would show a craze session twice.
+    final rows = state?.rows ?? const <MachineRow>[];
     final reachable = state?.reachable ?? false;
 
     // **The source stamp, counted** (plan 020 §5 C-M4; shed-mobile AC 3). A row
@@ -77,14 +81,18 @@ class _MachineGroup extends ConsumerWidget {
     // the live leg has to prove is that the app is reading the machine's own
     // `roost-session` rather than a shed's RC hub. `rowSourceOf` reads the one
     // field only roost fills, so `roost=N` in the transcript is a named field
-    // and not a look at the screen.
-    final roostRows = sessions
-        .where((s) => rowSourceOf(s) == MachineRowSource.roost)
+    // and not a look at the screen; `craze=N` counts the hub's rows the same
+    // way (plan 025).
+    final roostRows = rows
+        .whereType<RoostMachineRow>()
+        .where((r) => rowSourceOf(r.session) == MachineRowSource.roost)
         .length;
+    final crazeRows = rows.whereType<CrazeMachineRow>().length;
     logDriveState(
       'machine-sessions machine=${machine.name} reachable=$reachable '
-      'count=${sessions.length} roost=$roostRows',
+      'count=${rows.length} roost=$roostRows craze=$crazeRows',
     );
+    final crazeNote = state == null ? null : crazeNoteFor(state);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -92,20 +100,35 @@ class _MachineGroup extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _MachineHeader(machine: machine, state: state),
-          if (sessions.isEmpty)
+          // craze too old for shed is the one craze state worth a line; not
+          // installed is quiet (plan 025 §3.2.4).
+          if (crazeNote != null)
+            _MachineNote(
+              key: ValueKey('machine-craze-note-${machine.name}'),
+              text: crazeNote,
+            ),
+          if (rows.isEmpty)
             _MachineNote(
               key: ValueKey('machine-empty-${machine.name}'),
               text: _emptyText(state),
             )
           else
-            for (final s in sessions)
-              _MachineSessionCard(
-                // Keyed by ORIGIN + slug, never by shed (which is empty here).
-                key: ValueKey('${machine.origin}/${s.slug}'),
-                machine: machine,
-                session: s,
-                state: state!,
-              ),
+            for (final row in rows)
+              switch (row) {
+                RoostMachineRow(:final session) => _MachineSessionCard(
+                  // Keyed by ORIGIN + slug, never by shed (empty here).
+                  key: ValueKey('${machine.origin}/${session.slug}'),
+                  machine: machine,
+                  session: session,
+                  state: state!,
+                ),
+                CrazeMachineRow() => CrazeSessionCard(
+                  key: ValueKey('${machine.origin}/craze/${row.key}'),
+                  origin: machine.name,
+                  row: row,
+                  keySuffix: machine.name,
+                ),
+              },
         ],
       ),
     );
@@ -377,6 +400,8 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
     MaterialPageRoute<void>(
       builder: (_) => LaneScreen(
         machine: widget.machineName,
+        // The pill only renders for a row with a stamp.
+        kind: widget.session.agentLane!.kind,
         // The ROW's slug, which is what the lane is keyed on — not the stamp's
         // session id, which is the thing being reconciled.
         slug: widget.session.slug,

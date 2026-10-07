@@ -129,8 +129,6 @@ Color? sessionRailColor(
 Color kindColor(ShedColors shed, String kind) {
   final k = kind.toLowerCase();
   if (k.startsWith('claude')) return shed.kindClaude;
-  if (k.startsWith('codex')) return shed.kindCodex;
-  if (k == 'cursor') return shed.kindCursor;
   if (k == 'opencode') return shed.kindOpencode;
   return shed.kindShell;
 }

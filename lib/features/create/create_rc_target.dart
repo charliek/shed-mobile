@@ -35,12 +35,70 @@ typedef RcCapsView = ({
 /// What a create produced: enough to log honestly, plus the value to pop.
 typedef RcCreated = ({String slug, String state, String? url, Object result});
 
-/// The always-safe base when capabilities are absent: claude + shell. Every
-/// build of shed-ext-rc and every build of sx has had both.
-const List<BridgeRcKind> baseRcKinds = [
-  BridgeRcKind.claudeRc(),
-  BridgeRcKind.shell(),
-];
+/// The always-safe base when capabilities are absent: claude alone. Every
+/// build of shed-ext-rc has had it, and shell is not offered (plan 025 O3).
+const List<BridgeRcKind> baseRcKinds = [BridgeRcKind.claudeRc()];
+
+const BridgeRcKind _crazeKind = BridgeRcKind.craze();
+
+/// **What a roost-fed target's create form offers** — the reduction the form
+/// renders, over that target's feed (plan 025 O3: craze, opencode and Claude).
+///
+/// The roost kinds come from the feed's capabilities, exactly as before; craze
+/// is offered beside them when the feed's craze source can create there
+/// ([crazeCreateOffered]) — and stays offered when roost cannot be reached at
+/// all, because a machine with craze and no roost is still a place to start a
+/// craze session.
+@visibleForTesting
+RcCapsView roostCapsView(
+  AsyncValue<MachineFeedState> async, {
+  required String subject,
+}) {
+  if (!async.hasValue) {
+    return async.hasError
+        ? baseCapsView(
+            offered: const [],
+            retry: true,
+            note: "Couldn't reach $subject.",
+            logToken: 'error',
+          )
+        : baseCapsView(offered: const [], loading: true, logToken: 'loading');
+  }
+  final state = async.requireValue;
+  final craze = crazeCreateOffered(state.craze);
+  // Unreachable: a roost launch would only fail, so offer no roost kind and
+  // say why. The feed's own `detail` is the honest half — "no roost session on
+  // this shed" and "this device's key is not authorized" have different
+  // fixes, and flattening them to "unreachable" throws the actionable part
+  // away. A craze source that can create is still offered: it rides its own
+  // tunnel, and its being live proves the machine answers.
+  if (!state.reachable) {
+    final detail = state.detail;
+    final who = craze ? 'roost on $subject' : subject;
+    return baseCapsView(
+      offered: [if (craze) _crazeKind],
+      retry: true,
+      note: detail == null
+          ? '$who is unreachable right now.'
+          : '$who is unreachable right now — $detail.',
+      logToken: 'unreachable',
+    );
+  }
+  final caps = state.capabilities;
+  // Reachable but no capabilities. Unreachable in practice: a roost feed's
+  // capabilities are SYNTHESIZED (`roostCapabilities`), not probed, so there
+  // is no round trip left to miss. Kept as the honest degradation for a state
+  // built without them.
+  if (caps == null) {
+    return baseCapsView(
+      offered: [...baseRcKinds, if (craze) _crazeKind],
+      retry: true,
+      note: 'opencode unavailable on $subject.',
+      logToken: 'absent',
+    );
+  }
+  return presentCapsView(caps, craze: craze);
+}
 
 /// The shared shape of every "capabilities not usable yet" branch except
 /// loading: caps absent (so [baseRcKinds] is offered), not loading, and never
@@ -62,9 +120,11 @@ RcCapsView baseCapsView({
   logToken: logToken,
 );
 
-/// Caps present: the target's own creatable set (empty → "present but empty").
-RcCapsView presentCapsView(BridgeRcCapabilities caps) {
-  final offered = caps.creatableKinds();
+/// Caps present: the target's own creatable set (empty → "present but empty"),
+/// plus craze when [craze] says this target's craze source can create (plan
+/// 025 O3: craze, opencode and Claude — craze last, so the default stays put).
+RcCapsView presentCapsView(BridgeRcCapabilities caps, {bool craze = false}) {
+  final offered = [...caps.creatableKinds(), if (craze) _crazeKind];
   return (
     offered: offered,
     capsPresent: true,
@@ -107,6 +167,11 @@ sealed class CreateRcTarget {
   /// on a machine is telling the user something untrue.
   String get nameFieldLabel;
   String get workdirFieldLabel;
+
+  /// The feed a craze session would be created through here — its origin — or
+  /// null for a target with no craze source at all. A craze create goes
+  /// through that feed's craze source, never through [create].
+  String? get crazeOrigin => null;
 
   /// Whether a create HERE can carry the optional detail fields — a session
   /// name, a kickoff prompt, a permission mode.
@@ -188,52 +253,17 @@ abstract class RoostRcTarget extends CreateRcTarget {
     });
   }
 
+  /// A shed's feed and a machine's both run a craze half (plan 025 §3.7.2).
+  @override
+  String get crazeOrigin => origin;
+
   @override
   RcCapsView caps(WidgetRef ref) {
     final async = ref.watch(machineFeedProvider(origin));
-    return withReloading(_reduce(async), async.isLoading);
-  }
-
-  RcCapsView _reduce(AsyncValue<MachineFeedState> async) {
-    if (!async.hasValue) {
-      return async.hasError
-          ? baseCapsView(
-              offered: const [],
-              retry: true,
-              note: "Couldn't reach $subject.",
-              logToken: 'error',
-            )
-          : baseCapsView(offered: const [], loading: true, logToken: 'loading');
-    }
-    final state = async.requireValue;
-    // Unreachable: creating would only fail, so offer nothing and say why. The
-    // feed's own `detail` is the honest half — "no roost session on this shed"
-    // and "this device's key is not authorized" have different fixes, and
-    // flattening them to "unreachable" throws the actionable part away.
-    if (!state.reachable) {
-      final detail = state.detail;
-      return baseCapsView(
-        offered: const [],
-        retry: true,
-        note: detail == null
-            ? '$subject is unreachable right now.'
-            : '$subject is unreachable right now — $detail.',
-        logToken: 'unreachable',
-      );
-    }
-    final caps = state.capabilities;
-    // Reachable but no capabilities. Unreachable in practice: a roost feed's
-    // capabilities are SYNTHESIZED (`roostCapabilities`), not probed, so there
-    // is no round trip left to miss. Kept as the honest degradation for a state
-    // built without them.
-    if (caps == null) {
-      return baseCapsView(
-        retry: true,
-        note: 'codex/cursor/opencode unavailable on $subject.',
-        logToken: 'absent',
-      );
-    }
-    return presentCapsView(caps);
+    return withReloading(
+      roostCapsView(async, subject: subject),
+      async.isLoading,
+    );
   }
 
   /// [displayName], [prompt] and [permissionMode] are not plumbed: roost's

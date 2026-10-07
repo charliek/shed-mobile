@@ -1,5 +1,6 @@
 pub mod bridge_rt;
 pub mod client;
+pub mod craze;
 pub mod create_stream;
 pub mod dto;
 pub mod dto_lane;

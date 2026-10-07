@@ -1265,16 +1265,7 @@ mod tests {
             // agent-transcript material: session ids, tab titles, working
             // directories, an approval's own request JSON, option ids and
             // labels, feed rows, and free-text answers. **No credential of any
-            // kind crosses.** gx's bearer token is a `shed_gx::GxToken` from the
-            // moment it is parsed (no `Display`, no `Serialize`, a redacting
-            // `Debug`) and it never leaves `api/lane.rs`; the probe's raw stdout
-            // travels the OTHER way as a `Vec<u8>` on `BridgeLaneSpec` /
-            // `lane_refresh_credentials`, is parsed in one function, and is not
-            // stored, logged, or echoed into any error — `api/lane`'s
-            // `every_gx_probe_refusal_echoes_no_byte_of_the_probe` asserts that
-            // against the whole `Debug` rendering of every refusal path through
-            // `discovery_from_probe` — no record, malformed token, truncated, no
-            // token — plus the no-probe-at-all case.
+            // kind crosses.**
             // `BridgeLane` is opaque and holds the adapter, the fold and two
             // abort handles.
             "BridgeAgentLaneStamp",
@@ -1299,6 +1290,19 @@ mod tests {
             "BridgeLaneApprovalStatus_Resolved",
             "BridgeLaneApprovalStatus_Submitted",
             "BridgeLaneCapabilities",
+            // Plan 025 CM2 — the contract split's DTOs, both levels: a session's
+            // settings (model/mode/option ids and names, context token counts),
+            // the setting change the settings sheet sends, a machine source's
+            // capabilities and outage cause, and the create sheet's options,
+            // request and answer (provider ids and labels, directories, a first
+            // prompt, a request id, the new session's row). Agent-session
+            // material only, like the lane types around them — **no credential
+            // of any kind crosses**: craze reports a provider's `needs_setup`
+            // reason and fix as text, never the key or login it is missing.
+            "BridgeLaneChoice",
+            "BridgeLaneCreateOptions",
+            "BridgeLaneCreateRequest",
+            "BridgeLaneCreated",
             "BridgeLaneDecision",
             "BridgeLaneError",
             "BridgeLaneError_AlreadyResolved",
@@ -1307,16 +1311,59 @@ mod tests {
             "BridgeLaneError_Failed",
             "BridgeLaneError_NoLane",
             "BridgeLaneError_NotAccepting",
+            "BridgeLaneError_OutcomeUnknown",
             "BridgeLaneError_Unauthorized",
             "BridgeLaneError_Unavailable",
             "BridgeLaneError_UnknownApproval",
             "BridgeLaneError_UnknownSession",
             "BridgeLaneError_UnsupportedLane",
+            "BridgeLanePromptOutcome",
+            "BridgeLanePromptOutcome_Accepted",
+            "BridgeLanePromptOutcome_None",
+            "BridgeLanePromptOutcome_Other",
+            "BridgeLanePromptOutcome_Refused",
+            "BridgeLanePromptOutcome_Unknown",
+            "BridgeLaneProvider",
+            "BridgeLaneProviderState",
+            "BridgeLaneProviderState_NeedsSetup",
+            "BridgeLaneProviderState_Other",
+            "BridgeLaneProviderState_Ready",
+            "BridgeLaneProviderState_Unavailable",
             "BridgeLaneQuestion",
             "BridgeLaneSession",
+            "BridgeLaneSetting",
+            "BridgeLaneSettingChange",
+            "BridgeLaneSettingChange_Config",
+            "BridgeLaneSettingChange_Mode",
+            "BridgeLaneSettingChange_Model",
+            "BridgeLaneSettings",
             "BridgeLaneSnapshot",
             "BridgeLaneSpec",
+            "BridgeLaneUsage",
             "BridgeSendMode",
+            "BridgeSourceCapabilities",
+            "BridgeSourceOffline",
+            "BridgeSourceOffline_Failed",
+            "BridgeSourceOffline_NotInstalled",
+            "BridgeSourceOffline_Other",
+            "BridgeSourceOffline_TooOld",
+            "BridgeSourceOffline_Unreachable",
+            // Plan 025 CM3 — the phone's craze source: a machine's craze
+            // SESSIONS as rows (hostIds, titles, workspaces, providers, models,
+            // one-line activity text), why the source is offline (a cause and
+            // craze's own sentence), and the row merge's inputs and answer
+            // (roost tab ids, and the provider session ids craze tabs claimed).
+            // Agent-session material only, like the lane types above — **no
+            // credential of any kind crosses**. `BridgeCrazeSource` is opaque
+            // and holds the source, its staged view and two abort handles; the
+            // SSH identity never reaches it: Dart owns the craze tunnel and
+            // hands Rust a loopback PORT, exactly as for the roost watcher.
+            "BridgeCrazeOffline",
+            "BridgeCrazeSnapshot",
+            "BridgeCrazeSource",
+            "BridgeFoldPlan",
+            "BridgeFoldedTab",
+            "BridgeRoostTabRef",
             "BridgeLiveCounters",
             "BridgeMintOutcome",
             "BridgeMintOutcome_Failure",
@@ -1334,12 +1381,9 @@ mod tests {
             "BridgeRcKind",
             "BridgeRcKind_ClaudeBroker",
             "BridgeRcKind_ClaudeRc",
-            "BridgeRcKind_Codex",
-            "BridgeRcKind_Cursor",
-            // Plan 017's two grok kinds. Without them a gx row would cross the
-            // bridge as `BridgeRcKind_Other { raw: "gx" }`.
-            "BridgeRcKind_Grok",
-            "BridgeRcKind_Gx",
+            // Plan 025 retired codex, cursor, gx and grok (they cross as
+            // `BridgeRcKind_Other` with their raw source now) and added craze.
+            "BridgeRcKind_Craze",
             "BridgeRcKind_Opencode",
             "BridgeRcKind_Other",
             "BridgeRcKind_Shell",
@@ -1653,6 +1697,9 @@ mod tests {
             "PENDING_PREVIEW_CREDENTIALS",
             "ACTIVE_LANES",
             "ACTIVE_LANE_FORWARDERS",
+            "ACTIVE_CRAZE_SOURCES",
+            "ACTIVE_CRAZE_FORWARDERS",
+            "PENDING_CRAZE_CALLS",
             "submit_mint_result(",
             "install_sink_hook(",
             "install_mint_emitter(",
@@ -1670,10 +1717,17 @@ mod tests {
         const SELF: &str = "every_test_touching_global_state_takes_the_guard";
 
         /// Every `#[…test…]`-attributed chunk in `tests`, whatever the
-        /// attribute's shape. Returns the text AFTER each attribute line, so a
-        /// caller reads the fn signature and body exactly as it did when this
-        /// split on the literal `"\n    #[test]\n"`.
-        fn split_on_test_attrs(tests: &str) -> Vec<&str> {
+        /// attribute's shape, TAGGED `is_async` — so a caller can count the
+        /// sync and async forms separately rather than only their sum (plan
+        /// 025 CM1 finding 5: a single combined floor cannot tell "the
+        /// splitter is healthy" from "the splitter stopped recognising
+        /// `#[tokio::test…]` and is silently scanning only the sync tests" —
+        /// `lane.rs` is overwhelmingly async, so that regression would still
+        /// clear a floor tuned to the sync-only count). Returns the text
+        /// AFTER each attribute line, so a caller reads the fn signature and
+        /// body exactly as it did when this split on the literal
+        /// `"\n    #[test]\n"`.
+        fn split_on_test_attrs(tests: &str) -> Vec<(bool, &str)> {
             let mut out = Vec::new();
             for (idx, line) in
                 tests
@@ -1690,29 +1744,61 @@ mod tests {
                     })
             {
                 let t = line.trim();
-                // `#[test]`, `#[tokio::test]`, `#[tokio::test(flavor = …)]`,
+                // `#[tokio::test]`, `#[tokio::test(flavor = …)]`,
                 // `#[tokio::test(start_paused = true)]`, and any future
                 // `#[foo::test…]` — but NOT `#[cfg(test)]`, which is the module
                 // gate, and not `#[should_panic]`-style siblings.
-                let is_test_attr = t.starts_with("#[test]")
-                    || (t.starts_with("#[") && t.contains("::test") && !t.contains("cfg("));
+                let is_async = t.starts_with("#[") && t.contains("::test") && !t.contains("cfg(");
+                let is_test_attr = t.starts_with("#[test]") || is_async;
                 if is_test_attr {
                     if let Some(after) = tests.get(idx + line.len()..) {
-                        out.push(after.trim_start_matches('\n'));
+                        out.push((is_async, after.trim_start_matches('\n')));
                     }
                 }
             }
             out
         }
 
+        /// A deliberately DIFFERENT, much simpler counting strategy over the
+        /// same five files — a whole-line check rather than
+        /// [`split_on_test_attrs`]'s char-indexed scan — so a bug shared by
+        /// both (the real risk this test exists for) is the only way the two
+        /// could agree on a wrong number. Counts every line, including the
+        /// self-referential ones in this very function's doc comments and
+        /// its `test_fn_name` fixture table: a doc comment line trimmed is
+        /// `/// ... \`#[tokio::test]\` ...` (starts with `///`, not `#[`) and
+        /// the fixture line is `("#[tokio::test(start_paused = true)]", None),`
+        /// (starts with `(`, not `#[`), so neither is mistaken for a real
+        /// attribute by a plain `starts_with` on the trimmed line.
+        fn independent_counts(tests: &str) -> (usize, usize) {
+            let mut sync = 0usize;
+            let mut r#async = 0usize;
+            for line in tests.lines() {
+                let t = line.trim();
+                if t == "#[test]" {
+                    sync += 1;
+                } else if t.starts_with("#[tokio::test") {
+                    r#async += 1;
+                }
+            }
+            (sync, r#async)
+        }
+
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
         let mut offenders = Vec::new();
         let mut checked = 0usize;
-        for name in ["mint.rs", "preview.rs", "client.rs", "lane.rs"] {
+        let mut sync_checked = 0usize;
+        let mut async_checked = 0usize;
+        let mut independent_sync = 0usize;
+        let mut independent_async = 0usize;
+        for name in ["mint.rs", "preview.rs", "client.rs", "lane.rs", "craze.rs"] {
             let text = std::fs::read_to_string(src.join(name)).unwrap();
             let tests = text
                 .split_at(text.find("#[cfg(test)]").expect("a test module"))
                 .1;
+            let (ind_sync, ind_async) = independent_counts(tests);
+            independent_sync += ind_sync;
+            independent_async += ind_async;
             // Split on EVERY test attribute, not just `#[test]`. `lane.rs`'s
             // tests are overwhelmingly `#[tokio::test]` — the pump, the
             // forwarder and the credential await are all async — so a splitter
@@ -1722,7 +1808,7 @@ mod tests {
             // `flavor = "multi_thread"`), which is why this matches a prefix
             // rather than a whole line.
             let chunks = split_on_test_attrs(tests);
-            for chunk in chunks {
+            for (is_async, chunk) in chunks {
                 // Stop at the end of the test fn so a helper defined after it is
                 // not attributed to it.
                 let body = chunk.split("\n    }\n").next().unwrap_or(chunk);
@@ -1734,17 +1820,51 @@ mod tests {
                     continue;
                 }
                 checked += 1;
+                if is_async {
+                    async_checked += 1;
+                } else {
+                    sync_checked += 1;
+                }
                 let touches = GLOBAL_STATE.iter().any(|m| body.contains(m));
                 if touches && !body.contains("test_guard()") {
                     offenders.push(format!("{name}::{fn_name}"));
                 }
             }
         }
+        // **The robustness this test exists for.** A single combined floor on
+        // `checked` cannot tell a healthy splitter from one that silently
+        // stopped recognising `#[tokio::test…]`: `lane.rs` alone carries most
+        // of the async tests in this scan, so a splitter that fell back to
+        // sync-only would still clear a floor sized to "most tests, sync or
+        // async". Comparing each count against the independent,
+        // differently-implemented [`independent_counts`] catches exactly that
+        // regression — the two would have to agree on the SAME wrong number,
+        // which a shared bug in attribute recognition does not produce (one
+        // scans char-by-char for a prefix, the other checks whole trimmed
+        // lines). `+ 1` on the sync side is [`SELF`], the one test this scan
+        // excludes from `checked`.
+        assert_eq!(
+            sync_checked + 1,
+            independent_sync,
+            "the splitter's sync #[test] count disagrees with the independent \
+             line count — one of the two attribute-recognition strategies regressed"
+        );
+        assert_eq!(
+            async_checked, independent_async,
+            "the splitter's async #[tokio::test…] count disagrees with the independent \
+             line count — one of the two attribute-recognition strategies regressed"
+        );
         assert!(
-            checked > 50,
+            async_checked > 0,
+            "the scan found NO async tests at all — `lane.rs` carries several \
+             `#[tokio::test]` fns, so a healthy splitter always finds some"
+        );
+        assert!(
+            checked > 40,
             "the scan found too few tests ({checked}) — the splitter probably stopped \
              recognising an attribute shape. It saw 46 when it knew only `#[test]` \
-             and 57 once it knew the async forms too."
+             and 57 once it knew the async forms too; plan 025 CM1 retired the gx lane's \
+             tests off `lane.rs` and the true count settled at 50."
         );
         assert!(
             offenders.is_empty(),

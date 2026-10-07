@@ -122,6 +122,8 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     MaterialPageRoute<void>(
       builder: (_) => LaneScreen(
         machine: _origin,
+        // The pill only renders for a row with a stamp.
+        kind: widget.session.agentLane!.kind,
         // The ROW's slug (roost's tab id), not the stamp's session id — the
         // session id is the thing being reconciled.
         slug: widget.session.slug,

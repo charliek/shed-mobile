@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -118,6 +119,131 @@ void main() {
         );
       });
     });
+
+    test(
+      'an async EPIPE on the local socket is observed, not left uncaught',
+      () async {
+        // `_socket.add` in the down-pump only catches a SYNCHRONOUS write
+        // failure. When the local peer has already closed, the write fails
+        // ASYNCHRONOUSLY instead: `Socket.done` completes with a
+        // `SocketException: Broken pipe` that nothing was listening for — it
+        // escaped as an uncaught async error. A real test run hit exactly
+        // this swapping one craze transcript for another, with the remote
+        // bridge still emitting buffered bytes into the torn-down local side.
+        //
+        // Built directly on `DuplexPump` (not through `PortListener`) so the
+        // test can see `pump.done` complete — the listener keeps its pumps
+        // private.
+        //
+        // `Socket.destroy()` on the peer does not GUARANTEE this lands as an
+        // asynchronous EPIPE rather than, say, a clean local FIN that the
+        // existing `_onLocalDone` path already handles within its grace
+        // period — so this cell must not merely hope the race goes the
+        // interesting way and pass either way. It captures the pump's own
+        // log (the injected logger `DuplexPump` already takes) and polls,
+        // bounded, until the fix's own log line shows up, failing loudly if
+        // it never does — so removing the fix cannot pass this cell by
+        // accident.
+        //
+        // An SO_LINGER{on:1,linger:0} RST was tried here and rejected: it
+        // forces the LOCAL socket's READ side to see `Connection reset by
+        // peer` immediately, which the pump's PRE-EXISTING `_up` stream
+        // `onError` handler (unrelated to this fix) already tears down on —
+        // and once that handler fires first, `_socket.done` never settles at
+        // all in testing here, so the one path this cell exists to exercise
+        // never runs. A plain `destroy()` (an idle connection, so a clean
+        // FIN) leaves the read side quiet and is what actually reaches
+        // `_socket.done`.
+        const asyncMarker = 'write failed asynchronously';
+        final logs = <String>[];
+        Object? uncaught;
+        var doneTimedOut = false;
+        late DuplexPump pump;
+        await runZonedGuarded(
+          () async {
+            // The accept must happen INSIDE this zone: dart:io binds a
+            // socket's asynchronous error reporting to whichever zone was
+            // current when the connection was accepted, not to whichever
+            // zone later calls `.listen`/`.then` on it. Accepting outside
+            // and only starting the pump in here would make the broken-pipe
+            // error unobservable to this zone no matter what `start()` does.
+            final server = await ServerSocket.bind(
+              InternetAddress.loopbackIPv4,
+              0,
+            );
+            final acceptFuture = server.first;
+            final peer = await Socket.connect(
+              InternetAddress.loopbackIPv4,
+              server.port,
+            );
+            final localSocket = await acceptFuture;
+            await server.close();
+
+            final channel = FakeChannel();
+            pump = DuplexPump(localSocket, channel, logs.add);
+            pump.start();
+
+            peer.destroy();
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+
+            // Remote bytes keep arriving after the local side is already
+            // gone — the scenario the bug report hit. Keep emitting, bounded,
+            // until the async observer's own log line shows up; the bound is
+            // enforced by the loop CONDITION, not by throwing — a `fail()`
+            // (or any other throw) from inside `runZonedGuarded`'s body does
+            // not reach the `await` below at all. It is instead delivered to
+            // this zone's `onError`, which is this cell's OWN handler; since
+            // that handler does not rethrow, the awaited call would simply
+            // hang until the suite's global per-test timeout. So: no
+            // assertions inside the zone, ever — everything observable here
+            // is read back and asserted once the zone has returned.
+            final deadline = DateTime.now().add(const Duration(seconds: 5));
+            var i = 0;
+            while (!logs.any((m) => m.contains(asyncMarker)) &&
+                DateTime.now().isBefore(deadline)) {
+              channel.emit('data: {"seq":${i++}}\n\n');
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+            }
+
+            // Same reasoning: catch the timeout locally rather than letting
+            // it propagate out of the zone, and report it via a flag below.
+            try {
+              await pump.done.timeout(const Duration(seconds: 5));
+            } catch (_) {
+              doneTimedOut = true;
+            }
+          },
+          (error, stack) {
+            uncaught ??= error;
+          },
+        );
+
+        expect(
+          uncaught,
+          isNull,
+          reason: 'the broken pipe must not escape as an uncaught error',
+        );
+        // Non-vacuous: the fix's own log line must actually have fired, and
+        // it must name the failure the bug report hit, not just any error —
+        // otherwise this cell would pass even with the fix removed, on a
+        // host where `destroy()` happened not to race into an async EPIPE.
+        expect(
+          logs.any((m) => m.contains(asyncMarker) && m.contains('Broken pipe')),
+          isTrue,
+          reason:
+              'the new async `done` observer must actually have run — '
+              'otherwise this cell would pass even with it removed',
+        );
+        // The pump must still have torn itself down despite the failed
+        // write — the whole point is to handle it, not to swallow it into a
+        // state where the pump is wedged.
+        expect(
+          doneTimedOut,
+          isFalse,
+          reason: 'the pump never finished tearing down',
+        );
+      },
+    );
 
     test('a local half-close reaches the sink, and reading continues', () async {
       // The rule stated once: local EOF closes the channel's write half and

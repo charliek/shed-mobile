@@ -1,8 +1,11 @@
 # Agent sessions
 
 An agent session is a **roost tab** — a pane on the `roost-session` daemon
-running on a shed or on a machine. The phone opens one SSH tunnel per origin,
-hands the shared Rust core a loopback port, and reads tabs off roost's own IPC.
+running on a shed or on a machine — or a **craze session**, listed by the
+machine's craze hub (see [Craze sessions](#craze-sessions)). The phone opens one
+SSH tunnel per origin for roost and a second one for craze, hands the shared
+Rust core a loopback port for each, and reads tabs off roost's own IPC and
+sessions off craze's hub.
 
 !!! note "This page used to describe the RC hub"
     Until shed 0.9.0 a shed's sessions were `rc-<slug>` tmux panes driven by the
@@ -28,13 +31,118 @@ last-known rows dimmed and shows roost's own reason ("…is reachable but has no
 roost session running…"), because "nothing is running here" and "this device's
 key is not authorized" have different fixes.
 
+## Craze sessions
+
+craze is the provider abstraction for cursor, grok, gx and native sessions
+(plan 025): one hub per machine lists every session there. The feed opens a
+second tunnel beside roost's, whose every accepted connection runs
+`craze bridge --hub` over the feed's one SSH connection — craze's published
+ladder, composed by shed-core and passed verbatim (`crazeRemoteCommand()`) —
+and the shared Rust core reads the hub through a craze source on that port.
+Both tunnels have the same lifecycle: they live while the feed has listeners,
+and die with it. A craze half that fails to come up (its port will not bind,
+its source will not open) leaves roost running, and the feed's next start
+retries craze alone. The phone is **not** attach-only: viewing a machine with
+craze starts a hub there if none runs, which idles out about a minute after the
+phone lets go.
+
+**One row per session.** A craze session's status is craze's (plan 025 D4): with
+the craze feed live, a roost tab running a craze TUI is folded into the hub
+row it names (the rule is shed's own `shed_app::craze_rows::fold_plan`, called
+over the bridge — never re-derived in Dart), and its terminal actions — Peek and
+End tab — act on that tab by its id. With the feed down, nothing is folded:
+roost's tab stands alone again beside the hub row's last-known, dimmed copy.
+
+A craze row shows the provider and model, what the session is doing (or the head
+of its last reply), the asks it is blocked on with the first one's summary, how
+many clients are attached, and why it failed to start. Every craze row offers
+**Transcript**: the lane opens through the machine's craze source by the row's
+hostId, with no forward. It follows that source: when the feed restarts (a roost
+install completing does one), an open transcript leaves the retired source at
+once and re-opens through its replacement as soon as that one has read the
+roster.
+
+**Not installed is quiet; too old says so.** Rust, reading a loopback port, sees
+both as a connection that ended before `hello`, so the craze tunnel's stderr
+classifies them on the Dart side (`lib/ssh/craze_reach.dart`): the ladder's
+`craze: command not found` is not installed and shows nothing; craze v0.0.1's
+`unknown flag: --hub` is too old and the machine says "craze on this machine is
+too old for shed; update it". A live hub that cannot create (its `hello` lacks
+`createOptions` or `sessionCreate`) still lists, and the machine says "update
+craze on this machine to create sessions here".
+
+### Creating a craze session
+
+The create screen offers **craze** beside Claude and opencode wherever the
+target's craze source is live and its hub can create (a machine with craze and
+no roost offers craze alone). Choosing it shows craze's own sheet
+(`lib/features/craze/craze_create_sheet.dart`, the desktop's create sheet as
+rules — `lib/features/craze/craze_create.dart`): a provider, a directory and an
+optional first prompt, nothing else — no model, effort or permission mode
+(craze's defaults; a sheet-created session runs `bypass`, which its transcript
+header says).
+
+| Part | Behaviour |
+|---|---|
+| Providers | Read from craze (`sessions.createOptions`) every time the sheet opens, in craze's order. A provider that is not `ready` is dimmed with craze's reason and fix and cannot be picked. craze's default is preselected only if it is ready, else the first ready one; with none ready the sheet says so and Create is disabled. |
+| Directory | craze's recent directories, one tap each, or a typed path, which must be absolute (craze checks that it exists and says so beside the field). |
+| First prompt | Optional, multi-line, sent exactly as typed. A prompt craze refused, or whose answer was lost, is said once the session exists. |
+| Request id | Minted per submission and **kept only while its outcome is unknown** (a lost answer): "Try again" then resumes the same request, so a lost answer never makes a second session. The sheet keeps that request's provider even if a later open reads it as not ready: craze answers the id with the session the first attempt started, or starts it then. Only an edit makes a new request. Any definite answer — a refusal, a start failure — ends it, because craze would replay that answer under the same id; the next try mints a new one. |
+| The form | Held per machine above the screen. No state clears it — loading, a failed options read, craze going offline or turning out too old, a refusal, an unknown outcome. Leaving the screen while a create runs keeps it running (the session simply appears as a row); coming back finds the same form and id. |
+| Created | The screen gives way to the session's transcript at once: the feed folds the created row in before the create returns, so the lane finds it before craze's roster has listed it. |
+
+A start failure shows craze's cause verbatim (monospace); craze's
+`bad_request` is shown beside the directory.
+
+### A craze session's transcript
+
+The transcript screen is the same one an opencode lane opens, and it takes
+everything a session can do from what the lane's stream last said about that
+session — its capabilities, its settings and its row — never from a copy taken
+when it opened.
+
+| Part | Behaviour |
+|---|---|
+| Header | The session's title and its permission posture, from the live session row: a session the create sheet started runs `bypass`, and says "runs tools without asking". |
+| Stop | Offered only when the session's capabilities say `stop` (a session hosted by a craze TUI has none), and never in one tap: it asks "Stop this session? The agent ends; the transcript stays." first — and if the session ended, or stopped offering Stop, while it was asking, the answer is moot and nothing is sent. It ends the SESSION — craze's `session.stop` — and the lane ends with it, its transcript kept; the row leaves. A refusal is said under the header. |
+| Cancel | Offered only when the capabilities say `cancel`, and only while a turn is running. |
+| Interject | Offered only when the capabilities say `interject`, and live only while a turn is running. |
+| Reconnecting | The lane's own connection dropped and craze is resuming it from where it was: the banner says "reconnecting…", the transcript stays on screen, and when the resume lands the banner goes — the same transcript, nothing re-read. |
+| Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened; any other end is re-opened on a backoff. |
+| A lost answer | A send whose answer was lost — the connection dropped while it was in flight — may or may not have started a turn and is never resent: the typed text stays, and the screen says to check the transcript before sending again. |
+| Settings | The settings chip and sheet, below. |
+
+### A craze session's settings
+
+A session whose capabilities say `settings` carries a chip under the transcript
+header — the current model, effort and fast (`Grok 4.6 · High · fast`; "fast"
+only when it is on) — and tapping it opens the session's settings sheet
+(`lib/features/lanes/lane_settings_sheet.dart`, the desktop's sheet as rules —
+`lib/lanes/lane_settings.dart`). A session that does not offer settings (every
+opencode one) has no chip at all: hidden, never disabled, and an open sheet
+leaves if the session stops offering them.
+
+| Part | Behaviour |
+|---|---|
+| Rows | The model (a list, in craze's order: the current one first, then the ones used recently), then the current model's own options (four values or fewer side by side, more as a list), then the mode. A context meter shows when the session reports both its tokens and its window. |
+| A change | Applies at once: the row says "applying…" until craze answers, and shows no value of its own meanwhile — what it shows next is the session's. An option is sent bound to the model the sheet shows, so a session that has already moved to another model refuses it rather than applying it there. |
+| Live | The sheet is drawn from the session's own settings, so a model change redraws the options as the new model offers them, and a change made elsewhere (another device, an attached TUI) appears in the open sheet. |
+| A refusal | Shown on its own row; an option refused because the model changed under it says "the model changed; try again". Trying again is a new change. |
+| A lost answer | The connection dropped before craze answered: the change may have run, and it is never resent. The row says "not confirmed" until the session next says what its settings are (when the lane resumes), which replaces the mark with the real value. |
+| Closing | The marks belong to the transcript, not the sheet: closing the sheet while a change is in flight loses nothing. |
+
 ## Kinds
 
-What a target can launch comes from `roostCapabilities()` — **synthesized, not
-probed**: roost is a terminal multiplexer with agent adapters, not shed's guest
-agent, so there is nothing to ask. The launchable set is `claude-rc`, `codex`,
-`opencode`, `cursor`, `gx` and `grok`; `shell` and `claude-broker` have no launch
-recipe and are refused by name rather than opening an empty tab.
+What a target can launch as a roost tab comes from `roostCapabilities()` —
+**synthesized, not probed**: roost is a terminal multiplexer with agent
+adapters, not shed's guest agent, so there is nothing to ask. The create form
+offers exactly `claude-rc` and `opencode` as roost tabs, plus `craze` where the
+target's craze source can create (plan 025 O3; see
+[Creating a craze session](#creating-a-craze-session)). A row running any other
+kind directly (`codex`, `cursor`, `gx`, `grok`) still shows up and reads as a
+plain row when it was launched some other way (the CLI, the desktop app);
+`shell` and `claude-broker` have no launch recipe and are refused by name
+rather than opening an empty tab.
 
 ## States
 

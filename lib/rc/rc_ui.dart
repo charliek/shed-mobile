@@ -22,11 +22,8 @@ extension BridgeRcKindUi on BridgeRcKind {
   String get wire => switch (this) {
     BridgeRcKind_ClaudeRc() => 'claude-rc',
     BridgeRcKind_ClaudeBroker() => 'claude-broker',
-    BridgeRcKind_Codex() => 'codex',
     BridgeRcKind_Opencode() => 'opencode',
-    BridgeRcKind_Cursor() => 'cursor',
-    BridgeRcKind_Gx() => 'gx',
-    BridgeRcKind_Grok() => 'grok',
+    BridgeRcKind_Craze() => 'craze',
     BridgeRcKind_Shell() => 'shell',
     BridgeRcKind_Other(:final raw) => raw,
   };
@@ -34,11 +31,14 @@ extension BridgeRcKindUi on BridgeRcKind {
   /// False for a preserved-raw unknown/foreign kind — the neutral-render signal.
   bool get known => this is! BridgeRcKind_Other;
 
-  /// Whether this kind accepts a typed kickoff line (claude-rc/codex/opencode/
-  /// cursor → a prompt, shell → a command). claude-broker's input is its remote
-  /// URL, not the pane; an unknown kind is not promptable. Mirrors
-  /// `RcKind::accepts_typed_input`.
-  bool get acceptsPrompt => known && this is! BridgeRcKind_ClaudeBroker;
+  /// Whether this kind accepts a typed kickoff line (claude-rc/opencode → a
+  /// prompt, shell → a command). claude-broker's input is its remote URL, not
+  /// the pane; craze's own create sheet is its kickoff surface (plan 025 D6);
+  /// an unknown kind is not promptable. Mirrors `RcKind::accepts_typed_input`.
+  bool get acceptsPrompt =>
+      known &&
+      this is! BridgeRcKind_ClaudeBroker &&
+      this is! BridgeRcKind_Craze;
 
   /// Whether this kind runs claude (one of the two claude kinds → claude's full
   /// `--permission-mode` set + URL affordances). Mirrors `RcKind::runs_claude`.
@@ -46,32 +46,30 @@ extension BridgeRcKindUi on BridgeRcKind {
       this is BridgeRcKind_ClaudeRc || this is BridgeRcKind_ClaudeBroker;
 
   /// Whether this kind carries an autonomy/permission posture: every known agent
-  /// kind does; `shell` has none, and an unknown kind renders neutrally with
-  /// none. Mirrors `RcKind::has_permission_mode`.
-  bool get hasPermissionMode => known && this is! BridgeRcKind_Shell;
+  /// kind does, except craze — whose mode is its own settings sheet (plan 025
+  /// D7), not this permission-mode vocabulary. `shell` has none, and an unknown
+  /// kind renders neutrally with none. Mirrors `RcKind::has_permission_mode`.
+  bool get hasPermissionMode =>
+      known && this is! BridgeRcKind_Shell && this is! BridgeRcKind_Craze;
 
   /// The tool token this kind's agent maps to under `capabilities.agents`, or
   /// null for a kind with no installable agent (`shell`) or an unknown kind.
   /// Mirrors `RcKind::tool`.
   String? get tool => switch (wire) {
     'claude-rc' || 'claude-broker' => 'claude',
-    'codex' => 'codex',
     'opencode' => 'opencode',
-    'cursor' => 'cursor',
-    'gx' => 'gx',
-    'grok' => 'grok',
+    'craze' => 'craze',
     _ => null,
   };
 
   /// The per-agent login remediation for this kind's `needs-auth` state. Mirrors
-  /// the guest's `AuthHintFor` and `shed_core::rc::auth_hint`.
+  /// the guest's `AuthHintFor` and `shed_core::rc::auth_hint` — including its
+  /// EMPTY answer for craze, which states each provider's own setup reason and
+  /// fix (plan 025 D5) rather than one generic hint.
   String get authHint => switch (wire) {
     'claude-rc' || 'claude-broker' => 'run `claude` → /login',
-    'codex' => 'run `codex` and complete login (`codex login`)',
     'opencode' => 'run `opencode auth login`',
-    'cursor' => 'run `cursor-agent login`',
-    'gx' => 'run `gx` and complete login',
-    'grok' => 'run `grok` and complete login',
+    'craze' => '',
     _ => 'log in to the agent in a terminal',
   };
 }
@@ -79,37 +77,32 @@ extension BridgeRcKindUi on BridgeRcKind {
 /// The create-time default kind (matches the guest's `DefaultKind`).
 const BridgeRcKind defaultRcKind = BridgeRcKind.claudeRc();
 
-/// Every recognized kind, in the pinned capabilities wire order. Mirrors the
-/// Rust core `RcKind` variant set.
+/// Every recognized kind. Mirrors the Rust core `RcKind` variant set — which
+/// plan 025 changed: codex, cursor, gx and grok left it (a tab running one of
+/// them directly decodes as an unknown kind, a plain row) and craze joined.
 const List<BridgeRcKind> rcKindValues = [
   BridgeRcKind.claudeBroker(),
   BridgeRcKind.claudeRc(),
-  BridgeRcKind.codex(),
   BridgeRcKind.opencode(),
-  BridgeRcKind.cursor(),
-  BridgeRcKind.gx(),
-  BridgeRcKind.grok(),
+  BridgeRcKind.craze(),
   BridgeRcKind.shell(),
 ];
 
 /// The kinds a create form can offer for creation, in canonical order.
-/// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind is
-/// never creatable, so both are excluded. Mirrors `RcKind::creatable`.
 ///
-/// `grok` is here and is LANE-LESS by design — launching one opens a `grok` tab
-/// whose status shed reads through roost, with no transcript affordance. `gx` is
-/// here too, but a ROW only ever reads as `gx` once its remote lane binds: roost
-/// reports both as `source: "grok"` and shed promotes the row on the `gx.remote`
-/// metadata key, so which kind was launched and which kind the card settles on
-/// are two different questions.
+/// **Exactly claude-rc and opencode** (plan 025 O3): no shell, and none of the
+/// retired direct-agent kinds (codex/cursor/grok/gx). These are the ROOST
+/// kinds — what a roost tab can launch. craze is the lane for every provider
+/// but these two, and it is never one of them: a craze session is created
+/// through the machine's craze source, not a roost tab (`RcKind::Craze` is not
+/// in `RcKind::creatable`), so the create form adds it beside these only where
+/// that source can create (`presentCapsView`'s `craze`, plan 025 O3).
+/// `claude-broker` is URL-driven (not create-from-a-form) and an unknown kind
+/// is never creatable, so both stay excluded. Mirrors `RcKind::creatable`
+/// minus shell (O3).
 const List<BridgeRcKind> rcCreatableKinds = [
   BridgeRcKind.claudeRc(),
-  BridgeRcKind.codex(),
   BridgeRcKind.opencode(),
-  BridgeRcKind.cursor(),
-  BridgeRcKind.gx(),
-  BridgeRcKind.grok(),
-  BridgeRcKind.shell(),
 ];
 
 /// Decode a wire value, PRESERVING an unrecognized string as an unknown kind
@@ -195,10 +188,13 @@ extension BridgeRcKindFeaturesUi on BridgeRcKindFeatures {
 /// The attach affordance for a row, defaulting to the read-only peek.
 ///
 /// The default is load-bearing. `featuresFor` is a map lookup by the row's kind
-/// (`machine_feed.dart:129`) and `roost_capabilities()` populates it for six
-/// kinds only; shed parses any other tab source as `RcKind::Other` — its own
-/// tests pin `manual`, `legacy` and `something-new` (`roost/model.rs:1130`).
-/// Such a row misses the map and lands here with `null`.
+/// (`machine_feed.dart:129`) and `roost_capabilities()` populates it for two
+/// kinds only (claude-rc and opencode, since plan 025); shed parses any other
+/// tab source as `RcKind::Other` — its own tests pin `manual`, `legacy`,
+/// `something-new` and the four retired agents (`roost/model.rs`'s
+/// `agent_kind_maps_every_source`), and a `craze`-sourced tab is `Craze`, which
+/// is not in the map either. Such a row misses the map and lands here with
+/// `null`.
 ///
 /// It used to default to `tmux`, meaning "a capability block from an older,
 /// non-roost producer". After S6 there is no such producer: `roostCapabilities()`

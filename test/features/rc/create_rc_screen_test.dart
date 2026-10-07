@@ -29,9 +29,8 @@ BridgeRcCapabilities _caps({
     for (final k in kinds)
       switch (k) {
         'claude-rc' => const BridgeRcKind.claudeRc(),
-        'codex' => const BridgeRcKind.codex(),
         'opencode' => const BridgeRcKind.opencode(),
-        'cursor' => const BridgeRcKind.cursor(),
+        'craze' => const BridgeRcKind.craze(),
         'shell' => const BridgeRcKind.shell(),
         _ => BridgeRcKind.other(raw: k),
       },
@@ -44,15 +43,19 @@ BridgeRcCapabilities _caps({
   kindFeatures: const {},
 );
 
-/// Present caps that offer claude-rc + codex + shell (all installed).
-BridgeRcCapabilities _codexCaps() => _caps(
-  kinds: ['claude-rc', 'codex', 'shell'],
-  installed: {'claude': true, 'codex': true},
+/// Present caps that offer claude-rc + opencode + codex + shell (all
+/// installed) — codex and shell are advertised and installed but are NOT in
+/// `rcCreatableKinds` (plan 025 O3), so they never render as chips. Kept in
+/// the fixture on purpose: the negative control needs something to advertise
+/// that must still not appear.
+BridgeRcCapabilities _opencodeCaps() => _caps(
+  kinds: ['claude-rc', 'opencode', 'codex', 'shell'],
+  installed: {'claude': true, 'opencode': true, 'codex': true},
 );
 
-/// Present caps that offer only the base pair (claude-rc + shell).
+/// Present caps that offer only the base kind (claude-rc).
 BridgeRcCapabilities _baseCaps() =>
-    _caps(kinds: ['claude-rc', 'shell'], installed: {'claude': true});
+    _caps(kinds: ['claude-rc'], installed: {'claude': true});
 
 MachineFeedState _state({
   bool reachable = true,
@@ -132,14 +135,13 @@ void main() {
       await _pump(tester, () {
         calls++;
         if (!present) return Stream.error(StateError('probe boom'));
-        return Stream.value(_state(caps: _codexCaps()));
+        return Stream.value(_state(caps: _opencodeCaps()));
       });
-      // Errored: NOT the silent claude+shell downgrade — a Retry instead.
+      // Errored: NOT the silent claude-only downgrade — a Retry instead.
       expect(calls, 1);
       expect(find.byKey(const ValueKey('createrc-caps-retry')), findsOneWidget);
       expect(_kindChip('claude-rc'), findsNothing);
-      expect(_kindChip('shell'), findsNothing);
-      expect(_kindChip('codex'), findsNothing);
+      expect(_kindChip('opencode'), findsNothing);
 
       // Flip the source to a served feed, then Retry → the provider MUST
       // re-run (counter proves it) and the screen transitions to present.
@@ -148,7 +150,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       expect(calls, 2);
-      expect(_kindChip('codex'), findsOneWidget);
+      expect(_kindChip('opencode'), findsOneWidget);
       expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
     },
   );
@@ -179,24 +181,28 @@ void main() {
     },
   );
 
-  testWidgets('reachable shed + null caps → base chips + note + Retry', (
+  testWidgets('reachable shed + null caps → base chip + note + Retry', (
     tester,
   ) async {
     await _pump(tester, () => Stream.value(_state()));
     expect(_kindChip('claude-rc'), findsOneWidget);
-    expect(_kindChip('shell'), findsOneWidget);
+    // No shell (plan 025 O3): the base set is claude-rc alone now.
+    expect(_kindChip('shell'), findsNothing);
     expect(find.byKey(const ValueKey('createrc-caps-note')), findsOneWidget);
     expect(find.byKey(const ValueKey('createrc-caps-retry')), findsOneWidget);
     expect(find.textContaining('unavailable'), findsOneWidget);
   });
 
-  testWidgets('present caps with codex installed → codex chip appears', (
+  testWidgets('present caps with opencode installed → opencode chip appears', (
     tester,
   ) async {
-    await _pump(tester, () => Stream.value(_state(caps: _codexCaps())));
+    await _pump(tester, () => Stream.value(_state(caps: _opencodeCaps())));
     expect(_kindChip('claude-rc'), findsOneWidget);
-    expect(_kindChip('codex'), findsOneWidget);
-    expect(_kindChip('shell'), findsOneWidget);
+    expect(_kindChip('opencode'), findsOneWidget);
+    // The negative control (plan 025 O3): codex and shell are advertised and
+    // installed, but neither is in `rcCreatableKinds` any more.
+    expect(_kindChip('codex'), findsNothing);
+    expect(_kindChip('shell'), findsNothing);
     // No status note / retry when the real offering is known.
     expect(find.byKey(const ValueKey('createrc-caps-note')), findsNothing);
     expect(find.byKey(const ValueKey('createrc-caps-retry')), findsNothing);
@@ -233,20 +239,21 @@ void main() {
   });
 
   testWidgets(
-    'selecting codex then losing it (caps change) falls back sanely',
+    'selecting opencode then losing it (caps change) falls back sanely',
     (tester) async {
-      var offerCodex = true;
+      var offerOpencode = true;
       await _pump(
         tester,
-        () =>
-            Stream.value(_state(caps: offerCodex ? _codexCaps() : _baseCaps())),
+        () => Stream.value(
+          _state(caps: offerOpencode ? _opencodeCaps() : _baseCaps()),
+        ),
       );
-      await tester.tap(_kindChip('codex'));
+      await tester.tap(_kindChip('opencode'));
       await tester.pumpAndSettle();
-      expect(_kindChip('codex'), findsOneWidget);
+      expect(_kindChip('opencode'), findsOneWidget);
 
-      // Caps change so codex is no longer offered; re-probe the feed.
-      offerCodex = false;
+      // Caps change so opencode is no longer offered; re-probe the feed.
+      offerOpencode = false;
       final container = ProviderScope.containerOf(
         tester.element(find.byType(CreateRcScreen)),
       );
@@ -255,8 +262,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       // The vanished selection falls back to a still-offered kind (claude-rc):
-      // codex gone, submit still enabled, no crash.
-      expect(_kindChip('codex'), findsNothing);
+      // opencode gone, submit still enabled, no crash.
+      expect(_kindChip('opencode'), findsNothing);
       expect(_kindChip('claude-rc'), findsOneWidget);
       expect(_submitEnabled(tester), isTrue);
     },
