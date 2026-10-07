@@ -333,6 +333,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneSession dco_decode_box_autoadd_bridge_lane_session(dynamic raw);
 
   @protected
+  BridgeLaneSettingChange dco_decode_box_autoadd_bridge_lane_setting_change(
+    dynamic raw,
+  );
+
+  @protected
   BridgeLaneSettings dco_decode_box_autoadd_bridge_lane_settings(dynamic raw);
 
   @protected
@@ -1141,6 +1146,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneSession sse_decode_box_autoadd_bridge_lane_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSettingChange sse_decode_box_autoadd_bridge_lane_setting_change(
     SseDeserializer deserializer,
   );
 
@@ -2186,6 +2196,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_bridge_lane_session(
     BridgeLaneSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_setting_change(
+    BridgeLaneSettingChange self,
     SseSerializer serializer,
   );
 

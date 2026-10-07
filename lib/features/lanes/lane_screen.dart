@@ -4,6 +4,7 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../../core/app_error.dart';
 import '../../lanes/lane_controller.dart';
+import '../../lanes/lane_settings.dart';
 import '../../lanes/lane_state.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
@@ -14,6 +15,7 @@ import '../../theme/shed_colors.dart';
 import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/feed_rows.dart';
+import 'lane_settings_sheet.dart';
 
 /// **One agent lane, on a phone** (plan 018 §3.12).
 ///
@@ -64,6 +66,11 @@ import '../rc/feed_rows.dart';
 /// `interject`. And the banner tells a lane that is RECONNECTING on its own
 /// (`stale`, not `ended`: a craze lane resuming from its cursor) from one that
 /// is over (`ended`) — [laneStaleBannerText].
+///
+/// **The settings chip** (plan 025 §3.10) rides the AppBar on a session whose
+/// capabilities say `settings` — and nowhere else, hidden, never disabled: the
+/// current model, effort and fast ([settingsChip]), and a tap opens the
+/// session's settings sheet ([LaneSettingsSheet]).
 class LaneScreen extends ConsumerStatefulWidget {
   const LaneScreen({
     required this.machine,
@@ -380,6 +387,11 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
                 : null,
           ),
       ],
+      // The settings chip, under the title so a long model name never
+      // squeezes it: only where the session's capabilities say `settings`.
+      bottom: state != null && settingsOffered(state.capabilities)
+          ? _settingsChip(state)
+          : null,
       // Two lines, like the watch screen: the slug is what you came looking
       // for, and the session's name answers "which session is this" — from the
       // LIVE session row once the stream has sent one (plan 025 §3.6.5).
@@ -400,6 +412,39 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ),
     ),
     body: child,
+  );
+
+  /// The AppBar's settings chip: `<model> · <effort> · fast` from the current
+  /// values ([settingsChip]), "Settings" before the first `Settings` arrives.
+  /// A tap opens the sheet, which reads this same lane.
+  PreferredSizeWidget _settingsChip(LaneState state) => PreferredSize(
+    preferredSize: const Size.fromHeight(40),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+        child: ActionChip(
+          key: const ValueKey('lane-settings-chip'),
+          avatar: Icon(Icons.tune, size: 16, color: context.shed.accent),
+          label: Text(
+            settingsChip(state.settings ?? noSettings),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: sansStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: context.shed.accent,
+            ),
+          ),
+          backgroundColor: context.shed.accentSoft,
+          side: BorderSide.none,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          tooltip: 'Session settings: model, options, mode',
+          onPressed: () => showLaneSettingsSheet(context, _ref),
+        ),
+      ),
+    ),
   );
 
   Widget _centered(String key, String text) => Center(

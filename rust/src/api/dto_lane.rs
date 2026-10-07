@@ -797,6 +797,24 @@ pub struct BridgeLaneSnapshot {
     /// The session's settings, as of the live generation; `None` when it has
     /// none to show (its capabilities say `settings: false`).
     pub settings: Option<BridgeLaneSettings>,
+    /// **How many `Settings` frames this lane has folded** — the settings
+    /// sheet's clock (plan 025 §3.10), and the one thing in this snapshot that
+    /// is the bridge's own rather than the fold's.
+    ///
+    /// A change whose answer was lost is "not confirmed" until the session's
+    /// NEXT `Settings` states where it is. The desktop tells "a next one
+    /// arrived" by counting the `Settings` events it is sent; Dart is sent no
+    /// events, so the pump counts them for it and this read carries the count
+    /// under the same lock as everything else here. Per handle: a re-opened
+    /// lane counts from zero again (the controller carries the total across).
+    ///
+    /// A `Settings` inside a reseed is counted when it is FOLDED, a moment
+    /// before its seed's `Ready` swaps it onto the screen — so a reader that
+    /// must not let a mark go before the value replacing it is shown takes the
+    /// count only from a snapshot whose [`Self::stale`] is clear, as the
+    /// controller does (a lost answer means a drop, and a drop leaves `stale`
+    /// set until the resume's or the reseed's `Ready`).
+    pub settings_frames: u64,
     /// The asks still waiting on the human, oldest first, id as the tiebreak.
     /// Pending only, by [`lane_status_is_pending`]'s rule.
     pub approvals: Vec<BridgeLaneApproval>,
@@ -804,8 +822,9 @@ pub struct BridgeLaneSnapshot {
 
 impl BridgeLaneSnapshot {
     /// Project one [`LaneViewSnapshot`] — the fold's own output, so the phone
-    /// and the desktop read the same truth.
-    pub(crate) fn from_view(snap: LaneViewSnapshot) -> BridgeLaneSnapshot {
+    /// and the desktop read the same truth — with the pump's count of the
+    /// `Settings` frames behind it ([`Self::settings_frames`]).
+    pub(crate) fn from_view(snap: LaneViewSnapshot, settings_frames: u64) -> BridgeLaneSnapshot {
         BridgeLaneSnapshot {
             messages: snap.messages.into_iter().map(Into::into).collect(),
             full: snap.full,
@@ -816,6 +835,7 @@ impl BridgeLaneSnapshot {
             ended: snap.ended,
             capabilities: snap.capabilities.map(Into::into),
             settings: snap.settings.map(Into::into),
+            settings_frames,
             approvals: snap.approvals.into_iter().map(Into::into).collect(),
         }
     }
@@ -1307,12 +1327,13 @@ pub enum BridgeLaneError {
     ///   started, so a lost answer never makes a second session, while after any
     ///   definite refusal craze would replay that same refusal for ten minutes,
     ///   so the id must go;
-    /// * **a lane verb** (`lane_send`, `lane_cancel`, `lane_answer`, `lane_stop`)
-    ///   — the transcript says whether it ran; a send's text stays in the box
-    ///   with the desktop's words for it (its `SEND_OUTCOME_UNKNOWN`, Dart's
-    ///   `laneSendOutcomeUnknown`), and the desktop's settings sheet shows such
-    ///   a change "not confirmed" until the next `Settings` says where the
-    ///   session is (§3.10).
+    /// * **a lane verb** (`lane_send`, `lane_cancel`, `lane_answer`,
+    ///   `lane_stop`, `lane_set`) — the transcript says whether it ran; a
+    ///   send's text stays in the box with the desktop's words for it (its
+    ///   `SEND_OUTCOME_UNKNOWN`, Dart's `laneSendOutcomeUnknown`), and both
+    ///   clients' settings sheets show such a change "not confirmed" until the
+    ///   next `Settings` says where the session is (§3.10;
+    ///   [`BridgeLaneSnapshot::settings_frames`]).
     ///
     /// The desktop's `LaneFailure::OutcomeUnknown`, for the same reasons and
     /// mapped the same way: by the one [`From<LaneError>`] every lane and create
@@ -1829,7 +1850,11 @@ mod tests {
             settings: Some(settings()),
             approvals: vec![approval(vec![option("allow-once", None)])],
         };
-        let snap = BridgeLaneSnapshot::from_view(view);
+        let snap = BridgeLaneSnapshot::from_view(view, 4);
+        assert_eq!(
+            snap.settings_frames, 4,
+            "the pump's count of Settings frames rides beside the view"
+        );
         assert_eq!(snap.messages.len(), 1);
         assert_eq!(snap.messages[0].seq, 7);
         assert_eq!(snap.messages[0].text.as_deref(), Some("hi"));
@@ -1853,7 +1878,7 @@ mod tests {
         // capabilities, no settings — crosses as exactly that, not as a
         // default row or an all-false capabilities record a panel would
         // render as "can do nothing".
-        let ended = BridgeLaneSnapshot::from_view(LaneViewSnapshot {
+        let unseeded = LaneViewSnapshot {
             messages: Vec::new(),
             full: true,
             activity: RcActivity::Unknown,
@@ -1864,7 +1889,8 @@ mod tests {
             capabilities: None,
             settings: None,
             approvals: Vec::new(),
-        });
+        };
+        let ended = BridgeLaneSnapshot::from_view(unseeded, 0);
         assert!(ended.ended);
         assert_eq!(ended.stale.as_deref(), Some("unknown_session"));
         assert_eq!(ended.session, None);

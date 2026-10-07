@@ -77,7 +77,9 @@ use shed_opencode::OpencodeSource;
 use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_LANES, ACTIVE_LANE_FORWARDERS};
-use super::dto_lane::{BridgeLaneAnswer, BridgeLaneError, BridgeLaneSnapshot, BridgeSendMode};
+use super::dto_lane::{
+    BridgeLaneAnswer, BridgeLaneError, BridgeLaneSettingChange, BridgeLaneSnapshot, BridgeSendMode,
+};
 
 /// The `agent_lane` kinds THIS BUILD has an adapter for.
 ///
@@ -174,6 +176,11 @@ struct LaneState {
     /// [`lane_snapshot`]. The nudge is this bit's clean→dirty transition, which
     /// is what coalesces a burst into one wakeup.
     dirty: bool,
+    /// Every [`LaneEvent::Settings`] [`LaneInner::apply`] has folded — the
+    /// settings sheet's clock, projected as
+    /// [`BridgeLaneSnapshot::settings_frames`]. Under this lock for the
+    /// dirty bit's reason: a count read apart from the view would tear.
+    settings_frames: u64,
 }
 
 /// The adapter and the two tasks, plus the idempotence flags — the teardown
@@ -234,6 +241,9 @@ impl LaneInner {
         let first = {
             let mut s = lock(&self.state);
             s.view.apply(event);
+            if matches!(event, LaneEvent::Settings { .. }) {
+                s.settings_frames += 1;
+            }
             let first = !s.dirty;
             s.dirty = true;
             first
@@ -366,6 +376,7 @@ pub(super) async fn open_adapter(
         state: Mutex::new(LaneState {
             view: LaneView::default(),
             dirty: false,
+            settings_frames: 0,
         }),
         tasks: Mutex::new(LaneTasks {
             client: Some(Arc::clone(&client)),
@@ -582,7 +593,8 @@ async fn forward_loop(inner: Arc<LaneInner>, push: impl Fn() -> NudgeResult) {
 
 /// **The one read**, and the nudge acknowledgement: the staged view projected
 /// — the transcript, the pending approvals, and the session's live row,
-/// capabilities and settings — under ONE lock, and the dirty bit cleared.
+/// capabilities and settings, with the count of `Settings` frames folded so far
+/// — under ONE lock, and the dirty bit cleared.
 ///
 /// It is also where a panel reads what the session can do. There is no
 /// `lane_capabilities` getter (plan 025 §3.2.1): capabilities are per session
@@ -608,7 +620,7 @@ pub fn lane_snapshot(lane: &BridgeLane, since_seq: Option<u64>) -> BridgeLaneSna
     // is in the value being returned. There is no ordering here in which a
     // change is both un-nudged and unseen.
     s.dirty = false;
-    BridgeLaneSnapshot::from_view(s.view.snapshot(since_seq))
+    BridgeLaneSnapshot::from_view(s.view.snapshot(since_seq), s.settings_frames)
 }
 
 // ---------------------------------------------------------------------------
@@ -687,6 +699,39 @@ pub async fn lane_stop(lane: &BridgeLane) -> Result<(), BridgeLaneError> {
     on_bridge_rt(async move { client.stop().await.map_err(BridgeLaneError::from) }).await
 }
 
+/// **Change one of the session's settings** (plan 025 §3.10) — the settings
+/// sheet's one verb: craze's `session.set`, a fresh command id per call.
+///
+/// `Ok` means craze applied it, and the change itself arrives on the stream
+/// AHEAD of the answer — a `meta` delta, re-emitted as `Settings` — so the
+/// sheet re-renders from the next snapshot and never from what it asked for.
+/// A [`BridgeLaneSettingChange::Config`] carries `for_model`, the model the
+/// sheet DISPLAYED when the option was pressed (Amendment A13): a session that
+/// has moved on refuses it — `stale_model`, [`BridgeLaneError::NotAccepting`] —
+/// rather than apply an option chosen for one model to another. A refusal is
+/// definite and the person's retry is a new call (a new command id). An answer
+/// lost to a drop is [`BridgeLaneError::OutcomeUnknown`]: the change may have
+/// run, nothing resends it, and the sheet says "not confirmed" until the next
+/// `Settings` ([`BridgeLaneSnapshot::settings_frames`]) says where the session
+/// is.
+///
+/// A session whose capabilities say `settings: false` (every opencode one)
+/// refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
+/// offers no settings there.
+pub async fn lane_set(
+    lane: &BridgeLane,
+    change: BridgeLaneSettingChange,
+) -> Result<(), BridgeLaneError> {
+    let client = lane.inner.client()?;
+    on_bridge_rt(async move {
+        client
+            .set(change.into())
+            .await
+            .map_err(BridgeLaneError::from)
+    })
+    .await
+}
+
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.
 ///
@@ -744,7 +789,7 @@ mod tests {
     use shed_core::rc::RcFeedMessage;
     use shed_opencode::testing::FakeOpencode;
 
-    use shed_core::lane::LaneCapabilities;
+    use shed_core::lane::{LaneCapabilities, LaneChoice, LaneSettings};
 
     use crate::api::bridge_rt::live_counters;
     use crate::api::testsupport::{test_guard, wait_until};
@@ -760,6 +805,7 @@ mod tests {
             state: Mutex::new(LaneState {
                 view: LaneView::default(),
                 dirty: false,
+                settings_frames: 0,
             }),
             tasks: Mutex::new(LaneTasks {
                 client: None,
@@ -920,6 +966,11 @@ mod tests {
         assert!(
             !caps.settings && !caps.stop,
             "opencode has no settings and cannot be stopped from here"
+        );
+        assert_eq!(
+            lane_snapshot(&lane, None).settings_frames,
+            0,
+            "opencode never sends a Settings frame"
         );
         assert_eq!(live_counters().active_lanes, 1);
 
@@ -1170,6 +1221,133 @@ mod tests {
         let down = lane_snapshot(&lane, None);
         assert!(down.ended);
         assert_eq!(down.stale.as_deref(), Some("session_closed"));
+
+        lane_close(&lane);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// A session's settings on `model`.
+    fn on_model(model: &str) -> LaneSettings {
+        LaneSettings {
+            model: Some(model.to_string()),
+            models: ["grok", "fast"]
+                .into_iter()
+                .map(|id| LaneChoice {
+                    id: id.to_string(),
+                    name: id.to_string(),
+                    rank: None,
+                    description: None,
+                })
+                .collect(),
+            ..LaneSettings::default()
+        }
+    }
+
+    /// **The settings sheet's clock** (plan 025 §3.10): every `Settings` the
+    /// pump folds moves [`BridgeLaneSnapshot::settings_frames`] by one, and
+    /// no other frame moves it — a "not confirmed" mark that cleared on a
+    /// transcript row would claim the session had said where its settings are
+    /// when it had not.
+    ///
+    /// A `Settings` inside a reseed counts when it is FOLDED, before its
+    /// seed's `Ready` shows it: the count runs ahead of the settings while the
+    /// seed is staged. That is why the snapshot's doc tells a reader to take
+    /// the count from a read whose `stale` is clear — and the reseed here
+    /// follows a `Stale`, as a lost answer's does, so `stale` is set for
+    /// exactly that window.
+    #[test]
+    fn every_settings_frame_moves_the_count_and_nothing_else_does() {
+        let _g = test_guard();
+        let lane = bare_lane();
+        let caps = LaneCapabilities {
+            kind: "craze".to_string(),
+            interject: true,
+            cancel: true,
+            approvals: true,
+            history_cursor: true,
+            settings: true,
+            stop: true,
+        };
+        assert_eq!(lane_snapshot(&lane, None).settings_frames, 0);
+        lane.inner.apply(&LaneEvent::Reset {
+            reason: "connect".to_string(),
+            generation: 1,
+        });
+        lane.inner.apply(&message(1));
+        lane.inner.apply(&LaneEvent::Capabilities {
+            capabilities: caps.clone(),
+        });
+        lane.inner.apply(&LaneEvent::Settings {
+            settings: on_model("grok"),
+        });
+        lane.inner.apply(&LaneEvent::Ready { generation: 1 });
+        let seeded = lane_snapshot(&lane, None);
+        assert_eq!(seeded.settings_frames, 1, "the seed's Settings");
+        assert_eq!(
+            seeded.settings.and_then(|s| s.model).as_deref(),
+            Some("grok")
+        );
+
+        // Everything else a live lane sends: none of it is a Settings.
+        lane.inner.apply(&message(2));
+        lane.inner.apply(&LaneEvent::Capabilities {
+            capabilities: caps.clone(),
+        });
+        lane.inner.apply(&LaneEvent::Stale {
+            reason: "hub connection lost".to_string(),
+        });
+        lane.inner.apply(&LaneEvent::Ready { generation: 1 });
+        assert_eq!(
+            lane_snapshot(&lane, None).settings_frames,
+            1,
+            "no frame but a Settings moves the count"
+        );
+
+        // A `meta` delta's Settings, between seeds: counted, and shown at once.
+        lane.inner.apply(&LaneEvent::Settings {
+            settings: on_model("fast"),
+        });
+        let moved = lane_snapshot(&lane, None);
+        assert_eq!(moved.settings_frames, 2);
+        assert_eq!(
+            moved.settings.and_then(|s| s.model).as_deref(),
+            Some("fast")
+        );
+
+        // A reseed after a drop: its Settings is counted when folded, while
+        // the staged seed is not on screen yet — and `stale` says so.
+        lane.inner.apply(&LaneEvent::Stale {
+            reason: "hub connection lost".to_string(),
+        });
+        lane.inner.apply(&LaneEvent::Reset {
+            reason: "resume refused".to_string(),
+            generation: 2,
+        });
+        lane.inner.apply(&LaneEvent::Capabilities {
+            capabilities: caps.clone(),
+        });
+        lane.inner.apply(&LaneEvent::Settings {
+            settings: on_model("grok"),
+        });
+        let staged = lane_snapshot(&lane, None);
+        assert_eq!(staged.settings_frames, 3);
+        assert!(
+            staged.stale.is_some(),
+            "the count ran ahead of the screen only while the view is stale"
+        );
+        assert_eq!(
+            staged.settings.and_then(|s| s.model).as_deref(),
+            Some("fast"),
+            "the staged seed is not shown yet"
+        );
+        lane.inner.apply(&LaneEvent::Ready { generation: 2 });
+        let reseeded = lane_snapshot(&lane, None);
+        assert_eq!(reseeded.settings_frames, 3, "a Ready moves nothing");
+        assert_eq!(reseeded.stale, None);
+        assert_eq!(
+            reseeded.settings.and_then(|s| s.model).as_deref(),
+            Some("grok")
+        );
 
         lane_close(&lane);
         assert_eq!(live_counters().active_lanes, 0);

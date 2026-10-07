@@ -67,6 +67,13 @@ abstract interface class LaneSource {
   /// good. Offered only when the snapshot's capabilities say `stop`.
   Future<void> stop(LaneHandle handle);
 
+  /// Change one of the session's settings (plan 025 §3.10): craze's
+  /// `session.set`, a new command per call. The change itself arrives on the
+  /// stream ahead of the answer (a `Settings` in the next snapshot); a config
+  /// change carries the model the sheet DISPLAYED (Amendment A13). Offered
+  /// only when the snapshot's capabilities say `settings`.
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change);
+
   /// Synchronous teardown. Idempotent; Rust's `Drop` is the backstop.
   void close(LaneHandle handle);
 }
@@ -109,6 +116,10 @@ class BridgeLaneSource implements LaneSource {
 
   @override
   Future<void> stop(LaneHandle handle) => laneStop(lane: _lane(handle));
+
+  @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) =>
+      laneSet(lane: _lane(handle), change: change);
 
   @override
   void close(LaneHandle handle) {

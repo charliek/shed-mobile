@@ -596,6 +596,7 @@ class _FakeSource implements LaneSource {
           settings: false,
           stop: false,
         ),
+        settingsFrames: BigInt.zero,
         approvals: const [],
       );
 

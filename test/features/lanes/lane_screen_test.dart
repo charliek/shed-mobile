@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
 import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
@@ -50,6 +51,12 @@ import '../../lanes/fake_lane_lease.dart';
 ///    only when they say `cancel` (and a turn is running); the banner tells a
 ///    lane reconnecting on its own (`stale`, not `ended`) from one that is
 ///    over.
+/// 7. **The settings chip and sheet** (plan 025 §3.10): offered only where the
+///    capabilities say `settings`, drawn from the session's own settings and
+///    re-drawn from its next `Settings` (a model change redraws the options, a
+///    change from another client appears in the open sheet), a refusal inline
+///    on its row, and a change lost to a drop "not confirmed" — never shown as
+///    applied — until the next `Settings`.
 void main() {
   group('the composer lifecycle', () {
     testWidgets('a send that lands after the screen is gone touches nothing', (
@@ -1012,6 +1019,523 @@ void main() {
       );
     });
   });
+
+  group('the settings chip and sheet (plan 025 §3.10)', () {
+    const chip = ValueKey('lane-settings-chip');
+    const sheet = ValueKey('lane-settings');
+
+    /// A tall surface, so the whole sheet lays out and every row is on screen.
+    void tall(WidgetTester tester) {
+      tester.view.physicalSize = const Size(900, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    Future<void> openSheet(WidgetTester tester) async {
+      await tester.tap(find.byKey(chip));
+      await _settle(tester);
+      expect(find.byKey(sheet), findsOneWidget);
+    }
+
+    testWidgets('CONTROL: offered only where the capabilities say settings — '
+        'no chip, and no sheet to reach, otherwise', (tester) async {
+      tall(tester);
+      // Every opencode session: `settings: false`, even with a settings tree
+      // a producer sent against the contract.
+      final rig = _Rig(snapshot: _snap(settings: _grok46));
+      await _pump(tester, rig);
+      expect(find.byKey(chip), findsNothing);
+      expect(find.byKey(sheet), findsNothing);
+
+      // The control: the same lane once its capabilities say `settings`.
+      rig.bump(_snap(capabilities: _settingsCaps, settings: _grok46));
+      await _settle(tester);
+      expect(find.byKey(chip), findsOneWidget);
+      expect(_chipText(tester), 'Grok 4.6 · High · fast');
+    });
+
+    testWidgets('CONTROL: an open sheet LEAVES when the session stops offering '
+        'settings — hidden, never disabled', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      // A new incarnation whose capabilities say `settings: false`.
+      rig.bump(_snap(capabilities: _caps(kind: 'craze')));
+      await _settle(tester);
+      expect(find.byKey(sheet), findsNothing);
+      expect(find.byKey(chip), findsNothing);
+      expect(find.byKey(const ValueKey('lane-screen')), findsOneWidget);
+    });
+
+    testWidgets('before the first Settings: a "Settings" chip and an empty '
+        'sheet', (tester) async {
+      tall(tester);
+      final rig = _Rig(snapshot: _snap(capabilities: _settingsCaps));
+      await _pump(tester, rig);
+      expect(_chipText(tester), 'Settings');
+      await openSheet(tester);
+      expect(find.byKey(const ValueKey('lane-settings-empty')), findsOneWidget);
+    });
+
+    testWidgets('the sheet draws the session\'s rows: the model a list, the '
+        'options and the mode segmented, the current values selected', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      expect(_rowKeys(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ]);
+      for (final m in ['grok-4.6', 'composer-2.5', 'claude-opus-5']) {
+        expect(find.byKey(ValueKey('lane-setting-model:model-$m')), findsOne);
+      }
+      expect(_selected(tester, 'model:model', 'grok-4.6'), isTrue);
+      expect(_selected(tester, 'model:model', 'composer-2.5'), isFalse);
+      // A list line is checked; a segment is not a list line.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-model:model-grok-4.6')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-config:effort-high')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsNothing,
+        reason: 'four values: a segmented control',
+      );
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      expect(_selected(tester, 'config:fast', 'true'), isTrue);
+      expect(_selected(tester, 'mode:mode', 'agent'), isTrue);
+      expect(find.byKey(const ValueKey('lane-settings-meter')), findsNothing);
+    });
+
+    testWidgets('a press is pending — "applying…", no optimistic value, no '
+        'second press — and sends the option bound to the model SHOWN', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      rig.source.holdSet = Completer<void>();
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-low')),
+      );
+      await _settle(tester);
+      expect(_markText('config:effort'), pendingText);
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-medium')),
+      );
+      await _settle(tester);
+      expect(
+        rig.source.sets,
+        [
+          const BridgeLaneSettingChange.config(
+            id: 'effort',
+            value: 'low',
+            forModel: 'grok-4.6',
+          ),
+        ],
+        reason: 'one change, bound to the model this sheet drew (A13)',
+      );
+
+      // craze's delta, ahead of its answer.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, effort: 'low'),
+          settingsFrames: 1,
+        ),
+      );
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-setting-mark-config:effort')),
+        findsNothing,
+      );
+      expect(_selected(tester, 'config:effort', 'low'), isTrue);
+      expect(_chipText(tester), 'Grok 4.6 · Low · fast');
+    });
+
+    testWidgets('CONTROL: a model change re-renders the options from the NEXT '
+        'Settings — never from the press', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-model:model-claude-opus-5')),
+      );
+      await _settle(tester);
+      expect(rig.source.sets, [
+        const BridgeLaneSettingChange.model(id: 'claude-opus-5'),
+      ]);
+      expect(_rowKeys(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ], reason: 'grok-4.6\'s options until the session says otherwise');
+
+      rig.bump(
+        _snap(capabilities: _settingsCaps, settings: _opus, settingsFrames: 1),
+      );
+      await _settle(tester);
+      expect(_rowKeys(), [
+        'model:model',
+        'config:thinking',
+        'config:effort',
+        'config:context',
+        'config:fast',
+        'mode:mode',
+      ], reason: 'claude-opus-5\'s OWN options');
+      expect(_selected(tester, 'model:model', 'claude-opus-5'), isTrue);
+      // Five effort values now: a list.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('lane-setting-config:effort-max')),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+      expect(_chipText(tester), 'Claude Opus 5 · Max');
+    });
+
+    testWidgets('CONTROL: a change made by another client appears in the open '
+        'sheet', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+      expect(_selected(tester, 'mode:mode', 'agent'), isTrue);
+
+      // Nobody pressed anything here: an attached TUI moved the mode.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, mode: 'plan'),
+          settingsFrames: 1,
+        ),
+      );
+      await _settle(tester);
+      expect(_selected(tester, 'mode:mode', 'plan'), isTrue);
+      expect(_selected(tester, 'mode:mode', 'agent'), isFalse);
+      expect(rig.source.sets, isEmpty);
+    });
+
+    testWidgets('CONTROL: a refusal is shown inline on ITS row', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      )..source.setFailure = const BridgeLaneError.notAccepting();
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:effort-low')),
+      );
+      await _settle(tester);
+      expect(_markText('config:effort'), staleModelText);
+      for (final other in ['model:model', 'config:fast', 'mode:mode']) {
+        expect(
+          find.byKey(ValueKey('lane-setting-mark-$other')),
+          findsNothing,
+          reason: 'only the row that was refused',
+        );
+      }
+      expect(_selected(tester, 'config:effort', 'high'), isTrue);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    });
+
+    testWidgets('CONTROL: a change lost to a drop is "not confirmed" — never '
+        'shown as applied — until the next Settings', (tester) async {
+      tall(tester);
+      final rig =
+          _Rig(
+              snapshot: _snap(
+                capabilities: _settingsCaps,
+                settings: _grok46,
+                settingsFrames: 2,
+              ),
+            )
+            ..source.setFailure = const BridgeLaneError.outcomeUnknown(
+              msg: 'outcome unknown: the connection to craze dropped',
+            );
+      await _pump(tester, rig);
+      await openSheet(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-config:fast-false')),
+      );
+      await _settle(tester);
+      expect(_markText('config:fast'), notConfirmedText);
+      expect(
+        _selected(tester, 'config:fast', 'true'),
+        isTrue,
+        reason: 'the old value until the session says otherwise',
+      );
+
+      // A read with nothing new to say: still not confirmed.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _grok46,
+          settingsFrames: 2,
+        ),
+      );
+      await _settle(tester);
+      expect(_markText('config:fast'), notConfirmedText);
+
+      // The next Settings: the change DID run.
+      rig.bump(
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _with(_grok46, fast: 'false'),
+          settingsFrames: 3,
+        ),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-setting-mark-config:fast')),
+        findsNothing,
+      );
+      expect(_selected(tester, 'config:fast', 'false'), isTrue);
+      expect(rig.source.sets, hasLength(1), reason: 'never resent');
+    });
+
+    testWidgets('closing the sheet mid-change loses nothing: the mark is the '
+        'lane\'s', (tester) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(capabilities: _settingsCaps, settings: _grok46),
+      );
+      rig.source.holdSet = Completer<void>();
+      await _pump(tester, rig);
+      await openSheet(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('lane-setting-mode:mode-ask')),
+      );
+      await _settle(tester);
+      expect(_markText('mode:mode'), pendingText);
+
+      Navigator.of(tester.element(find.byKey(sheet))).pop();
+      await _settle(tester);
+      expect(find.byKey(sheet), findsNothing);
+      await openSheet(tester);
+      expect(_markText('mode:mode'), pendingText, reason: 'still in flight');
+
+      rig.source.setFailure = const BridgeLaneError.failed(msg: 'nope');
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(_markText('mode:mode'), 'nope');
+    });
+
+    testWidgets('a context meter only when the usage has tokens AND a window', (
+      tester,
+    ) async {
+      tall(tester);
+      final rig = _Rig(
+        snapshot: _snap(
+          capabilities: _settingsCaps,
+          settings: _with(
+            _grok46,
+            usage: BridgeLaneUsage(
+              contextTokens: BigInt.from(68000),
+              contextWindow: BigInt.from(200000),
+            ),
+          ),
+        ),
+      );
+      await _pump(tester, rig);
+      await openSheet(tester);
+      expect(find.byKey(const ValueKey('lane-settings-meter')), findsOneWidget);
+      expect(find.text('68k / 200k tokens · 34%'), findsOneWidget);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// the settings fixtures (craze's permodel cursor, as shed-craze orders it)
+// ---------------------------------------------------------------------------
+
+/// A craze session that offers settings.
+final _settingsCaps = _caps(kind: 'craze', settings: true);
+
+List<BridgeLaneChoice> _offOn(String on) => [
+  const BridgeLaneChoice(id: 'false', name: 'Off'),
+  BridgeLaneChoice(id: 'true', name: on),
+];
+
+const _models = [
+  BridgeLaneChoice(id: 'grok-4.6', name: 'Grok 4.6'),
+  BridgeLaneChoice(id: 'composer-2.5', name: 'Composer 2.5'),
+  BridgeLaneChoice(id: 'claude-opus-5', name: 'Claude Opus 5'),
+  BridgeLaneChoice(id: 'glm-5.2', name: 'GLM 5.2'),
+];
+
+const _modes = [
+  BridgeLaneChoice(id: 'agent', name: 'Agent'),
+  BridgeLaneChoice(id: 'plan', name: 'Plan'),
+  BridgeLaneChoice(id: 'ask', name: 'Ask'),
+];
+
+/// grok-4.6: effort (four values) and fast.
+final _grok46 = _with(
+  const BridgeLaneSettings(models: _models, modes: _modes, options: []),
+);
+
+/// claude-opus-5: thinking, effort (five values), context and fast.
+final _opus = BridgeLaneSettings(
+  model: 'claude-opus-5',
+  models: _models,
+  mode: 'agent',
+  modes: _modes,
+  options: [
+    BridgeLaneSetting(
+      id: 'thinking',
+      name: 'Thinking',
+      category: 'thought_level',
+      current: 'true',
+      values: _offOn('On'),
+    ),
+    const BridgeLaneSetting(
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      current: 'max',
+      values: [
+        BridgeLaneChoice(id: 'low', name: 'Low'),
+        BridgeLaneChoice(id: 'medium', name: 'Medium'),
+        BridgeLaneChoice(id: 'high', name: 'High'),
+        BridgeLaneChoice(id: 'xhigh', name: 'Extra High'),
+        BridgeLaneChoice(id: 'max', name: 'Max'),
+      ],
+    ),
+    const BridgeLaneSetting(
+      id: 'context',
+      name: 'Context',
+      category: 'model_config',
+      current: '300k',
+      values: [
+        BridgeLaneChoice(id: '300k', name: '300K'),
+        BridgeLaneChoice(id: '1m', name: '1M'),
+      ],
+    ),
+    BridgeLaneSetting(
+      id: 'fast',
+      name: 'Fast',
+      category: 'model_config',
+      current: 'false',
+      values: _offOn('Fast'),
+    ),
+  ],
+);
+
+/// A grok-4.6 session with the values given.
+BridgeLaneSettings _with(
+  BridgeLaneSettings base, {
+  String effort = 'high',
+  String fast = 'true',
+  String mode = 'agent',
+  BridgeLaneUsage? usage,
+}) => BridgeLaneSettings(
+  model: 'grok-4.6',
+  models: base.models,
+  mode: mode,
+  modes: base.modes,
+  options: [
+    BridgeLaneSetting(
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      current: effort,
+      values: const [
+        BridgeLaneChoice(id: 'low', name: 'Low'),
+        BridgeLaneChoice(id: 'medium', name: 'Medium'),
+        BridgeLaneChoice(id: 'high', name: 'High'),
+        BridgeLaneChoice(id: 'xhigh', name: 'Extra High'),
+      ],
+    ),
+    BridgeLaneSetting(
+      id: 'fast',
+      name: 'Fast',
+      category: 'model_config',
+      current: fast,
+      values: _offOn('Fast'),
+    ),
+  ],
+  usage: usage,
+);
+
+/// The chip's words.
+String _chipText(WidgetTester tester) => tester
+    .widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('lane-settings-chip')),
+        matching: find.byType(Text),
+      ),
+    )
+    .data!;
+
+/// The sheet's rows, by key, in the order drawn.
+List<String> _rowKeys() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> &&
+          RegExp(r'^lane-setting-[a-z]+:[^-]+$').hasMatch(k.value);
+    })
+    .evaluate()
+    .map(
+      (e) => (e.widget.key! as ValueKey<String>).value.substring(
+        'lane-setting-'.length,
+      ),
+    )
+    .toList();
+
+/// Whether [row]'s [value] is the one it shows as current.
+bool _selected(WidgetTester tester, String row, String value) => tester
+    .widget<Semantics>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey('lane-setting-$row-$value')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    )
+    .properties
+    .selected!;
+
+/// The mark [row] shows inline, or null when it shows none.
+String? _markText(String row) {
+  final mark = find.byKey(ValueKey('lane-setting-mark-$row')).evaluate();
+  return mark.isEmpty ? null : (mark.single.widget as Text).data;
 }
 
 // ---------------------------------------------------------------------------
@@ -1097,6 +1621,8 @@ BridgeLaneSnapshot _snap({
   bool ended = false,
   BridgeLaneSession? session,
   BridgeLaneCapabilities? capabilities = _fixtureCaps,
+  BridgeLaneSettings? settings,
+  int settingsFrames = 0,
   int generation = 1,
 }) => BridgeLaneSnapshot(
   messages: rows,
@@ -1107,6 +1633,8 @@ BridgeLaneSnapshot _snap({
   stale: stale,
   ended: ended,
   capabilities: capabilities,
+  settings: settings,
+  settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
 );
 
@@ -1144,13 +1672,14 @@ BridgeLaneCapabilities _caps({
   bool interject = true,
   bool cancel = true,
   bool stop = false,
+  bool settings = false,
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
   cancel: cancel,
   approvals: true,
   historyCursor: true,
-  settings: false,
+  settings: settings,
   stop: stop,
 );
 
@@ -1259,6 +1788,22 @@ class _FakeSource implements LaneSource {
   Future<void> stop(LaneHandle handle) async {
     stops++;
     final failure = stopFailure;
+    if (failure != null) throw failure;
+  }
+
+  /// Every settings change sent, in order.
+  final sets = <BridgeLaneSettingChange>[];
+  Object? setFailure;
+
+  /// When set, `set` awaits it — a change held PENDING.
+  Completer<void>? holdSet;
+
+  @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) async {
+    sets.add(change);
+    final hold = holdSet;
+    if (hold != null) await hold.future;
+    final failure = setFailure;
     if (failure != null) throw failure;
   }
 

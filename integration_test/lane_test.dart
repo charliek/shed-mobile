@@ -57,6 +57,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
@@ -272,6 +273,44 @@ void main() {
         await rig.ocPostPaths(),
         before,
         reason: 'a refusal that reached the wire is not a local refusal',
+      );
+    }, timeout: _cell);
+
+    testWidgets('settings_are_hidden_where_the_capabilities_say_none', (
+      tester,
+    ) async {
+      // Plan 025 §3.10: hidden, never disabled. opencode's capabilities say
+      // `settings: false` in every seed, so its transcript has no settings
+      // chip, no sheet can be reached, and a change asked of the lane anyway
+      // sends nothing at all.
+      final rig = await _oc(tester);
+      await rig.pumpUntil(
+        tester,
+        () => rig.state.capabilities != null,
+        what: 'the lane',
+      );
+      expect(rig.state.capabilities!.settings, isFalse);
+      expect(rig.state.settings, isNull);
+      expect(find.byKey(const ValueKey('lane-settings-chip')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+
+      final before = await rig.ocPostPaths();
+      const row = SettingsRow(
+        id: 'mode',
+        kind: SettingKind.mode,
+        name: 'Mode',
+        control: SettingControl.segmented,
+        current: 'build',
+        values: [BridgeLaneChoice(id: 'plan', name: 'Plan')],
+        category: null,
+      );
+      await rig.controller.setSetting(row, 'plan', displayedModel: null);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(rig.state.settingMarks, isEmpty);
+      expect(
+        await rig.ocPostPaths(),
+        before,
+        reason: 'nothing a settings-less session was asked reached the wire',
       );
     }, timeout: _cell);
 

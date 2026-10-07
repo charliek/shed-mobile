@@ -80,6 +80,32 @@
 // * **the ghost row** (Amendment A16) — with the roster's own bridge FROZEN, so
 //   no roster frame can list or remove it, a session created and stopped at
 //   once leaves the rows: the source's `on_created_gone`, through the feed.
+//
+// ## The cells (CM6: settings, §3.10)
+//
+// The transcript's settings chip and sheet against craze's permodel cursor
+// (`craze-fake-agent -script permodel`, four models each with an option
+// catalog of its own) — the desktop's C11 cells:
+//
+// * **the sheet, and a model change** — the chip reads the CURRENT values;
+//   the sheet lists the model, grok-4.6's options and the mode; with the
+//   agent holding its answer the model row is PENDING with no optimistic
+//   value, and once it answers the sheet redraws claude-opus-5's OWN options
+//   from the session's next `Settings`. An option change goes out bound to
+//   the model the sheet shows (A13).
+// * **a refusal, inline** — a second client moves the model while the agent
+//   holds that change; the sheet's effort press, chosen on the model it
+//   showed, is refused `stale_model` on its own row ("the model changed; try
+//   again") and never reaches the agent; the retry is a NEW command.
+// * **the model the sheet DISPLAYED** (A13) — the lane folds another client's
+//   move while the screen, held, still shows the old model: an option pressed
+//   there goes out bound to the model shown and is refused `stale_model`,
+//   never applied to the model the session moved to.
+// * **another client's change** — appears in the open sheet, nothing pressed.
+// * **a change lost to a drop** — the lane's own bridge cut once craze has the
+//   change (and its redial held): the row says "not confirmed", still showing
+//   the old value; when the lane resumes, its next `Settings` replaces the
+//   mark with the real value; the change ran once and was never resent.
 import 'dart:async';
 import 'dart:io';
 
@@ -95,6 +121,7 @@ import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/machines/machine_sessions_view.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
 import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
@@ -1520,6 +1547,400 @@ void main() {
     skip: skip,
     timeout: _cell,
   );
+
+  // -------------------------------------------------------------------------
+  // settings (CM6, §3.10)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the_sheet_renders_crazes_settings_and_a_model_change_redraws_the_options',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      expect(_chip(), 'Grok 4.6 · High · fast');
+      await _openSettings(tester);
+      expect(_sheetRows(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ]);
+      expect(_values('model:model'), _permodelModels);
+      expect(_shown(tester, 'model:model'), 'grok-4.6');
+      expect(_values('config:effort'), ['low', 'medium', 'high', 'xhigh']);
+      expect(_shown(tester, 'config:effort'), 'high');
+      expect(_shown(tester, 'config:fast'), 'true');
+      expect(_values('mode:mode'), ['agent', 'plan', 'ask']);
+      expect(
+        find.byKey(const ValueKey('lane-settings-meter')),
+        findsNothing,
+        reason: 'an ACP session reports no usage: no context meter',
+      );
+
+      // The model change, with the agent holding its answer: PENDING, and
+      // no optimistic value.
+      await t.gate.hold();
+      await _pressSetting(tester, 'model:model', 'claude-opus-5');
+      await _until(
+        tester,
+        () => _markOf('model:model') == pendingText,
+        what: 'the model row pending',
+      );
+      expect(_shown(tester, 'model:model'), 'grok-4.6');
+      expect(rig.sets.last.setting, {
+        'kind': 'model',
+        'value': 'claude-opus-5',
+      });
+      await t.gate.release();
+      t.gate.open();
+      await _until(
+        tester,
+        () =>
+            _shown(tester, 'model:model') == 'claude-opus-5' &&
+            _markOf('model:model') == null,
+        what: 'the model change, from the session\'s next Settings',
+      );
+      // claude-opus-5's OWN options: thinking and effort (thought_level)
+      // before context and fast (model_config), effort now five values and
+      // so a list.
+      expect(_sheetRows(), [
+        'model:model',
+        'config:thinking',
+        'config:effort',
+        'config:context',
+        'config:fast',
+        'mode:mode',
+      ]);
+      expect(_values('config:effort'), hasLength(5));
+      expect(_isList(tester, 'config:effort'), isTrue);
+      expect(_values('model:model').first, 'claude-opus-5', reason: 'first');
+      expect(_chip(), 'Claude Opus 5 · High');
+
+      // An option and a mode, each from the session's own next Settings —
+      // the option bound to the model the sheet now shows.
+      await _pressSetting(tester, 'config:effort', 'low');
+      await _until(
+        tester,
+        () => _shown(tester, 'config:effort') == 'low',
+        what: 'the option change',
+      );
+      await _pressSetting(tester, 'mode:mode', 'plan');
+      await _until(
+        tester,
+        () => _shown(tester, 'mode:mode') == 'plan',
+        what: 'the mode change',
+      );
+      expect(_chip(), 'Claude Opus 5 · Low');
+      final sent = [for (final e in rig.sets) e.setting];
+      expect(
+        sent,
+        anyElement(
+          equals({
+            'kind': 'config',
+            'id': 'effort',
+            'value': 'low',
+            'forModel': 'claude-opus-5',
+          }),
+        ),
+      );
+      expect(sent, anyElement(equals({'kind': 'mode', 'value': 'plan'})));
+      expect(_sheetMarks(), isEmpty);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_stale_model_refusal_is_inline_on_its_row_and_the_retry_is_a_new_command',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _openSettings(tester);
+      expect(_shown(tester, 'model:model'), 'grok-4.6');
+
+      final other = await rig.client();
+      try {
+        final sid = await other.connect(t.host);
+        await t.gate.hold();
+        // Another client moves the session to claude-opus-5; the agent holds
+        // that change.
+        final moved = other.send('session.set', {
+          'sessionId': sid,
+          'commandId': '1',
+          'setting': {'kind': 'model', 'value': 'claude-opus-5'},
+        });
+        await _until(
+          tester,
+          () => CrazeRig.agentSets(t.calls).lastOrNull == 'model=claude-opus-5',
+          what: 'the other client\'s move at the agent',
+        );
+        // The sheet still shows grok-4.6: the effort press is chosen on it,
+        // and bound to it.
+        final before = rig.sets.length;
+        await _pressSetting(tester, 'config:effort', 'low');
+        await _until(
+          tester,
+          () => rig.sets.length > before,
+          what: 'the sheet\'s change on the wire',
+        );
+        final chosen = rig.sets.last;
+        expect(chosen.setting, {
+          'kind': 'config',
+          'id': 'effort',
+          'value': 'low',
+          'forModel': 'grok-4.6',
+        });
+        expect(_markOf('config:effort'), pendingText);
+        // Let the change reach craze's queue behind the held move.
+        await _wait(tester, const Duration(milliseconds: 500));
+        await t.gate.release();
+        await _until(
+          tester,
+          () => _markOf('config:effort') == staleModelText,
+          what: 'the stale_model refusal on the effort row',
+        );
+        expect(
+          (await moved.timeout(const Duration(seconds: 30)))['value'],
+          'claude-opus-5',
+        );
+        t.gate.open();
+        await _until(
+          tester,
+          () => _shown(tester, 'model:model') == 'claude-opus-5',
+          what: 'the sheet redrawn on the session\'s model',
+        );
+        expect(
+          _markOf('config:effort'),
+          staleModelText,
+          reason: 'the refusal stays on its row until the row is pressed',
+        );
+        for (final row in _sheetRows()) {
+          if (row != 'config:effort') {
+            expect(_markOf(row), isNull, reason: 'only $row\'s own');
+          }
+        }
+        expect(
+          CrazeRig.agentSets(t.calls),
+          isNot(contains('effort=low')),
+          reason: 'a change chosen for another model never reached the agent',
+        );
+
+        // The retry: a NEW command, bound to the model shown now.
+        await _pressSetting(tester, 'config:effort', 'low');
+        await _until(
+          tester,
+          () =>
+              _shown(tester, 'config:effort') == 'low' &&
+              _markOf('config:effort') == null,
+          what: 'the retry taking',
+        );
+        final retry = rig.sets.last;
+        expect(retry.setting['forModel'], 'claude-opus-5');
+        expect(
+          retry.commandId,
+          isNot(chosen.commandId),
+          reason: 'the retry is a NEW command',
+        );
+      } finally {
+        await other.close();
+      }
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_option_is_bound_to_the_model_the_sheet_displayed',
+    (tester) async {
+      // Amendment A13, live: another client moves the session to
+      // composer-2.5 and the lane FOLDS it, while the screen still shows
+      // grok-4.6 (the view held — the frame between the adapter folding a
+      // change and the screen drawing it). The fast press — an option
+      // composer-2.5 also has — goes out bound to grok-4.6, and craze refuses
+      // it `stale_model`, inline on its row, rather than apply it to
+      // composer-2.5. It never reaches the agent.
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final view = _HeldViewSource();
+      final t = await _permodel(tester, rig, recording: view);
+      await _openSettings(tester);
+      expect(_shown(tester, 'model:model'), 'grok-4.6');
+      expect(_shown(tester, 'config:fast'), 'true');
+
+      final other = await rig.client();
+      try {
+        final sid = await other.connect(t.host);
+        view.hold();
+        await other.call('session.set', {
+          'sessionId': sid,
+          'commandId': '1',
+          'setting': {'kind': 'model', 'value': 'composer-2.5'},
+        });
+        await _until(
+          tester,
+          () => view.latest?.settings?.model == 'composer-2.5',
+          what: 'the move folded by the lane',
+        );
+        expect(
+          _shown(tester, 'model:model'),
+          'grok-4.6',
+          reason: 'the sheet still shows grok-4.6',
+        );
+        final before = rig.sets.length;
+        await _pressSetting(tester, 'config:fast', 'false');
+        await _until(
+          tester,
+          () => _markOf('config:fast') == staleModelText,
+          what: 'the stale_model refusal on the fast row',
+        );
+        final sent = rig.sets.sublist(before);
+        expect(sent, hasLength(1));
+        expect(sent.single.setting, {
+          'kind': 'config',
+          'id': 'fast',
+          'value': 'false',
+          'forModel': 'grok-4.6',
+        });
+        expect(
+          CrazeRig.agentSets(t.calls),
+          isNot(contains('fast=false')),
+          reason: 'an option chosen on grok-4.6 never reached composer-2.5',
+        );
+      } finally {
+        view.release();
+        await other.close();
+      }
+      await _until(
+        tester,
+        () => _shown(tester, 'model:model') == 'composer-2.5',
+        what: 'the sheet, released, showing the move',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_change_made_by_another_client_appears_in_the_open_sheet',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _openSettings(tester);
+      expect(_shown(tester, 'mode:mode'), 'agent');
+      expect(_shown(tester, 'config:effort'), 'high');
+
+      final other = await rig.client();
+      try {
+        final sid = await other.connect(t.host);
+        await other.call('session.set', {
+          'sessionId': sid,
+          'commandId': '1',
+          'setting': {'kind': 'mode', 'value': 'plan'},
+        });
+        await other.call('session.set', {
+          'sessionId': sid,
+          'commandId': '2',
+          'setting': {
+            'kind': 'config',
+            'id': 'effort',
+            'value': 'low',
+            'forModel': 'grok-4.6',
+          },
+        });
+      } finally {
+        await other.close();
+      }
+      await _until(
+        tester,
+        () =>
+            _shown(tester, 'mode:mode') == 'plan' &&
+            _shown(tester, 'config:effort') == 'low',
+        what: 'the other client\'s changes in the open sheet',
+      );
+      expect(_chip(), 'Grok 4.6 · Low · fast');
+      expect(rig.sets, isEmpty, reason: 'nothing was pressed here');
+      expect(_sheetMarks(), isEmpty);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_change_lost_to_a_drop_is_not_confirmed_until_the_next_settings',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      final controller = t.controller();
+      await _openSettings(tester);
+      expect(_shown(tester, 'config:fast'), 'true');
+      final handle = controller.handle;
+
+      // The lane's bridge is cut once craze has the change, and its redial
+      // held: the answer is lost, and the lane cannot come back yet.
+      rig.dropSets = true;
+      rig.holdCrazeDials = Completer<void>();
+      try {
+        await _pressSetting(tester, 'config:fast', 'false');
+        await _until(
+          tester,
+          () => _markOf('config:fast') == notConfirmedText,
+          what: 'the fast row not confirmed',
+        );
+        expect(
+          _shown(tester, 'config:fast'),
+          'true',
+          reason: 'the old value until the session says otherwise',
+        );
+        await _until(
+          tester,
+          () => controller.state.stale != null,
+          what: 'the lane to say it is reconnecting',
+        );
+        // A while with no way back: still not confirmed, never applied.
+        await _wait(tester, const Duration(seconds: 2));
+        expect(_markOf('config:fast'), notConfirmedText);
+        expect(_shown(tester, 'config:fast'), 'true');
+        expect(
+          CrazeRig.agentSets(t.calls),
+          contains('fast=false'),
+          reason: 'craze ran the change',
+        );
+      } finally {
+        rig.dropSets = false;
+        rig.holdCrazeDials!.complete();
+        rig.holdCrazeDials = null;
+      }
+
+      // The lane resumes, and its next Settings — the change DID run —
+      // replaces the mark with the real value.
+      await _until(
+        tester,
+        () =>
+            _markOf('config:fast') == null &&
+            _shown(tester, 'config:fast') == 'false',
+        what: 'the resume\'s Settings replacing the mark',
+      );
+      expect(controller.handle, same(handle), reason: 'a silent resume');
+      await _wait(tester, const Duration(seconds: 1));
+      final fast = [
+        for (final e in rig.sets)
+          if (e.setting['id'] == 'fast') e,
+      ];
+      expect(fast, hasLength(1), reason: 'never resent');
+      expect(fast.single.dropped, isTrue);
+      expect(
+        CrazeRig.agentSets(t.calls).where((c) => c == 'fast=false'),
+        hasLength(1),
+        reason: 'the agent was asked once',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1888,7 +2309,72 @@ class _RecordingSource implements LaneSource {
   Future<void> stop(LaneHandle handle) => _bridge.stop(handle);
 
   @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) =>
+      _bridge.set(handle, change);
+
+  @override
   void close(LaneHandle handle) => _bridge.close(handle);
+}
+
+/// [_RecordingSource] with the desktop's view hold (`ui.hold_lane_view`): while
+/// [hold] is set, every read still goes to the bridge — the lane's fold moves
+/// on, and [latest] says where to — but the controller is handed the view as
+/// it stood when the hold began, with no new rows. What a person sees in the
+/// moment between the adapter folding a change and the screen drawing it,
+/// held open so a cell can press inside it. [release] lets the screen catch
+/// up.
+class _HeldViewSource extends _RecordingSource {
+  bool _held = false;
+  BridgeLaneSnapshot? _shown;
+
+  /// The bridge's own latest read — the lane's fold, whatever the screen
+  /// shows.
+  BridgeLaneSnapshot? latest;
+
+  /// One nudge stream per open lane, so [release] can ask for a read.
+  final _kick = StreamController<bool>.broadcast();
+
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    _kick.add(true);
+  }
+
+  @override
+  Stream<bool> nudges(LaneHandle handle) {
+    final out = StreamController<bool>();
+    final real = _bridge
+        .nudges(handle)
+        .listen(out.add, onError: out.addError, onDone: out.close);
+    final kicks = _kick.stream.listen(out.add);
+    out.onCancel = () async {
+      await kicks.cancel();
+      await real.cancel();
+    };
+    return out.stream;
+  }
+
+  @override
+  BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) {
+    final read = super.snapshot(handle, sinceSeq);
+    latest = read;
+    if (!_held) return _shown = read;
+    final shown = _shown ?? read;
+    return BridgeLaneSnapshot(
+      messages: const [],
+      full: false,
+      activity: shown.activity,
+      session: shown.session,
+      generation: shown.generation,
+      stale: shown.stale,
+      ended: shown.ended,
+      capabilities: shown.capabilities,
+      settings: shown.settings,
+      settingsFrames: shown.settingsFrames,
+      approvals: shown.approvals,
+    );
+  }
 }
 
 /// The provider graph over [rig]'s tunnels, with the lane bridge recorded,
@@ -1896,8 +2382,12 @@ class _RecordingSource implements LaneSource {
 Future<
   ({ProviderContainer container, MachineFeed feed, _RecordingSource source})
 >
-_feedGraph(WidgetTester tester, CrazeRig rig) async {
-  final source = _RecordingSource();
+_feedGraph(
+  WidgetTester tester,
+  CrazeRig rig, {
+  _RecordingSource? recording,
+}) async {
+  final source = recording ?? _RecordingSource();
   final container = ProviderContainer(
     retry: (_, _) => null,
     overrides: [
@@ -2019,4 +2509,197 @@ Future<void> _wait(WidgetTester tester, Duration time) async {
   while (DateTime.now().isBefore(until)) {
     await tester.pump(const Duration(milliseconds: 50));
   }
+}
+
+// ---------------------------------------------------------------------------
+// settings (CM6)
+// ---------------------------------------------------------------------------
+
+/// The permodel session's models, in craze's order on grok-4.6.
+const _permodelModels = [
+  'grok-4.6',
+  'composer-2.5',
+  'claude-opus-5',
+  'glm-5.2',
+];
+
+/// A tall view, so the whole settings sheet lays out with every row on
+/// screen.
+void _tall(WidgetTester tester) {
+  tester.view.physicalSize = const Size(900, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
+/// **A craze session running craze's permodel cursor**, its transcript on
+/// screen and seeded with its settings — created as `cursor` (`[agents]`
+/// makes cursor ready; grok stays the default, and the config is put back at
+/// once). Answers the graph, the session, its agent's record and its set gate.
+Future<
+  ({
+    ProviderContainer container,
+    MachineFeed feed,
+    String host,
+    LaneController Function() controller,
+    String calls,
+    CrazeSetGate gate,
+  })
+>
+_permodel(
+  WidgetTester tester,
+  CrazeRig rig, {
+  _RecordingSource? recording,
+}) async {
+  final calls = '${rig.root}/permodel-calls';
+  final gate = CrazeSetGate('${rig.root}/set-gate');
+  addTearDown(gate.open);
+  final g = await _feedGraph(tester, rig, recording: recording);
+  rig.setAgents({
+    'grok': rig.grokEcho,
+    'cursor': rig.permodelAgent(calls: calls, gate: gate.path),
+  });
+  final BridgeLaneCreated created;
+  try {
+    created = await g.feed.crazeCreateSession(
+      BridgeLaneCreateRequest(
+        cwd: _mkdir('${rig.root}/w-settings'),
+        provider: 'cursor',
+        requestId: crazeNewRequestId(),
+      ),
+    );
+  } finally {
+    rig.setGrokAgent(rig.grokEcho);
+  }
+  final host = created.session.id;
+  await _showLane(tester, g.container, host);
+  LaneController controller() => g.container.read(
+    laneControllerProvider((
+      machine: _local.name,
+      kind: crazeLaneKind,
+      slug: host,
+    )),
+  );
+  await _until(
+    tester,
+    () =>
+        controller().isOpen &&
+        (controller().state.capabilities?.settings ?? false) &&
+        controller().state.settings?.model == 'grok-4.6' &&
+        find.byKey(const ValueKey('lane-settings-chip')).evaluate().isNotEmpty,
+    what: 'the permodel session\'s settings',
+  );
+  return (
+    container: g.container,
+    feed: g.feed,
+    host: host,
+    controller: controller,
+    calls: calls,
+    gate: gate,
+  );
+}
+
+/// The transcript header's settings chip, as it reads.
+String _chip() =>
+    (find
+                .descendant(
+                  of: find.byKey(const ValueKey('lane-settings-chip')),
+                  matching: find.byType(Text),
+                )
+                .evaluate()
+                .single
+                .widget
+            as Text)
+        .data!;
+
+/// Tap the chip and wait for the sheet.
+Future<void> _openSettings(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('lane-settings-chip')));
+  await _until(
+    tester,
+    () => find.byKey(const ValueKey('lane-settings')).evaluate().isNotEmpty,
+    what: 'the settings sheet',
+  );
+}
+
+/// The sheet's rows, by key (`<kind>:<id>`), in the order drawn.
+List<String> _sheetRows() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> &&
+          RegExp(r'^lane-setting-[a-z]+:[a-z_]+$').hasMatch(k.value);
+    })
+    .evaluate()
+    .map(
+      (e) => (e.widget.key! as ValueKey<String>).value.substring(
+        'lane-setting-'.length,
+      ),
+    )
+    .toList();
+
+/// [row]'s values, by id, in the order drawn.
+List<String> _values(String row) {
+  final prefix = 'lane-setting-$row-';
+  return find
+      .byWidgetPredicate((w) {
+        final k = w.key;
+        return k is ValueKey<String> && k.value.startsWith(prefix);
+      })
+      .evaluate()
+      .map(
+        (e) =>
+            (e.widget.key! as ValueKey<String>).value.substring(prefix.length),
+      )
+      .toList();
+}
+
+/// The value [row] SHOWS as current — the one its own semantics say is
+/// selected — or null.
+String? _shown(WidgetTester tester, String row) {
+  for (final v in _values(row)) {
+    final semantics = tester.widget<Semantics>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey('lane-setting-$row-$v')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    );
+    if (semantics.properties.selected ?? false) return v;
+  }
+  return null;
+}
+
+/// Whether [row] is drawn as a list (its current value checked) rather than
+/// a segmented control.
+bool _isList(WidgetTester tester, String row) => find
+    .descendant(
+      of: find.byKey(ValueKey('lane-setting-$row')),
+      matching: find.byIcon(Icons.check),
+    )
+    .evaluate()
+    .isNotEmpty;
+
+/// The mark [row] shows inline, or null.
+String? _markOf(String row) {
+  final mark = find.byKey(ValueKey('lane-setting-mark-$row')).evaluate();
+  return mark.isEmpty ? null : (mark.single.widget as Text).data;
+}
+
+/// Every row that shows a mark.
+List<String> _sheetMarks() => [
+  for (final row in _sheetRows())
+    if (_markOf(row) != null) row,
+];
+
+/// Press [value] on [row], as a person would.
+Future<void> _pressSetting(
+  WidgetTester tester,
+  String row,
+  String value,
+) async {
+  final target = find.byKey(ValueKey('lane-setting-$row-$value'));
+  await tester.ensureVisible(target);
+  await tester.pump(const Duration(milliseconds: 30));
+  await tester.tap(target);
+  await tester.pump(const Duration(milliseconds: 30));
 }

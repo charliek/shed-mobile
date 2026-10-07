@@ -78,11 +78,11 @@ both run every file even after one fails.
 |---|---|
 | `shed_probe_test.dart` | a Rust→Dart call into shed-core round-trips at runtime |
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
-| `lane_test.dart` | the agent lanes, end to end against shed's own opencode fake |
+| `lane_test.dart` | the agent lanes, end to end against shed's own opencode fake (including that a session whose capabilities say no settings gets no settings chip and sends nothing) |
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
-| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, the feed's teardown, the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it), and the transcript (seed, send, answers, cancel, Stop behind its confirm, the silent resume after the lane's own connection is killed, and a session created and stopped at once leaving the rows) |
+| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, the feed's teardown, the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it), the transcript (seed, send, answers, cancel, Stop behind its confirm, the silent resume after the lane's own connection is killed, and a session created and stopped at once leaving the rows), and the settings sheet against craze's permodel cursor (the chip and rows, a model change redrawing the options, a `stale_model` refusal inline with a new command for the retry, another client's change appearing in the open sheet, and a change lost to a drop shown "not confirmed" until the resume's `Settings`) |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
@@ -153,6 +153,19 @@ craze its pinned shed tested.
   the signal was delivered and `/proc/<pid>/stat` then says `T` (stopped), and
   the cell checks, at the moment the row leaves, that the same bridge is still
   alive and stopped and that no replacement roster connection was opened.
+- **The settings cells' levers.** `setAgents` makes cursor ready by naming its
+  agent, and `permodelAgent` is craze's `craze-fake-agent -script permodel`
+  (four models, each with an option catalog of its own) behind a wrapper that
+  records every `session/set_config_option` the agent is asked
+  (`CRAZE_FAKE_DUMP_CALLS`, read by `CrazeRig.agentSets`) and, while
+  `CrazeSetGate`'s FIFO exists, holds each one until a byte is written
+  (`CRAZE_FAKE_SET_GATE`) — a change held pending. The rig logs every
+  `session.set` a bridge carries (`sets`: command id, setting, dropped), and
+  `dropSets` cuts the lane's own bridge once craze has the change (the
+  `dropCreates` shape), so the answer is lost while the change runs.
+  `client()` is a second client of the same hub (its own `craze bridge
+  --hub`), for a change made to the session from elsewhere — another device
+  or a TUI.
 
 Rules that matter when adding a cell:
 

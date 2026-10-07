@@ -1,6 +1,7 @@
 import '../core/app_error.dart';
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
+import 'lane_settings.dart';
 
 /// The three facts a lane's snapshot carries about the SESSION rather than its
 /// transcript — its live row, its capabilities and its settings — as one value.
@@ -55,6 +56,8 @@ class LaneState {
     this.approvalErrors = const {},
     this.composerError,
     this.stopError,
+    this.settingMarks = const {},
+    this.settingsSeen = 0,
     this.retrying = false,
     this.abandoned = false,
     // `BigInt.zero` is not a compile-time constant, which is the only reason
@@ -129,6 +132,22 @@ class LaneState {
   /// `session_closed`), which is the banner's.
   final AppError? stopError;
 
+  /// **Each settings row's mark** (plan 025 §3.10), keyed by
+  /// [SettingsRow.key]: a change pending, refused, or not confirmed — the
+  /// desktop's `RowMark`s. Held HERE, on the lane, not in the settings sheet,
+  /// for the desktop's reason (its marks live in the panel): closing the sheet
+  /// while a change is in flight loses nothing, and reopening it shows the row
+  /// as it stands. Read through [shownMark] with [settingsSeen].
+  final Map<String, RowMark> settingMarks;
+
+  /// How many `Settings` the session has sent that a read of a LIVE view
+  /// reflects — what ends a lost change's "not confirmed" ([shownMark]).
+  /// Monotonic for the lane's life, across re-opens (each handle counts from
+  /// zero; the controller carries the total), and moved only by a snapshot
+  /// whose `stale` is clear, so a mark never goes before the value that
+  /// replaces it is on screen.
+  final int settingsSeen;
+
   /// A re-open is waiting out its backoff. The screen says "reconnecting"
   /// rather than showing a dead lane as if it were live.
   final bool retrying;
@@ -150,6 +169,8 @@ class LaneState {
     Map<String, AppError>? approvalErrors,
     AppError? composerError,
     AppError? stopError,
+    Map<String, RowMark>? settingMarks,
+    int? settingsSeen,
     bool? retrying,
     bool? abandoned,
     bool clearStale = false,
@@ -172,6 +193,8 @@ class LaneState {
         ? null
         : (composerError ?? this.composerError),
     stopError: clearStopError ? null : (stopError ?? this.stopError),
+    settingMarks: settingMarks ?? this.settingMarks,
+    settingsSeen: settingsSeen ?? this.settingsSeen,
     retrying: retrying ?? this.retrying,
     abandoned: abandoned ?? this.abandoned,
   );

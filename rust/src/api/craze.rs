@@ -922,8 +922,10 @@ mod tests {
     };
 
     use crate::api::bridge_rt::live_counters;
-    use crate::api::dto_lane::BridgeSendMode;
-    use crate::api::lane::{lane_close, lane_send, lane_snapshot, lane_stop, pump_finished};
+    use crate::api::dto_lane::{BridgeLaneSettingChange, BridgeSendMode};
+    use crate::api::lane::{
+        lane_close, lane_send, lane_set, lane_snapshot, lane_stop, pump_finished,
+    };
     use crate::api::testsupport::test_guard;
 
     /// The host a scripted create answers with.
@@ -1746,6 +1748,162 @@ mod tests {
             },
             "craze's words never wear shed's outcome unknown"
         );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// A `meta` delta setting [`snapshot_at`]'s effort option to `current` —
+    /// what craze writes ahead of a config set's answer.
+    fn effort_delta(current: &str) -> Value {
+        json!({"type": "meta", "state": {"config": {"options": [
+            {"id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+             "current": current, "selectValues": [{"value": "low", "name": "Low"},
+             {"value": "medium", "name": "Medium"}, {"value": "high", "name": "High"}]}]}}})
+    }
+
+    /// The effort option's current value, as a snapshot shows it.
+    fn effort_shown(lane: &BridgeLane) -> Option<String> {
+        lane_snapshot(lane, None)
+            .settings?
+            .options
+            .into_iter()
+            .find(|o| o.id == "effort")
+            .map(|o| o.current)
+    }
+
+    /// **`lane_set` is craze's `session.set`, bound to the model the client
+    /// DISPLAYED** (plan 025 §3.10, Amendment A13): a config change goes out
+    /// with the `for_model` it was given — here "fast", which the lane's own
+    /// fold does not show (it shows "grok"), so a client that bound the fold's
+    /// model instead would send "grok" and craze could never refuse an option
+    /// chosen for a model the session has left. craze refuses it `stale_model`
+    /// — [`BridgeLaneError::NotAccepting`], the sheet's "the model changed; try
+    /// again". The retry is a NEW command, and its `meta` delta, ahead of its
+    /// answer, is the `Settings` that moves the snapshot's clock by one.
+    #[tokio::test]
+    async fn a_setting_goes_out_bound_to_the_displayed_model_and_its_delta_moves_the_clock() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let (lane, mut hub, _roster) = listed_lane(&mut conns, &src).await;
+        let seeded = lane_snapshot(&lane, None);
+        assert!(
+            seeded.capabilities.is_some_and(|c| c.settings),
+            "the scripted session offers settings"
+        );
+        assert_eq!(
+            seeded.settings.and_then(|s| s.model).as_deref(),
+            Some("grok"),
+            "the lane's fold shows grok"
+        );
+        let frames = seeded.settings_frames;
+        assert!(frames >= 1, "the seed carried a Settings");
+        assert_eq!(effort_shown(&lane).as_deref(), Some("medium"));
+
+        let (refused, first) = tokio::join!(
+            lane_set(
+                &lane,
+                BridgeLaneSettingChange::Config {
+                    id: "effort".to_string(),
+                    value: "high".to_string(),
+                    for_model: Some("fast".to_string()),
+                }
+            ),
+            async {
+                let req = hub.expect("session.set").await;
+                hub.refuse(&req, "stale_model", "stale_model", json!({}))
+                    .await;
+                req
+            }
+        );
+        assert_eq!(
+            first["params"]["setting"],
+            json!({"kind": "config", "id": "effort", "value": "high", "forModel": "fast"}),
+            "the DISPLAYED model, never the fold's"
+        );
+        assert_eq!(first["params"]["sessionId"], "session-created");
+        assert_eq!(refused, Err(BridgeLaneError::NotAccepting));
+        assert_eq!(
+            lane_snapshot(&lane, None).settings_frames,
+            frames,
+            "a refusal sends no Settings"
+        );
+
+        let (applied, retry) = tokio::join!(
+            lane_set(
+                &lane,
+                BridgeLaneSettingChange::Config {
+                    id: "effort".to_string(),
+                    value: "high".to_string(),
+                    for_model: Some("grok".to_string()),
+                }
+            ),
+            async {
+                let req = hub.expect("session.set").await;
+                hub.event("s-1", 2, effort_delta("high")).await;
+                hub.reply(&req, json!({"value": "high", "rev": 2})).await;
+                req
+            }
+        );
+        applied.expect("the retry, bound to the model shown now, applies");
+        assert_eq!(retry["params"]["setting"]["forModel"], "grok");
+        assert_ne!(
+            retry["params"]["commandId"], first["params"]["commandId"],
+            "a retry is a NEW command"
+        );
+        assert!(
+            until(Duration::from_secs(10), || effort_shown(&lane).as_deref()
+                == Some("high"))
+            .await,
+            "the delta's Settings never reached the view"
+        );
+        assert_eq!(
+            lane_snapshot(&lane, None).settings_frames,
+            frames + 1,
+            "the delta's Settings moved the clock by one"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// **A setting whose answer was lost is an unknown outcome** (plan 025
+    /// §3.10): the change may have run, nothing resends it, and the sheet says
+    /// "not confirmed" — [`BridgeLaneError::OutcomeUnknown`], never a `Failed`
+    /// the sheet would show as a refusal. And no `Settings` was folded for it:
+    /// the mark stays until one is.
+    #[tokio::test]
+    async fn a_setting_lost_to_a_drop_is_an_unknown_outcome() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let (lane, hub, _roster) = listed_lane(&mut conns, &src).await;
+        let frames = lane_snapshot(&lane, None).settings_frames;
+
+        let (lost, ()) = tokio::join!(
+            lane_set(
+                &lane,
+                BridgeLaneSettingChange::Mode {
+                    id: "agent".to_string()
+                }
+            ),
+            async {
+                let mut hub = hub;
+                hub.expect("session.set").await;
+                hub.close().await;
+            }
+        );
+        let Err(BridgeLaneError::OutcomeUnknown { msg }) = lost else {
+            panic!("a set lost to a drop: {lost:?}");
+        };
+        assert!(
+            msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN),
+            "{msg}"
+        );
+        assert_eq!(lane_snapshot(&lane, None).settings_frames, frames);
 
         lane_close(&lane);
         craze_source_close(&src);

@@ -154,7 +154,7 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     409,
   ),
   BridgeLaneError_NotAccepting() => AppError(
-    'LANE_NOT_ACCEPTING',
+    laneNotAcceptingCode,
     'the session is not accepting that right now',
     409,
   ),
@@ -179,6 +179,12 @@ AppError appErrorFromLane(BridgeLaneError e) => switch (e) {
     msg,
   ),
 };
+
+/// The [AppError.code] of a lane verb the session refused because it is not
+/// accepting that right now ([BridgeLaneError_NotAccepting]) — on a settings
+/// option, craze's `stale_model`: the session left the model the option was
+/// chosen for (plan 025 §3.10), which the settings sheet words as such.
+const laneNotAcceptingCode = 'LANE_NOT_ACCEPTING';
 
 /// The [AppError.code] of a craze request whose answer was lost
 /// ([BridgeLaneError_OutcomeUnknown]) — what a caller holding only the

@@ -48,7 +48,8 @@ Stream<bool> laneNudges({required BridgeLane lane}) =>
 
 /// **The one read**, and the nudge acknowledgement: the staged view projected
 /// — the transcript, the pending approvals, and the session's live row,
-/// capabilities and settings — under ONE lock, and the dirty bit cleared.
+/// capabilities and settings, with the count of `Settings` frames folded so far
+/// — under ONE lock, and the dirty bit cleared.
 ///
 /// It is also where a panel reads what the session can do. There is no
 /// `lane_capabilities` getter (plan 025 §3.2.1): capabilities are per session
@@ -129,6 +130,30 @@ Future<void> laneAnswer({
 /// the stream says whether it is.
 Future<void> laneStop({required BridgeLane lane}) =>
     RustLib.instance.api.crateApiLaneLaneStop(lane: lane);
+
+/// **Change one of the session's settings** (plan 025 §3.10) — the settings
+/// sheet's one verb: craze's `session.set`, a fresh command id per call.
+///
+/// `Ok` means craze applied it, and the change itself arrives on the stream
+/// AHEAD of the answer — a `meta` delta, re-emitted as `Settings` — so the
+/// sheet re-renders from the next snapshot and never from what it asked for.
+/// A [`BridgeLaneSettingChange::Config`] carries `for_model`, the model the
+/// sheet DISPLAYED when the option was pressed (Amendment A13): a session that
+/// has moved on refuses it — `stale_model`, [`BridgeLaneError::NotAccepting`] —
+/// rather than apply an option chosen for one model to another. A refusal is
+/// definite and the person's retry is a new call (a new command id). An answer
+/// lost to a drop is [`BridgeLaneError::OutcomeUnknown`]: the change may have
+/// run, nothing resends it, and the sheet says "not confirmed" until the next
+/// `Settings` ([`BridgeLaneSnapshot::settings_frames`]) says where the session
+/// is.
+///
+/// A session whose capabilities say `settings: false` (every opencode one)
+/// refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
+/// offers no settings there.
+Future<void> laneSet({
+  required BridgeLane lane,
+  required BridgeLaneSettingChange change,
+}) => RustLib.instance.api.crateApiLaneLaneSet(lane: lane, change: change);
 
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.

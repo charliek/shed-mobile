@@ -546,12 +546,13 @@ sealed class BridgeLaneError with _$BridgeLaneError implements FrbException {
   ///   started, so a lost answer never makes a second session, while after any
   ///   definite refusal craze would replay that same refusal for ten minutes,
   ///   so the id must go;
-  /// * **a lane verb** (`lane_send`, `lane_cancel`, `lane_answer`, `lane_stop`)
-  ///   — the transcript says whether it ran; a send's text stays in the box
-  ///   with the desktop's words for it (its `SEND_OUTCOME_UNKNOWN`, Dart's
-  ///   `laneSendOutcomeUnknown`), and the desktop's settings sheet shows such
-  ///   a change "not confirmed" until the next `Settings` says where the
-  ///   session is (§3.10).
+  /// * **a lane verb** (`lane_send`, `lane_cancel`, `lane_answer`,
+  ///   `lane_stop`, `lane_set`) — the transcript says whether it ran; a
+  ///   send's text stays in the box with the desktop's words for it (its
+  ///   `SEND_OUTCOME_UNKNOWN`, Dart's `laneSendOutcomeUnknown`), and both
+  ///   clients' settings sheets show such a change "not confirmed" until the
+  ///   next `Settings` says where the session is (§3.10;
+  ///   [`BridgeLaneSnapshot::settings_frames`]).
   ///
   /// The desktop's `LaneFailure::OutcomeUnknown`, for the same reasons and
   /// mapped the same way: by the one [`From<LaneError>`] every lane and create
@@ -998,6 +999,25 @@ class BridgeLaneSnapshot {
   /// none to show (its capabilities say `settings: false`).
   final BridgeLaneSettings? settings;
 
+  /// **How many `Settings` frames this lane has folded** — the settings
+  /// sheet's clock (plan 025 §3.10), and the one thing in this snapshot that
+  /// is the bridge's own rather than the fold's.
+  ///
+  /// A change whose answer was lost is "not confirmed" until the session's
+  /// NEXT `Settings` states where it is. The desktop tells "a next one
+  /// arrived" by counting the `Settings` events it is sent; Dart is sent no
+  /// events, so the pump counts them for it and this read carries the count
+  /// under the same lock as everything else here. Per handle: a re-opened
+  /// lane counts from zero again (the controller carries the total across).
+  ///
+  /// A `Settings` inside a reseed is counted when it is FOLDED, a moment
+  /// before its seed's `Ready` swaps it onto the screen — so a reader that
+  /// must not let a mark go before the value replacing it is shown takes the
+  /// count only from a snapshot whose [`Self::stale`] is clear, as the
+  /// controller does (a lost answer means a drop, and a drop leaves `stale`
+  /// set until the resume's or the reseed's `Ready`).
+  final BigInt settingsFrames;
+
   /// The asks still waiting on the human, oldest first, id as the tiebreak.
   /// Pending only, by [`lane_status_is_pending`]'s rule.
   final List<BridgeLaneApproval> approvals;
@@ -1012,6 +1032,7 @@ class BridgeLaneSnapshot {
     required this.ended,
     this.capabilities,
     this.settings,
+    required this.settingsFrames,
     required this.approvals,
   });
 
@@ -1026,6 +1047,7 @@ class BridgeLaneSnapshot {
       ended.hashCode ^
       capabilities.hashCode ^
       settings.hashCode ^
+      settingsFrames.hashCode ^
       approvals.hashCode;
 
   @override
@@ -1042,6 +1064,7 @@ class BridgeLaneSnapshot {
           ended == other.ended &&
           capabilities == other.capabilities &&
           settings == other.settings &&
+          settingsFrames == other.settingsFrames &&
           approvals == other.approvals;
 }
 

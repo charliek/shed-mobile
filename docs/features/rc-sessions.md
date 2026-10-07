@@ -108,6 +108,26 @@ when it opened.
 | Reconnecting | The lane's own connection dropped and craze is resuming it from where it was: the banner says "reconnecting…", the transcript stays on screen, and when the resume lands the banner goes — the same transcript, nothing re-read. |
 | Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened; any other end is re-opened on a backoff. |
 | A lost answer | A send whose answer was lost — the connection dropped while it was in flight — may or may not have started a turn and is never resent: the typed text stays, and the screen says to check the transcript before sending again. |
+| Settings | The settings chip and sheet, below. |
+
+### A craze session's settings
+
+A session whose capabilities say `settings` carries a chip under the transcript
+header — the current model, effort and fast (`Grok 4.6 · High · fast`; "fast"
+only when it is on) — and tapping it opens the session's settings sheet
+(`lib/features/lanes/lane_settings_sheet.dart`, the desktop's sheet as rules —
+`lib/lanes/lane_settings.dart`). A session that does not offer settings (every
+opencode one) has no chip at all: hidden, never disabled, and an open sheet
+leaves if the session stops offering them.
+
+| Part | Behaviour |
+|---|---|
+| Rows | The model (a list, in craze's order: the current one first, then the ones used recently), then the current model's own options (four values or fewer side by side, more as a list), then the mode. A context meter shows when the session reports both its tokens and its window. |
+| A change | Applies at once: the row says "applying…" until craze answers, and shows no value of its own meanwhile — what it shows next is the session's. An option is sent bound to the model the sheet shows, so a session that has already moved to another model refuses it rather than applying it there. |
+| Live | The sheet is drawn from the session's own settings, so a model change redraws the options as the new model offers them, and a change made elsewhere (another device, an attached TUI) appears in the open sheet. |
+| A refusal | Shown on its own row; an option refused because the model changed under it says "the model changed; try again". Trying again is a new change. |
+| A lost answer | The connection dropped before craze answered: the change may have run, and it is never resent. The row says "not confirmed" until the session next says what its settings are (when the lane resumes), which replaces the mark with the real value. |
+| Closing | The marks belong to the transcript, not the sheet: closing the sheet while a change is in flight loses nothing. |
 
 ## Kinds
 

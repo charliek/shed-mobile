@@ -9,6 +9,7 @@ import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
 import '../src/rust/api/lane.dart';
 import '../ssh/lane_forward.dart';
+import 'lane_settings.dart';
 import 'lane_source.dart';
 import 'lane_state.dart';
 
@@ -281,6 +282,22 @@ class LaneController {
 
   Duration _backoff = laneRetryBase;
 
+  /// The `Settings` frames counted by the handles this lane has already let
+  /// go of — what keeps [LaneState.settingsSeen] monotonic across re-opens,
+  /// each handle counting from zero.
+  int _framesBefore = 0;
+
+  /// The current handle's count of `Settings` frames, as last taken from a
+  /// LIVE read (see [_pull]).
+  int _framesNow = 0;
+
+  /// Each settings row's latest press, by [SettingsRow.key] — an answer
+  /// settles its row only while its press is still the row's latest, so one
+  /// that lands after a new stamp cleared the marks (and the row was pressed
+  /// again) settles nothing.
+  final Map<String, int> _presses = {};
+  int _pressSeq = 0;
+
   /// The current view. Always available — a lane that has never opened still
   /// renders a header and, once it fails, a reason.
   LaneState get state => _state;
@@ -488,6 +505,14 @@ class LaneController {
       _backoff = laneRetryBase;
     }
 
+    // The settings clock (plan 025 §3.10) moves only with a LIVE read. A
+    // `Settings` inside a reseed is counted when Rust folds it, a moment
+    // before its seed's `Ready` shows it — and a lost answer means a drop,
+    // which leaves `stale` set until that `Ready` (or a resume's): taking the
+    // count then would let a "not confirmed" mark go before the value that
+    // replaces it is on screen.
+    if (snap.stale == null) _framesNow = snap.settingsFrames.toInt();
+
     _emit(
       _state.copyWith(
         rows: rows,
@@ -506,6 +531,7 @@ class LaneController {
           capabilities: snap.capabilities,
           settings: snap.settings,
         ),
+        settingsSeen: _framesBefore + _framesNow,
       ),
     );
 
@@ -585,6 +611,85 @@ class LaneController {
           ),
         ),
       );
+
+  /// **Change one setting** (plan 025 §3.10) — a press on the settings sheet:
+  /// [value] on [row] as the sheet drew it, with [displayedModel] the model the
+  /// sheet SHOWED, which an option is bound to (Amendment A13 — the adapter's
+  /// fold may already be on a model the sheet has not drawn yet).
+  ///
+  /// The desktop's `useSettingChanges` press, rule for rule:
+  ///
+  /// * a press is sent only when [pressSends] says so — never while the row's
+  ///   last change is pending, never a value the row does not offer or already
+  ///   shows — and only on a session whose capabilities say `settings`;
+  /// * the row is [RowPending] until craze answers, with NO optimistic value:
+  ///   what it shows next is the session's own next `Settings`, which craze
+  ///   sends ahead of its answer;
+  /// * the answer settles the row ([settle]): nothing on success; a refusal
+  ///   inline — "the model changed; try again" for an option craze refused
+  ///   `stale_model`; "not confirmed" for an answer lost to a drop, unless the
+  ///   row already shows the value asked for, until the next `Settings`
+  ///   ([LaneState.settingsSeen]);
+  /// * nothing is ever resent: a retry is the person's next press, a new
+  ///   command.
+  ///
+  /// The marks live on the lane, not the sheet, so closing the sheet while a
+  /// change is in flight loses nothing. Never throws: a refusal is the row's
+  /// mark.
+  Future<void> setSetting(
+    SettingsRow row,
+    String value, {
+    required String? displayedModel,
+  }) async {
+    if (!settingsOffered(_state.capabilities)) return;
+    final key = row.key;
+    final mark = shownMark(_state.settingMarks[key], _state.settingsSeen);
+    if (!pressSends(row, value, mark)) return;
+    final press = ++_pressSeq;
+    _presses[key] = press;
+    _emit(_state.copyWith(settingMarks: _withMark(key, const RowPending())));
+    final handle = _handle;
+    AppError? error;
+    if (handle == null) {
+      error = _noLane();
+    } else {
+      try {
+        await source.set(handle, changeFor(row, value, displayedModel));
+      } catch (e) {
+        error = appErrorFrom(e);
+      }
+    }
+    // A newer press owns the row now, or a new stamp cleared it.
+    if (_presses[key] != press) return;
+    _presses.remove(key);
+    // As of NOW: the settings on screen and the `Settings` seen so far, after
+    // however many reads landed while the change was in flight.
+    final shown = rowNow(_state.settings ?? noSettings, row);
+    _emit(
+      _state.copyWith(
+        settingMarks: _withMark(
+          key,
+          settle(
+            row.kind,
+            error,
+            _state.settingsSeen,
+            confirmedOnScreen: shown?.current == value,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The marks with [key]'s set to [mark] — or removed, for none.
+  Map<String, RowMark> _withMark(String key, RowMark? mark) {
+    final next = {..._state.settingMarks};
+    if (mark == null) {
+      next.remove(key);
+    } else {
+      next[key] = mark;
+    }
+    return Map<String, RowMark>.unmodifiable(next);
+  }
 
   Future<void> _composerVerb(Future<void> Function(LaneHandle) verb) =>
       _guardedVerb(
@@ -749,11 +854,14 @@ class LaneController {
 
   Future<void> _reopenNow() async {
     await _dropHandle(releaseLease: true);
+    // A change in flight on the old session settles nothing on the new one.
+    _presses.clear();
     _emit(
       _state.copyWith(
         rows: const [],
         approvals: const [],
         approvalErrors: const {},
+        settingMarks: const {},
         // A new stamp is a new session: nothing the old one's stream said
         // about itself — its row, what it can do, its settings — carries over.
         live: laneLiveUnknown,
@@ -820,6 +928,9 @@ class LaneController {
     _handle = null;
     _openedEpoch = null;
     _cursor = null;
+    // The next handle counts its `Settings` from zero; the total carries on.
+    _framesBefore += _framesNow;
+    _framesNow = 0;
     // **`lane_close` FIRST, and the cancel awaited after it.**
     //
     // The reverse order — which this had, on the theory that a cancel racing

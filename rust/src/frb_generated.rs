@@ -46,7 +46,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1218146952;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 428083574;
 
 // Section: executor
 
@@ -2120,6 +2120,64 @@ fn wire__crate__api__lane__lane_send_impl(
                         let output_ok =
                             crate::api::lane::lane_send(&*api_lane_guard, api_text, api_mode)
                                 .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__lane__lane_set_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "lane_set",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_lane = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>,
+            >>::sse_decode(&mut deserializer);
+            let api_change =
+                <crate::api::dto_lane::BridgeLaneSettingChange>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::dto_lane::BridgeLaneError>(
+                    (move || async move {
+                        let mut api_lane_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_lane, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_lane_guard =
+                                        Some(api_lane.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_lane_guard = api_lane_guard.unwrap();
+                        let output_ok =
+                            crate::api::lane::lane_set(&*api_lane_guard, api_change).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -5031,6 +5089,7 @@ impl SseDecode for crate::api::dto_lane::BridgeLaneSnapshot {
             <Option<crate::api::dto_lane::BridgeLaneCapabilities>>::sse_decode(deserializer);
         let mut var_settings =
             <Option<crate::api::dto_lane::BridgeLaneSettings>>::sse_decode(deserializer);
+        let mut var_settingsFrames = <u64>::sse_decode(deserializer);
         let mut var_approvals =
             <Vec<crate::api::dto_lane::BridgeLaneApproval>>::sse_decode(deserializer);
         return crate::api::dto_lane::BridgeLaneSnapshot {
@@ -5043,6 +5102,7 @@ impl SseDecode for crate::api::dto_lane::BridgeLaneSnapshot {
             ended: var_ended,
             capabilities: var_capabilities,
             settings: var_settings,
+            settings_frames: var_settingsFrames,
             approvals: var_approvals,
         };
     }
@@ -6486,68 +6546,69 @@ fn pde_ffi_dispatcher_primary_impl(
         39 => wire__crate__api__lane__lane_nudges_impl(port, ptr, rust_vec_len, data_len),
         40 => wire__crate__api__lane__lane_open_impl(port, ptr, rust_vec_len, data_len),
         42 => wire__crate__api__lane__lane_send_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__lane__lane_stop_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
+        43 => wire__crate__api__lane__lane_set_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__lane__lane_stop_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
+        52 => wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
+        53 => wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
+        55 => wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__client__set_credential_event_sink_impl(
+        58 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__client__set_credential_event_sink_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+        66 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+        72 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+        73 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        73 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6573,32 +6634,32 @@ fn pde_ffi_dispatcher_sync_impl(
         34 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         38 => wire__crate__api__lane__lane_close_impl(ptr, rust_vec_len, data_len),
         41 => wire__crate__api__dto_lane__lane_option_for_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
+        44 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
+        54 => wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
+        56 => wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+        57 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__client__shutdown_credential_event_sink_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        69 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -8181,6 +8242,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_lane::BridgeLaneSnapshot 
             self.ended.into_into_dart().into_dart(),
             self.capabilities.into_into_dart().into_dart(),
             self.settings.into_into_dart().into_dart(),
+            self.settings_frames.into_into_dart().into_dart(),
             self.approvals.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -10234,6 +10296,7 @@ impl SseEncode for crate::api::dto_lane::BridgeLaneSnapshot {
             serializer,
         );
         <Option<crate::api::dto_lane::BridgeLaneSettings>>::sse_encode(self.settings, serializer);
+        <u64>::sse_encode(self.settings_frames, serializer);
         <Vec<crate::api::dto_lane::BridgeLaneApproval>>::sse_encode(self.approvals, serializer);
     }
 }

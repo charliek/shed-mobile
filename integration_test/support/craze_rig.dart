@@ -152,6 +152,22 @@ class CrazeRig {
   /// client never sees its answer: an unknown outcome.
   bool dropCreates = false;
 
+  /// Every `session.set` a craze bridge of this rig carried — a settings
+  /// sheet's changes, as they left the phone: the command id, the setting
+  /// verbatim, and whether it was [dropSets]-dropped. What the settings cells
+  /// check "bound to the model shown", "a new command" and "never resent"
+  /// against (the desktop rig's `sets.log`). A [client]'s own sets do not
+  /// pass through here.
+  final List<({String? commandId, Map<String, Object?> setting, bool dropped})>
+  sets = [];
+
+  /// **A settings change's answer, lost** (the desktop rig's `drop-sets`):
+  /// while set, a bridge that carries a `session.set` relays it to the hub and
+  /// then relays nothing back, and a second later the bridge is killed — the
+  /// lane's own connection, so the lane goes stale and resumes. craze has the
+  /// change and runs it; the phone never sees its answer: an unknown outcome.
+  bool dropSets = false;
+
   static int _next = 0;
 
   /// Start a namespace: the directories (0700, under `/tmp`, short — a socket
@@ -278,6 +294,18 @@ class CrazeRig {
       ));
       return false;
     }
+    if (method == 'session.set') {
+      final drop = dropSets;
+      final setting = params is Map ? params['setting'] : null;
+      sets.add((
+        commandId: params is Map ? params['commandId'] as String? : null,
+        setting: setting is Map
+            ? setting.cast<String, Object?>()
+            : const <String, Object?>{},
+        dropped: drop,
+      ));
+      return drop;
+    }
     if (method != 'session.create') return false;
     final drop = dropCreates;
     creates.add((
@@ -396,6 +424,65 @@ class CrazeRig {
 
   /// The fake agent this rig's grok runs by default.
   String get grokEcho => '$pathDir/craze-fake-agent';
+
+  /// Point `[agents]` at [agents] (provider → agent binary); grok stays the
+  /// default provider. A provider named here is READY to craze (cursor needs
+  /// no `cursor-agent` on the PATH once `[agents]` names one), which is how a
+  /// settings cell gets a cursor session.
+  void setAgents(Map<String, String> agents) {
+    File('$crazeHome/config.toml').writeAsStringSync(
+      'provider = "grok"\nhost_idle_exit = "30s"\n\n[agents]\n'
+      '${[for (final e in agents.entries) '${e.key} = "${e.value}"\n'].join()}',
+    );
+  }
+
+  /// **craze's permodel cursor** (`craze-fake-agent -script permodel`): four
+  /// models, each with an option catalog of its OWN — grok-4.6 effort and
+  /// fast, claude-opus-5 thinking, effort (five values), context and fast —
+  /// and three modes. Every `session/set_config_option` it is asked is
+  /// recorded in [calls] (`CRAZE_FAKE_DUMP_CALLS`, read by [agentSets]); while
+  /// [gate] exists as a FIFO, each one waits for a byte before it is answered
+  /// (`CRAZE_FAKE_SET_GATE`, [CrazeSetGate]) — a change held PENDING.
+  String permodelAgent({required String calls, required String gate}) {
+    final path = '$root/permodel-agent';
+    File(path).writeAsStringSync(
+      '#!/bin/sh\n'
+      "export CRAZE_FAKE_DUMP_CALLS='$calls'\n"
+      "export CRAZE_FAKE_SET_GATE='$gate'\n"
+      'exec \'$pathDir/craze-fake-agent\' -script permodel "\$@"\n',
+    );
+    _chmod('0755', path);
+    return path;
+  }
+
+  /// The config sets the permodel agent was ASKED for (`<id>=<value>`), in
+  /// order — the agent's own record, so "the change never reached the agent"
+  /// and "it ran once" are the agent's word, not the wire's.
+  static List<String> agentSets(String calls) {
+    final f = File(calls);
+    if (!f.existsSync()) return const [];
+    const prefix = 'session/set_config_option ';
+    return [
+      for (final line in f.readAsLinesSync())
+        if (line.startsWith(prefix)) line.substring(prefix.length),
+    ];
+  }
+
+  /// **A second client** of this namespace's hub — its own `craze bridge
+  /// --hub` over the jailed ladder, under the recipe env, outside the feed:
+  /// another device, or a TUI, acting on the same session. Closed by the
+  /// cell; the teardown finds it too.
+  Future<CrazeClient> client() async {
+    final argv = crazeJailedBridgeArgv();
+    final process = await Process.start(
+      '/bin/sh',
+      argv.sublist(1),
+      environment: env,
+      includeParentEnvironment: false,
+      workingDirectory: root,
+    );
+    return CrazeClient._(process);
+  }
 
   /// The fake agent running [script] (`exit-two-lines`, `hang`, …) behind a
   /// two-line wrapper — `[agents]` names one binary and no arguments, and the
@@ -570,6 +657,146 @@ class CrazeRig {
   static void _chmod(String mode, String path) {
     final r = Process.runSync('chmod', [mode, path]);
     if (r.exitCode != 0) throw StateError('chmod $mode $path: ${r.stderr}');
+  }
+}
+
+/// **One NDJSON JSON-RPC connection to the hub** through `craze bridge --hub`
+/// — the desktop rig's `Bridge`: a second client, for what a cell needs done
+/// to a session from elsewhere (a model moved under the phone's sheet).
+class CrazeClient {
+  CrazeClient._(this.process) {
+    process.stderr.drain<void>();
+    process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(_line, onDone: _done);
+  }
+
+  final Process process;
+  int _next = 0;
+  final Map<int, Completer<Map<String, Object?>>> _waiting = {};
+
+  /// The hello every connection opens with (the desktop rig's `HELLO`).
+  static const hello = {
+    'protocols': [1],
+    'client': {'kind': 'test', 'name': 'shed-mobile'},
+  };
+
+  void _line(String line) {
+    Object? msg;
+    try {
+      msg = jsonDecode(line);
+    } on FormatException {
+      return;
+    }
+    if (msg is! Map) return;
+    final id = msg['id'];
+    if (id is! int) return;
+    _waiting.remove(id)?.complete(msg.cast<String, Object?>());
+  }
+
+  void _done() {
+    for (final w in _waiting.values) {
+      w.completeError(StateError('the bridge closed before answering'));
+    }
+    _waiting.clear();
+  }
+
+  /// Write one request; its answer is the future (a refusal throws).
+  Future<Map<String, Object?>> send(
+    String method,
+    Map<String, Object?> params,
+  ) {
+    final id = ++_next;
+    final answer = Completer<Map<String, Object?>>();
+    _waiting[id] = answer;
+    process.stdin.writeln(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': id,
+        'method': method,
+        'params': params,
+      }),
+    );
+    return answer.future.then((msg) {
+      if (msg.containsKey('error')) {
+        throw StateError('$method was refused: $msg');
+      }
+      return (msg['result'] as Map).cast<String, Object?>();
+    });
+  }
+
+  /// [send], bounded.
+  Future<Map<String, Object?>> call(
+    String method,
+    Map<String, Object?> params,
+  ) => send(method, params).timeout(const Duration(seconds: 30));
+
+  /// Connect to [hostId]'s session through the hub (its splice) and answer
+  /// the craze session id it speaks for.
+  Future<String> connect(String hostId) async {
+    final hub = await call('hello', hello);
+    if ((hub['endpoint'] as Map?)?['kind'] != 'hub') {
+      throw StateError('not a hub: $hub');
+    }
+    await call('session.connect', {'sessionId': hostId});
+    await call('hello', hello);
+    final list = await call('sessions.list', {});
+    return ((list['sessions']! as List).first as Map)['sessionId']! as String;
+  }
+
+  Future<void> close() async {
+    await process.stdin.close().catchError((Object _) {});
+    await process.exitCode.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        process.kill(ProcessSignal.sigkill);
+        return -1;
+      },
+    );
+  }
+}
+
+/// **The permodel agent's set gate** (`CRAZE_FAKE_SET_GATE`): while its FIFO
+/// exists, each `session/set_config_option` waits for one byte before the
+/// agent answers — so a change stays PENDING, and craze's one-at-a-time queue
+/// holds every set behind it. Absent, sets run at once.
+class CrazeSetGate {
+  CrazeSetGate(this.path);
+
+  final String path;
+
+  /// Make the FIFO: from now on every set waits.
+  Future<void> hold() async {
+    final r = await Process.run('mkfifo', ['-m', '0600', path]);
+    if (r.exitCode != 0) throw StateError('mkfifo $path: ${r.stderr}');
+  }
+
+  /// Let one waiting set through. The agent holds the FIFO open read-write
+  /// while a set waits, so the byte's writer opens at once then; a writer run
+  /// before any set waits blocks until one does — in its own process, never
+  /// this isolate.
+  Future<void> release() async {
+    final writer = await Process.start('/bin/sh', [
+      '-c',
+      r'printf x > "$1"',
+      'sh',
+      path,
+    ]);
+    final code = await writer.exitCode.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        writer.kill(ProcessSignal.sigkill);
+        throw StateError('no set waited at the gate');
+      },
+    );
+    if (code != 0) throw StateError('the gate\'s writer exited $code');
+  }
+
+  /// Take the FIFO away: sets run at once again.
+  void open() {
+    final f = File(path);
+    if (f.existsSync()) f.deleteSync();
   }
 }
 

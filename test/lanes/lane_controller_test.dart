@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/bridge_adapters.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
+import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
@@ -890,6 +891,351 @@ void main() {
     );
   });
 
+  group('settings changes (plan 025 §3.10)', () {
+    /// A craze lane open on a session that offers settings, at [frames]
+    /// `Settings` so far.
+    Future<_Rig> settingsRig({int frames = 1}) async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(),
+        settingsFrames: frames,
+      );
+      await rig.controller.open();
+      return rig;
+    }
+
+    /// Deliver [next] as the lane's next snapshot.
+    void read(_Rig rig, BridgeLaneSnapshot next) {
+      rig.bridge.onSnapshot = (_) => next;
+      rig.bridge.handles.last.nudges.deliver();
+      rig.pumpFrame();
+    }
+
+    test('a press is pending until craze answers — with no optimistic '
+        'value — and a definite answer leaves no mark', () async {
+      final rig = await settingsRig();
+      final effort = _effortRow(rig.controller.state.settings!);
+      rig.bridge.holdSet = Completer<void>();
+
+      final pressed = rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      await pumpEventQueue();
+      expect(rig.controller.state.settingMarks[effort.key], isA<RowPending>());
+      expect(
+        _effortRow(rig.controller.state.settings!).current,
+        'high',
+        reason: 'the row shows the SESSION\'s value, never the press',
+      );
+
+      // A second press on the pending row sends nothing.
+      await rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      expect(rig.bridge.sets, hasLength(1));
+
+      // craze's delta lands ahead of its answer: the next Settings.
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(effort: 'low'),
+          settingsFrames: 2,
+        ),
+      );
+      rig.bridge.holdSet!.complete();
+      await pressed;
+      expect(rig.controller.state.settingMarks, isEmpty);
+      expect(_effortRow(rig.controller.state.settings!).current, 'low');
+      expect(rig.bridge.sets, [
+        const BridgeLaneSettingChange.config(
+          id: 'effort',
+          value: 'low',
+          forModel: 'grok-4.6',
+        ),
+      ]);
+    });
+
+    test('a press of the value shown, or of one the row does not offer, '
+        'sends nothing', () async {
+      final rig = await settingsRig();
+      final effort = _effortRow(rig.controller.state.settings!);
+      await rig.controller.setSetting(
+        effort,
+        'high',
+        displayedModel: 'grok-4.6',
+      );
+      await rig.controller.setSetting(
+        effort,
+        'max',
+        displayedModel: 'grok-4.6',
+      );
+      expect(rig.bridge.sets, isEmpty);
+      expect(rig.controller.state.settingMarks, isEmpty);
+    });
+
+    test('CONTROL (A13): an option goes out bound to the model the sheet '
+        'DISPLAYED, not the one the lane holds', () async {
+      // The lane's state says grok-4.6; the sheet drew composer-2.5 (a frame
+      // behind, or ahead) — the press names what was SHOWN.
+      final rig = await settingsRig();
+      await rig.controller.setSetting(
+        _effortRow(rig.controller.state.settings!),
+        'low',
+        displayedModel: 'composer-2.5',
+      );
+      expect(rig.bridge.sets, [
+        const BridgeLaneSettingChange.config(
+          id: 'effort',
+          value: 'low',
+          forModel: 'composer-2.5',
+        ),
+      ]);
+    });
+
+    test('CONTROL: a refusal is shown INLINE on its row, and the retry is a '
+        'new press', () async {
+      final rig = await settingsRig();
+      final effort = _effortRow(rig.controller.state.settings!);
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+
+      await rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      expect(
+        rig.controller.state.settingMarks,
+        {effort.key: const RowRefused(staleModelText)},
+        reason: 'craze\'s stale_model, on the option\'s own row',
+      );
+      expect(rig.controller.state.composerError, isNull);
+      expect(rig.controller.state.error, isNull);
+
+      // A refusal stays through later reads, until the row is pressed again.
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(),
+          settingsFrames: 5,
+        ),
+      );
+      expect(
+        shownMark(
+          rig.controller.state.settingMarks[effort.key],
+          rig.controller.state.settingsSeen,
+        ),
+        const RowRefused(staleModelText),
+      );
+
+      rig.bridge.setFailure = null;
+      await rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      expect(rig.bridge.sets, hasLength(2), reason: 'the retry was sent');
+      expect(rig.controller.state.settingMarks, isEmpty);
+    });
+
+    test('a model refused not_accepting says the agent\'s words, not the '
+        'stale-model ones', () async {
+      final rig = await settingsRig();
+      final model = sheetRows(
+        rig.controller.state.settings!,
+      ).firstWhere((r) => r.kind == SettingKind.model);
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+      await rig.controller.setSetting(
+        model,
+        'composer-2.5',
+        displayedModel: 'grok-4.6',
+      );
+      expect(
+        rig.controller.state.settingMarks[model.key],
+        const RowRefused('the session is not accepting that right now'),
+      );
+    });
+
+    test('CONTROL: a lost answer is "not confirmed" — never shown as applied '
+        '— until the next LIVE Settings, and is never resent', () async {
+      final rig = await settingsRig(frames: 3);
+      final effort = _effortRow(rig.controller.state.settings!);
+      expect(rig.controller.state.settingsSeen, 3);
+      rig.bridge.setFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'outcome unknown: the connection dropped',
+      );
+
+      await rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      RowMark? shown() => shownMark(
+        rig.controller.state.settingMarks[effort.key],
+        rig.controller.state.settingsSeen,
+      );
+      expect(shown(), const RowNotConfirmed(3));
+      expect(markText(shown()), notConfirmedText);
+      expect(_effortRow(rig.controller.state.settings!).current, 'high');
+
+      // A read with no new Settings: still not confirmed.
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(),
+          settingsFrames: 3,
+          stale: 'reconnecting',
+        ),
+      );
+      expect(shown(), const RowNotConfirmed(3));
+
+      // A reseed's Settings, folded while the view is still STALE (its
+      // `Ready` not yet in): the count is not taken, the mark stays.
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(),
+          settingsFrames: 4,
+          stale: 'reconnecting',
+        ),
+      );
+      expect(rig.controller.state.settingsSeen, 3);
+      expect(shown(), const RowNotConfirmed(3));
+
+      // The live read that shows it: the real value replaces the mark.
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(effort: 'low'),
+          settingsFrames: 4,
+        ),
+      );
+      expect(rig.controller.state.settingsSeen, 4);
+      expect(shown(), isNull);
+      expect(_effortRow(rig.controller.state.settings!).current, 'low');
+      expect(rig.bridge.sets, hasLength(1), reason: 'never resent');
+    });
+
+    test(
+      'a lost answer whose value the row already shows is no mark',
+      () async {
+        final rig = await settingsRig();
+        final effort = _effortRow(rig.controller.state.settings!);
+        rig.bridge.holdSet = Completer<void>();
+        rig.bridge.setFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+        final pressed = rig.controller.setSetting(
+          effort,
+          'low',
+          displayedModel: 'grok-4.6',
+        );
+        await pumpEventQueue();
+        // The session's own Settings said it took before the loss was known.
+        read(
+          rig,
+          _snap(
+            capabilities: _settingsCaps,
+            settings: _settings(effort: 'low'),
+            settingsFrames: 2,
+          ),
+        );
+        rig.bridge.holdSet!.complete();
+        await pressed;
+        expect(rig.controller.state.settingMarks, isEmpty);
+      },
+    );
+
+    test('nothing is sent where the capabilities say no settings', () async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _caps(kind: 'craze'),
+        settings: _settings(),
+      );
+      await rig.controller.open();
+      await rig.controller.setSetting(
+        _effortRow(_settings()),
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      expect(rig.bridge.sets, isEmpty);
+      expect(rig.controller.state.settingMarks, isEmpty);
+    });
+
+    test('the settings clock carries across a re-open: each handle counts '
+        'from zero', () async {
+      final rig = await settingsRig(frames: 3);
+      expect(rig.controller.state.settingsSeen, 3);
+      read(
+        rig,
+        _snap(
+          capabilities: _settingsCaps,
+          settings: _settings(),
+          settingsFrames: 3,
+          stale: 'unreachable',
+          ended: true,
+        ),
+      );
+      await pumpEventQueue();
+      // The re-opened handle's own seed: its first Settings.
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(),
+        settingsFrames: 1,
+      );
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.bridge.handles, hasLength(2), reason: 're-opened');
+      expect(
+        rig.controller.state.settingsSeen,
+        4,
+        reason: 'the new handle\'s seed Settings, on top of the old three',
+      );
+    });
+
+    test('a new stamp clears the marks, and a change still in flight on the '
+        'old session settles nothing', () async {
+      final rig = await settingsRig();
+      final effort = _effortRow(rig.controller.state.settings!);
+      rig.bridge.holdSet = Completer<void>();
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+      final pressed = rig.controller.setSetting(
+        effort,
+        'low',
+        displayedModel: 'grok-4.6',
+      );
+      await pumpEventQueue();
+      expect(rig.controller.state.settingMarks, isNotEmpty);
+
+      rig.stamps.add(
+        const BridgeAgentLaneStamp(
+          kind: crazeLaneKind,
+          sessionId: 'sess-2',
+          serverUrl: '',
+        ),
+      );
+      await pumpEventQueue();
+      expect(rig.controller.state.settingMarks, isEmpty);
+
+      rig.bridge.holdSet!.complete();
+      await pressed;
+      expect(
+        rig.controller.state.settingMarks,
+        isEmpty,
+        reason: 'the old session\'s refusal is not the new one\'s',
+      );
+    });
+  });
+
   group('close', () {
     test('releases the lease exactly once and is idempotent', () async {
       final rig = _Rig();
@@ -1175,6 +1521,23 @@ class _FakeLaneBridge implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// Every settings change sent, in order.
+  final List<BridgeLaneSettingChange> sets = [];
+  Object? setFailure;
+
+  /// Parks `set` after the change is recorded — a change PENDING, for as long
+  /// as a cell needs one.
+  Completer<void>? holdSet;
+
+  @override
+  Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) async {
+    sets.add(change);
+    final gate = holdSet;
+    if (gate != null) await gate.future;
+    final failure = setFailure;
+    if (failure != null) throw failure;
+  }
+
   @override
   void close(LaneHandle handle) {
     closes++;
@@ -1256,13 +1619,14 @@ BridgeLaneCapabilities _caps({
   String kind = 'opencode',
   bool interject = false,
   bool stop = false,
+  bool settings = false,
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
   cancel: true,
   approvals: true,
   historyCursor: false,
-  settings: false,
+  settings: settings,
   stop: stop,
 );
 
@@ -1288,6 +1652,8 @@ BridgeLaneSnapshot _snap({
   bool ended = false,
   BridgeLaneSession? session,
   BridgeLaneCapabilities? capabilities = _opencodeCaps,
+  BridgeLaneSettings? settings,
+  int settingsFrames = 0,
   List<BridgeLaneApproval> approvals = const [],
 }) => BridgeLaneSnapshot(
   messages: messages,
@@ -1298,8 +1664,43 @@ BridgeLaneSnapshot _snap({
   stale: stale,
   ended: ended,
   capabilities: capabilities,
+  settings: settings,
+  settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
 );
+
+/// A craze session that offers settings.
+final _settingsCaps = _caps(kind: 'craze', settings: true, stop: true);
+
+/// A session on [model] with an effort option at [effort] — the shape craze's
+/// permodel cursor hands over, cut down to what a press needs.
+BridgeLaneSettings _settings({
+  String model = 'grok-4.6',
+  String effort = 'high',
+}) => BridgeLaneSettings(
+  model: model,
+  models: const [
+    BridgeLaneChoice(id: 'grok-4.6', name: 'Grok 4.6'),
+    BridgeLaneChoice(id: 'composer-2.5', name: 'Composer 2.5'),
+  ],
+  modes: const [],
+  options: [
+    BridgeLaneSetting(
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      current: effort,
+      values: const [
+        BridgeLaneChoice(id: 'low', name: 'Low'),
+        BridgeLaneChoice(id: 'high', name: 'High'),
+      ],
+    ),
+  ],
+);
+
+/// The effort row of [s], as the sheet draws it.
+SettingsRow _effortRow(BridgeLaneSettings s) =>
+    sheetRows(s).firstWhere((r) => r.id == 'effort');
 
 BridgeRcFeedMessage _row(int seq, String text) => BridgeRcFeedMessage(
   seq: BigInt.from(seq),
