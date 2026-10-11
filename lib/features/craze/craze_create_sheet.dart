@@ -87,10 +87,17 @@ class CrazeDraftController extends Notifier<CrazeDraft> {
   /// only while something listens) and cut the create short — and a create cut
   /// short is an outcome nobody knows. With it, leaving the screen leaves the
   /// create running and its session appears as a row.
-  Future<void> submit() async {
+  ///
+  /// [home] is the machine's home directory, which a `~` directory is
+  /// expanded against when a NEW request begins ([CrazeDraft.beginSubmit]); a
+  /// replay resends the directory it expanded the first time.
+  Future<void> submit({String? home}) async {
     final current = state;
     if (current.phase == CrazePhase.submitting) return;
-    final started = current.beginSubmit(ref.read(crazeRequestIdMintProvider));
+    final started = current.beginSubmit(
+      ref.read(crazeRequestIdMintProvider),
+      home: home,
+    );
     state = started;
     final feedHold = ref.listen(
       machineFeedControllerProvider(origin),
@@ -170,6 +177,10 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
   late final TextEditingController _prompt;
   _OptionsLoad _load = const _Loading();
 
+  /// The machine's home directory — what a typed `~` expands to; null until
+  /// (or unless) the feed learns it.
+  String? _home;
+
   /// Bumped by every read, so an answer that lost to a Retry is dropped.
   int _attempt = 0;
 
@@ -203,10 +214,27 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
       if (!mounted || attempt != _attempt) return;
       setState(() => _load = _Ready(options));
       _reconcile();
+      _readHome(attempt);
     } catch (e) {
       if (!mounted || attempt != _attempt) return;
       setState(() => _load = _Failed(_message(e)));
     }
+  }
+
+  /// Learn the machine's home beside the options; a failure leaves `~` refused
+  /// and costs nothing else.
+  Future<void> _readHome(int attempt) async {
+    if (_home != null) return;
+    String? home;
+    try {
+      home = await ref
+          .read(machineFeedControllerProvider(widget.origin))
+          .remoteHome();
+    } catch (_) {
+      home = null;
+    }
+    if (!mounted || attempt != _attempt || home == null) return;
+    setState(() => _home = home);
   }
 
   static String _message(Object e) => switch (e) {
@@ -287,14 +315,18 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
         selected = p;
       }
     }
-    final cwdProblem = draft.cwd.isEmpty && draft.phase == CrazePhase.idle
+    // A replay resends the directory it already expanded ([CrazeDraft.sentCwd]),
+    // so the field's rule (and whether the home is known now) is not asked.
+    final cwdProblem =
+        replaying || (draft.cwd.isEmpty && draft.phase == CrazePhase.idle)
         ? null
-        : directoryProblem(draft.cwd);
+        : directoryProblem(draft.cwd, home: _home);
     final refusal = draft.refusal == null ? null : refusalView(draft.refusal!);
+    final recent = visibleRecentDirs(options?.recentDirs ?? const []);
     final canCreate =
         options != null &&
         (selected != null || replaying) &&
-        directoryProblem(draft.cwd) == null &&
+        (replaying || directoryProblem(draft.cwd, home: _home) == null) &&
         note == null &&
         !submitting;
     logDriveState(
@@ -379,15 +411,16 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
         const SizedBox(height: 14),
         _Label('Directory', color: c.fg2),
         const SizedBox(height: 8),
-        if (options != null && options.recentDirs.isNotEmpty) ...[
+        if (recent.isNotEmpty) ...[
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final (i, dir) in options.recentDirs.indexed)
+              for (final (i, dir) in recent.indexed)
                 _RecentDir(
                   key: ValueKey('craze-recent-dir-$i'),
                   dir: dir,
+                  label: abbreviateHome(dir, _home),
                   chosen: draft.cwd == dir,
                   onTap: submitting ? null : () => _useRecent(dir),
                 ),
@@ -403,7 +436,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
           enableSuggestions: false,
           style: monoStyle(fontSize: 13, color: c.fg),
           decoration: const InputDecoration(
-            labelText: 'Absolute path on that machine',
+            labelText: 'Path on that machine (absolute, or ~/…)',
           ),
           onChanged: (v) => _draft.edit(cwd: v),
         ),
@@ -492,7 +525,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
         PrimaryButton(
           key: const ValueKey('craze-create-submit'),
           label: primaryLabel(draft),
-          onPressed: canCreate ? _draft.submit : null,
+          onPressed: canCreate ? () => _draft.submit(home: _home) : null,
         ),
         if (submitting) ...[
           const SizedBox(height: 8),
@@ -610,11 +643,15 @@ class _RecentDir extends StatelessWidget {
   const _RecentDir({
     super.key,
     required this.dir,
+    required this.label,
     required this.chosen,
     required this.onTap,
   });
 
   final String dir;
+
+  /// What the chip reads — [dir] with its home abbreviated.
+  final String label;
   final bool chosen;
   final VoidCallback? onTap;
 
@@ -631,7 +668,7 @@ class _RecentDir extends StatelessWidget {
           borderRadius: BorderRadius.circular(7),
         ),
         child: Text(
-          dir,
+          label,
           overflow: TextOverflow.ellipsis,
           style: monoStyle(fontSize: 12, color: chosen ? c.accent : c.fg2),
         ),

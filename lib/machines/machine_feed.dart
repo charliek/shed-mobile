@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
@@ -1201,6 +1202,88 @@ class MachineFeed {
       throw StateError('craze is not connected on ${machine.name}');
     }
     return crazeCreateOptions(src: source);
+  }
+
+  /// The login user's home directory on this machine — what a `~` typed into
+  /// the craze create sheet stands for, since craze's hub takes only absolute
+  /// directories. One `printf` over the feed's own SSH connection, read once
+  /// per feed; null when it cannot be learned (the sheet then asks for an
+  /// absolute path). Only a failed DIAL is tried again next time: once an exec
+  /// has been attempted, a failure is kept for the feed's life — dartssh2 can
+  /// leave a failed or expired exec's channel open (see [_readHome]), and a
+  /// repeat would stack them on the connection the whole app shares.
+  Future<String?> remoteHome() => _home ??= _readHome().then((home) {
+    if (home == null && !_homeExecTried) _home = null;
+    return home;
+  });
+
+  Future<String?>? _home;
+  bool _homeExecTried = false;
+
+  Future<String?> _readHome() async {
+    // The dial is inside the deadline too: a stalled connect must not hold
+    // the sheet's `~` refusal open forever.
+    const deadline = Duration(seconds: 10);
+    final SSHClient client;
+    try {
+      client = await _connect().timeout(deadline);
+    } catch (_) {
+      return null;
+    }
+    // Not `execOn`: a timeout around it would abandon a live channel on the
+    // ONE client this feed shares with the tunnel and every forward. Owning
+    // the session lets the deadline end exactly it — as far as dartssh2 lets
+    // anyone: `kill` then `close`, the same best effort (and the same stated
+    // limit) as `exec_bytes.dart`'s budget expiry.
+    void end(SSHSession s, {bool expired = true}) {
+      if (expired && s.exitCode == null) {
+        try {
+          s.kill(SSHSignal.KILL);
+        } catch (_) {}
+      }
+      s.close();
+    }
+
+    _homeExecTried = true;
+    final opening = client.execute('printf %s "\$HOME"');
+    SSHSession session;
+    try {
+      session = await opening.timeout(
+        deadline,
+        // An open that answers after the deadline is ended when it does.
+        onTimeout: () {
+          opening.then(end, onError: (_) {});
+          throw TimeoutException('opening the home read', deadline);
+        },
+      );
+    } catch (_) {
+      return null;
+    }
+    final out = <int>[];
+    var expired = false;
+    final read = Completer<void>();
+    final sub = session.stdout.listen(
+      out.addAll,
+      onDone: () => read.isCompleted ? null : read.complete(),
+      onError: (Object e) => read.isCompleted ? null : read.completeError(e),
+    );
+    try {
+      await read.future.timeout(deadline);
+      var home = utf8.decode(out, allowMalformed: true).trim();
+      // One spelling, so `~` abbreviates and expands alike: no trailing `/`.
+      while (home.length > 1 && home.endsWith('/')) {
+        home = home.substring(0, home.length - 1);
+      }
+      return home.startsWith('/') ? home : null;
+    } on TimeoutException {
+      expired = true;
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await sub.cancel();
+      end(session, expired: expired);
+    }
   }
 
   /// Create a craze session — its own connection, owned by this feed.

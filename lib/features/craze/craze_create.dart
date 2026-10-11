@@ -62,17 +62,64 @@ String providerStateWords(BridgeLaneProviderState s) => switch (s) {
 
 // ---- the directory ----------------------------------------------------------
 
+/// Whether [dir] (trimmed) is `~` or starts `~/` — the one home form the field
+/// takes. `~user` is not: craze has no way to resolve another user's home.
+bool _homeRelative(String dir) => dir == '~' || dir.startsWith('~/');
+
 /// The directory field's refusal, or null when it may be sent: a session's
-/// directory must be ABSOLUTE (empty and relative are refused here; craze
-/// checks that it exists, and says so as a `bad_request` beside the field).
-String? directoryProblem(String cwd) {
+/// directory must be ABSOLUTE once [expandHome] has run (empty and relative
+/// are refused here; craze checks that it exists, and says so as a
+/// `bad_request` beside the field). A `~` path is taken only while the
+/// machine's [home] is known — craze's hub refuses anything not absolute, so
+/// the client expands it.
+String? directoryProblem(String cwd, {String? home}) {
   final dir = cwd.trim();
   if (dir.isEmpty) {
-    return 'choose a directory: a recent one, or an absolute path';
+    return 'choose a directory: a recent one, or a path';
   }
-  if (!dir.startsWith('/')) return 'an absolute path, starting with /';
+  if (_homeRelative(dir)) {
+    return home == null
+        ? 'the home directory on this machine is not known yet; type an '
+              'absolute path'
+        : null;
+  }
+  if (!dir.startsWith('/')) return 'an absolute path, or one starting with ~/';
   return null;
 }
+
+/// The directory as sent: trimmed, and a leading `~` replaced by the
+/// machine's [home] (left as typed while it is unknown — [directoryProblem]
+/// refuses that form then).
+String expandHome(String cwd, String? home) {
+  final dir = cwd.trim();
+  if (home == null || !_homeRelative(dir)) return dir;
+  final base = home.endsWith('/') && home.length > 1
+      ? home.substring(0, home.length - 1)
+      : home;
+  return dir == '~' ? base : '$base${dir.substring(1)}';
+}
+
+/// A directory as the sheet SHOWS it: under the machine's [home], as `~/…`.
+String abbreviateHome(String dir, String? home) {
+  if (home == null || home.isEmpty || home == '/') return dir;
+  if (dir == home) return '~';
+  return dir.startsWith('$home/') ? '~${dir.substring(home.length)}' : dir;
+}
+
+/// How many recent directories the sheet offers as chips.
+const recentDirsShown = 6;
+
+/// Throwaway locations — scratch checkouts, test fixtures — that crowd out
+/// the directories worth one tap.
+const _scratchRoots = ['/tmp', '/private/tmp', '/var/tmp', '/var/folders'];
+
+bool _isScratch(String dir) =>
+    _scratchRoots.any((r) => dir == r || dir.startsWith('$r/'));
+
+/// The recent directories the sheet offers: craze's order (newest first),
+/// scratch locations left out, at most [recentDirsShown].
+List<String> visibleRecentDirs(List<String> dirs) =>
+    dirs.where((d) => !_isScratch(d)).take(recentDirsShown).toList();
 
 // ---- the request id (plan 025 §3.8, the panel's Codex B) --------------------
 
@@ -186,6 +233,7 @@ class CrazeDraft {
     this.cwd = '',
     this.prompt = '',
     this.requestId,
+    this.sentCwd,
     this.phase = CrazePhase.idle,
     this.refusal,
     this.lastCreated,
@@ -203,6 +251,13 @@ class CrazeDraft {
   /// a second session. Null: the next submission mints a new one.
   final String? requestId;
 
+  /// The directory as the held [requestId] sends it — [cwd] with its `~`
+  /// expanded ([expandHome]), fixed when the submission began. Held exactly as
+  /// long as the id: a retry resends THIS, never a re-expansion, since a home
+  /// read differently (or not at all) on a later open would change the params
+  /// under the same id — craze's `request_conflict`.
+  final String? sentCwd;
+
   final CrazePhase phase;
   final CrazeRefusal? refusal;
 
@@ -210,10 +265,14 @@ class CrazeDraft {
   /// the sheet on screen can open its transcript; see [CrazeCreated].
   final CrazeCreated? lastCreated;
 
-  /// A submission starts: the id held from an unknown outcome is REUSED, else a
-  /// new one is minted.
-  CrazeDraft beginSubmit(String Function() mint) => _with(
+  /// A submission starts: the id held from an unknown outcome is REUSED with
+  /// the directory it sent, else a new one is minted and the directory is
+  /// expanded against the machine's [home] now.
+  CrazeDraft beginSubmit(String Function() mint, {String? home}) => _with(
     requestId: requestId ?? mint(),
+    sentCwd: requestId != null && sentCwd != null
+        ? sentCwd
+        : expandHome(cwd, home),
     phase: CrazePhase.submitting,
     refusal: null,
   );
@@ -224,7 +283,12 @@ class CrazeDraft {
   /// one. The typed form is never touched.
   CrazeDraft settle(CrazeRefusal refusal) => refusal.code == 'outcome_unknown'
       ? _with(phase: CrazePhase.unknown, refusal: refusal)
-      : _with(requestId: null, phase: CrazePhase.refused, refusal: refusal);
+      : _with(
+          requestId: null,
+          sentCwd: null,
+          phase: CrazePhase.refused,
+          refusal: refusal,
+        );
 
   /// A submission created a session: the draft is spent (the desktop's
   /// `EMPTY_DRAFT`), carrying only what was created.
@@ -256,14 +320,15 @@ class CrazeDraft {
   }
 
   /// The create this draft sends — the desktop's `create_request` rule: the
-  /// directory trimmed; a blank provider is absent (craze's default); a blank
-  /// prompt is absent (an idle session), any other prompt goes EXACTLY as
-  /// typed, newlines and all. Only a draft that has begun a submission has an
-  /// id to send.
+  /// directory trimmed, with a leading `~` expanded against the machine's home
+  /// when the submission began ([sentCwd]); a blank provider is absent
+  /// (craze's default); a blank prompt is absent (an idle session), any other
+  /// prompt goes EXACTLY as typed, newlines and all. Only a draft that has
+  /// begun a submission has an id to send.
   BridgeLaneCreateRequest request() {
     final p = provider?.trim() ?? '';
     return BridgeLaneCreateRequest(
-      cwd: cwd.trim(),
+      cwd: sentCwd ?? cwd.trim(),
       provider: p.isEmpty ? null : p,
       prompt: prompt.trim().isEmpty ? null : prompt,
       requestId: requestId!,
@@ -272,6 +337,7 @@ class CrazeDraft {
 
   CrazeDraft _with({
     Object? requestId = _keep,
+    Object? sentCwd = _keep,
     required CrazePhase phase,
     required CrazeRefusal? refusal,
   }) => CrazeDraft(
@@ -281,6 +347,7 @@ class CrazeDraft {
     requestId: identical(requestId, _keep)
         ? this.requestId
         : requestId as String?,
+    sentCwd: identical(sentCwd, _keep) ? this.sentCwd : sentCwd as String?,
     phase: phase,
     refusal: refusal,
     lastCreated: lastCreated,
