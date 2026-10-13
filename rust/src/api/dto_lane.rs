@@ -80,12 +80,16 @@
 
 use flutter_rust_bridge::frb;
 use shed_app::lane_view::LaneViewSnapshot;
+use shed_app::slash_menu::{
+    SlashAccept, SlashAcceptKey, SlashAction, SlashDispatch, SlashFilter, SlashFilterRow,
+    SlashHidden, SlashMenu, SlashMenuRow,
+};
 use shed_core::lane::{
     LaneAnswer, LaneApproval, LaneApprovalKind, LaneApprovalOption, LaneApprovalStatus,
     LaneCapabilities, LaneChoice, LaneCreateOptions, LaneCreateRequest, LaneCreated, LaneDecision,
     LaneError, LanePromptOutcome, LaneProvider, LaneProviderState, LaneQuestion, LaneSession,
-    LaneSetting, LaneSettingChange, LaneSettings, LaneUsage, SendMode, SourceCapabilities,
-    SourceOffline,
+    LaneSetting, LaneSettingChange, LaneSettings, LaneSlashArg, LaneSlashSource, LaneUsage,
+    SendMode, SourceCapabilities, SourceOffline,
 };
 use shed_core::roost::AgentLaneStamp;
 
@@ -726,6 +730,11 @@ pub struct BridgeLaneCapabilities {
     pub settings: bool,
     /// The session can be ended from this client (a Stop button).
     pub stop: bool,
+    /// The session serves a `/` command catalog (plan 029): its snapshots may
+    /// carry [`BridgeLaneSnapshot::slash_menu`].
+    pub slash: bool,
+    /// The session can be renamed from this client ([`super::lane::lane_set_title`]).
+    pub set_title: bool,
 }
 
 impl From<LaneCapabilities> for BridgeLaneCapabilities {
@@ -738,6 +747,8 @@ impl From<LaneCapabilities> for BridgeLaneCapabilities {
             history_cursor: c.history_cursor,
             settings: c.settings,
             stop: c.stop,
+            slash: c.slash,
+            set_title: c.set_title,
         }
     }
 }
@@ -818,6 +829,10 @@ pub struct BridgeLaneSnapshot {
     /// The asks still waiting on the human, oldest first, id as the tiebreak.
     /// Pending only, by [`lane_status_is_pending`]'s rule.
     pub approvals: Vec<BridgeLaneApproval>,
+    /// The session's `/` menu, resolved in Rust against its capabilities
+    /// (plan 029); `None` when the session has no catalog or does not say
+    /// `slash`. Every rule over it lives in the `slash_*` functions.
+    pub slash_menu: Option<BridgeSlashMenu>,
 }
 
 impl BridgeLaneSnapshot {
@@ -837,7 +852,418 @@ impl BridgeLaneSnapshot {
             settings: snap.settings.map(Into::into),
             settings_frames,
             approvals: snap.approvals.into_iter().map(Into::into).collect(),
+            slash_menu: snap.slash_menu.map(Into::into),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// the `/` menu (plan 029)
+// ---------------------------------------------------------------------------
+
+/// Where a menu row came from (mirrors `lane::LaneSlashSource`).
+///
+/// **Tolerant**: `Other { raw }` preserves an unrecognised source. A row
+/// carrying one never reaches a menu (Rust hides it), but the mirror stays
+/// lossless.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSlashSource {
+    Builtin,
+    Agent,
+    Plugin,
+    Skill,
+    Other { raw: String },
+}
+
+impl From<LaneSlashSource> for BridgeSlashSource {
+    fn from(s: LaneSlashSource) -> Self {
+        match s {
+            LaneSlashSource::Builtin => BridgeSlashSource::Builtin,
+            LaneSlashSource::Agent => BridgeSlashSource::Agent,
+            LaneSlashSource::Plugin => BridgeSlashSource::Plugin,
+            LaneSlashSource::Skill => BridgeSlashSource::Skill,
+            LaneSlashSource::Other(raw) => BridgeSlashSource::Other { raw },
+        }
+    }
+}
+
+impl From<BridgeSlashSource> for LaneSlashSource {
+    fn from(s: BridgeSlashSource) -> Self {
+        match s {
+            BridgeSlashSource::Builtin => LaneSlashSource::Builtin,
+            BridgeSlashSource::Agent => LaneSlashSource::Agent,
+            BridgeSlashSource::Plugin => LaneSlashSource::Plugin,
+            BridgeSlashSource::Skill => LaneSlashSource::Skill,
+            BridgeSlashSource::Other { raw } => LaneSlashSource::Other(raw),
+        }
+    }
+}
+
+/// Whether a menu row takes an argument, for display (mirrors
+/// `lane::LaneSlashArg`). **Tolerant**, like [`BridgeSlashSource`].
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSlashArg {
+    None,
+    Optional,
+    Required,
+    Other { raw: String },
+}
+
+impl From<LaneSlashArg> for BridgeSlashArg {
+    fn from(a: LaneSlashArg) -> Self {
+        match a {
+            LaneSlashArg::None => BridgeSlashArg::None,
+            LaneSlashArg::Optional => BridgeSlashArg::Optional,
+            LaneSlashArg::Required => BridgeSlashArg::Required,
+            LaneSlashArg::Other(raw) => BridgeSlashArg::Other { raw },
+        }
+    }
+}
+
+impl From<BridgeSlashArg> for LaneSlashArg {
+    fn from(a: BridgeSlashArg) -> Self {
+        match a {
+            BridgeSlashArg::None => LaneSlashArg::None,
+            BridgeSlashArg::Optional => LaneSlashArg::Optional,
+            BridgeSlashArg::Required => LaneSlashArg::Required,
+            BridgeSlashArg::Other { raw } => LaneSlashArg::Other(raw),
+        }
+    }
+}
+
+/// What running a menu row does (mirrors `slash_menu::SlashAction`).
+/// **Strict**: Rust resolved it, so it is always one of these five.
+/// `SetMode` carries the mode id (`LaneSettingChange::Mode`, always).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSlashAction {
+    Prompt,
+    SetTitle,
+    SetMode { id: String },
+    Stop,
+    ModelPicker,
+}
+
+impl From<SlashAction> for BridgeSlashAction {
+    fn from(a: SlashAction) -> Self {
+        match a {
+            SlashAction::Prompt => BridgeSlashAction::Prompt,
+            SlashAction::SetTitle => BridgeSlashAction::SetTitle,
+            // `resolve` only ever builds a `Mode` change (P14).
+            SlashAction::SetMode { change } => BridgeSlashAction::SetMode {
+                id: match change {
+                    LaneSettingChange::Mode { id } | LaneSettingChange::Model { id } => id,
+                    LaneSettingChange::Config { id, .. } => id,
+                },
+            },
+            SlashAction::Stop => BridgeSlashAction::Stop,
+            SlashAction::ModelPicker => BridgeSlashAction::ModelPicker,
+        }
+    }
+}
+
+impl From<BridgeSlashAction> for SlashAction {
+    fn from(a: BridgeSlashAction) -> Self {
+        match a {
+            BridgeSlashAction::Prompt => SlashAction::Prompt,
+            BridgeSlashAction::SetTitle => SlashAction::SetTitle,
+            BridgeSlashAction::SetMode { id } => SlashAction::SetMode {
+                change: LaneSettingChange::Mode { id },
+            },
+            BridgeSlashAction::Stop => SlashAction::Stop,
+            BridgeSlashAction::ModelPicker => SlashAction::ModelPicker,
+        }
+    }
+}
+
+/// One shown menu row (mirrors `slash_menu::SlashMenuRow`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSlashMenuRow {
+    /// The token without its `/` — pass it to [`slash_accept`].
+    pub name: String,
+    pub qualified: Option<String>,
+    pub description: Option<String>,
+    pub source: BridgeSlashSource,
+    pub arg: BridgeSlashArg,
+    pub arg_hint: Option<String>,
+    pub while_working: bool,
+    pub action: BridgeSlashAction,
+}
+
+impl From<SlashMenuRow> for BridgeSlashMenuRow {
+    fn from(r: SlashMenuRow) -> Self {
+        BridgeSlashMenuRow {
+            name: r.name,
+            qualified: r.qualified,
+            description: r.description,
+            source: r.source.into(),
+            arg: r.arg.into(),
+            arg_hint: r.arg_hint,
+            while_working: r.while_working,
+            action: r.action.into(),
+        }
+    }
+}
+
+impl From<BridgeSlashMenuRow> for SlashMenuRow {
+    fn from(r: BridgeSlashMenuRow) -> Self {
+        SlashMenuRow {
+            name: r.name,
+            qualified: r.qualified,
+            description: r.description,
+            source: r.source.into(),
+            arg: r.arg.into(),
+            arg_hint: r.arg_hint,
+            while_working: r.while_working,
+            action: r.action.into(),
+        }
+    }
+}
+
+/// A hidden builtin and why a typed command is refused for it (mirrors
+/// `slash_menu::SlashHidden`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSlashHidden {
+    pub name: String,
+    pub reason: String,
+}
+
+impl From<SlashHidden> for BridgeSlashHidden {
+    fn from(h: SlashHidden) -> Self {
+        BridgeSlashHidden {
+            name: h.name,
+            reason: h.reason,
+        }
+    }
+}
+
+impl From<BridgeSlashHidden> for SlashHidden {
+    fn from(h: BridgeSlashHidden) -> Self {
+        SlashHidden {
+            name: h.name,
+            reason: h.reason,
+        }
+    }
+}
+
+/// A session's resolved `/` menu (mirrors `slash_menu::SlashMenu`). Uncapped
+/// (P16): the panel scrolls. Hand it back to the `slash_*` functions as it was
+/// read from [`BridgeLaneSnapshot::slash_menu`].
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSlashMenu {
+    pub rows: Vec<BridgeSlashMenuRow>,
+    pub hidden: Vec<BridgeSlashHidden>,
+}
+
+impl From<SlashMenu> for BridgeSlashMenu {
+    fn from(m: SlashMenu) -> Self {
+        BridgeSlashMenu {
+            rows: m.rows.into_iter().map(Into::into).collect(),
+            hidden: m.hidden.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<BridgeSlashMenu> for SlashMenu {
+    fn from(m: BridgeSlashMenu) -> Self {
+        SlashMenu {
+            rows: m.rows.into_iter().map(Into::into).collect(),
+            hidden: m.hidden.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// One row of an open menu (mirrors `slash_menu::SlashFilterRow`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSlashFilterRow {
+    pub row: BridgeSlashMenuRow,
+    /// A turn is running and this row would be refused for it: draw it dimmed.
+    pub dimmed: bool,
+}
+
+impl From<SlashFilterRow> for BridgeSlashFilterRow {
+    fn from(r: SlashFilterRow) -> Self {
+        BridgeSlashFilterRow {
+            row: r.row.into(),
+            dimmed: r.dimmed,
+        }
+    }
+}
+
+impl From<BridgeSlashFilterRow> for SlashFilterRow {
+    fn from(r: BridgeSlashFilterRow) -> Self {
+        SlashFilterRow {
+            row: r.row.into(),
+            dimmed: r.dimmed,
+        }
+    }
+}
+
+/// What the menu panel shows for a draft and caret (mirrors
+/// `slash_menu::SlashFilter`): `open` is exactly `!rows.is_empty()`; `token`
+/// keys an Esc dismissal.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSlashFilter {
+    pub open: bool,
+    pub token: String,
+    pub rows: Vec<BridgeSlashFilterRow>,
+}
+
+impl From<SlashFilter> for BridgeSlashFilter {
+    fn from(f: SlashFilter) -> Self {
+        BridgeSlashFilter {
+            open: f.open,
+            token: f.token,
+            rows: f.rows.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<BridgeSlashFilter> for SlashFilter {
+    fn from(f: BridgeSlashFilter) -> Self {
+        SlashFilter {
+            open: f.open,
+            token: f.token,
+            rows: f.rows.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// What sending a draft does (mirrors `slash_menu::SlashDispatch`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSlashDispatch {
+    /// Send the draft as text, as without a menu.
+    NotCommand,
+    /// Send `text` as the prompt.
+    Prompt { text: String },
+    /// Run `action`; `arg` is the title for `SetTitle`, else `None`.
+    Run {
+        action: BridgeSlashAction,
+        arg: Option<String>,
+    },
+    /// Refused: show `reason`, keep the draft.
+    Refuse { reason: String },
+}
+
+impl From<SlashDispatch> for BridgeSlashDispatch {
+    fn from(d: SlashDispatch) -> Self {
+        match d {
+            SlashDispatch::NotCommand => BridgeSlashDispatch::NotCommand,
+            SlashDispatch::Prompt { text } => BridgeSlashDispatch::Prompt { text },
+            SlashDispatch::Run { action, arg } => BridgeSlashDispatch::Run {
+                action: action.into(),
+                arg,
+            },
+            SlashDispatch::Refuse { reason } => BridgeSlashDispatch::Refuse { reason },
+        }
+    }
+}
+
+impl From<BridgeSlashDispatch> for SlashDispatch {
+    fn from(d: BridgeSlashDispatch) -> Self {
+        match d {
+            BridgeSlashDispatch::NotCommand => SlashDispatch::NotCommand,
+            BridgeSlashDispatch::Prompt { text } => SlashDispatch::Prompt { text },
+            BridgeSlashDispatch::Run { action, arg } => SlashDispatch::Run {
+                action: action.into(),
+                arg,
+            },
+            BridgeSlashDispatch::Refuse { reason } => SlashDispatch::Refuse { reason },
+        }
+    }
+}
+
+/// How a menu row was chosen (mirrors `slash_menu::SlashAcceptKey`).
+#[frb(unignore)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeSlashAcceptKey {
+    Enter,
+    Tab,
+    Pick,
+}
+
+impl From<BridgeSlashAcceptKey> for SlashAcceptKey {
+    fn from(k: BridgeSlashAcceptKey) -> Self {
+        match k {
+            BridgeSlashAcceptKey::Enter => SlashAcceptKey::Enter,
+            BridgeSlashAcceptKey::Tab => SlashAcceptKey::Tab,
+            BridgeSlashAcceptKey::Pick => SlashAcceptKey::Pick,
+        }
+    }
+}
+
+impl From<SlashAcceptKey> for BridgeSlashAcceptKey {
+    fn from(k: SlashAcceptKey) -> Self {
+        match k {
+            SlashAcceptKey::Enter => BridgeSlashAcceptKey::Enter,
+            SlashAcceptKey::Tab => BridgeSlashAcceptKey::Tab,
+            SlashAcceptKey::Pick => BridgeSlashAcceptKey::Pick,
+        }
+    }
+}
+
+/// What choosing a menu row does (mirrors `slash_menu::SlashAccept`). `caret`
+/// is UTF-16 code units — Flutter's `TextSelection` offset, no conversion.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeSlashAccept {
+    Complete { draft: String, caret: u32 },
+    Dispatch { dispatch: BridgeSlashDispatch },
+}
+
+impl From<SlashAccept> for BridgeSlashAccept {
+    fn from(a: SlashAccept) -> Self {
+        match a {
+            SlashAccept::Complete { draft, caret } => BridgeSlashAccept::Complete { draft, caret },
+            SlashAccept::Dispatch { dispatch } => BridgeSlashAccept::Dispatch {
+                dispatch: dispatch.into(),
+            },
+        }
+    }
+}
+
+impl From<BridgeSlashAccept> for SlashAccept {
+    fn from(a: BridgeSlashAccept) -> Self {
+        match a {
+            BridgeSlashAccept::Complete { draft, caret } => SlashAccept::Complete { draft, caret },
+            BridgeSlashAccept::Dispatch { dispatch } => SlashAccept::Dispatch {
+                dispatch: dispatch.into(),
+            },
+        }
+    }
+}
+
+/// What a rename answered ([`super::lane::lane_set_title`]). `warning` is set
+/// when the rename TOOK but craze could not record it (`index_write`): the
+/// person sees the new title, the draft clears, and the message is shown beside
+/// it — never a rollback or a retry. Every other failure is a
+/// [`BridgeLaneError`] instead.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeSetTitleOutcome {
+    pub warning: Option<String>,
+}
+
+/// A rename's answer as the phone reports it: `Ok(warning)` for a rename that
+/// took but was not recorded ([`shed_craze::index_write_cause`] recognises
+/// it), a clean `Ok` otherwise, and every other error unchanged.
+pub(crate) fn set_title_outcome(
+    result: Result<(), LaneError>,
+) -> Result<BridgeSetTitleOutcome, BridgeLaneError> {
+    match result {
+        Ok(()) => Ok(BridgeSetTitleOutcome { warning: None }),
+        Err(e) if shed_craze::index_write_cause(&e).is_some() => Ok(BridgeSetTitleOutcome {
+            warning: Some(e.to_string()),
+        }),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -1019,6 +1445,8 @@ pub struct BridgeSourceCapabilities {
     pub kind: String,
     pub create: bool,
     pub create_options: bool,
+    /// A create may carry a title (plan 029); a source that says no refuses one.
+    pub create_title: bool,
 }
 
 impl From<SourceCapabilities> for BridgeSourceCapabilities {
@@ -1027,6 +1455,7 @@ impl From<SourceCapabilities> for BridgeSourceCapabilities {
             kind: c.kind,
             create: c.create,
             create_options: c.create_options,
+            create_title: c.create_title,
         }
     }
 }
@@ -1175,6 +1604,8 @@ pub struct BridgeLaneCreateRequest {
     /// The first prompt; `None` creates an idle session.
     pub prompt: Option<String>,
     pub request_id: String,
+    /// The session's title at create (plan 029); `None` leaves it to the agent.
+    pub title: Option<String>,
 }
 
 impl From<BridgeLaneCreateRequest> for LaneCreateRequest {
@@ -1184,6 +1615,7 @@ impl From<BridgeLaneCreateRequest> for LaneCreateRequest {
             provider: r.provider,
             prompt: r.prompt,
             request_id: r.request_id,
+            title: r.title,
         }
     }
 }
@@ -1195,6 +1627,7 @@ impl From<LaneCreateRequest> for BridgeLaneCreateRequest {
             provider: r.provider,
             prompt: r.prompt,
             request_id: r.request_id,
+            title: r.title,
         }
     }
 }
@@ -1285,7 +1718,9 @@ pub enum BridgeLaneError {
     /// The agent demanded a credential this build cannot supply.
     Unauthorized,
     /// The agent rejected the request and said why — ITS message, kept whole.
-    BadRequest { msg: String },
+    BadRequest {
+        msg: String,
+    },
     UnknownSession,
     UnknownApproval,
     /// An answer is already in flight (the optimistic `Submitted` state). A
@@ -1296,13 +1731,19 @@ pub enum BridgeLaneError {
     /// Nothing to talk to: the agent is not running, the dial was refused, the
     /// tunnel is down. **Quiet** — render an unreachable row with this reason,
     /// not an error dialog. The string names what was tried.
-    Unavailable { msg: String },
+    Unavailable {
+        msg: String,
+    },
     /// Anything else that went wrong on the wire, kept whole.
-    Failed { msg: String },
+    Failed {
+        msg: String,
+    },
     /// There is no lane here: this handle is closed, or the row carries no
     /// stamp. Carries a message because the two cases read differently to a
     /// user, and neither is the adapter's.
-    NoLane { msg: String },
+    NoLane {
+        msg: String,
+    },
     /// The row DOES carry a lane and this build has no adapter for its kind.
     ///
     /// Distinct from [`BridgeLaneError::NoLane`] on purpose: `NoLane` is a
@@ -1310,7 +1751,9 @@ pub enum BridgeLaneError {
     /// while this one means "there IS something here and I cannot speak to it" —
     /// which a NEWER build may well be able to. `AgentLaneStamp`'s doc makes
     /// refusing by name the client's obligation for exactly that reason.
-    UnsupportedLane { kind: String },
+    UnsupportedLane {
+        kind: String,
+    },
     /// **A craze request whose answer was lost** (plan 025 §3.3.4, §3.8) — it
     /// was written and never answered: its connection dropped while it was in
     /// flight, or its deadline passed. Whether it RAN is not known, and it is
@@ -1339,7 +1782,9 @@ pub enum BridgeLaneError {
     /// mapped the same way: by the one [`From<LaneError>`] every lane and create
     /// refusal goes through, recognised by `shed_craze::is_outcome_unknown` (one
     /// implementation; no client string-matches it).
-    OutcomeUnknown { msg: String },
+    OutcomeUnknown {
+        msg: String,
+    },
 }
 
 impl From<LaneError> for BridgeLaneError {
@@ -1698,6 +2143,8 @@ mod tests {
             history_cursor: false,
             settings: true,
             stop: false,
+            slash: true,
+            set_title: false,
         }
         .into();
         assert_eq!(
@@ -1710,6 +2157,8 @@ mod tests {
                 history_cursor: false,
                 settings: true,
                 stop: false,
+                slash: true,
+                set_title: false,
             }
         );
         let flipped: BridgeLaneCapabilities = LaneCapabilities {
@@ -1720,10 +2169,13 @@ mod tests {
             history_cursor: true,
             settings: false,
             stop: true,
+            slash: false,
+            set_title: true,
         }
         .into();
         assert!(!flipped.interject && flipped.cancel && !flipped.approvals);
         assert!(flipped.history_cursor && !flipped.settings && flipped.stop);
+        assert!(!flipped.slash && flipped.set_title);
 
         let stamp: BridgeAgentLaneStamp = AgentLaneStamp {
             kind: "opencode".to_string(),
@@ -1846,11 +2298,15 @@ mod tests {
                 history_cursor: true,
                 settings: true,
                 stop: true,
+                slash: true,
+                set_title: true,
             }),
             settings: Some(settings()),
             approvals: vec![approval(vec![option("allow-once", None)])],
+            slash_menu: Some(sample_menu()),
         };
         let snap = BridgeLaneSnapshot::from_view(view, 4);
+        assert_eq!(snap.slash_menu, Some(sample_menu().into()));
         assert_eq!(
             snap.settings_frames, 4,
             "the pump's count of Settings frames rides beside the view"
@@ -1889,6 +2345,7 @@ mod tests {
             capabilities: None,
             settings: None,
             approvals: Vec::new(),
+            slash_menu: None,
         };
         let ended = BridgeLaneSnapshot::from_view(unseeded, 0);
         assert!(ended.ended);
@@ -1896,6 +2353,7 @@ mod tests {
         assert_eq!(ended.session, None);
         assert_eq!(ended.capabilities, None);
         assert_eq!(ended.settings, None);
+        assert_eq!(ended.slash_menu, None);
     }
 
     /// The settings tree maps whole: the current model and mode, every choice
@@ -2055,12 +2513,14 @@ mod tests {
                 provider: Some("cursor".to_string()),
                 prompt: Some("fix the build".to_string()),
                 request_id: "req-1".to_string(),
+                title: Some("a title".to_string()),
             },
             LaneCreateRequest {
                 cwd: "/home/shed".to_string(),
                 provider: None,
                 prompt: None,
                 request_id: "req-2".to_string(),
+                title: None,
             },
         ] {
             let bridged: BridgeLaneCreateRequest = original.clone().into();
@@ -2077,6 +2537,7 @@ mod tests {
             kind: "craze".to_string(),
             create: true,
             create_options: false,
+            create_title: true,
         }
         .into();
         assert_eq!(
@@ -2085,6 +2546,7 @@ mod tests {
                 kind: "craze".to_string(),
                 create: true,
                 create_options: false,
+                create_title: true,
             }
         );
 
@@ -2135,5 +2597,338 @@ mod tests {
         assert_eq!(created.session, full_session().into());
         assert_eq!(created.prompt, BridgeLanePromptOutcome::Refused);
         assert_eq!(created.prompt_error.as_deref(), Some("busy"));
+    }
+
+    // ---- plan 029: the `/` menu, a rename and a title at create ----
+
+    use shed_app::slash_menu::{self, SlashFilter};
+    use shed_core::lane::{
+        LaneSlashCatalog, LaneSlashKind, LaneSlashMethod, LaneSlashPicker, LaneSlashRow,
+        LaneSlashRun,
+    };
+
+    fn all_caps() -> LaneCapabilities {
+        LaneCapabilities {
+            kind: "craze".to_string(),
+            interject: true,
+            cancel: true,
+            approvals: true,
+            history_cursor: true,
+            settings: true,
+            stop: true,
+            slash: true,
+            set_title: true,
+        }
+    }
+
+    fn run(kind: LaneSlashKind) -> LaneSlashRun {
+        LaneSlashRun {
+            kind,
+            arg: LaneSlashArg::None,
+            arg_hint: None,
+            method: None,
+            param: None,
+            mode: None,
+            picker: None,
+            reason: None,
+            local: None,
+        }
+    }
+
+    fn row(name: &str, source: LaneSlashSource, run: LaneSlashRun) -> LaneSlashRow {
+        LaneSlashRow {
+            name: name.to_string(),
+            description: Some(format!("about {name}")),
+            source,
+            plugin: None,
+            qualified: None,
+            requires: None,
+            while_working: false,
+            run,
+        }
+    }
+
+    /// One row of every action, plus a hidden builtin: the menu the round-trip
+    /// and smoke tests share.
+    fn sample_menu() -> SlashMenu {
+        let mut rename = run(LaneSlashKind::Method);
+        rename.method = Some(LaneSlashMethod::SetTitle);
+        rename.param = Some("title".to_string());
+        rename.arg = LaneSlashArg::Required;
+        rename.arg_hint = Some("<title>".to_string());
+        let mut plan = run(LaneSlashKind::Method);
+        plan.method = Some(LaneSlashMethod::Set);
+        plan.mode = Some("plan".to_string());
+        let mut stop = run(LaneSlashKind::Method);
+        stop.method = Some(LaneSlashMethod::Stop);
+        let mut model = run(LaneSlashKind::Picker);
+        model.picker = Some(LaneSlashPicker::Model);
+        let mut review = row(
+            "review",
+            LaneSlashSource::Plugin,
+            run(LaneSlashKind::Prompt),
+        );
+        review.qualified = Some("tools:review".to_string());
+        let mut local = run(LaneSlashKind::Local);
+        local.local = Some("help".to_string());
+        let catalog = LaneSlashCatalog {
+            rows: vec![
+                row("rename", LaneSlashSource::Builtin, rename),
+                row("plan", LaneSlashSource::Builtin, plan),
+                row("stop", LaneSlashSource::Builtin, stop),
+                row("model", LaneSlashSource::Builtin, model),
+                review,
+                row("help", LaneSlashSource::Builtin, local),
+            ],
+        };
+        slash_menu::resolve(&catalog, &all_caps())
+    }
+
+    #[test]
+    fn the_sample_menu_has_every_action_and_a_hidden_builtin() {
+        let menu = sample_menu();
+        let actions: Vec<_> = menu.rows.iter().map(|r| r.action.clone()).collect();
+        assert_eq!(actions.len(), 5);
+        assert!(actions.contains(&SlashAction::SetTitle));
+        assert!(actions.contains(&SlashAction::Prompt));
+        assert_eq!(menu.hidden.len(), 1, "the local help builtin is refused");
+    }
+
+    /// Every new type converts both ways without losing a field.
+    #[test]
+    fn the_menu_types_round_trip() {
+        let menu = sample_menu();
+        let bridged: BridgeSlashMenu = menu.clone().into();
+        assert_eq!(bridged.rows.len(), menu.rows.len());
+        assert_eq!(SlashMenu::from(bridged.clone()), menu);
+        assert!(bridged.rows.iter().any(|r| r.action
+            == BridgeSlashAction::SetMode {
+                id: "plan".to_string()
+            }));
+        let first = &bridged.rows[0];
+        assert_eq!(first.name, "rename");
+        assert_eq!(first.arg, BridgeSlashArg::Required);
+        assert_eq!(first.arg_hint.as_deref(), Some("<title>"));
+        assert_eq!(first.source, BridgeSlashSource::Builtin);
+
+        for action in [
+            SlashAction::Prompt,
+            SlashAction::SetTitle,
+            SlashAction::SetMode {
+                change: LaneSettingChange::Mode {
+                    id: "plan".to_string(),
+                },
+            },
+            SlashAction::Stop,
+            SlashAction::ModelPicker,
+        ] {
+            let b: BridgeSlashAction = action.clone().into();
+            assert_eq!(SlashAction::from(b), action);
+        }
+        for d in [
+            SlashDispatch::NotCommand,
+            SlashDispatch::Prompt {
+                text: "/x y".to_string(),
+            },
+            SlashDispatch::Run {
+                action: SlashAction::SetTitle,
+                arg: Some("t".to_string()),
+            },
+            SlashDispatch::Run {
+                action: SlashAction::Stop,
+                arg: None,
+            },
+            SlashDispatch::Refuse {
+                reason: "no".to_string(),
+            },
+        ] {
+            let b: BridgeSlashDispatch = d.clone().into();
+            assert_eq!(SlashDispatch::from(b), d);
+        }
+        for a in [
+            SlashAccept::Complete {
+                draft: "/rename ".to_string(),
+                caret: 8,
+            },
+            SlashAccept::Dispatch {
+                dispatch: SlashDispatch::NotCommand,
+            },
+        ] {
+            let b: BridgeSlashAccept = a.clone().into();
+            assert_eq!(SlashAccept::from(b), a);
+        }
+        for k in [
+            SlashAcceptKey::Enter,
+            SlashAcceptKey::Tab,
+            SlashAcceptKey::Pick,
+        ] {
+            let b: BridgeSlashAcceptKey = k.into();
+            assert_eq!(SlashAcceptKey::from(b), k);
+        }
+        let f = slash_menu::filter(&menu, "/", 1, true);
+        let bf: BridgeSlashFilter = f.clone().into();
+        assert_eq!(SlashFilter::from(bf.clone()), f);
+        assert!(bf.open && bf.rows.iter().any(|r| r.dimmed));
+        // The tolerant mirrors keep an unknown word.
+        for src in [
+            LaneSlashSource::Other("future".to_string()),
+            LaneSlashSource::Skill,
+        ] {
+            let b: BridgeSlashSource = src.clone().into();
+            assert_eq!(LaneSlashSource::from(b), src);
+        }
+        for arg in [
+            LaneSlashArg::Other("many".to_string()),
+            LaneSlashArg::Optional,
+        ] {
+            let b: BridgeSlashArg = arg.clone().into();
+            assert_eq!(LaneSlashArg::from(b), arg);
+        }
+    }
+
+    /// The new capability flags and the create title cross, and a pre-029
+    /// shape (everything false/absent) still converts to the neutral values.
+    #[test]
+    fn the_new_flags_and_the_title_cross_and_a_pre_029_shape_defaults() {
+        let caps: BridgeLaneCapabilities = all_caps().into();
+        assert!(caps.slash && caps.set_title);
+        let old: LaneCapabilities = serde_json::from_value(serde_json::json!({
+            "kind": "opencode", "interject": false, "cancel": true,
+            "approvals": true, "history_cursor": false,
+            "settings": false, "stop": false
+        }))
+        .expect("a pre-029 capabilities record still decodes");
+        let old: BridgeLaneCapabilities = old.into();
+        assert!(!old.slash && !old.set_title);
+
+        let src: BridgeSourceCapabilities = SourceCapabilities {
+            kind: "craze".to_string(),
+            create: true,
+            create_options: true,
+            create_title: true,
+        }
+        .into();
+        assert!(src.create_title);
+
+        let req = BridgeLaneCreateRequest {
+            cwd: "/w".to_string(),
+            provider: None,
+            prompt: None,
+            request_id: "r".to_string(),
+            title: Some("named".to_string()),
+        };
+        let core = LaneCreateRequest::from(req.clone());
+        assert_eq!(core.title.as_deref(), Some("named"));
+        assert_eq!(BridgeLaneCreateRequest::from(core), req);
+    }
+
+    /// **P16: no cap.** A 600-row catalog converts whole and a bare `/` lists
+    /// every row.
+    #[test]
+    fn a_600_row_menu_converts_and_a_bare_slash_lists_all_of_it() {
+        let catalog = LaneSlashCatalog {
+            rows: (0..600)
+                .map(|i| {
+                    row(
+                        &format!("cmd{i}"),
+                        LaneSlashSource::Agent,
+                        run(LaneSlashKind::Prompt),
+                    )
+                })
+                .collect(),
+        };
+        let menu = slash_menu::resolve(&catalog, &all_caps());
+        assert_eq!(menu.rows.len(), 600);
+        let bridged: BridgeSlashMenu = menu.into();
+        assert_eq!(bridged.rows.len(), 600);
+        let f = super::super::lane::slash_filter(bridged, "/".to_string(), 1, false);
+        assert!(f.open);
+        assert_eq!(f.rows.len(), 600);
+    }
+
+    /// The pure functions are thin wrappers: they agree with
+    /// `shed_app::slash_menu` on a case each.
+    #[test]
+    fn the_slash_functions_agree_with_shed_app() {
+        use super::super::lane::{slash_accept, slash_dispatch, slash_filter, slash_is_working};
+        let menu = sample_menu();
+        let b: BridgeSlashMenu = menu.clone().into();
+
+        let f = slash_filter(b.clone(), "/re".to_string(), 3, false);
+        assert_eq!(
+            SlashFilter::from(f),
+            slash_menu::filter(&menu, "/re", 3, false)
+        );
+
+        let d = slash_dispatch(b.clone(), "/rename   new name ".to_string(), false);
+        assert_eq!(
+            d,
+            BridgeSlashDispatch::Run {
+                action: BridgeSlashAction::SetTitle,
+                arg: Some("new name".to_string()),
+            }
+        );
+        assert_eq!(
+            SlashDispatch::from(d),
+            slash_menu::dispatch(&menu, "/rename   new name ", false)
+        );
+        assert!(matches!(
+            slash_dispatch(b.clone(), "/rename".to_string(), false),
+            BridgeSlashDispatch::Refuse { .. }
+        ));
+
+        let a = slash_accept(
+            b.clone(),
+            "/re".to_string(),
+            "rename".to_string(),
+            BridgeSlashAcceptKey::Tab,
+            false,
+        );
+        assert_eq!(
+            a,
+            Some(BridgeSlashAccept::Complete {
+                draft: "/rename ".to_string(),
+                caret: 8
+            })
+        );
+        assert_eq!(
+            slash_accept(
+                b,
+                "hello".to_string(),
+                "rename".to_string(),
+                BridgeSlashAcceptKey::Pick,
+                false
+            ),
+            None
+        );
+
+        assert!(slash_is_working(BridgeRcActivity::Working));
+        assert!(slash_is_working(BridgeRcActivity::NeedsApproval));
+        assert!(!slash_is_working(BridgeRcActivity::Unknown));
+    }
+
+    /// The rename's mapping: craze's "renamed but unrecorded" is success with a
+    /// warning; everything else stays an error.
+    #[test]
+    fn a_rename_that_took_but_was_not_recorded_is_success_with_a_warning() {
+        assert_eq!(
+            set_title_outcome(Ok(())),
+            Ok(BridgeSetTitleOutcome { warning: None })
+        );
+        let msg = format!("{}disk full", shed_craze::errors::RENAMED_UNRECORDED);
+        let out = set_title_outcome(Err(LaneError::Failed(msg.clone())))
+            .expect("an index_write rename is success");
+        assert_eq!(out.warning.as_deref(), Some(msg.as_str()));
+        // Any other failure stays an error, under its own variant.
+        assert_eq!(
+            set_title_outcome(Err(LaneError::Failed("boom".to_string()))),
+            Err(BridgeLaneError::Failed {
+                msg: "boom".to_string()
+            })
+        );
+        assert_eq!(
+            set_title_outcome(Err(LaneError::UnknownSession)),
+            Err(BridgeLaneError::UnknownSession)
+        );
     }
 }

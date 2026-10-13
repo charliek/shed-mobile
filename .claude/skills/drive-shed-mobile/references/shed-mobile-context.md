@@ -348,13 +348,24 @@ immediately) or claim one on the far side with
 
 **Agent lane screen — `LaneScreen` (Scaffold `lane-screen`)**
 
-Reached from `machine-lane-<machine>-<slug>`. The agent's OWN transcript
-(`gx`/`opencode` over the machine's SSH forward), the approvals it is blocked
-on, and a composer. Rows are the shared `RcMessageTile` — the same tile the
-session-watch feed uses, because a lane's rows *are* `RcFeedMessage`s.
+Reached from `machine-lane-<machine>-<slug>` (a roost row's agent lane) or a
+craze row's `craze-lane-<scope>-<hostId>` Transcript pill. The agent's OWN
+transcript (`gx`/`opencode` over the machine's SSH forward; a craze session
+through the machine's craze source), the approvals it is blocked on, and a
+composer. Rows are the shared `RcMessageTile` — the same tile the session-watch
+feed uses, because a lane's rows *are* `RcFeedMessage`s. Every affordance below
+is gated on the capabilities the lane's stream last stated — hidden, never
+disabled — not on the kind.
 
 | Key | What |
 |---|---|
+| `lane-title` | the header title — the LIVE session row's title once the stream sent one (a `/rename` shows here when craze's delta says so, never from the rename's answer), else the row's name |
+| `lane-slug` | the small line under the title: the row's slug (a craze hostId, a roost tab id) |
+| `lane-permission` | the live row's permission posture (`runs tools without asking` for a craze `bypass` session); absent when the row states none |
+| `lane-stop` | AppBar Stop — **only** when `capabilities.stop` (a hub-created craze session); disabled once the lane ended. Opens a confirm, never one tap |
+| `lane-stop-confirm` / `lane-stop-keep` / `lane-stop-session` | the Stop confirm, its Keep (sends nothing) and its "Stop session" (craze's `session.stop`; the lane then ends `session_closed`, the transcript stays) |
+| `lane-stop-error` | a refused or lost Stop from the header's button, as a banner under the header (not the composer's). `/exit`'s refused or lost stop is the composer's instead (`lane-composer-error`: craze's words, or `may have applied — check the session`), the draft kept |
+| `lane-settings-chip` | AppBar settings chip — **only** when `capabilities.settings` (craze): `<model> · <effort> · fast`; a tap opens the settings sheet (below) |
 | `lane-loading` | the lane is opening (probe → forward → `lane_open`) |
 | `lane-unavailable` | the lane's provider failed — centred text before the first snapshot, an error banner above the (now last-known) transcript afterwards |
 | `lane-activity` | activity chip, in the shared `rcActivityDisplay` colours (absent for `unknown`) |
@@ -374,18 +385,107 @@ session-watch feed uses, because a lane's rows *are* `RcFeedMessage`s.
 | `lane-raw-<approvalId>` / `lane-raw-body-<approvalId>` | the collapsed `requestJson` expander, and its body once expanded |
 | `lane-reject-<approvalId>` | the raw card's Reject → posts `Reject`. **A placeholder permission has no allow button at all** — only this |
 | `lane-approval-error-<approvalId>` | a refused answer, on the card that raised it |
-| `lane-input` | the composer's text field |
+| `lane-input` | the composer's text field. Hardware keys go through the composer's key table first: Enter sends (or, with the `/` menu up, accepts the highlighted row), Shift+Enter is a newline, and every key is ignored while an IME composes. The keyboard's Send action takes the same rule as Enter |
 | `lane-interject` | the Interject toggle — rendered **only** when `capabilities.interject` (opencode: absent), enabled **only** while activity is `working`. The mode is recomputed at SEND time, so a turn that ended between render and tap sends `Queue` |
 | `lane-cancel` | Cancel — rendered **only** while activity is `working` |
-| `lane-send` | Send |
-| `lane-composer-error` | a refused send or cancel, inline under the composer |
+| `lane-send` | Send — through the `/` menu's shared dispatch when the session has one (a typed hidden builtin is refused, never sent as text) |
+| `lane-composer-error` | a refused send, cancel, `/rename` or `/` mode, inline under the composer — craze's words, or for an answer lost to a drop `outcome unknown: …check the transcript before sending again` (a plain send) / `may have applied — check the session` (a `/` command) |
+
+**The `/` menu (plan 029)** — only on a session whose capabilities say
+`slash` and whose view carries a resolved catalog (craze 0.1.1+; never
+opencode, never an older craze: no button, no panel, `/foo` goes out as
+text). Every rule — which rows show, what a token matches, what Enter / Tab /
+a tap does, what is refused — is shared Rust (`shed_app::slash_menu`); the
+screen renders and handles keys.
+
+| Key | What |
+|---|---|
+| `lane-slash-button` | the `/` button, left of the input — **only** on an EMPTY draft of a session with menu rows; a tap makes the draft `/` (focused), which opens the menu on every row |
+| `lane-slash-menu` / `lane-slash-list` | the menu panel above the composer — up while the draft is one line starting `/` with the caret in its first token and at least one row matches; capped at 40 % of the viewport height AND at what the body has left above the composer (the keyboard, header, banners and approvals taken out — half of it while approvals are up too), it scrolls (a catalog has no row cap); the composer is never pushed off |
+| `lane-slash-row-<name>` | one row (`/name`, its arg hint, its description). The highlighted one carries `selected` semantics. A tap: a row that takes no argument (a mode, `/exit`, `/model`) RUNS; `/rename` and a prompt row COMPLETE the draft (`/rename `) |
+| `lane-slash-after-<name>` | "after this turn" on a DIMMED row — while a turn runs (activity `working` or `needs_approval`) the rows without `whileWorking` are listed dimmed, not hidden, and choosing one is refused |
+| `lane-slash-refusal` | a `/` command refused HERE, nothing sent, the draft kept: `/help: not available here yet`, `/plan: runs after this turn`, `/model: takes no argument — pick a model from the list`, `type a title after /rename`. Gone with the next edit, and not shown while the session offers no menu (no catalog, or no `slash`) |
+| `lane-slash-warning` | a `/rename` that took but craze could not record (`renamed, but craze could not record it: …`); the draft cleared |
+
+Keys while the menu is up (hardware keyboard): Enter accepts the highlighted
+row — when the token already spells it, Enter SENDS it instead (so `/re` Enter
+→ `/rename `, then Enter with a title renames); Tab completes, never runs; ↑/↓
+move the highlight (wrapping) instead of the caret; Esc closes the menu and it
+stays closed until the token changes (a second Esc does nothing). Zero matches
+is a closed menu: Enter sends the draft. The draft after a command: cleared on
+success and when `/model` opens the settings sheet; kept on any refusal, on a
+lost answer, and when `/exit`'s confirm is answered Keep. A command owns only
+the draft it was made from: an edit before its verb is sent drops it
+silently, and an edit while it runs is never erased by its outcome (whose
+note/warning still shows). One command at a time — a second Enter while one is
+in flight does nothing.
 
 MSTATE: `screen=lane machine=<name> session=<agent session id> generation=N
-stale=<reason|-> approvals=N activity=<wire>`.
-MRESULT: `lane-send ok|error=…`, `lane-cancel ok|error=…`, `lane-answer
-ok|error=…`. A refusal is STATE, not an exception — every `error=` above was
-read back off `LaneState.composerError` / `LaneState.approvalErrors[id]` after
-the verb returned.
+stale=<reason|-> approvals=N activity=<wire> slash=<shown>/<open>` —
+`<shown>` the rows the session's menu lists, `<open>` the rows the panel shows
+right now (0 closed); `slash=-/-` when the session has no menu.
+MRESULT: `lane-send ok|error=…` (a prompt row too), `lane-cancel ok|error=…`,
+`lane-answer ok|error=…`, `lane-stop ok|error=…` (the header's Stop and
+`/exit`), `lane-rename ok|error=…`, `lane-mode ok|error=…` (a `/` mode row),
+`lane-slash error=<reason>` (a `/` command refused here, nothing sent). A
+refusal is STATE, not an exception — every `error=` above was read back off
+`LaneState.composerError` / `.stopError` / `.approvalErrors[id]` after the verb
+returned.
+
+**Settings sheet — `LaneSettingsSheet` (bottom sheet `lane-settings`)**
+
+Opened by `lane-settings-chip` or a `/model` command. Rendered from the
+session's streamed settings: the model (a list), the current model's options
+(a segmented control at ≤4 values, else a list), the mode. A press shows
+"applying…" with NO optimistic value until craze answers; the value shown next
+is the session's own next `Settings`.
+
+| Key | What |
+|---|---|
+| `lane-settings-list` | the sheet's scroll body |
+| `lane-settings-empty` | "No settings yet" — before the first `Settings` |
+| `lane-setting-<kind>:<id>` | one row (`model:model`, `config:effort`, `config:fast`, `mode:mode`, …) |
+| `lane-setting-<kind>:<id>-<value>` | one value on that row — tap to change it (selected semantics on the current one) |
+| `lane-setting-mark-<kind>:<id>` | the row's inline mark: `applying…`, a refusal (`the model changed; try again`), or `not confirmed` |
+| `lane-settings-meter` | the context meter — only when usage carries tokens AND a window |
+| `lane-settings-gone` | the sheet's session stopped offering settings: the sheet removes itself |
+
+MSTATE: `screen=lane-settings machine=<name> slug=<slug> chip=<chip> rows=<ids>`.
+MRESULT: `lane-set ok|error=<mark>`.
+
+**craze rows and the craze create sheet (plan 025, 029)**
+
+A craze session row (`craze_session_card.dart`) is keyed by `<scope>-<hostId>`
+(`<scope>` the machine name, or `<server>-<shed>`):
+
+| Key | What |
+|---|---|
+| `craze-row-<scope>-<hostId>` | the row card |
+| `craze-activity-…` / `craze-meta-…` | activity chip / provider · model line |
+| `craze-needs-…` / `craze-doing-…` / `craze-reply-…` | needs-you (with the head ask), what it is doing, or idle the head of its last reply |
+| `craze-start-error-…` | why the session failed to start (craze's cause) |
+| `craze-lane-…` | the Transcript pill → `LaneScreen` (always offered) |
+| `craze-peek-…` / `craze-end-tab-…` | peek / end the roost TAB the session runs in — only when it runs in one |
+| `craze-control-error-…` | a refused tab action |
+
+The create screen's craze choice is `createrc-kind-craze`; its sheet
+(`craze-create-sheet`):
+
+| Key | What |
+|---|---|
+| `craze-create-loading` / `craze-create-options-error` / `craze-create-options-retry` | craze's create options loading / failed / retry |
+| `craze-provider-<id>` | one provider (craze's order; craze's default preselected); `craze-provider-state-<id>`, `craze-provider-reason-<id>`, `craze-provider-fix-<id>` on a dimmed one |
+| `craze-recent-dir-<i>` | a recent directory chip |
+| `craze-create-cwd` / `craze-create-cwd-problem` | the directory field / its problem |
+| `craze-create-title` / `craze-create-title-problem` | "Name (optional)" — **only** when the hub says it takes a title at create (craze 0.1.1+, or while a title is typed); blank is omitted. A `bad_request` about the title shows under it |
+| `craze-create-prompt` | the optional first prompt |
+| `craze-create-submit` | Create / Try again |
+| `craze-create-note` / `craze-create-unknown` / `craze-create-cause` / `craze-create-error` | the offline note / an unknown outcome (the id held) / a start failure's cause / a refusal |
+| `craze-create-leaving` | the sheet handing over to the new session's transcript |
+
+MSTATE: `screen=craze-create machine=<name> state=<phase> provider=<id|->
+providers=<id:ready|dimmed,…> recent=N request=<id|-> create=true|false`.
+MRESULT: `craze-create ok|error=…`.
 
 **Peek screen — `RoostPeekScreen` (Scaffold `roost-peek-screen`)**
 

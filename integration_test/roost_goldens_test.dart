@@ -154,6 +154,7 @@ void main() {
           kind: 'craze',
           create: true,
           createOptions: true,
+          createTitle: false,
         ),
         truncated: false,
       ),

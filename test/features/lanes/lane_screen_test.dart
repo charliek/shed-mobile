@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
+import 'package:shed_mobile/features/lanes/slash_keys.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
@@ -18,6 +20,7 @@ import 'package:shed_mobile/ssh/lane_forward.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
 import '../../lanes/fake_lane_lease.dart';
+import 'fake_slash_rules.dart';
 
 /// **The lane screen** (plan 018 §3.12) — every affordance driven through the
 /// [LaneSource] stub, so no native library is loaded and no machine is dialled.
@@ -1379,6 +1382,1324 @@ void main() {
       expect(find.text('68k / 200k tokens · 34%'), findsOneWidget);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // the `/` menu (plan 029 §3.5, D17)
+  // -------------------------------------------------------------------------
+  //
+  // The screen RENDERS what the shared rules answer and handles keys; the
+  // rules here are `fake_slash_rules.dart`'s stand-in (no native library in a
+  // widget test), recorded, and every effect is read off the fake SOURCE's
+  // recorded calls (P26) — a send, a rename, a set, a stop — never off the
+  // screen alone.
+  group('the / menu (plan 029 §3.5)', () {
+    test('the key table with the menu UP', () {
+      ComposerKey k(LogicalKeyboardKey key, {bool shift = false}) =>
+          composerKey(key: key, shift: shift, composing: false, menuUp: true);
+      expect(k(LogicalKeyboardKey.enter), ComposerKey.accept);
+      expect(k(LogicalKeyboardKey.numpadEnter), ComposerKey.accept);
+      expect(k(LogicalKeyboardKey.tab), ComposerKey.complete);
+      expect(k(LogicalKeyboardKey.escape), ComposerKey.dismiss);
+      expect(k(LogicalKeyboardKey.arrowUp), ComposerKey.up);
+      expect(k(LogicalKeyboardKey.arrowDown), ComposerKey.down);
+      expect(k(LogicalKeyboardKey.keyA), ComposerKey.none, reason: 'typing');
+      expect(
+        k(LogicalKeyboardKey.tab, shift: true),
+        ComposerKey.none,
+        reason: 'Shift+Tab moves focus back',
+      );
+    });
+
+    test('CONTROL: with the menu closed — zero matches included — Enter '
+        'sends and the rest are the field\'s', () {
+      ComposerKey k(LogicalKeyboardKey key) =>
+          composerKey(key: key, shift: false, composing: false, menuUp: false);
+      expect(k(LogicalKeyboardKey.enter), ComposerKey.send);
+      for (final key in [
+        LogicalKeyboardKey.tab,
+        LogicalKeyboardKey.escape,
+        LogicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.keyA,
+      ]) {
+        expect(k(key), ComposerKey.none, reason: key.debugName);
+      }
+    });
+
+    test('CONTROL: Shift+Enter is a newline, menu or not', () {
+      for (final up in [true, false]) {
+        expect(
+          composerKey(
+            key: LogicalKeyboardKey.enter,
+            shift: true,
+            composing: false,
+            menuUp: up,
+          ),
+          ComposerKey.newline,
+        );
+      }
+    });
+
+    test('CONTROL: every key is ignored while an IME composes — the menu\'s '
+        'and Enter-to-send alike', () {
+      for (final up in [true, false]) {
+        for (final shift in [true, false]) {
+          for (final key in [
+            LogicalKeyboardKey.enter,
+            LogicalKeyboardKey.tab,
+            LogicalKeyboardKey.escape,
+            LogicalKeyboardKey.arrowUp,
+            LogicalKeyboardKey.arrowDown,
+          ]) {
+            expect(
+              composerKey(key: key, shift: shift, composing: true, menuUp: up),
+              ComposerKey.none,
+              reason: '${key.debugName} up=$up shift=$shift',
+            );
+          }
+        }
+      }
+    });
+
+    test('composing is a non-empty composing range', () {
+      expect(isComposing(const TextEditingValue(text: '/re')), isFalse);
+      expect(
+        isComposing(
+          const TextEditingValue(
+            text: '/re',
+            composing: TextRange(start: 1, end: 3),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isComposing(
+          const TextEditingValue(
+            text: '/re',
+            composing: TextRange.collapsed(3),
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('an Esc dismissal lasts exactly until the token changes', () {
+      expect(dismissalAfter('/re', '/re'), '/re', reason: 'still dismissed');
+      expect(dismissalAfter('/re', '/ren'), isNull, reason: 'typed on');
+      expect(dismissalAfter(null, '/re'), isNull);
+      // Once gone it stays gone: typing back does not re-close the menu.
+      expect(dismissalAfter(dismissalAfter('/re', '/ren'), '/re'), isNull);
+    });
+
+    test('the highlight wraps at either end', () {
+      expect(moveHighlight(0, 1, 3), 1);
+      expect(moveHighlight(2, 1, 3), 0);
+      expect(moveHighlight(0, -1, 3), 2);
+      expect(moveHighlight(1, -1, 3), 0);
+      expect(moveHighlight(4, 1, 0), 0, reason: 'no rows: the first');
+    });
+
+    test('the menu is up only while the filter says open and Esc has not '
+        'dismissed this token', () {
+      final open = BridgeSlashFilter(
+        open: true,
+        token: '/re',
+        rows: [BridgeSlashFilterRow(row: crazeMenu.rows[1], dimmed: false)],
+      );
+      expect(slashMenuUp(open, null), isTrue);
+      expect(slashMenuUp(open, '/re'), isFalse, reason: 'dismissed for it');
+      expect(slashMenuUp(open, '/r'), isTrue, reason: 'another token');
+      expect(
+        slashMenuUp(
+          const BridgeSlashFilter(open: false, token: '/zz', rows: []),
+          null,
+        ),
+        isFalse,
+        reason: 'zero matches is a closed menu',
+      );
+      expect(slashMenuUp(null, null), isFalse, reason: 'no menu at all');
+    });
+
+    testWidgets('/ lists the session\'s rows in the shared order, the first '
+        'highlighted, the caret read in UTF-16', (tester) async {
+      final rig = await _slashRig(tester);
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+
+      await _type(tester, '/');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsOneWidget);
+      expect(_slashRows(), crazeMenuNames);
+      expect(_slashHighlighted(tester), 'model');
+      expect(find.byKey(const ValueKey('lane-slash-after-plan')), findsNothing);
+      expect(rig.rules.filters.last, (draft: '/', caret: 1, working: false));
+
+      // A caret past an astral character is counted in UTF-16 code units —
+      // what the shared filter reads (E10), with nothing converted here.
+      await _type(tester, '/re 🦀');
+      expect(rig.rules.filters.last.caret, '/re 🦀'.length);
+      expect('/re 🦀'.length, 6, reason: 'the crab is two code units');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+    });
+
+    testWidgets('the / button: only on an EMPTY draft of a session with a '
+        'menu; a tap inserts / and opens the menu', (tester) async {
+      final rig = await _slashRig(tester);
+      final button = find.byKey(const ValueKey('lane-slash-button'));
+      expect(button, findsOneWidget);
+
+      await tester.tap(button);
+      await _settle(tester);
+      expect(_draft(tester), '/');
+      expect(_selection(tester), const TextSelection.collapsed(offset: 1));
+      expect(_slashRows(), crazeMenuNames, reason: 'the menu, on every row');
+      expect(button, findsNothing, reason: 'the draft is no longer empty');
+
+      await _type(tester, 'hello');
+      expect(button, findsNothing);
+      await _type(tester, '');
+      expect(button, findsOneWidget, reason: 'empty again');
+      expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('CONTROL: no menu without caps.slash or without a catalog — '
+        'no button, no panel, and /help goes out as TEXT', (tester) async {
+      for (final snapshot in [
+        // A catalog the capabilities do not vouch for is not offered.
+        _slashSnap(caps: _caps(kind: 'craze', stop: true)),
+        // `slash`, but no catalog (yet, or truncated away): none either.
+        _snap(capabilities: _slashCaps),
+      ]) {
+        final rig = await _slashRig(tester, snapshot);
+        expect(find.byKey(const ValueKey('lane-slash-button')), findsNothing);
+        await _type(tester, '/help');
+        expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(rig.source.sends.map((s) => s.text), ['/help']);
+        expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+        expect(rig.rules.filters, isEmpty, reason: 'no rule was asked');
+        expect(rig.rules.dispatches, isEmpty);
+        // The controls: the same session WITH a menu lists it.
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+      await _slashRig(tester);
+      expect(find.byKey(const ValueKey('lane-slash-button')), findsOneWidget);
+    });
+
+    testWidgets('Enter on /re ACCEPTS — the draft completes and nothing is '
+        'sent; with a title typed Enter RENAMES and the draft clears', (
+      tester,
+    ) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/re');
+      expect(_slashRows().first, 'rename');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_draft(tester), '/rename ');
+      expect(_selection(tester), const TextSelection.collapsed(offset: 8));
+      expect(rig.rules.accepts.last.key, BridgeSlashAcceptKey.enter);
+      expect(rig.source.titles, isEmpty, reason: 'accepting sends nothing');
+      expect(
+        find.byKey(const ValueKey('lane-slash-menu')),
+        findsNothing,
+        reason: 'the caret is past the token now',
+      );
+
+      // A token that already spells the row: Enter SENDS — here a rename
+      // with no title, refused by the shared guard, the draft kept.
+      await _type(tester, '/rename');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_slashRefusal(tester), 'type a title after /rename');
+      expect(_draft(tester), '/rename');
+      expect(rig.source.titles, isEmpty);
+
+      await _type(tester, '/rename   plan 029 desk ');
+      expect(
+        find.byKey(const ValueKey('lane-slash-refusal')),
+        findsNothing,
+        reason: 'an edit clears the refusal',
+      );
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['plan 029 desk'], reason: 'trimmed, literal');
+      expect(_draft(tester), '', reason: 'success clears the draft');
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+      expect(rig.source.sends, isEmpty, reason: 'never sent as text');
+    });
+
+    testWidgets('Tab completes and never runs; Enter on a row that takes no '
+        'argument runs it at once', (tester) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/pl');
+      await _press(tester, LogicalKeyboardKey.tab);
+      expect(_draft(tester), '/plan ');
+      expect(rig.rules.accepts.last.key, BridgeSlashAcceptKey.tab);
+      expect(rig.source.sets, isEmpty, reason: 'Tab never runs a row');
+
+      await _type(tester, '/pl');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sets, [const BridgeLaneSettingChange.mode(id: 'plan')]);
+      expect(_draft(tester), '');
+    });
+
+    testWidgets('↑/↓ move the highlight — wrapping, the draft untouched — and '
+        'Enter accepts the highlighted row', (tester) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/');
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'rename');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await _press(tester, LogicalKeyboardKey.arrowUp);
+      expect(_slashHighlighted(tester), 'research', reason: 'wrapped');
+      expect(_draft(tester), '/', reason: 'the arrows moved the highlight');
+      expect(_selection(tester), const TextSelection.collapsed(offset: 1));
+
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.rules.accepts.last.row, 'research');
+      expect(_draft(tester), '/research ', reason: 'a prompt row completes');
+      expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('the highlight goes back to the first row when the filter or '
+        'the catalog changes', (tester) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'plan');
+
+      await _type(tester, '/a');
+      expect(_slashRows(), ['ask', 'agent', 'rename', 'plan', 'research']);
+      expect(_slashHighlighted(tester), 'ask', reason: 'a new filter');
+
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'agent');
+      // A streamed frame with the SAME menu moves nothing.
+      rig.bump(_slashSnap(rows: [_row(1, 'assistant', 'hi')]));
+      await _settle(tester);
+      expect(_slashHighlighted(tester), 'agent');
+      // A new catalog does.
+      rig.bump(
+        _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [
+              slashRow(
+                'alpha',
+                const BridgeSlashAction.prompt(),
+                source: const BridgeSlashSource.agent(),
+              ),
+              ...crazeMenu.rows,
+            ],
+            hidden: crazeMenu.hidden,
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashRows().take(3), ['alpha', 'ask', 'agent']);
+      expect(_slashHighlighted(tester), 'alpha', reason: 'a new catalog');
+    });
+
+    testWidgets('Esc closes the menu and it stays closed until the token '
+        'changes; a second Esc does nothing', (tester) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/');
+      await _press(tester, LogicalKeyboardKey.escape);
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+      expect(_draft(tester), '/', reason: 'only the menu closed');
+      await _press(tester, LogicalKeyboardKey.escape);
+      expect(find.byKey(const ValueKey('lane-screen')), findsOneWidget);
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+      expect(_draft(tester), '/');
+
+      await _type(tester, '/r');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsOneWidget);
+      // Typing back to the dismissed token does not re-close it.
+      await _type(tester, '/');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsOneWidget);
+      expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('IME: while composing, Enter / Esc / ↓ / Tab change nothing, '
+        'and a composing Enter on plain text sends nothing', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/');
+      const composing = TextEditingValue(
+        text: '/',
+        selection: TextSelection.collapsed(offset: 1),
+        composing: TextRange(start: 0, end: 1),
+      );
+      for (final key in [
+        LogicalKeyboardKey.enter,
+        LogicalKeyboardKey.escape,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.tab,
+      ]) {
+        tester.testTextInput.updateEditingValue(composing);
+        await _settle(tester);
+        await tester.sendKeyEvent(key);
+        await _settle(tester);
+        expect(_draft(tester), '/', reason: key.debugName);
+        expect(_slashHighlighted(tester), 'model', reason: key.debugName);
+        expect(
+          find.byKey(const ValueKey('lane-slash-menu')),
+          findsOneWidget,
+          reason: key.debugName,
+        );
+      }
+      expect(rig.rules.accepts, isEmpty);
+      expect(rig.rules.dispatches, isEmpty);
+
+      await _type(tester, 'hello ime');
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'hello ime',
+          selection: TextSelection.collapsed(offset: 9),
+          composing: TextRange(start: 6, end: 9),
+        ),
+      );
+      await _settle(tester);
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends, isEmpty, reason: 'a composing Enter');
+      expect(_draft(tester), 'hello ime');
+
+      // The composition committed, a real Enter sends.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'hello ime',
+          selection: TextSelection.collapsed(offset: 9),
+        ),
+      );
+      await _settle(tester);
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.map((s) => s.text), ['hello ime']);
+    });
+
+    testWidgets('Shift+Enter is a newline: the menu closes on a multi-line '
+        'draft and nothing is sent', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await _settle(tester);
+      expect(_draft(tester), '/\n');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+      expect(rig.source.sends, isEmpty);
+      expect(rig.rules.accepts, isEmpty);
+    });
+
+    testWidgets('the keyboard\'s Send action takes the same rule as Enter', (
+      tester,
+    ) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/re');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+      expect(_draft(tester), '/rename ', reason: 'it accepted');
+      expect(rig.source.titles, isEmpty);
+
+      await _type(tester, '/rename from the keyboard');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+      expect(rig.source.titles, ['from the keyboard']);
+      expect(_draft(tester), '');
+    });
+
+    testWidgets('Send goes through the dispatch: a typed hidden builtin is '
+        'refused inline and NOTHING is sent', (tester) async {
+      final rig = await _slashRig(tester);
+      for (final typed in ['/help', ' /help', '/HELP']) {
+        await _type(tester, typed);
+        await tester.tap(find.byKey(const ValueKey('lane-send')));
+        await _settle(tester);
+        expect(
+          _slashRefusal(tester),
+          '/help: not available here yet',
+          reason: typed,
+        );
+        expect(_draft(tester), typed, reason: 'the draft is kept');
+      }
+      expect(rig.source.sends, isEmpty, reason: 'never sent as text');
+      expect(rig.source.titles, isEmpty);
+      expect(rig.source.sets, isEmpty);
+
+      // A `/x` the menu does not know is text, as it always was.
+      await _type(tester, '/zz top');
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(rig.source.sends.map((s) => s.text), ['/zz top']);
+    });
+
+    testWidgets('a prompt row sends its CANONICAL spelling, and queues while '
+        'a turn runs', (tester) async {
+      final rig = _Rig(
+        snapshot: _slashSnap(activity: BridgeRcActivity.working),
+      );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/Research   deep dive ');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.single.text, '/research deep dive');
+      expect(rig.source.sends.single.mode, BridgeSendMode.queue);
+      expect(_draft(tester), '');
+    });
+
+    testWidgets('while a turn runs, waiting rows are DIMMED — "after this '
+        'turn" — and choosing one is refused, nothing sent', (tester) async {
+      final rig = _Rig(
+        snapshot: _slashSnap(activity: BridgeRcActivity.needsApproval),
+      );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/');
+      expect(_slashRows(), crazeMenuNames, reason: 'listed, not hidden');
+      final dimmed = {
+        for (final name in crazeMenuNames)
+          if (find
+              .byKey(ValueKey('lane-slash-after-$name'))
+              .evaluate()
+              .isNotEmpty)
+            name,
+      };
+      expect(dimmed, crazeWaitingRows);
+
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-plan')));
+      await _settle(tester);
+      expect(_slashRefusal(tester), '/plan: runs after this turn');
+      expect(_draft(tester), '/', reason: 'the draft is kept');
+      expect(rig.rules.accepts.last.key, BridgeSlashAcceptKey.pick);
+
+      await _type(tester, '/ask');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_slashRefusal(tester), '/ask: runs after this turn');
+      expect(rig.source.sets, isEmpty, reason: 'nothing was sent');
+
+      // `rename` works during a turn (whileWorking).
+      await _type(tester, '/rename mid-turn');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['mid-turn']);
+    });
+
+    testWidgets('a mode from the composer needs no settings capability, and '
+        're-selecting the current mode still sends', (tester) async {
+      final rig = _Rig(
+        snapshot: _slashSnap(
+          caps: _caps(kind: 'craze', slash: true, setTitle: true),
+          menu: BridgeSlashMenu(
+            rows: crazeMenu.rows
+                .where((r) => r.action is! BridgeSlashAction_ModelPicker)
+                .toList(),
+            hidden: crazeMenu.hidden,
+          ),
+        ),
+      );
+      await _pumpSlash(tester, rig);
+      expect(find.byKey(const ValueKey('lane-settings-chip')), findsNothing);
+      for (var i = 0; i < 2; i++) {
+        await _type(tester, '/plan');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(_draft(tester), '');
+      }
+      expect(rig.source.sets, [
+        const BridgeLaneSettingChange.mode(id: 'plan'),
+        const BridgeLaneSettingChange.mode(id: 'plan'),
+      ]);
+      expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+
+      // A refused mode is the composer's: craze's words, the draft kept.
+      rig.source.setFailure = const BridgeLaneError.notAccepting();
+      await _type(tester, '/ask');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsOneWidget);
+      expect(_draft(tester), '/ask');
+    });
+
+    testWidgets('a rename craze REFUSES keeps the draft and says craze\'s '
+        'words', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.setTitleFailure = const BridgeLaneError.badRequest(
+          msg: 'params.title is blank once normalized: send none instead',
+        );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['x']);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('lane-composer-error')))
+            .data,
+        contains('params.title is blank once normalized'),
+      );
+      expect(_draft(tester), '/rename x');
+    });
+
+    testWidgets('an unknown outcome keeps the draft: "may have applied — '
+        'check the session" — a rename and a prompt row alike', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap());
+      rig.source.setTitleFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'outcome unknown: the connection dropped',
+      );
+      rig.source.sendFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'outcome unknown: the connection dropped',
+      );
+      await _pumpSlash(tester, rig);
+      String error() => tester
+          .widget<Text>(find.byKey(const ValueKey('lane-composer-error')))
+          .data!;
+
+      await _type(tester, '/rename lost');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(error(), laneCommandOutcomeUnknown);
+      expect(laneCommandOutcomeUnknown, 'may have applied — check the session');
+      expect(_draft(tester), '/rename lost');
+
+      await _type(tester, '/research lost too');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(error(), laneCommandOutcomeUnknown);
+      expect(_draft(tester), '/research lost too');
+
+      // A plain send keeps today's words.
+      await _type(tester, 'plain text');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(error(), laneSendOutcomeUnknown);
+      expect(rig.source.sends.map((s) => s.text), [
+        '/research lost too',
+        'plain text',
+      ]);
+    });
+
+    testWidgets('a rename craze could not RECORD clears the draft and shows '
+        'the warning', (tester) async {
+      const warning =
+          'renamed, but craze could not record it: write index: disk full';
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.setTitleWarning = warning;
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename kept anyway');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['kept anyway']);
+      expect(_draft(tester), '');
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('lane-slash-warning')))
+            .data,
+        warning,
+      );
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+      // An edit clears it.
+      await _type(tester, 'x');
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+    });
+
+    testWidgets('/exit asks first: Keep sends NOTHING and keeps the draft; '
+        'Stop session stops once and clears it', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/exit');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+      expect(rig.source.stops, 0, reason: 'never one key');
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      expect(rig.source.stops, 0, reason: 'Keep sent nothing');
+      expect(_draft(tester), '/exit', reason: 'and kept the draft');
+
+      await _type(tester, '/exit');
+      await _press(tester, LogicalKeyboardKey.enter);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 1);
+      expect(_draft(tester), '', reason: 'the stop went through');
+    });
+
+    testWidgets('/model opens the settings sheet and clears the draft; '
+        '/model <id> is refused, nothing opened', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/model grok-4.6');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(
+        _slashRefusal(tester),
+        '/model: takes no argument — pick a model from the list',
+      );
+      expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+      expect(_draft(tester), '/model grok-4.6');
+
+      await _type(tester, '/model');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+      expect(_draft(tester), '', reason: 'the picker clears the draft');
+      expect(rig.source.sets, isEmpty, reason: 'opening it changes nothing');
+    });
+
+    testWidgets('a 600-row menu renders in a panel capped at 40% of the '
+        'viewport, and scrolls to the highlight', (tester) async {
+      final names = [
+        for (var i = 0; i < 600; i++) 'cmd-${i.toString().padLeft(3, '0')}',
+      ];
+      final rig = _Rig(
+        snapshot: _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [
+              for (final name in names)
+                slashRow(
+                  name,
+                  const BridgeSlashAction.prompt(),
+                  source: const BridgeSlashSource.agent(),
+                ),
+            ],
+            hidden: const [],
+          ),
+        ),
+      );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/');
+      final list = find.byKey(const ValueKey('lane-slash-list'));
+      final viewport =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(tester.getSize(list).height, lessThanOrEqualTo(viewport * 0.4));
+      expect(rig.rules.filters.last.draft, '/');
+      expect(_slashRows().first, 'cmd-000');
+      expect(
+        find.byKey(const ValueKey('lane-slash-row-cmd-599')),
+        findsNothing,
+        reason: 'laid out lazily',
+      );
+
+      await _press(tester, LogicalKeyboardKey.arrowUp);
+      expect(_slashHighlighted(tester), 'cmd-599', reason: 'wrapped');
+      final last = find.byKey(const ValueKey('lane-slash-row-cmd-599'));
+      expect(last, findsOneWidget, reason: 'scrolled into view');
+      expect(
+        tester.getRect(list).contains(tester.getRect(last).center),
+        isTrue,
+      );
+
+      // And a finger scrolls it: back up the list, the last row out of view.
+      await tester.drag(list, const Offset(0, 2000));
+      await _settle(tester);
+      expect(_slashRows(), isNot(contains('cmd-599')), reason: 'it scrolls');
+      expect(
+        int.parse(_slashRows().first.substring('cmd-'.length)),
+        lessThan(560),
+      );
+    });
+
+    // ---- the draft's ownership, one command at a time, the highlight and
+    // ---- the dismissal (the coordinator's corrections to C4, mirrored)
+
+    testWidgets('OWNERSHIP: a rename\'s success clears only the draft it was '
+        'sent from — a newer one stays — and its warning still shows', (
+      tester,
+    ) async {
+      const warning = 'renamed, but craze could not record it: disk full';
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>()
+        ..source.setTitleWarning = warning;
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename held');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['held'], reason: 'the rename is in flight');
+
+      // The box moves under the verb.
+      _inputController(tester).text = 'a newer draft';
+      await _settle(tester);
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_draft(tester), 'a newer draft', reason: 'never erased');
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('lane-slash-warning')))
+            .data,
+        warning,
+        reason: 'the outcome is still said',
+      );
+    });
+
+    testWidgets('OWNERSHIP: a plain send\'s success clears only the draft it '
+        'was sent from', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSend = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, 'first words');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.map((s) => s.text), ['first words']);
+      _inputController(tester).text = 'second words';
+      await _settle(tester);
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_draft(tester), 'second words');
+    });
+
+    testWidgets('OWNERSHIP: /exit\'s stop clears only its own draft — typing '
+        'on while the stop is in flight keeps what was typed', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdStop = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/exit');
+      await _press(tester, LogicalKeyboardKey.enter);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 1, reason: 'the stop is in flight');
+
+      // The composer stays live during a stop: the person types on.
+      await _type(tester, 'still typing');
+      rig.source.holdStop!.complete();
+      await _settle(tester);
+      expect(_draft(tester), 'still typing');
+    });
+
+    testWidgets('OWNERSHIP: a draft that changed while /exit\'s confirm was '
+        'up calls the stop off — nothing is sent', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/exit');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+
+      _inputController(tester).text = '/exit later';
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 0, reason: 'dropped, silently');
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+      expect(_draft(tester), '/exit later');
+    });
+
+    testWidgets('ONE AT A TIME: two submits in one turn — before the first '
+        'one\'s confirm is up — open ONE confirm and ask the rules once', (
+      tester,
+    ) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/exit');
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('lane-input')),
+      );
+      // Back to back, no await between them: the second lands while the
+      // first is between its decision (Stop) and its outcome (the confirm,
+      // pushed and not yet answered). Taps cannot show this — a pushed route
+      // absorbs pointers until its first frame — but a keyboard's submits
+      // can.
+      field.onSubmitted!('/exit');
+      field.onSubmitted!('/exit');
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-stop-confirm')),
+        findsOneWidget,
+        reason: 'one confirm',
+      );
+      expect(rig.rules.accepts, hasLength(1), reason: 'one confirm');
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      expect(rig.source.stops, 0);
+      expect(_draft(tester), '/exit');
+    });
+
+    testWidgets('HIGHLIGHT: a new token resets it even when the rows are the '
+        'same ones (/r → /re)', (tester) async {
+      await _slashRig(tester);
+      await _type(tester, '/r');
+      expect(_slashRows(), ['rename', 'research']);
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'research');
+
+      await _type(tester, '/re');
+      expect(_slashRows(), ['rename', 'research'], reason: 'the same rows');
+      expect(_slashHighlighted(tester), 'rename', reason: 'a new token');
+
+      // A caret move inside the token is no new filter.
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '/re',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashHighlighted(tester), 'research');
+    });
+
+    testWidgets('HIGHLIGHT: a new CATALOG resets it even when every row\'s '
+        'name is the same — `plan` now behind another mode', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/');
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'plan');
+
+      // CONTROL: a catalog equal BY VALUE — a fresh copy, as a new read
+      // converts — is no new catalog: the highlight stays.
+      rig.bump(
+        _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [...crazeMenu.rows],
+            hidden: [...crazeMenu.hidden],
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashHighlighted(tester), 'plan', reason: 'the same catalog');
+
+      // The same names in the same order, but `plan` is another mode now:
+      // Enter must not run its newly bound action from a highlight the
+      // person put on the old one.
+      rig.bump(
+        _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [
+              for (final row in crazeMenu.rows)
+                row.name == 'plan'
+                    ? slashRow(
+                        'plan',
+                        const BridgeSlashAction.setMode(id: 'architect'),
+                        description: 'Plan mode',
+                      )
+                    : row,
+            ],
+            hidden: crazeMenu.hidden,
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashRows(), crazeMenuNames, reason: 'every name the same');
+      expect(_slashHighlighted(tester), 'model', reason: 'a new catalog');
+    });
+
+    testWidgets('SUPERSEDED: a rename whose lane was REBUILT before it '
+        'answered keeps the draft and says "may have applied" — never a '
+        'success — and a plain send says its own words', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>()
+        ..source.setTitleFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        )
+        ..source.holdSend = Completer<void>()
+        ..source.sendFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+      await _pumpSlash(tester, rig);
+      String? composerError() {
+        final f = find.byKey(const ValueKey('lane-composer-error'));
+        return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+      }
+
+      /// The lane's provider rebuilds — a new controller for the same row —
+      /// and the old one is closed, its generation moved, with the verb
+      /// still out. Its teardown awaits a subscription cancel that only the
+      /// real event loop finishes (see "a stale lane names the reason").
+      Future<void> rebuild() async {
+        ProviderScope.containerOf(
+          tester.element(find.byType(LaneScreen)),
+        ).invalidate(laneControllerProvider(_ref));
+        await _settle(tester);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await _settle(tester);
+      }
+
+      await _type(tester, '/rename held');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['held'], reason: 'the rename is in flight');
+      await rebuild();
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+
+      expect(_draft(tester), '/rename held', reason: 'kept: not a success');
+      expect(composerError(), laneCommandOutcomeUnknown);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      // A plain send the lane moved on from: kept, in the send's words.
+      await _type(tester, 'plain words');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.map((s) => s.text), ['plain words']);
+      expect(composerError(), isNull, reason: 'a new verb clears the last');
+      await rebuild();
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_draft(tester), 'plain words');
+      expect(composerError(), laneSendOutcomeUnknown);
+
+      // The next verb, on the live lane, clears what the screen said.
+      rig.source
+        ..holdSend = null
+        ..sendFailure = null;
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(rig.source.sends, hasLength(2));
+      expect(_draft(tester), '', reason: 'this one took');
+      expect(composerError(), isNull);
+    });
+
+    testWidgets('DISMISSAL: a moment with no menu (a catalog on its way back) '
+        'does not end an Esc dismissal; a different token does', (
+      tester,
+    ) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/');
+      await _press(tester, LogicalKeyboardKey.escape);
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+
+      rig.bump(_snap(capabilities: _slashCaps)); // the menu gone for a read
+      await _settle(tester);
+      rig.bump(_slashSnap()); // and back
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey('lane-slash-menu')),
+        findsNothing,
+        reason: 'still dismissed for "/"',
+      );
+
+      await _type(tester, '/m');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsOneWidget);
+    });
+
+    // ---- the M3 review's fixes (soft Send's composition, /exit's outcome,
+    // ---- the keyboard, no catalog → no note, a missing lane)
+
+    testWidgets('IME: a soft-keyboard Send COMMITS the composition, the focus '
+        'kept — a refused draft is not left composing, and the next hardware '
+        'key acts', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/help');
+      // The IME is still composing the token when its Send arrives, and no
+      // editing update follows the Send.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '/help',
+          selection: TextSelection.collapsed(offset: 5),
+          composing: TextRange(start: 1, end: 5),
+        ),
+      );
+      await _settle(tester);
+      expect(isComposing(_inputController(tester).value), isTrue);
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+
+      expect(_slashRefusal(tester), '/help: not available here yet');
+      expect(_draft(tester), '/help', reason: 'refused: the draft is kept');
+      expect(
+        _inputController(tester).value.composing,
+        TextRange.empty,
+        reason: 'the Send committed the composition',
+      );
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: find.byKey(const ValueKey('lane-input')),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .focusNode
+            .hasFocus,
+        isTrue,
+        reason: 'the caret stays, to fix the draft in place',
+      );
+      expect(rig.rules.dispatches, hasLength(1));
+
+      // With nothing more from the IME, a hardware Enter is no longer
+      // swallowed by the composing guard: it dispatches again.
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.rules.dispatches, hasLength(2), reason: 'the key acted');
+      expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('/exit\'s outcome is the COMMAND\'s: a lost answer keeps the '
+        'draft and says "may have applied" in the composer, a refusal says '
+        'craze\'s words there — the header\'s Stop keeps its banner', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.stopFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped with session.stop',
+        );
+      await _pumpSlash(tester, rig);
+      String? composerError() {
+        final f = find.byKey(const ValueKey('lane-composer-error'));
+        return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+      }
+
+      Future<void> exitConfirmed() async {
+        await _type(tester, '/exit');
+        await _press(tester, LogicalKeyboardKey.enter);
+        await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+        await _settle(tester);
+      }
+
+      await exitConfirmed();
+      expect(rig.source.stops, 1);
+      expect(composerError(), laneCommandOutcomeUnknown);
+      expect(_draft(tester), '/exit', reason: 'kept: it may not have run');
+      expect(
+        find.byKey(const ValueKey('lane-stop-error')),
+        findsNothing,
+        reason: 'the composer\'s, not the header\'s',
+      );
+
+      rig.source.stopFailure = const BridgeLaneError.failed(
+        msg: 'unsupported: this host cannot stop its session',
+      );
+      await exitConfirmed();
+      expect(rig.source.stops, 2);
+      expect(
+        composerError(),
+        'unsupported: this host cannot stop its session',
+        reason: 'craze\'s words',
+      );
+      expect(_draft(tester), '/exit');
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+
+      // The header's Stop is unchanged: its lost answer is the banner's, as
+      // the controller said it.
+      rig.source.stopFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'outcome unknown: the connection dropped with session.stop',
+      );
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(rig.source.stops, 3);
+      expect(
+        tester.widget<Text>(_bannerText('lane-stop-error')).data,
+        'outcome unknown: the connection dropped with session.stop',
+      );
+
+      // And `/exit` that goes through clears the draft and what it said.
+      rig.source.stopFailure = null;
+      await exitConfirmed();
+      expect(rig.source.stops, 4);
+      expect(_draft(tester), '');
+      expect(composerError(), isNull);
+    });
+
+    testWidgets('THE KEYBOARD: with the keyboard up and a catalog taller than '
+        'the body, the menu shrinks and scrolls — the composer\'s input and '
+        'Send stay on screen, nothing overflows', (tester) async {
+      // A phone: 400×800, a 350-pixel keyboard, the header's settings chip
+      // (the session offers settings) — 354 pixels of body for the status
+      // strip, the transcript, the menu (40 % of the viewport would be 320)
+      // and the composer (its Interject/Cancel row included).
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+      addTearDown(tester.view.reset);
+      final names = [
+        for (var i = 0; i < 600; i++) 'cmd-${i.toString().padLeft(3, '0')}',
+      ];
+      final big = BridgeSlashMenu(
+        rows: [
+          for (final name in names)
+            slashRow(
+              name,
+              const BridgeSlashAction.prompt(),
+              source: const BridgeSlashSource.agent(),
+            ),
+        ],
+        hidden: const [],
+      );
+      final rig = _Rig(snapshot: _slashSnap(menu: big));
+      await _pump(tester, rig);
+      await _type(tester, '/');
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+
+      const visibleBottom = 800.0 - 350.0;
+      void composerOnScreen(String when) {
+        for (final key in ['lane-input', 'lane-send']) {
+          final rect = tester.getRect(find.byKey(ValueKey(key)));
+          expect(
+            rect.bottom,
+            lessThanOrEqualTo(visibleBottom),
+            reason: '$key above the keyboard ($when)',
+          );
+          expect(rect.top, greaterThanOrEqualTo(0), reason: '$key ($when)');
+        }
+        final menu = tester.getRect(
+          find.byKey(const ValueKey('lane-slash-menu')),
+        );
+        final input = tester.getRect(find.byKey(const ValueKey('lane-input')));
+        expect(menu.height, greaterThan(0), reason: 'the menu is up ($when)');
+        expect(
+          menu.bottom,
+          lessThanOrEqualTo(input.top),
+          reason: 'the menu sits above the composer ($when)',
+        );
+      }
+
+      composerOnScreen('the menu alone');
+      expect(_slashRows().first, 'cmd-000');
+      // It still scrolls to the highlight inside what it was given.
+      await _press(tester, LogicalKeyboardKey.arrowUp);
+      expect(_slashHighlighted(tester), 'cmd-599');
+      expect(
+        tester
+            .getRect(find.byKey(const ValueKey('lane-slash-list')))
+            .contains(
+              tester
+                  .getRect(find.byKey(const ValueKey('lane-slash-row-cmd-599')))
+                  .center,
+            ),
+        isTrue,
+      );
+
+      // An approval arrives while the menu is up: the two share what is left,
+      // and the composer still does not move off.
+      rig.bump(
+        _snap(
+          capabilities: _slashCaps,
+          slashMenu: big,
+          approvals: [
+            _approval(
+              kind: const BridgeLaneApprovalKind.permission(),
+              options: const [
+                BridgeLaneApprovalOption(id: 'opt-a', label: 'Allow once'),
+                BridgeLaneApprovalOption(id: 'opt-b', label: 'Always allow'),
+                BridgeLaneApprovalOption(id: 'opt-c', label: 'Reject'),
+              ],
+            ),
+          ],
+        ),
+      );
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      expect(find.byKey(const ValueKey('lane-approvals')), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('lane-approvals'))).height,
+        greaterThan(0),
+        reason: 'the approvals keep a share',
+      );
+      composerOnScreen('the menu and an approval');
+    });
+
+    testWidgets('NO CATALOG, NO NOTE: a refusal or a warning goes when the '
+        'catalog or caps.slash does — no edit needed', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.setTitleWarning =
+            'renamed, but craze could not record it: disk full';
+      await _pumpSlash(tester, rig);
+
+      await _type(tester, '/help');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_slashRefusal(tester), '/help: not available here yet');
+      // The catalog goes (truncated away; a reseed without it).
+      rig.bump(_snap(capabilities: _slashCaps));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-slash-button')), findsNothing);
+      expect(_draft(tester), '/help', reason: 'no edit made it go');
+      // The note is the menu's: with the menu back, so is what it said of
+      // this very draft.
+      rig.bump(_slashSnap());
+      await _settle(tester);
+      expect(_slashRefusal(tester), '/help: not available here yet');
+
+      // A rename's warning, and the capability (not the catalog) going.
+      await _type(tester, '/rename noted');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsOneWidget);
+      rig.bump(_slashSnap(caps: _caps(kind: 'craze', stop: true)));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+    });
+
+    testWidgets('A MISSING LANE: the lane provider failing under a mounted '
+        'screen — a Stop confirm, a key and Send do nothing and throw '
+        'nothing, and the composer is not left busy', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/rename gone');
+      // The header's confirm is up when the lane goes.
+      await tester.tap(find.byKey(const ValueKey('lane-stop')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
+
+      // A machine-feed rebuild with no lane stamp for this row: from now on
+      // every read of the lane's provider refuses — Riverpod rethrowing the
+      // provider's StateError wrapped in a ProviderException.
+      rig.feed.laneGone = true;
+      ProviderScope.containerOf(
+        tester.element(find.byType(LaneScreen)),
+      ).invalidate(laneControllerProvider(_ref));
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'rendering is safe');
+      expect(
+        find.byKey(const ValueKey('lane-unavailable')),
+        findsOneWidget,
+        reason: 'the screen stays up on the last state, saying so',
+      );
+      expect(
+        tester.widget<Text>(_bannerText('lane-unavailable')).data,
+        'This lane is gone: no agent lane on mini3/7 (opencode)',
+        reason: 'the cause, not Riverpod\'s wrapper and its stack trace',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'the confirm');
+      expect(rig.source.stops, 0);
+
+      await _type(tester, '/rename gone');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(tester.takeException(), isNull, reason: 'Enter');
+      await _type(tester, '/re');
+      await _press(tester, LogicalKeyboardKey.tab);
+      expect(tester.takeException(), isNull, reason: 'Tab');
+      await _type(tester, 'plain words');
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'Send');
+
+      expect(rig.source.titles, isEmpty, reason: 'nothing to send to');
+      expect(rig.source.sends, isEmpty);
+      expect(
+        find.byKey(const ValueKey('lane-send')),
+        findsOneWidget,
+        reason: 'not left busy: the Send button, not a spinner',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+            .enabled,
+        isTrue,
+      );
+      expect(_draft(tester), 'plain words', reason: 'nothing cleared it');
+    });
+
+    testWidgets('MSTATE says slash=<shown>/<open>; the composer verbs log '
+        'lane-rename and lane-mode', (tester) async {
+      final lines = <String>[];
+      final saved = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) lines.add(message);
+      };
+      // Restored INSIDE the body: the binding checks its debug variables
+      // before any tear-down runs.
+      try {
+        await _slashRig(tester);
+        String state() => lines.lastWhere((l) => l.startsWith('MSTATE'));
+        expect(state(), endsWith(' slash=7/0'));
+        await _type(tester, '/re');
+        expect(state(), endsWith(' slash=7/2'), reason: 'rename, research');
+        await _type(tester, '/');
+        expect(state(), endsWith(' slash=7/7'));
+
+        await _type(tester, '/rename logged');
+        await _press(tester, LogicalKeyboardKey.enter);
+        await _type(tester, '/agent');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(lines, contains('MRESULT lane-rename ok'));
+        expect(lines, contains('MRESULT lane-mode ok'));
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await _slashRig(tester, _snap());
+        expect(state(), endsWith(' slash=-/-'), reason: 'no menu at all');
+      } finally {
+        debugPrint = saved;
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1577,6 +2898,9 @@ Future<void> _pump(WidgetTester tester, _Rig rig) async {
           'mini3',
         ).overrideWith((ref) => Stream.value(rig.feed.state)),
         laneSourceProvider.overrideWithValue(rig.source),
+        // No native library in a widget test: the `/` menu's shared rules
+        // are the rig's stand-in (`fake_slash_rules.dart`).
+        slashRulesProvider.overrideWithValue(rig.rules),
       ],
       child: MaterialApp(
         theme: shedLightTheme,
@@ -1611,6 +2935,8 @@ const _fixtureCaps = BridgeLaneCapabilities(
   historyCursor: true,
   settings: false,
   stop: false,
+  slash: false,
+  setTitle: false,
 );
 
 BridgeLaneSnapshot _snap({
@@ -1624,6 +2950,7 @@ BridgeLaneSnapshot _snap({
   BridgeLaneSettings? settings,
   int settingsFrames = 0,
   int generation = 1,
+  BridgeSlashMenu? slashMenu,
 }) => BridgeLaneSnapshot(
   messages: rows,
   full: true,
@@ -1636,6 +2963,7 @@ BridgeLaneSnapshot _snap({
   settings: settings,
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
+  slashMenu: slashMenu,
 );
 
 BridgeLaneSession _session({required String title, String? permissionMode}) =>
@@ -1673,6 +3001,8 @@ BridgeLaneCapabilities _caps({
   bool cancel = true,
   bool stop = false,
   bool settings = false,
+  bool slash = false,
+  bool setTitle = false,
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
@@ -1681,6 +3011,8 @@ BridgeLaneCapabilities _caps({
   historyCursor: true,
   settings: settings,
   stop: stop,
+  slash: slash,
+  setTitle: setTitle,
 );
 
 /// The [Text] inside the banner keyed [key].
@@ -1695,6 +3027,9 @@ class _Rig {
 
   final _FakeSource source;
   final _FakeFeed feed;
+
+  /// The `/` menu's rules, recorded.
+  final rules = FakeSlashRules();
 
   /// Replace what the bridge will answer with, and nudge — which is how every
   /// change reaches this screen in production too.
@@ -1784,9 +3119,14 @@ class _FakeSource implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// When set, `stop` awaits it — a stop in flight.
+  Completer<void>? holdStop;
+
   @override
   Future<void> stop(LaneHandle handle) async {
     stops++;
+    final hold = holdStop;
+    if (hold != null) await hold.future;
     final failure = stopFailure;
     if (failure != null) throw failure;
   }
@@ -1807,6 +3147,26 @@ class _FakeSource implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// Every rename sent, in order.
+  final titles = <String>[];
+  Object? setTitleFailure;
+
+  /// What a rename that TOOK answers with — craze's `index_write` warning.
+  String? setTitleWarning;
+
+  /// When set, `setTitle` awaits it — a rename in flight.
+  Completer<void>? holdSetTitle;
+
+  @override
+  Future<String?> setTitle(LaneHandle handle, String title) async {
+    titles.add(title);
+    final hold = holdSetTitle;
+    if (hold != null) await hold.future;
+    final failure = setTitleFailure;
+    if (failure != null) throw failure;
+    return setTitleWarning;
+  }
+
   @override
   void close(LaneHandle handle) {}
 }
@@ -1821,6 +3181,10 @@ class _FakeFeed implements MachineFeed {
 
   final String kind;
 
+  /// The row's lane stamp is gone — what a machine-feed rebuild without it
+  /// leaves: the next build of `laneControllerProvider` refuses.
+  bool laneGone = false;
+
   @override
   MachineRecord get machine => _mini3;
 
@@ -1830,22 +3194,23 @@ class _FakeFeed implements MachineFeed {
     connectedOnce: true,
     reachable: true,
     sessions: [
-      BridgeRcSession(
-        host: '',
-        shed: '',
-        slug: _ref.slug,
-        displayName: 'row7',
-        kind: const BridgeRcKind.opencode(),
-        state: BridgeRcState.ready,
-        managed: true,
-        attention: false,
-        tabId: 7,
-        agentLane: BridgeAgentLaneStamp(
-          kind: kind,
-          sessionId: 'sess-7',
-          serverUrl: 'http://127.0.0.1:2421',
+      if (!laneGone)
+        BridgeRcSession(
+          host: '',
+          shed: '',
+          slug: _ref.slug,
+          displayName: 'row7',
+          kind: const BridgeRcKind.opencode(),
+          state: BridgeRcState.ready,
+          managed: true,
+          attention: false,
+          tabId: 7,
+          agentLane: BridgeAgentLaneStamp(
+            kind: kind,
+            sessionId: 'sess-7',
+            serverUrl: 'http://127.0.0.1:2421',
+          ),
         ),
-      ),
     ],
   );
 
@@ -1859,4 +3224,109 @@ class _FakeFeed implements MachineFeed {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+// ---------------------------------------------------------------------------
+// the `/` menu fixtures and finders (plan 029)
+// ---------------------------------------------------------------------------
+
+/// A craze session with a `/` menu: `slash` and `setTitle`, and `stop` and
+/// `settings` too — so `/exit` and `/model` show.
+final _slashCaps = _caps(
+  kind: 'craze',
+  stop: true,
+  settings: true,
+  slash: true,
+  setTitle: true,
+);
+
+/// A seeded craze session carrying [menu] (the hub-created session's menu by
+/// default).
+BridgeLaneSnapshot _slashSnap({
+  BridgeRcActivity activity = BridgeRcActivity.idle,
+  BridgeLaneCapabilities? caps,
+  BridgeSlashMenu? menu,
+  List<BridgeRcFeedMessage> rows = const [],
+}) => _snap(
+  rows: rows,
+  activity: activity,
+  capabilities: caps ?? _slashCaps,
+  slashMenu: menu ?? crazeMenu,
+);
+
+/// [_pump], on a view tall enough that a menu of the hub's seven rows lays
+/// out whole under the panel's 40 % cap.
+Future<void> _pumpSlash(WidgetTester tester, _Rig rig) async {
+  tester.view.physicalSize = const Size(800, 1400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await _pump(tester, rig);
+}
+
+/// A `/`-menu cell's lane on [snapshot] (by default a craze session carrying
+/// the hub's menu), pumped ([_pumpSlash]).
+Future<_Rig> _slashRig(
+  WidgetTester tester, [
+  BridgeLaneSnapshot? snapshot,
+]) async {
+  final rig = _Rig(snapshot: snapshot ?? _slashSnap());
+  await _pumpSlash(tester, rig);
+  return rig;
+}
+
+/// Press [key] on the focused composer and let the screen settle.
+Future<void> _press(WidgetTester tester, LogicalKeyboardKey key) async {
+  await tester.sendKeyEvent(key);
+  await _settle(tester);
+}
+
+/// Type [text] into the composer (focusing it), the caret at its end.
+Future<void> _type(WidgetTester tester, String text) async {
+  await tester.enterText(find.byKey(const ValueKey('lane-input')), text);
+  await _settle(tester);
+}
+
+TextEditingController _inputController(WidgetTester tester) => tester
+    .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+    .controller!;
+
+String _draft(WidgetTester tester) => _inputController(tester).text;
+
+TextSelection _selection(WidgetTester tester) =>
+    _inputController(tester).selection;
+
+/// The menu panel's rows on screen (built), by name, in the order drawn.
+List<String> _slashRows() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> && k.value.startsWith('lane-slash-row-');
+    })
+    .evaluate()
+    .map(
+      (e) => (e.widget.key! as ValueKey<String>).value.substring(
+        'lane-slash-row-'.length,
+      ),
+    )
+    .toList();
+
+/// The row the panel highlights — the one its own semantics say is selected.
+String? _slashHighlighted(WidgetTester tester) {
+  for (final name in _slashRows()) {
+    final semantics = tester.widget<Semantics>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey('lane-slash-row-$name')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    );
+    if (semantics.properties.selected ?? false) return name;
+  }
+  return null;
+}
+
+/// The refusal the composer shows for a `/` command, or null.
+String? _slashRefusal(WidgetTester tester) {
+  final f = find.byKey(const ValueKey('lane-slash-refusal'));
+  return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
 }

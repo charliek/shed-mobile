@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
 import '../core/app_error.dart';
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
 import 'lane_settings.dart';
 
-/// The three facts a lane's snapshot carries about the SESSION rather than its
-/// transcript — its live row, its capabilities and its settings — as one value.
+/// The facts a lane's snapshot carries about the SESSION rather than its
+/// transcript — its live row, its capabilities, its settings and its resolved
+/// `/` menu — as one value.
 ///
 /// One value because they are replaced TOGETHER, verbatim, from one snapshot
 /// and never merged field by field: the live view is the newer truth,
@@ -15,6 +18,7 @@ typedef LaneLive = ({
   BridgeLaneSession? session,
   BridgeLaneCapabilities? capabilities,
   BridgeLaneSettings? settings,
+  BridgeSlashMenu? slashMenu,
 });
 
 /// Nothing known about the session yet — what a fresh lane, or a lane re-opened
@@ -23,6 +27,7 @@ const LaneLive laneLiveUnknown = (
   session: null,
   capabilities: null,
   settings: null,
+  slashMenu: null,
 );
 
 /// **One agent lane, as a screen renders it** (plan 018 §3.11).
@@ -52,6 +57,7 @@ class LaneState {
     this.session,
     this.capabilities,
     this.settings,
+    this.slashMenu,
     this.error,
     this.approvalErrors = const {},
     this.composerError,
@@ -109,6 +115,19 @@ class LaneState {
   /// The session's settings, as of the live generation; null when it has none
   /// to show (its capabilities say `settings: false`).
   final BridgeLaneSettings? settings;
+
+  /// The session's `/` menu (plan 029 §3.4), resolved in Rust against its
+  /// capabilities — the rows a composer may list and the hidden builtins a
+  /// typed command is refused for — or null: no catalog yet, or a session
+  /// whose capabilities do not say `slash`. The composer only RENDERS it,
+  /// handing it back to the shared rules (`SlashRules`) for every decision.
+  ///
+  /// **Replaced only when it CHANGES, compared by value** ([sameSlashMenu]):
+  /// every pull converts a fresh copy over FRB, and a streaming turn pulls
+  /// once per frame, so keeping the previous instance while the menu is the
+  /// same is what lets the composer re-filter only when something it reads
+  /// moved (the desktop's "replace the menu only when its value changes").
+  final BridgeSlashMenu? slashMenu;
 
   /// A lane-level failure: the open was refused. Distinct from the two inline
   /// errors below, which belong to one control.
@@ -187,6 +206,7 @@ class LaneState {
     session: live == null ? session : live.session,
     capabilities: live == null ? capabilities : live.capabilities,
     settings: live == null ? settings : live.settings,
+    slashMenu: live == null ? slashMenu : live.slashMenu,
     error: clearError ? null : (error ?? this.error),
     approvalErrors: approvalErrors ?? this.approvalErrors,
     composerError: clearComposerError
@@ -198,4 +218,13 @@ class LaneState {
     retrying: retrying ?? this.retrying,
     abandoned: abandoned ?? this.abandoned,
   );
+}
+
+/// Whether two resolved menus are the same menu, BY VALUE — the generated
+/// classes compare their lists by identity, and every snapshot carries a new
+/// list. Rows and hidden names compare field by field (their own `==`).
+bool sameSlashMenu(BridgeSlashMenu? a, BridgeSlashMenu? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return false;
+  return listEquals(a.rows, b.rows) && listEquals(a.hidden, b.hidden);
 }

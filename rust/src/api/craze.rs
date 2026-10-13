@@ -819,8 +819,10 @@ pub async fn craze_create_options(
 }
 
 /// Create a session — craze's `session.create{cwd, provider?, prompt?,
-/// requestId}`, on a connection of its own, retried once under the same id
-/// when its outcome is unknown (shed-craze's rule, plan 025 §3.3.3).
+/// title?, requestId}`, on a connection of its own, retried once under the
+/// same id when its outcome is unknown (shed-craze's rule, plan 025 §3.3.3).
+/// A NEW request: a request id held from an unknown outcome is replayed with
+/// [`craze_create_held`] instead.
 ///
 /// The new session's row is the source's at once (its created rows): this
 /// handle is nudged, so the row is listed — and a lane opens on its hostId —
@@ -837,13 +839,64 @@ pub async fn craze_create(
     src: &BridgeCrazeSource,
     request: BridgeLaneCreateRequest,
 ) -> Result<BridgeLaneCreated, BridgeLaneError> {
+    create_on(src, request, false).await
+}
+
+/// [`craze_create`] **REPLAYING a held request** — the sheet re-sending the
+/// request id (and the exact directory and title, plan 029 P11) it kept from
+/// an unknown outcome. Through shed-craze's
+/// [`create_held`](shed_core::lane::AgentSource::create_held) (plan 026
+/// §3.1), so every attempt — the first included — is a retry, and only
+/// craze's own answer about the request ends the id.
+///
+/// **What a refusal tells the caller about its request id:** the same
+/// variants as [`craze_create`], read the same way — but a replay reports
+/// [`BridgeLaneError::OutcomeUnknown`] for every failure that says nothing
+/// about the request: a dial that never reached craze, a hub that cannot
+/// create, a hub that does not say `createTitle` while the request carries a
+/// title (craze may have started the TITLED session the first attempt sent:
+/// a definite `Failed` there would end the id, and a later submission under a
+/// new one could start a second session), and this handle closed before the
+/// replay began as well as while it ran. The caller keeps the id on each.
+/// Only a created session, or craze's refusal of the request itself
+/// (`bad_request`, a replayed start failure), is definite.
+pub async fn craze_create_held(
+    src: &BridgeCrazeSource,
+    request: BridgeLaneCreateRequest,
+) -> Result<BridgeLaneCreated, BridgeLaneError> {
+    create_on(src, request, true).await
+}
+
+/// [`craze_create`] and [`craze_create_held`]: `held` says the request id is
+/// one kept from an unknown outcome.
+async fn create_on(
+    src: &BridgeCrazeSource,
+    request: BridgeLaneCreateRequest,
+    held: bool,
+) -> Result<BridgeLaneCreated, BridgeLaneError> {
     let inner = Arc::clone(&src.inner);
     on_bridge_rt(async move {
         let answer = match inner
-            .call(|source| async move { source.create(request.into()).await })
+            .call(|source| async move {
+                if held {
+                    source.create_held(request.into()).await
+                } else {
+                    source.create(request.into()).await
+                }
+            })
             .await
         {
             Ok(answer) => answer,
+            // Nothing was sent THIS time — which says nothing about the
+            // request the held id names: the first attempt may have started
+            // its session, so the replay is unknown again (`create_held`'s
+            // rule for a dial that never reached craze).
+            Err(Cut::Before) if held => Err(shed_craze::errors::outcome_unknown(&format!(
+                "the craze source for {} was closed before the retry began; the earlier attempt \
+                 may have started a session — check the session list, or try again with the \
+                 same request id once craze is back",
+                inner.machine
+            ))),
             Err(Cut::Before) => return Err(inner.closed_error()),
             Err(Cut::During) => Err(shed_craze::errors::outcome_unknown(&format!(
                 "the craze source for {} was closed while the create was in flight; it may have \
@@ -917,8 +970,8 @@ mod tests {
     use serde_json::{json, Value};
     use shed_core::rc::RcActivity;
     use shed_craze::testing::{
-        attach_result, full_hub_capabilities, host_session_row, roster_row, session_caps,
-        session_info, snapshot_at, HubEnd, ScriptedDial,
+        attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0, roster_row,
+        session_caps, session_info, snapshot_at, HubEnd, ScriptedDial,
     };
 
     use crate::api::bridge_rt::live_counters;
@@ -1021,6 +1074,7 @@ mod tests {
             kind: "craze".to_string(),
             create: true,
             create_options: true,
+            create_title: false,
         }
     }
 
@@ -1347,7 +1401,9 @@ mod tests {
             Some(BridgeSourceCapabilities {
                 kind: "craze".to_string(),
                 create: true,
-                create_options: true
+                create_options: true,
+                // The fake hub's `hello` advertises `createTitle` (craze 0.1.1).
+                create_title: true,
             })
         );
         assert!(
@@ -1415,6 +1471,15 @@ mod tests {
             provider: Some("grok".to_string()),
             prompt: Some("hello".to_string()),
             request_id: id.to_string(),
+            title: None,
+        }
+    }
+
+    /// [`create_request`] carrying a title (plan 029 P11's titled create).
+    fn titled_request(id: &str, title: &str) -> BridgeLaneCreateRequest {
+        BridgeLaneCreateRequest {
+            title: Some(title.to_string()),
+            ..create_request(id)
         }
     }
 
@@ -1975,11 +2040,18 @@ mod tests {
         })
         .await
         .expect("a lost create answered in time");
-        assert_eq!(ids, [json!("req-lost"), json!("req-lost")], "one retry, same id");
+        assert_eq!(
+            ids,
+            [json!("req-lost"), json!("req-lost")],
+            "one retry, same id"
+        );
         let Err(BridgeLaneError::OutcomeUnknown { msg }) = lost else {
             panic!("a create lost twice: {lost:?}");
         };
-        assert!(msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN), "{msg}");
+        assert!(
+            msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN),
+            "{msg}"
+        );
 
         // A refusal craze answered: definite.
         let script = async {
@@ -2029,6 +2101,113 @@ mod tests {
         assert_eq!(live_counters().pending_craze_calls, 0);
     }
 
+    /// **A held replay crosses the bridge AS a replay** (plan 029 P11; the sol
+    /// review of M2+M4, item 5). The sheet's "Try again" after an unknown
+    /// outcome re-sends a TITLED request, and craze may already have started
+    /// the titled session the first attempt sent — so when the hub answering
+    /// the replay no longer says `createTitle`, [`craze_create_held`] answers
+    /// an unknown outcome again (both attempts read the hello, neither sends),
+    /// and the caller keeps its id. The SAME request through [`craze_create`]
+    /// is shed's definite `Failed` (a fresh request: nothing was ever sent), the
+    /// control that tells the two doors apart. With the capability back, the
+    /// replay goes out under the same id and the same title.
+    #[tokio::test]
+    async fn a_held_titled_replay_to_a_hub_without_create_title_is_unknown_again() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = next_conn(&mut conns).await;
+
+        // Held: the replay's attempt and shed-craze's retry each read a hello
+        // without `createTitle`, and each sends nothing. Counted, not
+        // demanded: a create that gives up after one is the answer below.
+        let script = async {
+            let mut attempts = 0;
+            while attempts < 2 {
+                let Ok(Some(mut hub)) =
+                    tokio::time::timeout(Duration::from_secs(5), conns.recv()).await
+                else {
+                    break;
+                };
+                hub.hello("epoch-1", hub_capabilities_0_1_0()).await;
+                assert!(
+                    hub.recv().await.is_none(),
+                    "attempt {attempts}: nothing is sent to a hub that cannot take the title"
+                );
+                attempts += 1;
+            }
+            attempts
+        };
+        let (held, attempts) = tokio::time::timeout(Duration::from_secs(20), async {
+            tokio::join!(
+                craze_create_held(&src, titled_request("req-held", "Held name")),
+                script
+            )
+        })
+        .await
+        .expect("a held replay answered in time");
+        let Err(BridgeLaneError::OutcomeUnknown { msg }) = held else {
+            panic!("a held titled replay to a hub without createTitle keeps its id: {held:?}");
+        };
+        assert!(
+            msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN),
+            "{msg}"
+        );
+        assert_eq!(attempts, 2, "the replay and shed-craze's one retry");
+
+        // The same request, NEW: definite, nothing sent — the next submission
+        // mints a new id.
+        let script = async {
+            let mut hub = next_conn(&mut conns).await;
+            hub.hello("epoch-1", hub_capabilities_0_1_0()).await;
+            assert!(
+                hub.recv().await.is_none(),
+                "a fresh titled create sent nothing"
+            );
+        };
+        let (fresh, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(
+                craze_create(&src, titled_request("req-fresh", "Held name")),
+                script
+            )
+        })
+        .await
+        .expect("a fresh create answered in time");
+        assert!(
+            matches!(fresh, Err(BridgeLaneError::Failed { .. })),
+            "a fresh titled create to a hub without createTitle is refused: {fresh:?}"
+        );
+
+        // createTitle is back: the replay goes out under the same id and the
+        // same title, and craze's answer is the session.
+        let script = async {
+            let mut hub = next_conn(&mut conns).await;
+            hub.hello("epoch-1", full_hub_capabilities()).await;
+            let req = hub.expect("session.create").await;
+            let params = req["params"].clone();
+            hub.reply(&req, created_result()).await;
+            (hub, params)
+        };
+        let (replayed, (_hub, params)) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(
+                craze_create_held(&src, titled_request("req-held", "Held name")),
+                script
+            )
+        })
+        .await
+        .expect("the replay answered in time");
+        assert_eq!(
+            replayed.expect("the replay created").session.id,
+            CREATED,
+            "craze answered the held id with its session"
+        );
+        assert_eq!(params["requestId"], json!("req-held"));
+        assert_eq!(params["title"], json!("Held name"));
+
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
     /// A closed source refuses everything that would dial — a lane, a create —
     /// quietly (`Unavailable`: a feed restarting, which a caller retries
     /// through the replacement), and counts nothing.
@@ -2056,6 +2235,14 @@ mod tests {
         assert!(
             matches!(refused, Err(BridgeLaneError::Unavailable { .. })),
             "{refused:?}"
+        );
+        // A HELD replay on it sent nothing either — which says nothing about
+        // the request its id names (the first attempt may have started the
+        // session): unknown again, so the caller keeps the id.
+        let held = craze_create_held(&src, create_request("req-held-closed")).await;
+        assert!(
+            matches!(held, Err(BridgeLaneError::OutcomeUnknown { .. })),
+            "{held:?}"
         );
         assert_eq!(live_counters().active_lanes, 0);
         assert_eq!(live_counters().pending_craze_calls, 0);

@@ -520,4 +520,6 @@ BridgeLaneCapabilities _caps({required bool settings}) =>
       historyCursor: true,
       settings: settings,
       stop: true,
+      slash: false,
+      setTitle: false,
     );

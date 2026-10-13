@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderException;
 
 import 'app/app_section.dart';
 import 'keys/identity_store.dart';
@@ -11,6 +12,7 @@ import 'keys/key_manager.dart';
 import 'lanes/lane_controller.dart';
 import 'lanes/lane_source.dart';
 import 'lanes/lane_state.dart';
+import 'lanes/slash_rules.dart';
 import 'servers/add_server_flow.dart';
 import 'servers/server_record.dart';
 import 'machines/machine_feed.dart';
@@ -732,6 +734,13 @@ final laneSourceProvider = Provider<LaneSource>(
   (ref) => const BridgeLaneSource(),
 );
 
+/// The `/` menu's rules (plan 029 §3.4), as one overridable seam — shared
+/// Rust behind FRB sync calls, which a widget test (no native library) hands
+/// a stand-in for, as it does [laneSourceProvider].
+final slashRulesProvider = Provider<SlashRules>(
+  (ref) => const BridgeSlashRules(),
+);
+
 /// **One lane per row** — the guarantee that lives HERE and nowhere else.
 ///
 /// The bridge has no registry: two `lane_open` calls are two lanes, two
@@ -783,6 +792,43 @@ final laneControllerProvider = Provider.autoDispose
       ref.onDispose(controller.close);
       return controller;
     });
+
+/// [laneControllerProvider] for [lane], read for a verb — or null when the
+/// row has no lane any more ([laneMissing]): a machine-feed rebuild left no
+/// matching lane stamp while a screen or sheet on that lane is still up, so
+/// there is nothing to act on. Any other failure propagates.
+LaneController? readLaneController(WidgetRef ref, LaneRef lane) {
+  try {
+    return ref.read(laneControllerProvider(lane));
+  } catch (e) {
+    if (laneMissing(e)) return null;
+    rethrow;
+  }
+}
+
+/// Whether [error], from a read of [laneControllerProvider], is its refusal
+/// of a row with no lane. The provider throws a [StateError], but Riverpod 3
+/// rethrows a provider's build failure on every read WRAPPED in a
+/// [ProviderException] (`valueOrProviderException`) — once more for each
+/// provider it passed through — so the cause is unwrapped before it is
+/// judged.
+@visibleForTesting
+bool laneMissing(Object error) => switch (error) {
+  ProviderException(:final exception) => laneMissing(exception),
+  StateError() => true,
+  _ => false,
+};
+
+/// What a person reads for a lane provider's failure: its CAUSE. Riverpod 3
+/// hands a dependent (and `AsyncValue.error`) the failure wrapped in a
+/// [ProviderException], whose text is a provider dump with a stack trace —
+/// tall enough to push the composer off the screen — so it is unwrapped, and
+/// a [StateError] says its own message.
+String laneFailureText(Object error) => switch (error) {
+  ProviderException(:final exception) => laneFailureText(exception),
+  StateError(:final message) => message,
+  _ => '$error',
+};
 
 /// One lane's live state stream.
 ///

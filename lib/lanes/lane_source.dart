@@ -74,6 +74,15 @@ abstract interface class LaneSource {
   /// only when the snapshot's capabilities say `settings`.
   Future<void> set(LaneHandle handle, BridgeLaneSettingChange change);
 
+  /// Rename the session (plan 029 D4): craze's `session.setTitle`. Offered
+  /// only when the snapshot's capabilities say `setTitle`. The new title
+  /// arrives on the stream (a `meta` delta re-emits the session row), never
+  /// from this answer. Answers the WARNING of a rename that took but craze
+  /// could not record (`index_write`, "renamed, but craze could not record
+  /// it: …") — or null; every other refusal throws, an answer lost to a drop
+  /// as `outcome_unknown`.
+  Future<String?> setTitle(LaneHandle handle, String title);
+
   /// Synchronous teardown. Idempotent; Rust's `Drop` is the backstop.
   void close(LaneHandle handle);
 }
@@ -120,6 +129,10 @@ class BridgeLaneSource implements LaneSource {
   @override
   Future<void> set(LaneHandle handle, BridgeLaneSettingChange change) =>
       laneSet(lane: _lane(handle), change: change);
+
+  @override
+  Future<String?> setTitle(LaneHandle handle, String title) async =>
+      (await laneSetTitle(lane: _lane(handle), title: title)).warning;
 
   @override
   void close(LaneHandle handle) {

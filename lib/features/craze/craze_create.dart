@@ -155,12 +155,18 @@ class CrazeRefusal {
 /// short mid-flight). Two more:
 ///
 /// * a [StateError] is the feed refusing before it sent anything (no craze
-///   source on that machine right now) — definite, as `unavailable`;
+///   source on that machine right now) — definite, as `unavailable`, for a
+///   NEW request. For a [held] replay it is an unknown outcome again (the
+///   desktop's rule for its own preflight refusals, plan 026 §3.1): nothing
+///   was sent THIS time, which says nothing about the request the held id
+///   names — its first attempt may have started the session — so the id is
+///   kept. (Rust's refusals of a replay are already read that way by
+///   `craze_create_held`.)
 /// * anything else is an outcome nobody knows, and is read as one: keeping
 ///   the id is always safe (craze answers it with the session it started, or
 ///   starts one), while dropping it after a create that did land would start a
 ///   second session.
-CrazeRefusal crazeRefusalOf(Object e) => switch (e) {
+CrazeRefusal crazeRefusalOf(Object e, {bool held = false}) => switch (e) {
   BridgeLaneError_OutcomeUnknown(:final msg) => CrazeRefusal(
     'outcome_unknown',
     msg,
@@ -197,6 +203,11 @@ CrazeRefusal crazeRefusalOf(Object e) => switch (e) {
     'unsupported_lane',
     'this build has no adapter for a "$kind" lane',
   ),
+  StateError(:final message) when held => CrazeRefusal(
+    'outcome_unknown',
+    '$message; the retry was not sent, and the earlier attempt may have '
+        'started a session — try again once craze is back',
+  ),
   StateError(:final message) => CrazeRefusal('unavailable', message),
   _ => CrazeRefusal('outcome_unknown', '$e'),
 };
@@ -232,8 +243,10 @@ class CrazeDraft {
     this.provider,
     this.cwd = '',
     this.prompt = '',
+    this.title = '',
     this.requestId,
     this.sentCwd,
+    this.sentTitle,
     this.phase = CrazePhase.idle,
     this.refusal,
     this.lastCreated,
@@ -245,6 +258,9 @@ class CrazeDraft {
   final String? provider;
   final String cwd;
   final String prompt;
+
+  /// The optional Name (plan 029 D18) as typed; see [sentTitle] for what is sent.
+  final String title;
 
   /// Held ONLY while the last submission's outcome is unknown (or while it is
   /// in flight): the retry that follows reuses it, so a lost answer never makes
@@ -258,6 +274,14 @@ class CrazeDraft {
   /// under the same id — craze's `request_conflict`.
   final String? sentCwd;
 
+  /// The title as the held [requestId] sends it — [title] trimmed, null when
+  /// blank (never sent empty: craze refuses an empty or all-stripped title),
+  /// fixed when the submission began exactly as [sentCwd] is (plan 029 P11): a
+  /// retry resends THIS exact title under the same id, since another title
+  /// under the id is craze's `request_conflict`. Null is a value here (no
+  /// title), so it is held with the id, not by being non-null.
+  final String? sentTitle;
+
   final CrazePhase phase;
   final CrazeRefusal? refusal;
 
@@ -268,11 +292,18 @@ class CrazeDraft {
   /// A submission starts: the id held from an unknown outcome is REUSED with
   /// the directory it sent, else a new one is minted and the directory is
   /// expanded against the machine's [home] now.
+  ///
+  /// A typed title is never dropped here (E13): a NEW request carries it
+  /// trimmed (blank is null), and a hub without `createTitle` refuses it in
+  /// shed's gate, shown like any refusal. A held replay keeps its exact title.
   CrazeDraft beginSubmit(String Function() mint, {String? home}) => _with(
     requestId: requestId ?? mint(),
     sentCwd: requestId != null && sentCwd != null
         ? sentCwd
         : expandHome(cwd, home),
+    sentTitle: requestId != null
+        ? sentTitle
+        : (title.trim().isNotEmpty ? title.trim() : null),
     phase: CrazePhase.submitting,
     refusal: null,
   );
@@ -286,6 +317,7 @@ class CrazeDraft {
       : _with(
           requestId: null,
           sentCwd: null,
+          sentTitle: null,
           phase: CrazePhase.refused,
           refusal: refusal,
         );
@@ -299,22 +331,30 @@ class CrazeDraft {
   /// `request_conflict`), and a settled refusal or unknown outcome no longer
   /// describes the form. Nothing typed is cleared. A submission in flight is
   /// not edited (its controls are disabled).
-  CrazeDraft edit({Object? provider = _keep, String? cwd, String? prompt}) {
+  CrazeDraft edit({
+    Object? provider = _keep,
+    String? cwd,
+    String? prompt,
+    String? title,
+  }) {
     if (phase == CrazePhase.submitting) return this;
     final nextProvider = identical(provider, _keep)
         ? this.provider
         : provider as String?;
     final nextCwd = cwd ?? this.cwd;
     final nextPrompt = prompt ?? this.prompt;
+    final nextTitle = title ?? this.title;
     if (nextProvider == this.provider &&
         nextCwd == this.cwd &&
-        nextPrompt == this.prompt) {
+        nextPrompt == this.prompt &&
+        nextTitle == this.title) {
       return this;
     }
     return CrazeDraft(
       provider: nextProvider,
       cwd: nextCwd,
       prompt: nextPrompt,
+      title: nextTitle,
       lastCreated: lastCreated,
     );
   }
@@ -323,7 +363,8 @@ class CrazeDraft {
   /// directory trimmed, with a leading `~` expanded against the machine's home
   /// when the submission began ([sentCwd]); a blank provider is absent
   /// (craze's default); a blank prompt is absent (an idle session), any other
-  /// prompt goes EXACTLY as typed, newlines and all. Only a draft that has
+  /// prompt goes EXACTLY as typed, newlines and all; the title is [sentTitle]
+  /// (trimmed, absent when blank). Only a draft that has
   /// begun a submission has an id to send.
   BridgeLaneCreateRequest request() {
     final p = provider?.trim() ?? '';
@@ -331,6 +372,7 @@ class CrazeDraft {
       cwd: sentCwd ?? cwd.trim(),
       provider: p.isEmpty ? null : p,
       prompt: prompt.trim().isEmpty ? null : prompt,
+      title: sentTitle,
       requestId: requestId!,
     );
   }
@@ -338,16 +380,21 @@ class CrazeDraft {
   CrazeDraft _with({
     Object? requestId = _keep,
     Object? sentCwd = _keep,
+    Object? sentTitle = _keep,
     required CrazePhase phase,
     required CrazeRefusal? refusal,
   }) => CrazeDraft(
     provider: provider,
     cwd: cwd,
     prompt: prompt,
+    title: title,
     requestId: identical(requestId, _keep)
         ? this.requestId
         : requestId as String?,
     sentCwd: identical(sentCwd, _keep) ? this.sentCwd : sentCwd as String?,
+    sentTitle: identical(sentTitle, _keep)
+        ? this.sentTitle
+        : sentTitle as String?,
     phase: phase,
     refusal: refusal,
     lastCreated: lastCreated,
@@ -361,6 +408,8 @@ class CrazeDraft {
 /// later options read: one that reads non-ready now (or is not listed at all)
 /// still names that request. Refusing the replay would leave only an edit,
 /// which mints a new id, and so a second session if the first attempt landed.
+/// For the same reason the submission it starts goes to Rust AS a replay
+/// (`crazeCreateHeld`, plan 029 P11), not as a new create.
 ///
 /// The same reason keeps the sheet from re-picking a provider for any draft
 /// that is not idle (its `_reconcile`): an unknown one would lose its id, and
@@ -382,7 +431,7 @@ const outcomeUnknownNote =
     'session list. Try again resumes the same request.';
 
 /// Where a refusal is shown.
-enum RefusalWhere { cwd, cause, general }
+enum RefusalWhere { cwd, title, cause, general }
 
 /// Where and how a refusal is shown (§3.8, by code): `bad_request` beside the
 /// directory — except craze's `request_conflict` (an id reused with other
@@ -397,6 +446,11 @@ enum RefusalWhere { cwd, cause, general }
         text:
             'internal error (a new request id is used next time): ${r.message}',
       );
+    }
+    // craze words a title refusal `params.title …` (plan 029 D14); only that
+    // wording, so a directory error naming a path with "title" stays below.
+    if (r.message.contains('params.title')) {
+      return (where: RefusalWhere.title, text: r.message);
     }
     return (where: RefusalWhere.cwd, text: r.message);
   }

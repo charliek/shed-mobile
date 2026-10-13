@@ -3139,6 +3139,1800 @@ as String?,
 }
 
 /// @nodoc
+mixin _$BridgeSlashAccept {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAccept);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAccept()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSlashAcceptCopyWith<$Res>  {
+$BridgeSlashAcceptCopyWith(BridgeSlashAccept _, $Res Function(BridgeSlashAccept) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSlashAccept].
+extension BridgeSlashAcceptPatterns on BridgeSlashAccept {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashAccept_Complete value)?  complete,TResult Function( BridgeSlashAccept_Dispatch value)?  dispatch,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete() when complete != null:
+return complete(_that);case BridgeSlashAccept_Dispatch() when dispatch != null:
+return dispatch(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashAccept_Complete value)  complete,required TResult Function( BridgeSlashAccept_Dispatch value)  dispatch,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete():
+return complete(_that);case BridgeSlashAccept_Dispatch():
+return dispatch(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashAccept_Complete value)?  complete,TResult? Function( BridgeSlashAccept_Dispatch value)?  dispatch,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete() when complete != null:
+return complete(_that);case BridgeSlashAccept_Dispatch() when dispatch != null:
+return dispatch(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String draft,  int caret)?  complete,TResult Function( BridgeSlashDispatch dispatch)?  dispatch,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete() when complete != null:
+return complete(_that.draft,_that.caret);case BridgeSlashAccept_Dispatch() when dispatch != null:
+return dispatch(_that.dispatch);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String draft,  int caret)  complete,required TResult Function( BridgeSlashDispatch dispatch)  dispatch,}) {final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete():
+return complete(_that.draft,_that.caret);case BridgeSlashAccept_Dispatch():
+return dispatch(_that.dispatch);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String draft,  int caret)?  complete,TResult? Function( BridgeSlashDispatch dispatch)?  dispatch,}) {final _that = this;
+switch (_that) {
+case BridgeSlashAccept_Complete() when complete != null:
+return complete(_that.draft,_that.caret);case BridgeSlashAccept_Dispatch() when dispatch != null:
+return dispatch(_that.dispatch);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashAccept_Complete extends BridgeSlashAccept {
+  const BridgeSlashAccept_Complete({required this.draft, required this.caret}): super._();
+  
+
+ final  String draft;
+ final  int caret;
+
+/// Create a copy of BridgeSlashAccept
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashAccept_CompleteCopyWith<BridgeSlashAccept_Complete> get copyWith => _$BridgeSlashAccept_CompleteCopyWithImpl<BridgeSlashAccept_Complete>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAccept_Complete&&(identical(other.draft, draft) || other.draft == draft)&&(identical(other.caret, caret) || other.caret == caret));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,draft,caret);
+
+@override
+String toString() {
+  return 'BridgeSlashAccept.complete(draft: $draft, caret: $caret)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashAccept_CompleteCopyWith<$Res> implements $BridgeSlashAcceptCopyWith<$Res> {
+  factory $BridgeSlashAccept_CompleteCopyWith(BridgeSlashAccept_Complete value, $Res Function(BridgeSlashAccept_Complete) _then) = _$BridgeSlashAccept_CompleteCopyWithImpl;
+@useResult
+$Res call({
+ String draft, int caret
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashAccept_CompleteCopyWithImpl<$Res>
+    implements $BridgeSlashAccept_CompleteCopyWith<$Res> {
+  _$BridgeSlashAccept_CompleteCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashAccept_Complete _self;
+  final $Res Function(BridgeSlashAccept_Complete) _then;
+
+/// Create a copy of BridgeSlashAccept
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? draft = null,Object? caret = null,}) {
+  return _then(BridgeSlashAccept_Complete(
+draft: null == draft ? _self.draft : draft // ignore: cast_nullable_to_non_nullable
+as String,caret: null == caret ? _self.caret : caret // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashAccept_Dispatch extends BridgeSlashAccept {
+  const BridgeSlashAccept_Dispatch({required this.dispatch}): super._();
+  
+
+ final  BridgeSlashDispatch dispatch;
+
+/// Create a copy of BridgeSlashAccept
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashAccept_DispatchCopyWith<BridgeSlashAccept_Dispatch> get copyWith => _$BridgeSlashAccept_DispatchCopyWithImpl<BridgeSlashAccept_Dispatch>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAccept_Dispatch&&(identical(other.dispatch, dispatch) || other.dispatch == dispatch));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,dispatch);
+
+@override
+String toString() {
+  return 'BridgeSlashAccept.dispatch(dispatch: $dispatch)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashAccept_DispatchCopyWith<$Res> implements $BridgeSlashAcceptCopyWith<$Res> {
+  factory $BridgeSlashAccept_DispatchCopyWith(BridgeSlashAccept_Dispatch value, $Res Function(BridgeSlashAccept_Dispatch) _then) = _$BridgeSlashAccept_DispatchCopyWithImpl;
+@useResult
+$Res call({
+ BridgeSlashDispatch dispatch
+});
+
+
+$BridgeSlashDispatchCopyWith<$Res> get dispatch;
+
+}
+/// @nodoc
+class _$BridgeSlashAccept_DispatchCopyWithImpl<$Res>
+    implements $BridgeSlashAccept_DispatchCopyWith<$Res> {
+  _$BridgeSlashAccept_DispatchCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashAccept_Dispatch _self;
+  final $Res Function(BridgeSlashAccept_Dispatch) _then;
+
+/// Create a copy of BridgeSlashAccept
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? dispatch = null,}) {
+  return _then(BridgeSlashAccept_Dispatch(
+dispatch: null == dispatch ? _self.dispatch : dispatch // ignore: cast_nullable_to_non_nullable
+as BridgeSlashDispatch,
+  ));
+}
+
+/// Create a copy of BridgeSlashAccept
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$BridgeSlashDispatchCopyWith<$Res> get dispatch {
+  
+  return $BridgeSlashDispatchCopyWith<$Res>(_self.dispatch, (value) {
+    return _then(_self.copyWith(dispatch: value));
+  });
+}
+}
+
+/// @nodoc
+mixin _$BridgeSlashAction {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAction()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSlashActionCopyWith<$Res>  {
+$BridgeSlashActionCopyWith(BridgeSlashAction _, $Res Function(BridgeSlashAction) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSlashAction].
+extension BridgeSlashActionPatterns on BridgeSlashAction {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashAction_Prompt value)?  prompt,TResult Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult Function( BridgeSlashAction_SetMode value)?  setMode,TResult Function( BridgeSlashAction_Stop value)?  stop,TResult Function( BridgeSlashAction_ModelPicker value)?  modelPicker,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt() when prompt != null:
+return prompt(_that);case BridgeSlashAction_SetTitle() when setTitle != null:
+return setTitle(_that);case BridgeSlashAction_SetMode() when setMode != null:
+return setMode(_that);case BridgeSlashAction_Stop() when stop != null:
+return stop(_that);case BridgeSlashAction_ModelPicker() when modelPicker != null:
+return modelPicker(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashAction_Prompt value)  prompt,required TResult Function( BridgeSlashAction_SetTitle value)  setTitle,required TResult Function( BridgeSlashAction_SetMode value)  setMode,required TResult Function( BridgeSlashAction_Stop value)  stop,required TResult Function( BridgeSlashAction_ModelPicker value)  modelPicker,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt():
+return prompt(_that);case BridgeSlashAction_SetTitle():
+return setTitle(_that);case BridgeSlashAction_SetMode():
+return setMode(_that);case BridgeSlashAction_Stop():
+return stop(_that);case BridgeSlashAction_ModelPicker():
+return modelPicker(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashAction_Prompt value)?  prompt,TResult? Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult? Function( BridgeSlashAction_SetMode value)?  setMode,TResult? Function( BridgeSlashAction_Stop value)?  stop,TResult? Function( BridgeSlashAction_ModelPicker value)?  modelPicker,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt() when prompt != null:
+return prompt(_that);case BridgeSlashAction_SetTitle() when setTitle != null:
+return setTitle(_that);case BridgeSlashAction_SetMode() when setMode != null:
+return setMode(_that);case BridgeSlashAction_Stop() when stop != null:
+return stop(_that);case BridgeSlashAction_ModelPicker() when modelPicker != null:
+return modelPicker(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  prompt,TResult Function()?  setTitle,TResult Function( String id)?  setMode,TResult Function()?  stop,TResult Function()?  modelPicker,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt() when prompt != null:
+return prompt();case BridgeSlashAction_SetTitle() when setTitle != null:
+return setTitle();case BridgeSlashAction_SetMode() when setMode != null:
+return setMode(_that.id);case BridgeSlashAction_Stop() when stop != null:
+return stop();case BridgeSlashAction_ModelPicker() when modelPicker != null:
+return modelPicker();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  prompt,required TResult Function()  setTitle,required TResult Function( String id)  setMode,required TResult Function()  stop,required TResult Function()  modelPicker,}) {final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt():
+return prompt();case BridgeSlashAction_SetTitle():
+return setTitle();case BridgeSlashAction_SetMode():
+return setMode(_that.id);case BridgeSlashAction_Stop():
+return stop();case BridgeSlashAction_ModelPicker():
+return modelPicker();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  prompt,TResult? Function()?  setTitle,TResult? Function( String id)?  setMode,TResult? Function()?  stop,TResult? Function()?  modelPicker,}) {final _that = this;
+switch (_that) {
+case BridgeSlashAction_Prompt() when prompt != null:
+return prompt();case BridgeSlashAction_SetTitle() when setTitle != null:
+return setTitle();case BridgeSlashAction_SetMode() when setMode != null:
+return setMode(_that.id);case BridgeSlashAction_Stop() when stop != null:
+return stop();case BridgeSlashAction_ModelPicker() when modelPicker != null:
+return modelPicker();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashAction_Prompt extends BridgeSlashAction {
+  const BridgeSlashAction_Prompt(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_Prompt);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAction.prompt()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashAction_SetTitle extends BridgeSlashAction {
+  const BridgeSlashAction_SetTitle(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_SetTitle);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAction.setTitle()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashAction_SetMode extends BridgeSlashAction {
+  const BridgeSlashAction_SetMode({required this.id}): super._();
+  
+
+ final  String id;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashAction_SetModeCopyWith<BridgeSlashAction_SetMode> get copyWith => _$BridgeSlashAction_SetModeCopyWithImpl<BridgeSlashAction_SetMode>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_SetMode&&(identical(other.id, id) || other.id == id));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id);
+
+@override
+String toString() {
+  return 'BridgeSlashAction.setMode(id: $id)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashAction_SetModeCopyWith<$Res> implements $BridgeSlashActionCopyWith<$Res> {
+  factory $BridgeSlashAction_SetModeCopyWith(BridgeSlashAction_SetMode value, $Res Function(BridgeSlashAction_SetMode) _then) = _$BridgeSlashAction_SetModeCopyWithImpl;
+@useResult
+$Res call({
+ String id
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashAction_SetModeCopyWithImpl<$Res>
+    implements $BridgeSlashAction_SetModeCopyWith<$Res> {
+  _$BridgeSlashAction_SetModeCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashAction_SetMode _self;
+  final $Res Function(BridgeSlashAction_SetMode) _then;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? id = null,}) {
+  return _then(BridgeSlashAction_SetMode(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashAction_Stop extends BridgeSlashAction {
+  const BridgeSlashAction_Stop(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_Stop);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAction.stop()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashAction_ModelPicker extends BridgeSlashAction {
+  const BridgeSlashAction_ModelPicker(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_ModelPicker);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashAction.modelPicker()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+mixin _$BridgeSlashArg {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashArg);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashArg()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSlashArgCopyWith<$Res>  {
+$BridgeSlashArgCopyWith(BridgeSlashArg _, $Res Function(BridgeSlashArg) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSlashArg].
+extension BridgeSlashArgPatterns on BridgeSlashArg {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashArg_None value)?  none,TResult Function( BridgeSlashArg_Optional value)?  optional,TResult Function( BridgeSlashArg_Required value)?  required_,TResult Function( BridgeSlashArg_Other value)?  other,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSlashArg_None() when none != null:
+return none(_that);case BridgeSlashArg_Optional() when optional != null:
+return optional(_that);case BridgeSlashArg_Required() when required_ != null:
+return required_(_that);case BridgeSlashArg_Other() when other != null:
+return other(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashArg_None value)  none,required TResult Function( BridgeSlashArg_Optional value)  optional,required TResult Function( BridgeSlashArg_Required value)  required_,required TResult Function( BridgeSlashArg_Other value)  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashArg_None():
+return none(_that);case BridgeSlashArg_Optional():
+return optional(_that);case BridgeSlashArg_Required():
+return required_(_that);case BridgeSlashArg_Other():
+return other(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashArg_None value)?  none,TResult? Function( BridgeSlashArg_Optional value)?  optional,TResult? Function( BridgeSlashArg_Required value)?  required_,TResult? Function( BridgeSlashArg_Other value)?  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashArg_None() when none != null:
+return none(_that);case BridgeSlashArg_Optional() when optional != null:
+return optional(_that);case BridgeSlashArg_Required() when required_ != null:
+return required_(_that);case BridgeSlashArg_Other() when other != null:
+return other(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  none,TResult Function()?  optional,TResult Function()?  required_,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSlashArg_None() when none != null:
+return none();case BridgeSlashArg_Optional() when optional != null:
+return optional();case BridgeSlashArg_Required() when required_ != null:
+return required_();case BridgeSlashArg_Other() when other != null:
+return other(_that.raw);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  none,required TResult Function()  optional,required TResult Function()  required_,required TResult Function( String raw)  other,}) {final _that = this;
+switch (_that) {
+case BridgeSlashArg_None():
+return none();case BridgeSlashArg_Optional():
+return optional();case BridgeSlashArg_Required():
+return required_();case BridgeSlashArg_Other():
+return other(_that.raw);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  none,TResult? Function()?  optional,TResult? Function()?  required_,TResult? Function( String raw)?  other,}) {final _that = this;
+switch (_that) {
+case BridgeSlashArg_None() when none != null:
+return none();case BridgeSlashArg_Optional() when optional != null:
+return optional();case BridgeSlashArg_Required() when required_ != null:
+return required_();case BridgeSlashArg_Other() when other != null:
+return other(_that.raw);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashArg_None extends BridgeSlashArg {
+  const BridgeSlashArg_None(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashArg_None);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashArg.none()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashArg_Optional extends BridgeSlashArg {
+  const BridgeSlashArg_Optional(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashArg_Optional);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashArg.optional()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashArg_Required extends BridgeSlashArg {
+  const BridgeSlashArg_Required(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashArg_Required);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashArg.required_()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashArg_Other extends BridgeSlashArg {
+  const BridgeSlashArg_Other({required this.raw}): super._();
+  
+
+ final  String raw;
+
+/// Create a copy of BridgeSlashArg
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashArg_OtherCopyWith<BridgeSlashArg_Other> get copyWith => _$BridgeSlashArg_OtherCopyWithImpl<BridgeSlashArg_Other>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashArg_Other&&(identical(other.raw, raw) || other.raw == raw));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,raw);
+
+@override
+String toString() {
+  return 'BridgeSlashArg.other(raw: $raw)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashArg_OtherCopyWith<$Res> implements $BridgeSlashArgCopyWith<$Res> {
+  factory $BridgeSlashArg_OtherCopyWith(BridgeSlashArg_Other value, $Res Function(BridgeSlashArg_Other) _then) = _$BridgeSlashArg_OtherCopyWithImpl;
+@useResult
+$Res call({
+ String raw
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashArg_OtherCopyWithImpl<$Res>
+    implements $BridgeSlashArg_OtherCopyWith<$Res> {
+  _$BridgeSlashArg_OtherCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashArg_Other _self;
+  final $Res Function(BridgeSlashArg_Other) _then;
+
+/// Create a copy of BridgeSlashArg
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? raw = null,}) {
+  return _then(BridgeSlashArg_Other(
+raw: null == raw ? _self.raw : raw // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$BridgeSlashDispatch {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashDispatch);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashDispatch()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSlashDispatchCopyWith<$Res>  {
+$BridgeSlashDispatchCopyWith(BridgeSlashDispatch _, $Res Function(BridgeSlashDispatch) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSlashDispatch].
+extension BridgeSlashDispatchPatterns on BridgeSlashDispatch {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashDispatch_NotCommand value)?  notCommand,TResult Function( BridgeSlashDispatch_Prompt value)?  prompt,TResult Function( BridgeSlashDispatch_Run value)?  run,TResult Function( BridgeSlashDispatch_Refuse value)?  refuse,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand() when notCommand != null:
+return notCommand(_that);case BridgeSlashDispatch_Prompt() when prompt != null:
+return prompt(_that);case BridgeSlashDispatch_Run() when run != null:
+return run(_that);case BridgeSlashDispatch_Refuse() when refuse != null:
+return refuse(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashDispatch_NotCommand value)  notCommand,required TResult Function( BridgeSlashDispatch_Prompt value)  prompt,required TResult Function( BridgeSlashDispatch_Run value)  run,required TResult Function( BridgeSlashDispatch_Refuse value)  refuse,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand():
+return notCommand(_that);case BridgeSlashDispatch_Prompt():
+return prompt(_that);case BridgeSlashDispatch_Run():
+return run(_that);case BridgeSlashDispatch_Refuse():
+return refuse(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashDispatch_NotCommand value)?  notCommand,TResult? Function( BridgeSlashDispatch_Prompt value)?  prompt,TResult? Function( BridgeSlashDispatch_Run value)?  run,TResult? Function( BridgeSlashDispatch_Refuse value)?  refuse,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand() when notCommand != null:
+return notCommand(_that);case BridgeSlashDispatch_Prompt() when prompt != null:
+return prompt(_that);case BridgeSlashDispatch_Run() when run != null:
+return run(_that);case BridgeSlashDispatch_Refuse() when refuse != null:
+return refuse(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  notCommand,TResult Function( String text)?  prompt,TResult Function( BridgeSlashAction action,  String? arg)?  run,TResult Function( String reason)?  refuse,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand() when notCommand != null:
+return notCommand();case BridgeSlashDispatch_Prompt() when prompt != null:
+return prompt(_that.text);case BridgeSlashDispatch_Run() when run != null:
+return run(_that.action,_that.arg);case BridgeSlashDispatch_Refuse() when refuse != null:
+return refuse(_that.reason);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  notCommand,required TResult Function( String text)  prompt,required TResult Function( BridgeSlashAction action,  String? arg)  run,required TResult Function( String reason)  refuse,}) {final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand():
+return notCommand();case BridgeSlashDispatch_Prompt():
+return prompt(_that.text);case BridgeSlashDispatch_Run():
+return run(_that.action,_that.arg);case BridgeSlashDispatch_Refuse():
+return refuse(_that.reason);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  notCommand,TResult? Function( String text)?  prompt,TResult? Function( BridgeSlashAction action,  String? arg)?  run,TResult? Function( String reason)?  refuse,}) {final _that = this;
+switch (_that) {
+case BridgeSlashDispatch_NotCommand() when notCommand != null:
+return notCommand();case BridgeSlashDispatch_Prompt() when prompt != null:
+return prompt(_that.text);case BridgeSlashDispatch_Run() when run != null:
+return run(_that.action,_that.arg);case BridgeSlashDispatch_Refuse() when refuse != null:
+return refuse(_that.reason);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashDispatch_NotCommand extends BridgeSlashDispatch {
+  const BridgeSlashDispatch_NotCommand(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashDispatch_NotCommand);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashDispatch.notCommand()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashDispatch_Prompt extends BridgeSlashDispatch {
+  const BridgeSlashDispatch_Prompt({required this.text}): super._();
+  
+
+ final  String text;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashDispatch_PromptCopyWith<BridgeSlashDispatch_Prompt> get copyWith => _$BridgeSlashDispatch_PromptCopyWithImpl<BridgeSlashDispatch_Prompt>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashDispatch_Prompt&&(identical(other.text, text) || other.text == text));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,text);
+
+@override
+String toString() {
+  return 'BridgeSlashDispatch.prompt(text: $text)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashDispatch_PromptCopyWith<$Res> implements $BridgeSlashDispatchCopyWith<$Res> {
+  factory $BridgeSlashDispatch_PromptCopyWith(BridgeSlashDispatch_Prompt value, $Res Function(BridgeSlashDispatch_Prompt) _then) = _$BridgeSlashDispatch_PromptCopyWithImpl;
+@useResult
+$Res call({
+ String text
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashDispatch_PromptCopyWithImpl<$Res>
+    implements $BridgeSlashDispatch_PromptCopyWith<$Res> {
+  _$BridgeSlashDispatch_PromptCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashDispatch_Prompt _self;
+  final $Res Function(BridgeSlashDispatch_Prompt) _then;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? text = null,}) {
+  return _then(BridgeSlashDispatch_Prompt(
+text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashDispatch_Run extends BridgeSlashDispatch {
+  const BridgeSlashDispatch_Run({required this.action, this.arg}): super._();
+  
+
+ final  BridgeSlashAction action;
+ final  String? arg;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashDispatch_RunCopyWith<BridgeSlashDispatch_Run> get copyWith => _$BridgeSlashDispatch_RunCopyWithImpl<BridgeSlashDispatch_Run>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashDispatch_Run&&(identical(other.action, action) || other.action == action)&&(identical(other.arg, arg) || other.arg == arg));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,action,arg);
+
+@override
+String toString() {
+  return 'BridgeSlashDispatch.run(action: $action, arg: $arg)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashDispatch_RunCopyWith<$Res> implements $BridgeSlashDispatchCopyWith<$Res> {
+  factory $BridgeSlashDispatch_RunCopyWith(BridgeSlashDispatch_Run value, $Res Function(BridgeSlashDispatch_Run) _then) = _$BridgeSlashDispatch_RunCopyWithImpl;
+@useResult
+$Res call({
+ BridgeSlashAction action, String? arg
+});
+
+
+$BridgeSlashActionCopyWith<$Res> get action;
+
+}
+/// @nodoc
+class _$BridgeSlashDispatch_RunCopyWithImpl<$Res>
+    implements $BridgeSlashDispatch_RunCopyWith<$Res> {
+  _$BridgeSlashDispatch_RunCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashDispatch_Run _self;
+  final $Res Function(BridgeSlashDispatch_Run) _then;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? action = null,Object? arg = freezed,}) {
+  return _then(BridgeSlashDispatch_Run(
+action: null == action ? _self.action : action // ignore: cast_nullable_to_non_nullable
+as BridgeSlashAction,arg: freezed == arg ? _self.arg : arg // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$BridgeSlashActionCopyWith<$Res> get action {
+  
+  return $BridgeSlashActionCopyWith<$Res>(_self.action, (value) {
+    return _then(_self.copyWith(action: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class BridgeSlashDispatch_Refuse extends BridgeSlashDispatch {
+  const BridgeSlashDispatch_Refuse({required this.reason}): super._();
+  
+
+ final  String reason;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashDispatch_RefuseCopyWith<BridgeSlashDispatch_Refuse> get copyWith => _$BridgeSlashDispatch_RefuseCopyWithImpl<BridgeSlashDispatch_Refuse>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashDispatch_Refuse&&(identical(other.reason, reason) || other.reason == reason));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,reason);
+
+@override
+String toString() {
+  return 'BridgeSlashDispatch.refuse(reason: $reason)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashDispatch_RefuseCopyWith<$Res> implements $BridgeSlashDispatchCopyWith<$Res> {
+  factory $BridgeSlashDispatch_RefuseCopyWith(BridgeSlashDispatch_Refuse value, $Res Function(BridgeSlashDispatch_Refuse) _then) = _$BridgeSlashDispatch_RefuseCopyWithImpl;
+@useResult
+$Res call({
+ String reason
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashDispatch_RefuseCopyWithImpl<$Res>
+    implements $BridgeSlashDispatch_RefuseCopyWith<$Res> {
+  _$BridgeSlashDispatch_RefuseCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashDispatch_Refuse _self;
+  final $Res Function(BridgeSlashDispatch_Refuse) _then;
+
+/// Create a copy of BridgeSlashDispatch
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
+  return _then(BridgeSlashDispatch_Refuse(
+reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$BridgeSlashSource {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashSource()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeSlashSourceCopyWith<$Res>  {
+$BridgeSlashSourceCopyWith(BridgeSlashSource _, $Res Function(BridgeSlashSource) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeSlashSource].
+extension BridgeSlashSourcePatterns on BridgeSlashSource {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashSource_Builtin value)?  builtin,TResult Function( BridgeSlashSource_Agent value)?  agent,TResult Function( BridgeSlashSource_Plugin value)?  plugin,TResult Function( BridgeSlashSource_Skill value)?  skill,TResult Function( BridgeSlashSource_Other value)?  other,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin() when builtin != null:
+return builtin(_that);case BridgeSlashSource_Agent() when agent != null:
+return agent(_that);case BridgeSlashSource_Plugin() when plugin != null:
+return plugin(_that);case BridgeSlashSource_Skill() when skill != null:
+return skill(_that);case BridgeSlashSource_Other() when other != null:
+return other(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashSource_Builtin value)  builtin,required TResult Function( BridgeSlashSource_Agent value)  agent,required TResult Function( BridgeSlashSource_Plugin value)  plugin,required TResult Function( BridgeSlashSource_Skill value)  skill,required TResult Function( BridgeSlashSource_Other value)  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin():
+return builtin(_that);case BridgeSlashSource_Agent():
+return agent(_that);case BridgeSlashSource_Plugin():
+return plugin(_that);case BridgeSlashSource_Skill():
+return skill(_that);case BridgeSlashSource_Other():
+return other(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashSource_Builtin value)?  builtin,TResult? Function( BridgeSlashSource_Agent value)?  agent,TResult? Function( BridgeSlashSource_Plugin value)?  plugin,TResult? Function( BridgeSlashSource_Skill value)?  skill,TResult? Function( BridgeSlashSource_Other value)?  other,}){
+final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin() when builtin != null:
+return builtin(_that);case BridgeSlashSource_Agent() when agent != null:
+return agent(_that);case BridgeSlashSource_Plugin() when plugin != null:
+return plugin(_that);case BridgeSlashSource_Skill() when skill != null:
+return skill(_that);case BridgeSlashSource_Other() when other != null:
+return other(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  builtin,TResult Function()?  agent,TResult Function()?  plugin,TResult Function()?  skill,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin() when builtin != null:
+return builtin();case BridgeSlashSource_Agent() when agent != null:
+return agent();case BridgeSlashSource_Plugin() when plugin != null:
+return plugin();case BridgeSlashSource_Skill() when skill != null:
+return skill();case BridgeSlashSource_Other() when other != null:
+return other(_that.raw);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  builtin,required TResult Function()  agent,required TResult Function()  plugin,required TResult Function()  skill,required TResult Function( String raw)  other,}) {final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin():
+return builtin();case BridgeSlashSource_Agent():
+return agent();case BridgeSlashSource_Plugin():
+return plugin();case BridgeSlashSource_Skill():
+return skill();case BridgeSlashSource_Other():
+return other(_that.raw);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  builtin,TResult? Function()?  agent,TResult? Function()?  plugin,TResult? Function()?  skill,TResult? Function( String raw)?  other,}) {final _that = this;
+switch (_that) {
+case BridgeSlashSource_Builtin() when builtin != null:
+return builtin();case BridgeSlashSource_Agent() when agent != null:
+return agent();case BridgeSlashSource_Plugin() when plugin != null:
+return plugin();case BridgeSlashSource_Skill() when skill != null:
+return skill();case BridgeSlashSource_Other() when other != null:
+return other(_that.raw);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashSource_Builtin extends BridgeSlashSource {
+  const BridgeSlashSource_Builtin(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource_Builtin);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashSource.builtin()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashSource_Agent extends BridgeSlashSource {
+  const BridgeSlashSource_Agent(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource_Agent);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashSource.agent()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashSource_Plugin extends BridgeSlashSource {
+  const BridgeSlashSource_Plugin(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource_Plugin);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashSource.plugin()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashSource_Skill extends BridgeSlashSource {
+  const BridgeSlashSource_Skill(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource_Skill);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSlashSource.skill()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSlashSource_Other extends BridgeSlashSource {
+  const BridgeSlashSource_Other({required this.raw}): super._();
+  
+
+ final  String raw;
+
+/// Create a copy of BridgeSlashSource
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashSource_OtherCopyWith<BridgeSlashSource_Other> get copyWith => _$BridgeSlashSource_OtherCopyWithImpl<BridgeSlashSource_Other>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashSource_Other&&(identical(other.raw, raw) || other.raw == raw));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,raw);
+
+@override
+String toString() {
+  return 'BridgeSlashSource.other(raw: $raw)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashSource_OtherCopyWith<$Res> implements $BridgeSlashSourceCopyWith<$Res> {
+  factory $BridgeSlashSource_OtherCopyWith(BridgeSlashSource_Other value, $Res Function(BridgeSlashSource_Other) _then) = _$BridgeSlashSource_OtherCopyWithImpl;
+@useResult
+$Res call({
+ String raw
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashSource_OtherCopyWithImpl<$Res>
+    implements $BridgeSlashSource_OtherCopyWith<$Res> {
+  _$BridgeSlashSource_OtherCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashSource_Other _self;
+  final $Res Function(BridgeSlashSource_Other) _then;
+
+/// Create a copy of BridgeSlashSource
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? raw = null,}) {
+  return _then(BridgeSlashSource_Other(
+raw: null == raw ? _self.raw : raw // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$BridgeSourceOffline {
 
 

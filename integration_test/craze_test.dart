@@ -111,11 +111,45 @@
 //   change (and its redial held): the row says "not confirmed", still showing
 //   the old value; when the lane resumes, its next `Settings` replaces the
 //   mark with the real value; the change ran once and was never resent.
+//
+// ## The cells (M3: the `/` menu, plan 029 §3.5)
+//
+// The transcript composer's `/` menu against craze 0.1.1's own slash catalog
+// (`slash`), the shared Rust rules over FRB deciding every row, and every
+// command's wire effect read back off the rig's bridge (`verbs`, `sets`) or
+// the agent's own record — the desktop's C4 shedtest cells:
+//
+// * **no catalog, no menu** — a fake host's session states none: no `/`
+//   button, no panel, and a typed `/help` goes out as TEXT.
+// * **`/` lists** — the `/` button opens the rows a hub-created session can
+//   run, in craze's order; the agent re-advertising (`SET-COMMANDS`) replaces
+//   them live; 600 commands all listed, the panel capped and scrolling.
+// * **a hidden builtin** — `/help` (and ` /help`) refused inline, nothing on
+//   the wire.
+// * **`/re` + Enter** — accepts (`/rename `, nothing sent), then Enter renames:
+//   one `session.setTitle`, the header changing with craze's delta.
+// * **the M3 review's cells** — Tab completes `/re` to `/rename ` and sends
+//   nothing; `/rename` with no title (by Enter, and `/rename ` by Send) is
+//   refused inline, nothing sent; an unknown `/nosuch x` goes out as text; the
+//   soft keyboard's Send (its last word still composing) renames — one
+//   `session.setTitle`. (`slash_parity_test.dart` holds the widget tests'
+//   double to the same real rules, case by case.)
+// * **a mode** — `/ask` + Enter and a tap on `/plan` on the permodel cursor,
+//   re-selecting the current mode still sending; no settings sheet.
+// * **`/model`** — an argument refused; bare, it opens the settings sheet, and
+//   a model pressed there changes the session's model end to end.
+// * **`/exit`** — on its own session: Keep sends nothing and keeps the draft;
+//   a confirm sends one `session.stop` and the session ends.
+// * **while a turn runs** — a held turn (`sigint-hold`): the waiting rows
+//   dimmed, a dimmed one refused, and a prompt row QUEUED, not read until the
+//   turn ends, then read back by the agent.
 import 'dart:async';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -1237,7 +1271,10 @@ void main() {
       expect(_primaryLabel(tester), 'Try again');
       expect(
         rig.creates.sublist(before),
-        [(requestId: held, dropped: true), (requestId: held, dropped: true)],
+        [
+          (requestId: held, title: null, dropped: true),
+          (requestId: held, title: null, dropped: true),
+        ],
         reason: 'shed-craze\'s own retry, under the same id',
       );
 
@@ -1248,10 +1285,307 @@ void main() {
         what: 'the session the first attempt started, opened',
       );
       expect(rig.creates.sublist(before), [
-        (requestId: held, dropped: true),
-        (requestId: held, dropped: true),
-        (requestId: held, dropped: false),
+        (requestId: held, title: null, dropped: true),
+        (requestId: held, title: null, dropped: true),
+        (requestId: held, title: null, dropped: false),
       ], reason: 'Try again resumed the same request');
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_titled_create_carries_the_name_in_its_answer_and_first_seed',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled');
+      const name = 'Fix the login bug';
+      final before = rig.creates.length;
+      final replied = rig.createReplies.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field (craze 0.1.1 takes a title)',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        '  $name  ',
+      );
+      await _pumps(tester);
+      await _press(tester);
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the new session\'s transcript',
+      );
+      final sent = rig.creates.sublist(before);
+      expect(sent, hasLength(1));
+      expect(sent.single.title, name, reason: 'trimmed, sent');
+
+      // The FIRST frame, on the wire: the hub's answer to the create — the
+      // session's row, recorded as it came down, before the phone read it —
+      // already carries the name (P26).
+      final replies = rig.createReplies.sublist(replied);
+      expect(replies, hasLength(1), reason: 'one create, one answer');
+      final reply = replies.single;
+      expect(reply.requestId, sent.single.requestId);
+      expect(reply.error, isNull);
+      expect(reply.relayed, isTrue);
+      final answer = reply.session!;
+      expect(
+        (answer['row'] as Map?)?['title'],
+        name,
+        reason: 'the create\'s own answer — the session\'s row — is titled',
+      );
+      final host = answer['hostId']! as String;
+      final made = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .lastCreated!;
+      expect(made.hostId, host, reason: 'the transcript opened on that row');
+      expect(made.created.session.title, name, reason: 'as the phone read it');
+
+      // What the phone shows — EVENTUAL checks, not the first frame.
+      final ref = (machine: _local.name, kind: crazeLaneKind, slug: host);
+      await _until(
+        tester,
+        () =>
+            screen.container.read(laneStateProvider(ref)).value?.session !=
+            null,
+        what: 'the lane seeded',
+      );
+      expect(
+        screen.container.read(laneStateProvider(ref)).value!.session!.title,
+        name,
+        reason: 'the lane shows the title (eventually)',
+      );
+
+      // The FIRST seed, on the wire: the lane connection's first attach for
+      // this session (recorded before the lane could seed from it) is a fresh
+      // one, answered with a snapshot that already carries the name.
+      final sessionId = answer['sessionId']! as String;
+      bool attached(
+        ({
+          String? sessionId,
+          bool cursor,
+          String? hostId,
+          bool snapshot,
+          String? title,
+          Object? error,
+          bool relayed,
+        })
+        a,
+      ) => a.sessionId == sessionId && a.error == null;
+      await _until(
+        tester,
+        () => rig.attaches.any(attached),
+        what: 'the lane\'s attach reply on record',
+      );
+      final first = rig.attaches.firstWhere(attached);
+      expect(first.hostId, host);
+      expect(first.relayed, isTrue);
+      expect(
+        first.cursor,
+        isFalse,
+        reason: 'the lane\'s first attach is a fresh one',
+      );
+      expect(first.snapshot, isTrue, reason: 'answered with a snapshot');
+      expect(
+        first.title,
+        name,
+        reason: 'the lane\'s FIRST seed is already titled',
+      );
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_held_titled_replay_to_a_hub_without_create_title_keeps_its_id',
+    (tester) async {
+      // P11 (the sol review of M2+M4, item 5): Try again after an unknown
+      // outcome REPLAYS the titled request, and craze may already run the
+      // session the first attempt started. When the hub the replay reaches no
+      // longer says createTitle, the replay is unknown again — the id and the
+      // exact title kept, nothing sent — and once the capability is back the
+      // same request reaches craze, which answers with that one session. A
+      // replay sent as a NEW create would be refused definitely there and
+      // drop the id (a later submission could then start a second session).
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled-held');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        'Held name',
+      );
+      await _pumps(tester);
+      rig.dropCreates = true;
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-unknown'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the sheet to report an unknown outcome',
+        );
+      } finally {
+        rig.dropCreates = false;
+      }
+      CrazeDraft draft() =>
+          screen.container.read(crazeDraftProvider(_local.name));
+      final held = draft().requestId;
+      expect(held, startsWith('shed-'));
+
+      // The hub the replay reaches no longer says createTitle.
+      final hidden = rig.hiddenCreateTitles;
+      rig.hideCreateTitle = true;
+      try {
+        await _press(tester); // Try again: submitting from the tap on
+        await _until(
+          tester,
+          () => draft().phase != CrazePhase.submitting,
+          what: 'the replay answered',
+        );
+      } finally {
+        rig.hideCreateTitle = false;
+      }
+      expect(
+        draft().phase,
+        CrazePhase.unknown,
+        reason:
+            'a held replay the hub cannot take is unknown again, never '
+            'a definite refusal',
+      );
+      expect(draft().requestId, held, reason: 'the id is kept');
+      expect(draft().sentTitle, 'Held name', reason: 'and its exact title');
+      expect(_textAt('craze-create-unknown'), outcomeUnknownNote);
+      expect(
+        rig.hiddenCreateTitles - hidden,
+        greaterThanOrEqualTo(2),
+        reason:
+            'the replay and shed-craze\'s one retry each reached a hub '
+            'without createTitle (and the tap did start a replay)',
+      );
+      expect(
+        rig.creates.sublist(before),
+        hasLength(2),
+        reason: 'nothing was sent to a hub that cannot take the title',
+      );
+
+      // createTitle is back: Try again resumes the SAME request.
+      await _press(tester);
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the first attempt started, opened',
+      );
+      expect(
+        rig.creates.sublist(before),
+        [
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: false),
+        ],
+        reason: 'one request — the same id and title — every time it was sent',
+      );
+      expect(draft().lastCreated!.created.session.title, 'Held name');
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_unknown_outcome_retries_with_the_same_title',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled-unknown');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        'Held name',
+      );
+      await _pumps(tester);
+      rig.dropCreates = true;
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-unknown'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the sheet to report an unknown outcome',
+        );
+      } finally {
+        rig.dropCreates = false;
+      }
+      final held = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .requestId;
+      expect(held, startsWith('shed-'));
+      await _press(tester); // Try again
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the first attempt started, opened',
+      );
+      expect(
+        rig.creates.sublist(before),
+        [
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: false),
+        ],
+        reason: 'the same id AND the same title, every time',
+      );
+      final made = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .lastCreated!;
+      expect(made.created.session.title, 'Held name');
       await _exactlyOneIn(tester, screen.feed, dir);
     },
     skip: skip,
@@ -2175,6 +2509,674 @@ void main() {
     skip: skip,
     timeout: _cell,
   );
+
+  // -------------------------------------------------------------------------
+  // the `/` menu (M3, plan 029 §3.5)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'no_menu_without_a_slash_capability_and_slash_help_goes_out_as_text',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      await rig.fakeHost(_fake, _fakeSession);
+      final t = await _transcript(tester, rig, host: _fake);
+      final caps = t.controller().state.capabilities!;
+      expect(caps.slash, isFalse, reason: 'a fake host states no catalog');
+      expect(caps.setTitle, isTrue, reason: 'renaming needs no catalog');
+      expect(t.controller().state.slashMenu, isNull);
+      expect(find.byKey(const ValueKey('lane-slash-button')), findsNothing);
+
+      await _typeDraft(tester, '/help');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => rig.verbsOf('session.prompt').any((p) => p['text'] == '/help'),
+        what: '/help sent to the fake host as a prompt',
+      );
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the sent draft cleared',
+      );
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'slash_lists_the_sessions_commands_and_follows_the_agents_catalog',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+      final state = t.controller().state;
+      expect(state.capabilities!.slash, isTrue);
+      expect(state.capabilities!.setTitle, isTrue);
+      expect(
+        {for (final h in state.slashMenu!.hidden) h.name},
+        containsAll(['help', 'clear', 'tasks', 'theme', 'btw']),
+        reason: 'phase 1 hides local and aside rows',
+      );
+
+      // The `/` button starts a command: every row the session can run.
+      await tester.tap(find.byKey(const ValueKey('lane-slash-button')));
+      await _until(
+        tester,
+        () => listEquals(_menuRowsShown(), _menuRows),
+        what: 'the menu listing the session\'s rows',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/');
+      expect(_menuHighlighted(tester), 'model');
+      expect(_menuDimmed(), isEmpty, reason: 'idle: nothing waits');
+
+      // The catalog is the AGENT's, live: re-advertised, the menu follows.
+      await _typeDraft(tester, '');
+      await t.controller().send('SET-COMMANDS alpha-cmd,beta-cmd');
+      await _until(
+        tester,
+        () =>
+            (t.controller().state.slashMenu?.rows ?? const [])
+                .map((r) => r.name)
+                .skip(6)
+                .join(',') ==
+            'alpha-cmd,beta-cmd',
+        what: 'the agent\'s new catalog on the lane',
+      );
+      await _typeDraft(tester, '/a');
+      await _until(
+        tester,
+        () => listEquals(_menuRowsShown(), [
+          'ask',
+          'agent',
+          'alpha-cmd',
+          'rename',
+          'plan',
+          'beta-cmd',
+        ]),
+        what: 'prefix matches in menu order, then substring ones',
+      );
+
+      // No row cap (P16): 600 commands, a delta craze does not cap, all
+      // listed after the builtins — the panel capped and scrolling.
+      final names = [
+        for (var i = 0; i < 600; i++) 'cmd-${i.toString().padLeft(3, '0')}',
+      ];
+      await _typeDraft(tester, '');
+      await t.controller().send('SET-COMMANDS ${names.join(',')}');
+      await _until(
+        tester,
+        () => t.controller().state.slashMenu?.rows.length == 606,
+        what: 'the 600-command catalog on the lane',
+      );
+      final menu = t.controller().state.slashMenu!;
+      expect(menu.rows.map((r) => r.name).skip(6), names);
+      await _typeDraft(tester, '/');
+      await _until(
+        tester,
+        () => _menuRowsShown().take(6).join(',') == _menuRows.take(6).join(','),
+        what: 'the 606-row menu open',
+      );
+      expect(_menuRowsShown(), isNot(contains('cmd-599')), reason: 'lazy');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await _until(
+        tester,
+        () => _menuHighlighted(tester) == 'cmd-599',
+        what: 'the highlight wrapped to the last row, scrolled into view',
+      );
+      await _typeDraft(tester, '');
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_hidden_builtin_typed_is_refused_and_nothing_is_sent',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+      final before = rig.verbsOf('session.prompt').length;
+
+      await _typeDraft(tester, '/help');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => _refusalText() == '/help: not available here yet',
+        what: '/help refused inline',
+      );
+      expect(
+        _fieldText(tester, 'lane-input'),
+        '/help',
+        reason: 'the draft is kept',
+      );
+
+      // Send, too — and read as it would be sent (E9): ` /help` is `/help`.
+      await _typeDraft(tester, ' /help');
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => _refusalText() == '/help: not available here yet',
+        what: '` /help` refused inline',
+      );
+      expect(_fieldText(tester, 'lane-input'), ' /help');
+
+      await _wait(tester, const Duration(seconds: 1));
+      expect(
+        rig.verbsOf('session.prompt').length,
+        before,
+        reason: 'nothing was sent',
+      );
+      expect(_shows(t.controller().state, '/help'), isFalse);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    're_enter_accepts_then_enter_renames_and_the_header_follows_the_delta',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+
+      await _typeDraft(tester, '/re');
+      await _until(
+        tester,
+        () => _menuHighlighted(tester) == 'rename',
+        what: 'rename highlighted for /re',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input') == '/rename ',
+        what: 'Enter to complete the token',
+      );
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.verbsOf('session.setTitle'), isEmpty, reason: 'accepted');
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+
+      await _typeDraft(tester, '/rename   plan 029 phone ');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => t.controller().state.session?.title == 'plan 029 phone',
+        what: 'the new title on the lane\'s session row (the delta)',
+      );
+      await _until(
+        tester,
+        () => _textAt('lane-title') == 'plan 029 phone',
+        what: 'the header\'s new title',
+      );
+      expect(
+        [for (final p in rig.verbsOf('session.setTitle')) p['title']],
+        ['plan 029 phone'],
+        reason: 'one setTitle, the argument trimmed',
+      );
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the draft cleared on success',
+      );
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'tab_completes_re_to_rename_and_sends_nothing',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      await _menuTranscript(tester, rig);
+
+      await _typeDraft(tester, '/re');
+      await _until(
+        tester,
+        () => _menuHighlighted(tester) == 'rename',
+        what: 'rename highlighted for /re',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input') == '/rename ',
+        what: 'Tab to complete the token',
+      );
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(
+        rig.verbsOf('session.setTitle'),
+        isEmpty,
+        reason: 'Tab never runs',
+      );
+      expect(find.byKey(const ValueKey('lane-slash-menu')), findsNothing);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'rename_with_no_title_is_refused_and_nothing_is_sent',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      await _menuTranscript(tester, rig);
+
+      // The exact token, by Enter (the token spells the row: Enter sends).
+      await _typeDraft(tester, '/rename');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => _refusalText() == 'type a title after /rename',
+        what: '/rename with no title refused inline',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/rename');
+
+      // And after a completion, by Send.
+      await _typeDraft(tester, '/rename ');
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => _refusalText() == 'type a title after /rename',
+        what: '/rename + space refused inline',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/rename ');
+
+      await _wait(tester, const Duration(seconds: 1));
+      expect(rig.verbsOf('session.setTitle'), isEmpty, reason: 'nothing sent');
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_unknown_command_goes_out_as_text',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+
+      await _typeDraft(tester, '/nosuch x');
+      expect(
+        find.byKey(const ValueKey('lane-slash-menu')),
+        findsNothing,
+        reason: 'nothing matches',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () =>
+            rig.verbsOf('session.prompt').any((p) => p['text'] == '/nosuch x'),
+        what: '/nosuch x sent to the session as a prompt',
+      );
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the sent draft cleared',
+      );
+      await _until(
+        tester,
+        () => _shows(t.controller().state, '/nosuch x'),
+        what: 'the prompt in the transcript',
+      );
+      expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
+      expect(rig.verbsOf('session.setTitle'), isEmpty);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'the_soft_keyboard_send_renames',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+
+      await _typeDraft(tester, '/rename from the keyboard');
+      // As an IME sends it: the last word still composing, and the Send
+      // action with no editing update after it.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '/rename from the keyboard',
+          selection: TextSelection.collapsed(offset: 25),
+          composing: TextRange(start: 17, end: 25),
+        ),
+      );
+      await _pumps(tester);
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _until(
+        tester,
+        () => t.controller().state.session?.title == 'from the keyboard',
+        what: 'the new title on the lane\'s session row (the delta)',
+      );
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the draft cleared on success',
+      );
+      expect(
+        [for (final p in rig.verbsOf('session.setTitle')) p['title']],
+        ['from the keyboard'],
+        reason: 'one setTitle',
+      );
+      expect(
+        rig
+            .verbsOf('session.prompt')
+            .where((p) => '${p['text']}'.startsWith('/rename')),
+        isEmpty,
+        reason: 'never sent as text',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_mode_runs_from_the_composer_on_permodel',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      String? mode() => t.controller().state.settings?.mode;
+      List<Map<String, Object?>> modes() => [
+        for (final e in rig.sets)
+          if (e.setting['kind'] == 'mode') e.setting,
+      ];
+      final before = modes().length;
+
+      // The token spells the row: Enter runs it.
+      await _typeDraft(tester, '/ask');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(tester, () => mode() == 'ask', what: 'ask mode');
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the draft cleared',
+      );
+
+      // A tap on a row that takes no argument runs it at once.
+      await _typeDraft(tester, '/pl');
+      await _until(
+        tester,
+        () => _menuRowsShown().contains('plan'),
+        what: '/plan listed',
+      );
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-plan')));
+      await _until(tester, () => mode() == 'plan', what: 'plan mode');
+
+      // Re-selecting the current mode still sends (P7).
+      await _typeDraft(tester, '/plan');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => modes().length == before + 3,
+        what: 'the re-selected mode sent',
+      );
+      expect(modes().sublist(before), [
+        {'kind': 'mode', 'value': 'ask'},
+        {'kind': 'mode', 'value': 'plan'},
+        {'kind': 'mode', 'value': 'plan'},
+      ]);
+      expect(
+        find.byKey(const ValueKey('lane-settings')),
+        findsNothing,
+        reason: 'no settings sheet involved',
+      );
+      expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'model_opens_the_sheet_and_the_model_changes_end_to_end',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      final before = rig.sets.length;
+
+      await _typeDraft(tester, '/model composer-2.5');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () =>
+            _refusalText() ==
+            '/model: takes no argument — pick a model from the list',
+        what: 'an argument to /model refused',
+      );
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.sets.length, before, reason: 'nothing sent');
+      expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+
+      await _typeDraft(tester, '/model');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => find.byKey(const ValueKey('lane-settings')).evaluate().isNotEmpty,
+        what: 'the settings sheet, opened by /model',
+      );
+      expect(
+        _fieldText(tester, 'lane-input'),
+        '',
+        reason: 'the picker clears the draft',
+      );
+      await _pressSetting(tester, 'model:model', 'composer-2.5');
+      await _until(
+        tester,
+        () => t.controller().state.settings?.model == 'composer-2.5',
+        what: 'the session on composer-2.5',
+      );
+      expect([
+        for (final e in rig.sets.sublist(before)) e.setting,
+      ], contains(equals({'kind': 'model', 'value': 'composer-2.5'})));
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'exit_asks_first_keep_sends_nothing_and_a_confirm_ends_the_session',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _menuTranscript(tester, rig);
+      final host = t.host;
+      LaneController lane() => t.controller();
+
+      await _typeDraft(tester, '/exit');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('lane-stop-confirm'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'Stop\'s confirm, opened by /exit',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/exit');
+      await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
+      await _until(
+        tester,
+        () =>
+            find.byKey(const ValueKey('lane-stop-confirm')).evaluate().isEmpty,
+        what: 'Keep to close the confirm',
+      );
+      await _wait(tester, const Duration(seconds: 1));
+      expect(rig.verbsOf('session.stop'), isEmpty, reason: 'Keep sent nothing');
+      expect(
+        _fieldText(tester, 'lane-input'),
+        '/exit',
+        reason: 'and kept the draft',
+      );
+      expect(lane().state.ended, isFalse);
+      expect(_row(t.feed.state, host), isNotNull, reason: 'it runs on');
+
+      await _typeDraft(tester, '/exit');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('lane-stop-session'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the confirm again',
+      );
+      await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+      await _until(
+        tester,
+        () => lane().state.abandoned,
+        what: 'the stopped session\'s lane to end for good',
+      );
+      expect(lane().state.stale, laneSessionClosed);
+      expect(rig.verbsOf('session.stop'), hasLength(1));
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the draft cleared once the stop took',
+      );
+      await _until(
+        tester,
+        () => _row(t.feed.state, host) == null,
+        what: 'the stopped session\'s row to leave',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'while_a_turn_is_held_rows_dim_and_a_prompt_row_queues_and_is_read_back',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final gate = CrazeSetGate('${rig.root}/hold-gate');
+      final prompts = '${rig.root}/hold-prompts.jsonl';
+      await gate.hold();
+      addTearDown(gate.open);
+      final g = await _feedGraph(tester, rig);
+      rig.setAgents({
+        'grok': rig.grokEcho,
+        'cursor': rig.heldAgent(gate: gate.path, prompts: prompts),
+      });
+      final BridgeLaneCreated created;
+      try {
+        created = await g.feed.crazeCreateSession(
+          BridgeLaneCreateRequest(
+            cwd: _mkdir('${rig.root}/w-held'),
+            provider: 'cursor',
+            prompt: 'warm up',
+            requestId: crazeNewRequestId(),
+          ),
+        );
+      } finally {
+        rig.setGrokAgent(rig.grokEcho);
+      }
+      final host = created.session.id;
+      await _showLane(tester, g.container, host);
+      LaneController lane() => g.container.read(
+        laneControllerProvider((
+          machine: _local.name,
+          kind: crazeLaneKind,
+          slug: host,
+        )),
+      );
+      await _menuReady(tester, lane);
+
+      await lane().send('hold this turn');
+      await _until(
+        tester,
+        () =>
+            lane().state.activity == BridgeRcActivity.working &&
+            CrazeRig.agentRead(prompts, 'hold this turn'),
+        what: 'the held turn running',
+      );
+
+      // Every row stays LISTED; the ones that wait for the turn are dimmed.
+      await _typeDraft(tester, '/');
+      await _until(
+        tester,
+        () => _menuDimmed().length == 4,
+        what: 'the waiting rows dimmed',
+      );
+      expect(_menuRowsShown(), _menuRows);
+      expect(_menuDimmed(), {'model', 'plan', 'ask', 'agent'});
+
+      // A dimmed row chosen is refused inline, nothing sent.
+      final sets = rig.sets.length;
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-plan')));
+      await _until(
+        tester,
+        () => _refusalText() == '/plan: runs after this turn',
+        what: 'the dimmed row refused',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/', reason: 'the draft kept');
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.sets.length, sets, reason: 'nothing sent');
+
+      // A PROMPT row queues: its canonical spelling, held behind the turn.
+      final before = rig.verbsOf('session.prompt').length;
+      await _typeDraft(tester, '/Research   deep dive ');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => rig.verbsOf('session.prompt').length > before,
+        what: 'the prompt row on the wire',
+      );
+      expect(
+        [
+          for (final p in rig.verbsOf('session.prompt').sublist(before))
+            (p['text'], p['mode']),
+        ],
+        [('/research deep dive', 'queue')],
+      );
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty,
+        what: 'the queued prompt\'s draft cleared',
+      );
+      await _wait(tester, const Duration(seconds: 1));
+      expect(
+        CrazeRig.agentRead(prompts, '/research deep dive'),
+        isFalse,
+        reason: 'queued: the agent has not read it',
+      );
+      expect(lane().state.activity, BridgeRcActivity.working);
+
+      // The held turn ends; craze sends what it queued, and the agent reads
+      // it back.
+      await gate.release();
+      await _until(
+        tester,
+        () => CrazeRig.agentRead(prompts, '/research deep dive'),
+        what: 'the queued prompt reaching the agent',
+      );
+      await gate.release(); // and its own turn (held too) ends
+      await _until(
+        tester,
+        () => lane().state.rows.any(
+          (r) =>
+              (r.text ?? '').startsWith('echo') &&
+              r.text!.contains('/research deep dive'),
+        ),
+        what: 'the agent\'s answer to the queued prompt',
+      );
+      await _until(
+        tester,
+        () => lane().state.activity != BridgeRcActivity.working,
+        what: 'the session idle again',
+      );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2586,6 +3588,10 @@ class _RecordingSource implements LaneSource {
       _bridge.set(handle, change);
 
   @override
+  Future<String?> setTitle(LaneHandle handle, String title) =>
+      _bridge.setTitle(handle, title);
+
+  @override
   void close(LaneHandle handle) => _bridge.close(handle);
 }
 
@@ -2646,6 +3652,7 @@ class _HeldViewSource extends _RecordingSource {
       settings: shown.settings,
       settingsFrames: shown.settingsFrames,
       approvals: shown.approvals,
+      slashMenu: shown.slashMenu,
     );
   }
 }
@@ -2975,4 +3982,100 @@ Future<void> _pressSetting(
   await tester.pump(const Duration(milliseconds: 30));
   await tester.tap(target);
   await tester.pump(const Duration(milliseconds: 30));
+}
+
+// ---------------------------------------------------------------------------
+// the `/` menu (M3)
+// ---------------------------------------------------------------------------
+
+/// The rows a hub-created session's menu SHOWS on this client — craze
+/// 0.1.1's builtins it can run, then the agent's `research` — in catalog
+/// order (the desktop harness's `MENU_ROWS`); `help`, `clear`, `tasks`,
+/// `theme` (local) and `btw` (aside) are hidden in phase 1.
+const _menuRows = [
+  'model',
+  'rename',
+  'plan',
+  'ask',
+  'agent',
+  'exit',
+  'research',
+];
+
+/// A hub-created grok session's transcript on screen, seeded, its `/` menu
+/// in.
+Future<
+  ({
+    ProviderContainer container,
+    MachineFeed feed,
+    _RecordingSource source,
+    String host,
+    LaneController Function() controller,
+  })
+>
+_menuTranscript(WidgetTester tester, CrazeRig rig) async {
+  final t = await _transcript(tester, rig, prompt: 'hello menu');
+  await _menuReady(tester, t.controller);
+  return t;
+}
+
+/// Wait for the lane's resolved menu and the composer offering it.
+Future<void> _menuReady(
+  WidgetTester tester,
+  LaneController Function() controller,
+) => _until(
+  tester,
+  () =>
+      (controller().state.slashMenu?.rows.isNotEmpty ?? false) &&
+      find.byKey(const ValueKey('lane-slash-button')).evaluate().isNotEmpty,
+  what: 'the session\'s / menu',
+);
+
+/// Set the composer's draft as typed (focusing it), the caret at its end.
+Future<void> _typeDraft(WidgetTester tester, String text) async {
+  await tester.enterText(find.byKey(const ValueKey('lane-input')), text);
+  await _pumps(tester);
+}
+
+/// The menu panel's rows on screen (built), by name, in the order drawn.
+List<String> _menuRowsShown() => find
+    .byWidgetPredicate((w) {
+      final k = w.key;
+      return k is ValueKey<String> && k.value.startsWith('lane-slash-row-');
+    })
+    .evaluate()
+    .map(
+      (e) => (e.widget.key! as ValueKey<String>).value.substring(
+        'lane-slash-row-'.length,
+      ),
+    )
+    .toList();
+
+/// The row the panel highlights — the one its own semantics say is selected.
+String? _menuHighlighted(WidgetTester tester) {
+  for (final name in _menuRowsShown()) {
+    final semantics = tester.widget<Semantics>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey('lane-slash-row-$name')),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    );
+    if (semantics.properties.selected ?? false) return name;
+  }
+  return null;
+}
+
+/// The rows on screen drawn DIMMED ("after this turn").
+Set<String> _menuDimmed() => {
+  for (final name in _menuRowsShown())
+    if (find.byKey(ValueKey('lane-slash-after-$name')).evaluate().isNotEmpty)
+      name,
+};
+
+/// The composer's refusal for a `/` command, or null.
+String? _refusalText() {
+  final f = find.byKey(const ValueKey('lane-slash-refusal')).evaluate();
+  return f.isEmpty ? null : (f.single.widget as Text).data;
 }
