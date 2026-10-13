@@ -1021,6 +1021,7 @@ mod tests {
             kind: "craze".to_string(),
             create: true,
             create_options: true,
+            create_title: false,
         }
     }
 

@@ -1173,6 +1173,8 @@ mod tests {
             history_cursor: true,
             settings: false,
             stop: true,
+            set_title: false,
+            slash: false,
         };
         lane.inner.apply(&LaneEvent::Reset {
             reason: "connect".to_string(),
@@ -1267,6 +1269,8 @@ mod tests {
             history_cursor: true,
             settings: true,
             stop: true,
+            set_title: false,
+            slash: false,
         };
         assert_eq!(lane_snapshot(&lane, None).settings_frames, 0);
         lane.inner.apply(&LaneEvent::Reset {

@@ -1184,6 +1184,7 @@ impl From<BridgeLaneCreateRequest> for LaneCreateRequest {
             provider: r.provider,
             prompt: r.prompt,
             request_id: r.request_id,
+            title: None,
         }
     }
 }
@@ -1698,6 +1699,8 @@ mod tests {
             history_cursor: false,
             settings: true,
             stop: false,
+            set_title: false,
+            slash: false,
         }
         .into();
         assert_eq!(
@@ -1720,6 +1723,8 @@ mod tests {
             history_cursor: true,
             settings: false,
             stop: true,
+            set_title: false,
+            slash: false,
         }
         .into();
         assert!(!flipped.interject && flipped.cancel && !flipped.approvals);
@@ -1846,9 +1851,12 @@ mod tests {
                 history_cursor: true,
                 settings: true,
                 stop: true,
+                set_title: false,
+                slash: false,
             }),
             settings: Some(settings()),
             approvals: vec![approval(vec![option("allow-once", None)])],
+            slash_menu: None,
         };
         let snap = BridgeLaneSnapshot::from_view(view, 4);
         assert_eq!(
@@ -1889,6 +1897,7 @@ mod tests {
             capabilities: None,
             settings: None,
             approvals: Vec::new(),
+            slash_menu: None,
         };
         let ended = BridgeLaneSnapshot::from_view(unseeded, 0);
         assert!(ended.ended);
@@ -2055,12 +2064,14 @@ mod tests {
                 provider: Some("cursor".to_string()),
                 prompt: Some("fix the build".to_string()),
                 request_id: "req-1".to_string(),
+                title: None,
             },
             LaneCreateRequest {
                 cwd: "/home/shed".to_string(),
                 provider: None,
                 prompt: None,
                 request_id: "req-2".to_string(),
+                title: None,
             },
         ] {
             let bridged: BridgeLaneCreateRequest = original.clone().into();
@@ -2077,6 +2088,7 @@ mod tests {
             kind: "craze".to_string(),
             create: true,
             create_options: false,
+            create_title: false,
         }
         .into();
         assert_eq!(
