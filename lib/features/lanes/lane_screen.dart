@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
@@ -6,6 +9,7 @@ import '../../core/app_error.dart';
 import '../../lanes/lane_controller.dart';
 import '../../lanes/lane_settings.dart';
 import '../../lanes/lane_state.dart';
+import '../../lanes/slash_rules.dart';
 import '../../providers.dart';
 import '../../rc/rc_ui.dart';
 import '../../shed/shed_status.dart';
@@ -16,6 +20,8 @@ import '../../theme/shed_theme.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/feed_rows.dart';
 import 'lane_settings_sheet.dart';
+import 'slash_keys.dart';
+import 'slash_menu_panel.dart';
 
 /// **One agent lane, on a phone** (plan 018 §3.12).
 ///
@@ -71,6 +77,31 @@ import 'lane_settings_sheet.dart';
 /// capabilities say `settings` — and nowhere else, hidden, never disabled: the
 /// current model, effort and fast ([settingsChip]), and a tap opens the
 /// session's settings sheet ([LaneSettingsSheet]).
+///
+/// ## The `/` menu (plan 029 §3.5, D17)
+///
+/// On a session whose capabilities say `slash` and whose view carries a
+/// resolved menu ([LaneState.slashMenu]), a `/` draft opens a menu above the
+/// composer ([SlashMenuPanel]), and an empty draft offers a `/` button that
+/// starts one. The screen only RENDERS the menu and handles keys: what it
+/// lists, what a typed token matches, what Enter / Tab / a tap does and when a
+/// command is refused are the shared core's ([SlashRules] — P5), and which key
+/// does what to the menu on screen is `slash_keys.dart`'s. Send goes through
+/// the same dispatch as Enter, so a typed `/help` is refused inline rather than
+/// sent as text. Each command runs on the lane's own verb: a rename
+/// (`LaneController.setTitle`), a mode (`LaneController.setMode` — the
+/// composer's verb, errors in the composer, P7), Stop behind its existing
+/// confirm, the model picker (the existing settings sheet), a prompt row as a
+/// prompt of its canonical spelling (E8). The draft's fate after each is §3.5's
+/// table: cleared on success and when the picker opens; kept on a refusal
+/// (said inline), an unknown outcome ("may have applied — check the
+/// session") and a cancelled Stop — and only for the draft the command was
+/// made FROM: each Send / Enter / tap captures the draft with a revision
+/// before anything else, a verb whose draft was edited before it was sent is
+/// dropped, and an outcome clears (or completes) the box only while that
+/// revision still holds, so a newer draft is never erased (its note still
+/// shows). One command at a time, guarded before its first await. No menu on
+/// the view → the composer is as it always was (every opencode session, D11).
 class LaneScreen extends ConsumerStatefulWidget {
   const LaneScreen({
     required this.machine,
@@ -105,9 +136,18 @@ class LaneScreen extends ConsumerStatefulWidget {
   ConsumerState<LaneScreen> createState() => _LaneScreenState();
 }
 
+/// A draft as a command captured it: its text, and the revision it had then
+/// (`_LaneScreenState._draftRev`) — what decides whether the command's outcome
+/// may still touch the box.
+typedef _Draft = ({String text, int rev});
+
 class _LaneScreenState extends ConsumerState<LaneScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+
+  /// The composer's own focus: what a completion, a `/` button tap and a kept
+  /// draft hand the caret back to.
+  final _inputFocus = FocusNode(debugLabel: 'lane-input');
 
   /// The Interject intent, as a toggle. **Not the send mode** — that is
   /// recomputed from the live state at send time, because a turn can end
@@ -130,14 +170,78 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   int _renderedRows = -1;
   BigInt? _renderedGeneration;
 
+  // ---- the `/` menu's screen state (plan 029 §3.5) ------------------------
+
+  /// The highlighted row — an index into the open menu's rows.
+  int _highlight = 0;
+
+  /// Bumped on every edit of the draft's text. A command captures the draft
+  /// with its revision ([_Draft]) before anything else, and its outcome clears
+  /// the draft — or writes a completion — only while the revision is still
+  /// that one: a newer draft the person typed meanwhile is never erased or
+  /// overwritten (its note, warning or refusal still shows).
+  int _draftRev = 0;
+
+  /// A command — a Send, an Enter, a tap on a row — is between its first
+  /// decision and its outcome. One at a time, guarded synchronously before
+  /// its first await ([_command]): two fast Enters cannot dispatch twice.
+  bool _commanding = false;
+
+  /// The token the menu was dismissed for with Esc; the menu stays closed
+  /// until the token changes (P9).
+  String? _dismissed;
+
+  /// What the last `/` command left to say beside the composer: a refusal
+  /// (the draft kept to fix) or a rename's warning (it took, with a caveat).
+  /// Gone with the next edit of the draft.
+  ({String text, bool warning})? _note;
+
+  /// The draft as last seen — so an EDIT, not a caret move, clears [_note].
+  String _lastDraft = '';
+
+  /// The last filter and what it answered for: re-asked of the shared rules
+  /// only when the draft, the caret, the menu or the turn moved — never for a
+  /// streamed frame alone (the menu instance is stable while its value is,
+  /// [LaneState.slashMenu]).
+  ({
+    BridgeSlashMenu menu,
+    String draft,
+    int caret,
+    bool working,
+    BridgeSlashFilter filter,
+  })?
+  _filtered;
+
+  BridgeRcActivity? _workingFor;
+  bool _workingNow = false;
+
   LaneRef get _ref =>
       (machine: widget.machine, kind: widget.kind, slug: widget.slug);
 
   @override
+  void initState() {
+    super.initState();
+    _input.addListener(_onDraft);
+  }
+
+  @override
   void dispose() {
+    _input.removeListener(_onDraft);
     _input.dispose();
+    _inputFocus.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// An EDIT of the draft — not a caret move — moves its revision and clears
+  /// what the last command said. (What reads the draft re-renders on its own:
+  /// [_dock], under a builder on [_input].)
+  void _onDraft() {
+    final text = _input.text;
+    if (text == _lastDraft) return;
+    _lastDraft = text;
+    _draftRev++;
+    _note = null;
   }
 
   /// Whether the transcript is parked at the tail. True before the first
@@ -155,55 +259,66 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     );
   }
 
-  /// The lane, for the verbs. Safe only where [laneStateProvider] has data:
-  /// that provider watches this one, so data means the controller built.
-  LaneController get _controller => ref.read(laneControllerProvider(_ref));
+  /// The lane, for a verb or a key — or null when the row has no lane any
+  /// more ([readLaneController]): a machine-feed rebuild can leave this screen
+  /// up on the last state it drew while the provider now refuses every read,
+  /// and an action then has nothing to act on.
+  LaneController? _laneController() => readLaneController(ref, _ref);
 
-  /// The shared shape behind [_send], [_cancel] and [_answer]: guard against a
-  /// second tap while one is in flight, run it, log whatever it left on the
-  /// state, and clear the busy flag.
+  /// The shared shape behind every verb the screen runs: guard against a
+  /// second tap while one is in flight, run it on the lane, log whatever it
+  /// left on the state, and clear the busy flag — on every way out, a throw
+  /// included, so a control is never left busy. Answers that error (null:
+  /// none, or nothing ran — no lane, nothing to run it on).
   ///
-  /// [run] captures its own `controller` and reads the error back off that
-  /// SAME instance after the await — never a fresh [_controller] read, which
-  /// could resolve to a different lane if the row was torn down and rebuilt
-  /// mid-call. That capture-once discipline is the point of taking a closure
-  /// here rather than a plain future.
-  Future<void> _guarded({
+  /// The lane is read ONCE, here, before anything is marked busy, and [run]
+  /// gets that instance and reads its error back off it after the await —
+  /// never a fresh read, which could resolve to a different lane if the row
+  /// was torn down and rebuilt mid-call (or to none at all).
+  Future<AppError?> _guarded({
     required bool busy,
     required void Function(bool value) setBusy,
     required String logKey,
-    required Future<AppError?> Function() run,
+    required Future<AppError?> Function(LaneController controller) run,
     void Function()? onSuccess,
   }) async {
-    if (busy) return;
+    if (busy) return null;
+    final controller = _laneController();
+    if (controller == null) return null;
     setState(() => setBusy(true));
-    final error = await run();
-    // The log line goes out either way — a driver needs the MRESULT even for a
-    // verb whose screen has since gone.
-    logDriveResult(logKey, ok: error == null, error: error?.message);
-    if (!mounted) return;
-    // INSIDE the mounted guard: `_send` passes `_input.clear`, and a disposed
-    // `TextEditingController` throws when touched. Anything `onSuccess` does is
-    // by definition a change to this widget's own state, so there is nothing
-    // for it to do once the widget is gone.
-    if (error == null) onSuccess?.call();
-    setState(() => setBusy(false));
+    try {
+      final error = await run(controller);
+      // The log line goes out either way — a driver needs the MRESULT even
+      // for a verb whose screen has since gone.
+      logDriveResult(logKey, ok: error == null, error: error?.message);
+      // INSIDE the mounted guard: `_sendText` clears the input, and a
+      // disposed `TextEditingController` throws when touched. Anything
+      // `onSuccess` does is by definition a change to this widget's own
+      // state, so there is nothing for it to do once the widget is gone.
+      if (error == null && mounted) onSuccess?.call();
+      return error;
+    } finally {
+      if (mounted) setState(() => setBusy(false));
+    }
   }
 
-  Future<void> _send() {
-    final text = _input.text.trim();
+  /// Send [draft] as a prompt — a draft that is not a command, or any draft
+  /// on a session with no menu. Exactly today's send: cleared once the agent
+  /// took it ([_clearIfCurrent]), kept on a refusal and on a LOST answer
+  /// ([laneSendOutcomeUnknown]).
+  Future<void> _sendText(_Draft draft) {
+    final text = draft.text.trim();
     if (text.isEmpty) return Future.value();
     return _guarded(
       busy: _sending,
       setBusy: (v) => _sending = v,
       logKey: 'lane-send',
-      run: () async {
-        final controller = _controller;
+      run: (controller) async {
         await controller.send(text, mode: _sendMode(controller.state));
         // Never threw: the refusal is on the state, read after the await.
         return controller.state.composerError;
       },
-      onSuccess: _input.clear,
+      onSuccess: () => _clearIfCurrent(draft),
     );
   }
 
@@ -223,8 +338,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     busy: _sending,
     setBusy: (v) => _sending = v,
     logKey: 'lane-cancel',
-    run: () async {
-      final controller = _controller;
+    run: (controller) async {
       await controller.cancel();
       return controller.state.composerError;
     },
@@ -241,7 +355,16 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// lane ends) or the session may stop offering `stop` (a new incarnation's
   /// capabilities). Either way a "Stop session" tap is moot, and nothing is
   /// sent ([laneStopOffered], the same rule the header's button reads).
-  Future<void> _confirmStop() async {
+  ///
+  /// [draft]: the stop is `/exit`'s, made from that draft, and its outcome is
+  /// the composer's COMMAND lifecycle (§3.5, the desktop's `slashVerb`), not
+  /// the header's: a stop that goes through clears the draft (only while it
+  /// is still the one in the box); a refusal keeps it with craze's words, and
+  /// a lost receipt keeps it with "may have applied — check the session" —
+  /// both in the composer ([LaneController.stop]'s `command`); Keep and a
+  /// moot answer keep it with nothing said. A draft changed while the dialog
+  /// was up calls the stop off.
+  Future<void> _confirmStop({_Draft? draft}) async {
     if (_stopping) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -268,23 +391,20 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final LaneState live;
-    try {
-      live = _controller.state;
-    } on StateError {
-      // The row is gone (laneControllerProvider's refusal): nothing to stop.
-      return;
-    }
-    if (!laneStopOffered(live)) return;
+    // A row that is gone (null) has nothing to stop.
+    final live = _live();
+    if (live == null || !laneStopOffered(live)) return;
+    if (draft != null && !_current(draft)) return;
     await _guarded(
       busy: _stopping,
       setBusy: (v) => _stopping = v,
       logKey: 'lane-stop',
-      run: () async {
-        final controller = _controller;
-        await controller.stop();
-        return controller.state.stopError;
+      run: (controller) async {
+        await controller.stop(command: draft != null);
+        final state = controller.state;
+        return draft == null ? state.stopError : state.composerError;
       },
+      onSuccess: draft == null ? null : () => _clearIfCurrent(draft),
     );
   }
 
@@ -292,12 +412,396 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     busy: _answering,
     setBusy: (v) => _answering = v,
     logKey: 'lane-answer',
-    run: () async {
-      final controller = _controller;
+    run: (controller) async {
       await controller.answer(approvalId, answer);
       return controller.state.approvalErrors[approvalId];
     },
   );
+
+  // ---- the `/` menu (plan 029 §3.5) ----------------------------------------
+
+  SlashRules get _rules => ref.read(slashRulesProvider);
+
+  /// The lane's state as it is NOW, for a key or a tap — the freshest the
+  /// controller holds, which a frame may not have drawn yet. Null once the
+  /// row is gone ([_laneController]).
+  LaneState? _live() => _laneController()?.state;
+
+  /// The session's `/` menu, when it offers one (D11): its capabilities say
+  /// `slash` AND its view carries a resolved menu. Null — no menu, no `/`
+  /// button, no note — otherwise: every opencode session, a craze session
+  /// whose catalog has not arrived (or was truncated away), an older craze.
+  static BridgeSlashMenu? _menuOf(LaneState? state) =>
+      (state?.capabilities?.slash ?? false) ? state!.slashMenu : null;
+
+  /// Whether a turn is running, by the shared rule (P23) — asked again only
+  /// when the activity moves.
+  bool _working(BridgeRcActivity activity) {
+    if (activity != _workingFor) {
+      _workingFor = activity;
+      _workingNow = _rules.isWorking(activity);
+    }
+    return _workingNow;
+  }
+
+  bool _composerEnabled(LaneState state) => !state.abandoned && !_sending;
+
+  /// What the shared filter answers for the draft and caret as they stand,
+  /// on [state]'s menu — null when the session has no menu. Synchronous, so a
+  /// key always acts on the draft as it is now (the desktop has to re-read a
+  /// stale answer; this one cannot be stale). A new answer that lists
+  /// something else ([_sameEntries]) puts the highlight back on its first row.
+  BridgeSlashFilter? _filterNow(LaneState state) {
+    final menu = _menuOf(state);
+    if (menu == null) return null;
+    final value = _input.value;
+    final caret = slashCaret(value);
+    final working = _working(state.activity);
+    final last = _filtered;
+    if (last != null &&
+        identical(last.menu, menu) &&
+        last.draft == value.text &&
+        last.caret == caret &&
+        last.working == working) {
+      return last.filter;
+    }
+    final filter = _rules.filter(menu, value.text, caret, working);
+    if (last == null || !_sameEntries(last.filter, filter)) _highlight = 0;
+    _filtered = (
+      menu: menu,
+      draft: value.text,
+      caret: caret,
+      working: working,
+      filter: filter,
+    );
+    return filter;
+  }
+
+  /// Whether two filter answers list the same thing — the token AND the
+  /// rows' names, so `/r` → `/re` differs even when the rows are the same
+  /// ones; a row's dimming alone does not.
+  static bool _sameEntries(BridgeSlashFilter a, BridgeSlashFilter b) {
+    if (a.token != b.token || a.rows.length != b.rows.length) return false;
+    for (var i = 0; i < a.rows.length; i++) {
+      if (a.rows[i].row.name != b.rows[i].row.name) return false;
+    }
+    return true;
+  }
+
+  /// The menu as it stands for [state]: the filter, and the two things only
+  /// the screen keeps (P9) —
+  ///
+  /// * an Esc dismissal ends once a filter reports a DIFFERENT token; no
+  ///   filter at all (the session's menu gone for a moment — a reseed, a
+  ///   catalog on its way back) changes nothing;
+  /// * the highlight goes back to the first row on every filter change
+  ///   ([_filterNow], [_sameEntries]); a caret move inside the token, or a
+  ///   frame that changes neither, keeps it.
+  ///
+  /// `up`: the panel is on screen.
+  ({BridgeSlashMenu? menu, BridgeSlashFilter? filter, bool up}) _slashView(
+    LaneState state,
+  ) {
+    final filter = _filterNow(state);
+    if (filter != null) {
+      _dismissed = dismissalAfter(_dismissed, filter.token);
+    }
+    return (
+      menu: _menuOf(state),
+      filter: filter,
+      up: slashMenuUp(filter, _dismissed),
+    );
+  }
+
+  /// **The composer's keys** (`slash_keys.dart`'s table, P9) — every hardware
+  /// key the field sees, before the field does. An IME composition owns every
+  /// key; with the menu up, Enter / Tab accept, Esc dismisses (and goes no
+  /// further), ↑/↓ move the highlight; Enter with no menu up sends; Shift+Enter
+  /// is a newline.
+  KeyEventResult _onComposerKey(FocusNode _, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final state = _live();
+    if (state == null || !_composerEnabled(state)) {
+      return KeyEventResult.ignored;
+    }
+    final view = _slashView(state);
+    final action = composerKey(
+      key: event.logicalKey,
+      shift: HardwareKeyboard.instance.isShiftPressed,
+      composing: isComposing(_input.value),
+      menuUp: view.up,
+    );
+    // A held key repeats the highlight and the newline, never a send.
+    final once = event is KeyDownEvent;
+    final filter = view.filter;
+    switch (action) {
+      case ComposerKey.none:
+        return KeyEventResult.ignored;
+      case ComposerKey.newline:
+        _insertNewline();
+      case ComposerKey.send:
+        if (once) unawaited(_submit());
+      case ComposerKey.accept:
+        if (once) _acceptHighlighted(filter!, BridgeSlashAcceptKey.enter);
+      case ComposerKey.complete:
+        if (once) _acceptHighlighted(filter!, BridgeSlashAcceptKey.tab);
+      case ComposerKey.dismiss:
+        // One Esc closes one thing: the menu. Handled, so nothing an Esc
+        // handler further out would close sees it.
+        if (once) setState(() => _dismissed = filter!.token);
+      case ComposerKey.up:
+      case ComposerKey.down:
+        setState(
+          () => _highlight = moveHighlight(
+            _highlight,
+            action == ComposerKey.up ? -1 : 1,
+            filter!.rows.length,
+          ),
+        );
+    }
+    return KeyEventResult.handled;
+  }
+
+  /// The field's editing-complete step, run on a submit just BEFORE
+  /// [_onSubmitted]: the composition the IME held is COMMITTED — its
+  /// composing range cleared — and the focus STAYS (a completion, `/re` →
+  /// `/rename `, is typed on; a refusal is fixed in place). Flutter's own
+  /// step commits and then drops the focus; overriding it without the commit
+  /// left a refused or kept draft "composing" with no IME update coming to
+  /// end it, and every menu key ignored after it (P9's IME guard).
+  void _completeComposition() => _input.clearComposing();
+
+  /// The field's submit action — the soft keyboard's Send (and any platform
+  /// that delivers Enter as one): the SAME rule as a hardware Enter. No IME
+  /// guard here: the Send ends the composition ([_completeComposition]).
+  void _onSubmitted() {
+    final state = _live();
+    if (state == null || !_composerEnabled(state)) return;
+    final view = _slashView(state);
+    if (view.up) {
+      _acceptHighlighted(view.filter!, BridgeSlashAcceptKey.enter);
+    } else {
+      unawaited(_submit());
+    }
+  }
+
+  /// Shift+Enter: a newline at the caret (replacing any selection).
+  void _insertNewline() {
+    final value = _input.value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    _input.value = TextEditingValue(
+      text: value.text.replaceRange(selection.start, selection.end, '\n'),
+      selection: TextSelection.collapsed(offset: selection.start + 1),
+    );
+  }
+
+  /// The `/` button (P24): an empty draft becomes `/`, the caret after it, the
+  /// field focused — which opens the menu on every row.
+  void _insertSlash() {
+    _input.value = const TextEditingValue(
+      text: '/',
+      selection: TextSelection.collapsed(offset: 1),
+    );
+    _inputFocus.requestFocus();
+  }
+
+  /// Enter or Tab with the menu up: the highlighted row ([_slashView] keeps
+  /// the highlight inside the open rows).
+  void _acceptHighlighted(BridgeSlashFilter filter, BridgeSlashAcceptKey key) =>
+      _acceptRow(filter.rows[_highlight].row.name, key);
+
+  /// The draft in the box now, with its revision.
+  _Draft _capture() => (text: _input.text, rev: _draftRev);
+
+  /// Whether [draft] is still the one in the box.
+  bool _current(_Draft draft) => draft.rev == _draftRev;
+
+  /// Clear [draft] — only while it is still the one in the box.
+  void _clearIfCurrent(_Draft draft) {
+    if (_current(draft)) _input.clear();
+  }
+
+  /// **One command at a time** (Send, Enter, a tap on a row): refused while
+  /// another is between its first decision and its outcome — checked and set
+  /// synchronously, before [body]'s first await — and [body] gets the draft it
+  /// owns, captured here.
+  Future<void> _command(Future<void> Function(_Draft draft) body) async {
+    if (_commanding || _sending) return;
+    _commanding = true;
+    try {
+      await body(_capture());
+    } finally {
+      _commanding = false;
+    }
+  }
+
+  /// Accept the row [name] with [key] — the shared rule decides whether that
+  /// completes the draft, runs the row, or refuses it (P9, §3.5's select).
+  void _acceptRow(String name, BridgeSlashAcceptKey key) => unawaited(
+    _command((draft) async {
+      final state = _live();
+      final menu = _menuOf(state);
+      if (state == null || menu == null || !_composerEnabled(state)) return;
+      final answer = _rules.accept(
+        menu,
+        draft.text,
+        name,
+        key,
+        _working(state.activity),
+      );
+      switch (answer) {
+        case null:
+          // The menu moved under the highlight: the next frame re-filters.
+          return;
+        case BridgeSlashAccept_Complete(draft: final completed, :final caret):
+          if (!_current(draft)) return;
+          _input.value = TextEditingValue(
+            text: completed,
+            selection: TextSelection.collapsed(offset: caret),
+          );
+          setState(() => _note = null);
+          _inputFocus.requestFocus();
+        case BridgeSlashAccept_Dispatch(:final dispatch):
+          await _runDispatch(dispatch, draft);
+      }
+    }),
+  );
+
+  /// **Send the draft** — the Send button, and Enter with no menu up: through
+  /// the shared dispatch when the session has a menu (the guard serves Send
+  /// as it serves Enter, P5: a typed `/help` is refused here, never sent as
+  /// text), as text — exactly today's send — when it has none. A row whose
+  /// lane is gone has nothing to send to: nothing happens.
+  Future<void> _submit() => _command((draft) async {
+    final text = draft.text.trim();
+    if (text.isEmpty) return;
+    final state = _live();
+    if (state == null) return;
+    final menu = _menuOf(state);
+    if (menu == null) return _sendText(draft);
+    return _runDispatch(
+      _rules.dispatch(menu, draft.text, _working(state.activity)),
+      draft,
+    );
+  });
+
+  /// Act on what the shared dispatch answered for [draft] — Send's, Enter's,
+  /// or a chosen row's — by §3.5's table. A [draft] no longer in the box is
+  /// dropped, silently.
+  Future<void> _runDispatch(BridgeSlashDispatch dispatch, _Draft draft) async {
+    if (!_current(draft)) return;
+    switch (dispatch) {
+      case BridgeSlashDispatch_NotCommand():
+        return _sendText(draft);
+      case BridgeSlashDispatch_Refuse(:final reason):
+        // Refused HERE, nothing sent: the reason inline, the draft kept.
+        logDriveResult('lane-slash', ok: false, error: reason);
+        setState(() => _note = (text: reason, warning: false));
+      case BridgeSlashDispatch_Prompt(:final text):
+        // A prompt row (`/research deep dive`): its CANONICAL text (E8) as a
+        // prompt — queued during a turn like any prompt, an interject when the
+        // toggle says so.
+        return _commandVerb(
+          draft,
+          logKey: 'lane-send',
+          verb: (c) => c.send(text, mode: _sendMode(c.state), command: true),
+        );
+      case BridgeSlashDispatch_Run(:final action, :final arg):
+        switch (action) {
+          case BridgeSlashAction_SetTitle():
+            return _rename(arg ?? '', draft);
+          case BridgeSlashAction_SetMode(:final id):
+            // From the COMPOSER (P7): re-selecting the current mode sends.
+            return _commandVerb(
+              draft,
+              logKey: 'lane-mode',
+              verb: (c) => c.setMode(BridgeLaneSettingChange.mode(id: id)),
+            );
+          case BridgeSlashAction_Stop():
+            return _stopFromComposer(draft);
+          case BridgeSlashAction_ModelPicker():
+            return _openModelPicker(draft);
+          case BridgeSlashAction_Prompt():
+            // Never answered as a Run: a prompt row's answer is Prompt.
+            return;
+        }
+    }
+  }
+
+  /// A `/` command run on one of the composer's verbs (a prompt row, a
+  /// rename, a mode): the last note cleared, [_guarded] on `_sending`, its
+  /// error on the composer — a lost answer in the command wording
+  /// ([laneCommandOutcomeUnknown]) — and on success [draft] cleared
+  /// ([_clearIfCurrent]), then [onSuccess]. The field is disabled while the
+  /// verb runs, which drops its focus, so a refusal (the draft kept to fix)
+  /// hands the caret back.
+  Future<void> _commandVerb(
+    _Draft draft, {
+    required String logKey,
+    required Future<void> Function(LaneController controller) verb,
+    void Function()? onSuccess,
+  }) async {
+    setState(() => _note = null);
+    final hadFocus = _inputFocus.hasFocus;
+    final error = await _guarded(
+      busy: _sending,
+      setBusy: (v) => _sending = v,
+      logKey: logKey,
+      run: (controller) async {
+        await verb(controller);
+        return controller.state.composerError;
+      },
+      onSuccess: () {
+        _clearIfCurrent(draft);
+        onSuccess?.call();
+      },
+    );
+    if (error != null && hadFocus && mounted) {
+      // After the frame that re-enables the field: a disabled one takes no
+      // focus.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _inputFocus.requestFocus();
+      });
+    }
+  }
+
+  /// `/rename <title>` (the header shows the new title once craze's delta
+  /// says so, P19). A rename that took but craze could not record clears the
+  /// draft too, and shows the warning.
+  Future<void> _rename(String title, _Draft draft) {
+    String? warning;
+    return _commandVerb(
+      draft,
+      logKey: 'lane-rename',
+      verb: (c) async => warning = await c.setTitle(title),
+      // After the clear, whose edit wipes the note — and shown whether or not
+      // the draft was still this one: the rename took.
+      onSuccess: () {
+        if (warning case final text?) _note = (text: text, warning: true);
+      },
+    );
+  }
+
+  /// `/exit`: the session's Stop, behind the SAME confirm the header's button
+  /// opens ([_confirmStop]) — never one key — with the outcome settled as a
+  /// COMMAND's: Keep sends nothing and keeps the draft; a stop that goes
+  /// through clears it; a refused or lost one keeps it and is said in the
+  /// composer, in the command wording (the desktop's `slashVerb`). A draft
+  /// changed while the dialog was up calls the stop off.
+  Future<void> _stopFromComposer(_Draft draft) {
+    setState(() => _note = null);
+    return _confirmStop(draft: draft);
+  }
+
+  /// `/model`: the model picker IS the session's settings sheet (X2 — no
+  /// inline model): the draft clears and the sheet opens on this lane.
+  void _openModelPicker(_Draft draft) {
+    _clearIfCurrent(draft);
+    setState(() => _note = null);
+    unawaited(showLaneSettingsSheet(context, _ref));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -309,7 +813,10 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       return _shell(
         state: null,
         child: async.hasError
-            ? _centered('lane-unavailable', 'This lane is gone: ${async.error}')
+            ? _centered(
+                'lane-unavailable',
+                'This lane is gone: ${laneFailureText(async.error!)}',
+              )
             : const Center(
                 key: ValueKey('lane-loading'),
                 child: CircularProgressIndicator(),
@@ -318,9 +825,13 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     }
 
     _noteRows(state);
-    _log(state);
 
-    final approvals = state.approvals;
+    // Built once per frame of the LANE, outside the draft's builder below,
+    // and handed into it as they are: a keystroke never rebuilds them.
+    final transcript = _transcript(context, state);
+    final approvals = state.approvals.isEmpty
+        ? null
+        : _approvalList(context, state);
     return _shell(
       state: state,
       child: Column(
@@ -335,7 +846,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               context,
               'lane-unavailable',
               ShedStatusTone.err,
-              'This lane is gone: ${async.error}',
+              'This lane is gone: ${laneFailureText(async.error!)}',
             ),
           if (state.stale != null) _staleBanner(context, state),
           if (state.stopError case final error?)
@@ -346,29 +857,41 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               error.message,
             ),
           if (_laneNote(state) case final note?) _noteBanner(context, note),
-          Expanded(child: _transcript(context, state)),
-          if (approvals.isNotEmpty)
-            ConstrainedBox(
-              // The composer and some transcript must stay visible: five gx
-              // options plus a question form is taller than a phone.
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.45,
-              ),
-              child: SingleChildScrollView(
-                key: const ValueKey('lane-approvals'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final a in approvals) _approvalCard(context, state, a),
-                  ],
-                ),
+          // Only the `/` menu and the composer read the draft: a keystroke
+          // or a caret move rebuilds them, never the transcript.
+          Expanded(
+            child: ListenableBuilder(
+              listenable: _input,
+              builder: (context, _) => _dock(
+                context,
+                state,
+                transcript: transcript,
+                approvals: approvals,
               ),
             ),
-          _composer(context, state),
+          ),
         ],
       ),
     );
   }
+
+  /// The pending approvals, scrolling — capped at 45 % of the viewport: the
+  /// composer and some transcript must stay visible, and five gx options
+  /// plus a question form is taller than a phone.
+  Widget _approvalList(BuildContext context, LaneState state) => ConstrainedBox(
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+    ),
+    child: SingleChildScrollView(
+      key: const ValueKey('lane-approvals'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final a in state.approvals) _approvalCard(context, state, a),
+        ],
+      ),
+    ),
+  );
 
   Widget _shell({required LaneState? state, required Widget child}) => Scaffold(
     key: const ValueKey('lane-screen'),
@@ -482,20 +1005,18 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     });
   }
 
-  void _log(LaneState state) {
-    String session;
-    try {
-      session = _controller.stamp.sessionId;
-    } on StateError {
-      // laneControllerProvider throws StateError when the row's lane stamp
-      // is gone: the row went away between the snapshot and this line. The
-      // state is still worth reporting; the session id is not knowable.
-      session = '-';
-    }
+  /// `slash=<shown>/<open>`: how many rows the session's menu shows (`-` — no
+  /// menu at all), and how many the panel lists right now (0 — closed).
+  void _log(LaneState state, BridgeSlashMenu? menu, int open) {
+    // No lane (the row's lane stamp went away between the snapshot and this
+    // line): the state is still worth reporting; the session id is not
+    // knowable.
+    final session = _laneController()?.stamp.sessionId ?? '-';
     logDriveState(
       'screen=lane machine=${widget.machine} session=$session '
       'generation=${state.generation} stale=${state.stale ?? '-'} '
-      'approvals=${state.approvals.length} activity=${state.activity.wire}',
+      'approvals=${state.approvals.length} activity=${state.activity.wire} '
+      'slash=${menu == null ? '-/-' : '${menu.rows.length}/$open'}',
     );
   }
 
@@ -714,12 +1235,82 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
   // ---- composer -----------------------------------------------------------
 
-  Widget _composer(BuildContext context, LaneState state) {
+  /// **Everything under the banners** — the [transcript], the [approvals],
+  /// the `/` menu and the composer — and the MSTATE line (its `slash=` moves
+  /// with the draft). The menu shows above the composer, only on a session
+  /// whose view carries one, only while the shared filter says it is open,
+  /// and not once Esc dismissed it for this token.
+  ///
+  /// **The composer is never pushed off the screen** by what sits above it:
+  /// it is laid out first, and the approvals and the menu take only what is
+  /// left of the body — the Scaffold's body is already what the keyboard,
+  /// the header and the banners left — each also within its own share of the
+  /// viewport (45 %, 40 %: P24), and each scrolling inside whatever it gets.
+  /// With both up, neither takes more than half of what is left, so a long
+  /// menu never hides the approvals entirely, nor they it. The transcript
+  /// takes the rest, down to nothing.
+  Widget _dock(
+    BuildContext context,
+    LaneState state, {
+    required Widget transcript,
+    required Widget? approvals,
+  }) {
+    final slash = _slashView(state);
+    _log(state, slash.menu, slash.up ? slash.filter!.rows.length : 0);
+    final panel = slash.up
+        ? SlashMenuPanel(
+            rows: slash.filter!.rows,
+            highlight: _highlight,
+            onPick: (name) => _acceptRow(name, BridgeSlashAcceptKey.pick),
+          )
+        : null;
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, room) {
+              final share = approvals != null && panel != null
+                  ? room.maxHeight / 2
+                  : room.maxHeight;
+              return Column(
+                children: [
+                  Expanded(child: transcript),
+                  // Keyed: one coming or going must not remount the other.
+                  if (approvals != null)
+                    ConstrainedBox(
+                      key: const ValueKey('lane-dock-approvals'),
+                      constraints: BoxConstraints(maxHeight: share),
+                      child: approvals,
+                    ),
+                  if (panel != null)
+                    ConstrainedBox(
+                      key: const ValueKey('lane-dock-slash'),
+                      constraints: BoxConstraints(maxHeight: share),
+                      child: panel,
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        _composer(context, state, menu: slash.menu),
+      ],
+    );
+  }
+
+  /// [menu]: the session's `/` menu ([_menuOf]) — the `/` button's gate, with
+  /// rows and an EMPTY draft (P24), and the note's: no menu, no note (D11).
+  Widget _composer(
+    BuildContext context,
+    LaneState state, {
+    required BridgeSlashMenu? menu,
+  }) {
+    final offersMenu = menu?.rows.isNotEmpty ?? false;
     final c = context.shed;
     final working = state.activity == BridgeRcActivity.working;
     final canInterject = state.capabilities?.interject ?? false;
     final canCancel = laneCancelOffered(state.capabilities, state.activity);
-    final enabled = !state.abandoned && !_sending;
+    final enabled = _composerEnabled(state);
     final error = state.composerError;
     return SafeArea(
       top: false,
@@ -768,19 +1359,55 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                // The `/` button (P24): only on a session with a menu, and
+                // only on an EMPTY draft — it starts a command, it never
+                // edits one.
+                if (offersMenu && _input.text.isEmpty)
+                  IconButton(
+                    key: const ValueKey('lane-slash-button'),
+                    tooltip: 'Commands',
+                    onPressed: enabled ? _insertSlash : null,
+                    icon: Text(
+                      '/',
+                      style: monoStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: enabled ? c.accent : c.fg3,
+                      ),
+                    ),
+                  ),
                 Expanded(
-                  child: TextField(
-                    key: const ValueKey('lane-input'),
-                    controller: _input,
-                    enabled: enabled,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => enabled ? _send() : null,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: 'What should it do next?',
-                      border: OutlineInputBorder(),
+                  // Keyed: the `/` button coming or going beside it must not
+                  // remount the field (and drop its editing state).
+                  key: const ValueKey('lane-input-slot'),
+                  // Every hardware key reaches the composer's own table
+                  // first (`_onComposerKey`); what it does not take goes on
+                  // to the field as it always did.
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onKeyEvent: _onComposerKey,
+                    child: TextField(
+                      key: const ValueKey('lane-input'),
+                      controller: _input,
+                      focusNode: _inputFocus,
+                      enabled: enabled,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _onSubmitted(),
+                      // The caret STAYS on a submit, the composition
+                      // committed: a completion (`/re` → `/rename `) is typed
+                      // on, and a refusal is fixed in place. (A verb that
+                      // runs disables the field, which drops it anyway.)
+                      onEditingComplete: _completeComposition,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: offersMenu
+                            ? 'What should it do next? / for commands'
+                            : 'What should it do next?',
+                        border: const OutlineInputBorder(),
+                      ),
                     ),
                   ),
                 ),
@@ -799,12 +1426,30 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
                       )
                     : IconButton.filled(
                         key: const ValueKey('lane-send'),
-                        onPressed: enabled ? _send : null,
+                        onPressed: enabled ? _submit : null,
                         icon: const Icon(Icons.send, size: 20),
                         tooltip: 'Send',
                       ),
               ],
             ),
+            // What a `/` command left to say: a refusal (the draft kept to
+            // fix) or a rename that took with a caveat — said only while the
+            // session offers the menu it was said against (no catalog, or no
+            // `slash`, no note: D11).
+            if ((menu != null ? _note : null) case final note?)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  note.text,
+                  key: ValueKey(
+                    note.warning ? 'lane-slash-warning' : 'lane-slash-refusal',
+                  ),
+                  style: sansStyle(
+                    fontSize: 12,
+                    color: note.warning ? c.warnFg : c.errFg,
+                  ),
+                ),
+              ),
             if (error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),

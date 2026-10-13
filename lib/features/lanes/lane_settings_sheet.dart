@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stridelabs_drive/stridelabs_drive.dart';
 
-import '../../lanes/lane_controller.dart';
 import '../../lanes/lane_settings.dart';
 import '../../lanes/lane_state.dart';
 import '../../providers.dart';
@@ -133,13 +132,9 @@ class LaneSettingsSheet extends ConsumerWidget {
     String value, {
     required String? displayedModel,
   }) async {
-    final LaneController controller;
-    try {
-      controller = ref.read(laneControllerProvider(lane));
-    } on StateError {
-      // The row is gone (laneControllerProvider's refusal): nothing to set.
-      return;
-    }
+    // The row's lane is gone (readLaneController's null): nothing to set.
+    final controller = readLaneController(ref, lane);
+    if (controller == null) return;
     await controller.setSetting(row, value, displayedModel: displayedModel);
     // Never threw: the outcome is the row's mark, read off the same lane.
     final mark = controller.state.settingMarks[row.key];

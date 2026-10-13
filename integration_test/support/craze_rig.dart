@@ -223,6 +223,18 @@ class CrazeRig {
   final List<({String? commandId, Map<String, Object?> setting, bool dropped})>
   sets = [];
 
+  /// Every `session.setTitle`, `session.stop` and `session.prompt` a craze
+  /// bridge of this rig carried — what the `/` menu's commands put on the
+  /// wire (plan 029; the desktop rig's `verbs.log`): the method and its params
+  /// verbatim, in order. Read with [verbsOf].
+  final List<({String method, Map<String, Object?> params})> verbs = [];
+
+  /// The params of every [verbs] entry of [method], in order.
+  List<Map<String, Object?>> verbsOf(String method) => [
+    for (final v in verbs)
+      if (v.method == method) v.params,
+  ];
+
   /// **A settings change's answer, lost** (the desktop rig's `drop-sets`):
   /// while set, a bridge that carries a `session.set` relays it to the hub and
   /// then relays nothing back, and a second later the bridge is killed — the
@@ -339,7 +351,8 @@ class CrazeRig {
 
   /// One client→hub line on a craze bridge: a roster subscription or a lane's
   /// splice is logged to [connections]; a `session.create` is logged to
-  /// [creates], and cut ([dropCreates]) when asked.
+  /// [creates], and cut ([dropCreates]) when asked; a rename, a stop and a
+  /// prompt to [verbs].
   bool _clientLine(String line, Process process) {
     Object? msg;
     try {
@@ -364,6 +377,17 @@ class CrazeRig {
         process: process,
         method: method as String,
         hostId: params is Map ? params['sessionId'] as String? : null,
+      ));
+      return false;
+    }
+    if (method == 'session.setTitle' ||
+        method == 'session.stop' ||
+        method == 'session.prompt') {
+      verbs.add((
+        method: method as String,
+        params: params is Map
+            ? params.cast<String, Object?>()
+            : const <String, Object?>{},
       ));
       return false;
     }
@@ -595,6 +619,33 @@ class CrazeRig {
     );
     _chmod('0755', path);
     return path;
+  }
+
+  /// **A turn held open** (`craze-fake-agent -script sigint-hold`, plan 029's
+  /// queued-prompt cell — the desktop rig's `held` fixture): its first prompt
+  /// is echoed; every later one waits for one byte at [gate]
+  /// (`CRAZE_FAKE_GATE`, a FIFO — [CrazeSetGate]'s protocol: make it with
+  /// `hold`, release one turn with `release`) and is then echoed. Every
+  /// prompt the agent READS is appended to [prompts]
+  /// (`CRAZE_FAKE_DUMP_PROMPTS`), so "queued, not read yet" and "read" are the
+  /// agent's own word ([agentRead]).
+  String heldAgent({required String gate, required String prompts}) {
+    final path = '$root/held-agent';
+    File(path).writeAsStringSync(
+      '#!/bin/sh\n'
+      "export CRAZE_FAKE_GATE='$gate'\n"
+      "export CRAZE_FAKE_DUMP_PROMPTS='$prompts'\n"
+      'exec \'$pathDir/craze-fake-agent\' -script sigint-hold "\$@"\n',
+    );
+    _chmod('0755', path);
+    return path;
+  }
+
+  /// Whether the agent behind [prompts] ([heldAgent]) has READ a prompt
+  /// carrying [text].
+  static bool agentRead(String prompts, String text) {
+    final f = File(prompts);
+    return f.existsSync() && f.readAsLinesSync().any((l) => l.contains(text));
   }
 
   /// The config sets the permodel agent was ASKED for (`<id>=<value>`), in
@@ -904,7 +955,9 @@ class CrazeClient {
 /// **The permodel agent's set gate** (`CRAZE_FAKE_SET_GATE`): while its FIFO
 /// exists, each `session/set_config_option` waits for one byte before the
 /// agent answers — so a change stays PENDING, and craze's one-at-a-time queue
-/// holds every set behind it. Absent, sets run at once.
+/// holds every set behind it. Absent, sets run at once. The same FIFO protocol
+/// is the held agent's turn gate (`CRAZE_FAKE_GATE`, [CrazeRig.heldAgent]):
+/// one byte ends one held turn.
 class CrazeSetGate {
   CrazeSetGate(this.path);
 

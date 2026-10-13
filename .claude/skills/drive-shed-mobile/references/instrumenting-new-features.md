@@ -1,6 +1,6 @@
 # Instrumenting new features so they stay agent-drivable
 
-When you add or change UI in `apps/flutter_client`, make it drivable in the same
+When you add or change UI in shed-mobile (`lib/`), make it drivable in the same
 change. Marionette (and CI integration tests later) can only drive what's
 targetable and verifiable. Five rules, in priority order.
 
@@ -24,7 +24,7 @@ dialog actions, menu items. Id-suffix anything that repeats:
   dialogs — key each (`memory-add-cancel`, `memory-edit-cancel`) so they're
   unambiguous even though only one dialog shows at a time.
 
-Document new keys in `references/tapper-context.md`.
+Document new keys in `references/shed-mobile-context.md` (the screen key map).
 
 ## 2. Make outcomes readable — never rely only on a SnackBar
 
@@ -33,8 +33,10 @@ An agent must be able to confirm an action worked. A transient `SnackBar`
 **not** a reliable signal. For any save/create/edit/delete, do one of:
 
 - Emit a structured log: `logDriveResult('settings-save', ok: true)` (from
-  `lib/marionette/drive_state.dart`) → an agent reads `get-logs | grep MRESULT`.
-  Preferred — works headless and survives the SnackBar dismissing.
+  `package:stridelabs_drive/stridelabs_drive.dart` — the shared drive package,
+  pinned in `pubspec.yaml`; this app has no `lib/marionette/` of its own) → an
+  agent reads `get-logs | grep MRESULT`. Preferred — works headless and survives
+  the SnackBar dismissing.
 - Or render a durable, **keyed** result widget (like `login-error` on the login
   screen), not just a SnackBar.
 
@@ -42,7 +44,8 @@ An agent must be able to confirm an action worked. A transient `SnackBar`
 
 If a new screen has state an agent needs but that isn't shown as text — an in-flight
 flag, a selection, a mode, an id — emit it from `build()` with `logDriveState(...)`
-(see `conversation_screen.dart` for the pattern). It logs `MSTATE …` only on change,
+(`package:stridelabs_drive`; see `lib/features/lanes/lane_screen.dart`'s `_log`
+for the pattern). It logs `MSTATE …` only on change,
 so an agent can read current state and wait on transitions via
 `get-logs | grep MSTATE`. Keep it to one concise line per screen; both helpers are
 `kDebugMode`-gated and tree-shaken from release.
@@ -50,9 +53,10 @@ so an agent can read current state and wait on transitions via
 ## 4. Don't create driving traps
 
 - **Disabling a control drops focus and silently swallows taps.** If you disable a
-  text field while busy (as the chat input does during a turn), restore focus when
-  it re-enables (`didUpdateWidget`, see `text_input_bar.dart`) — otherwise the next
-  input goes nowhere. If you disable a button, an agent's tap is a silent no-op, so
+  text field while busy (as the lane composer does while a verb runs), restore
+  focus when it re-enables if the person still has something to fix there (see
+  `lane_screen.dart`'s `_commandVerb`) — otherwise the next input
+  goes nowhere. If you disable a button, an agent's tap is a silent no-op, so
   the disabled state must be readable (key + `onPressed: null`, or an MSTATE flag).
 - **Auto-scroll matters:** `get-interactive-elements` returns only *visible* nodes.
   If new content can land off-screen, scroll it into view (the app already

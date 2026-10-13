@@ -5,6 +5,7 @@ import 'package:shed_mobile/bridge/bridge_adapters.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
+import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/lane.dart';
@@ -891,6 +892,214 @@ void main() {
     );
   });
 
+  group('the / menu\'s verbs and its menu (plan 029)', () {
+    /// A craze lane open on a session with a menu, rename and stop — and no
+    /// settings.
+    Future<_Rig> slashRig() async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _caps(
+          kind: 'craze',
+          stop: true,
+          slash: true,
+          setTitle: true,
+        ),
+        slashMenu: _menu(),
+      );
+      await rig.controller.open();
+      return rig;
+    }
+
+    test(
+      'the menu is kept BY VALUE: the same menu stays the same instance '
+      'across reads, a changed one replaces it, and none clears it',
+      () async {
+        final rig = await slashRig();
+        final first = rig.controller.state.slashMenu;
+        expect(first?.rows.single.name, 'rename');
+
+        // A new read converts a new copy of the SAME menu: the held instance
+        // stays, so nothing downstream re-filters for a streamed frame.
+        rig.bridge.handles.single.nudges.deliver();
+        rig.pumpFrame();
+        expect(rig.bridge.snapshots, 2);
+        expect(identical(rig.controller.state.slashMenu, first), isTrue);
+
+        rig.bridge.onSnapshot = (_) => _snap(
+          capabilities: _caps(kind: 'craze', slash: true, setTitle: true),
+          slashMenu: _menu(name: 'title'),
+        );
+        rig.bridge.handles.single.nudges.deliver();
+        rig.pumpFrame();
+        expect(rig.controller.state.slashMenu?.rows.single.name, 'title');
+
+        // A snapshot with no menu (truncated, or the capability gone) is no
+        // menu — never "keep what you had".
+        rig.bridge.onSnapshot = (_) =>
+            _snap(capabilities: _caps(kind: 'craze'));
+        rig.bridge.handles.single.nudges.deliver();
+        rig.pumpFrame();
+        expect(rig.controller.state.slashMenu, isNull);
+      },
+    );
+
+    test('sameSlashMenu compares by value, not by list identity', () {
+      expect(sameSlashMenu(_menu(), _menu()), isTrue);
+      expect(sameSlashMenu(_menu(), _menu(name: 'title')), isFalse);
+      expect(sameSlashMenu(null, null), isTrue);
+      expect(sameSlashMenu(_menu(), null), isFalse);
+      // The generated `==` alone says two equal menus differ.
+      expect(_menu() == _menu(), isFalse, reason: 'why the helper exists');
+    });
+
+    test('setTitle reaches the bridge with the title as given and answers '
+        'the index_write WARNING as a success', () async {
+      final rig = await slashRig();
+      expect(await rig.controller.setTitle('plan 029'), isNull);
+      expect(rig.bridge.titles, ['plan 029']);
+      expect(rig.controller.state.composerError, isNull);
+
+      rig.bridge.setTitleWarning =
+          'renamed, but craze could not record it: disk full';
+      expect(
+        await rig.controller.setTitle('again'),
+        'renamed, but craze could not record it: disk full',
+      );
+      expect(rig.controller.state.composerError, isNull, reason: 'it took');
+    });
+
+    test('a refused rename is the COMPOSER\'s, in craze\'s words; a lost '
+        'answer says "may have applied"', () async {
+      final rig = await slashRig();
+      rig.bridge.setTitleFailure = const BridgeLaneError.badRequest(
+        msg: 'params.title is blank once normalized: send none instead',
+      );
+      expect(await rig.controller.setTitle('x'), isNull);
+      expect(rig.controller.state.composerError?.code, 'LANE_BAD_REQUEST');
+      expect(
+        rig.controller.state.composerError?.message,
+        'params.title is blank once normalized: send none instead',
+      );
+      expect(rig.controller.state.stopError, isNull);
+      expect(rig.controller.state.error, isNull);
+
+      rig.bridge.setTitleFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'outcome unknown: the connection dropped',
+      );
+      await rig.controller.setTitle('y');
+      expect(rig.controller.state.composerError?.code, laneOutcomeUnknownCode);
+      expect(
+        rig.controller.state.composerError?.message,
+        laneCommandOutcomeUnknown,
+      );
+      expect(rig.bridge.titles, ['x', 'y'], reason: 'never resent');
+
+      // The next verb clears it.
+      rig.bridge.setTitleFailure = null;
+      await rig.controller.setTitle('z');
+      expect(rig.controller.state.composerError, isNull);
+    });
+
+    test('setMode sends on a session WITHOUT settings, re-selecting the same '
+        'mode still sends, and its refusal is the composer\'s — never a row '
+        'mark', () async {
+      final rig = await slashRig();
+      expect(rig.controller.state.capabilities?.settings, isFalse);
+      const plan = BridgeLaneSettingChange.mode(id: 'plan');
+      await rig.controller.setMode(plan);
+      await rig.controller.setMode(plan);
+      expect(rig.bridge.sets, [plan, plan]);
+      expect(rig.controller.state.composerError, isNull);
+
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+      await rig.controller.setMode(const BridgeLaneSettingChange.mode(id: 'x'));
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_ACCEPTING');
+      expect(rig.controller.state.settingMarks, isEmpty);
+
+      rig.bridge.setFailure = const BridgeLaneError.outcomeUnknown(msg: 'lost');
+      await rig.controller.setMode(plan);
+      expect(
+        rig.controller.state.composerError?.message,
+        laneCommandOutcomeUnknown,
+      );
+    });
+
+    test('a prompt row\'s send says the command wording when its answer is '
+        'lost; a plain send keeps its own', () async {
+      final rig = await slashRig();
+      rig.bridge.sendFailure = const BridgeLaneError.outcomeUnknown(
+        msg: 'lost',
+      );
+      await rig.controller.send('/research x', command: true);
+      expect(
+        rig.controller.state.composerError?.message,
+        laneCommandOutcomeUnknown,
+      );
+      await rig.controller.send('plain');
+      expect(
+        rig.controller.state.composerError?.message,
+        laneSendOutcomeUnknown,
+      );
+    });
+
+    test(
+      '/exit\'s stop (command) is the COMPOSER\'s: a refusal in craze\'s '
+      'words, a lost receipt "may have applied" — never the stop banner\'s',
+      () async {
+        final rig = await slashRig();
+        rig.bridge.stopFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+        await rig.controller.stop(command: true);
+        expect(
+          rig.controller.state.composerError?.code,
+          laneOutcomeUnknownCode,
+        );
+        expect(
+          rig.controller.state.composerError?.message,
+          laneCommandOutcomeUnknown,
+        );
+        expect(rig.controller.state.stopError, isNull);
+
+        rig.bridge.stopFailure = const BridgeLaneError.failed(
+          msg: 'unsupported: this host cannot stop its session',
+        );
+        await rig.controller.stop(command: true);
+        expect(
+          rig.controller.state.composerError?.message,
+          'unsupported: this host cannot stop its session',
+        );
+        expect(rig.controller.state.stopError, isNull);
+
+        // The header's stop (the control) keeps its own error and wording.
+        rig.bridge.stopFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+        await rig.controller.stop();
+        expect(
+          rig.controller.state.stopError?.message,
+          'outcome unknown: the connection dropped',
+        );
+
+        rig.bridge.stopFailure = null;
+        await rig.controller.stop(command: true);
+        expect(rig.controller.state.composerError, isNull, reason: 'cleared');
+        expect(rig.bridge.stops, 4, reason: 'never resent');
+      },
+    );
+
+    test('with no lane open, rename and mode are refused without touching '
+        'the bridge', () async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      expect(await rig.controller.setTitle('x'), isNull);
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_OPEN');
+      await rig.controller.setMode(const BridgeLaneSettingChange.mode(id: 'x'));
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_OPEN');
+      expect(rig.bridge.titles, isEmpty);
+      expect(rig.bridge.sets, isEmpty);
+    });
+  });
+
   group('settings changes (plan 025 §3.10)', () {
     /// A craze lane open on a session that offers settings, at [frames]
     /// `Settings` so far.
@@ -1538,6 +1747,21 @@ class _FakeLaneBridge implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// Every rename sent, in order.
+  final List<String> titles = [];
+  Object? setTitleFailure;
+
+  /// What a rename that took answers with (craze's `index_write` warning).
+  String? setTitleWarning;
+
+  @override
+  Future<String?> setTitle(LaneHandle handle, String title) async {
+    titles.add(title);
+    final failure = setTitleFailure;
+    if (failure != null) throw failure;
+    return setTitleWarning;
+  }
+
   @override
   void close(LaneHandle handle) {
     closes++;
@@ -1622,6 +1846,8 @@ BridgeLaneCapabilities _caps({
   bool interject = false,
   bool stop = false,
   bool settings = false,
+  bool slash = false,
+  bool setTitle = false,
 }) => BridgeLaneCapabilities(
   kind: kind,
   interject: interject,
@@ -1630,8 +1856,8 @@ BridgeLaneCapabilities _caps({
   historyCursor: false,
   settings: settings,
   stop: stop,
-  slash: false,
-  setTitle: false,
+  slash: slash,
+  setTitle: setTitle,
 );
 
 BridgeLaneSession _session({String title = '', String? permissionMode}) =>
@@ -1659,6 +1885,7 @@ BridgeLaneSnapshot _snap({
   BridgeLaneSettings? settings,
   int settingsFrames = 0,
   List<BridgeLaneApproval> approvals = const [],
+  BridgeSlashMenu? slashMenu,
 }) => BridgeLaneSnapshot(
   messages: messages,
   full: full,
@@ -1671,7 +1898,23 @@ BridgeLaneSnapshot _snap({
   settings: settings,
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
-  slashMenu: null,
+  slashMenu: slashMenu,
+);
+
+/// A one-row `/` menu (plan 029): a builtin rename, freshly built — a new
+/// instance every call, as every FRB conversion is.
+BridgeSlashMenu _menu({String name = 'rename'}) => BridgeSlashMenu(
+  rows: [
+    BridgeSlashMenuRow(
+      name: name,
+      source: const BridgeSlashSource.builtin(),
+      arg: const BridgeSlashArg.required_(),
+      argHint: '<title>',
+      whileWorking: true,
+      action: const BridgeSlashAction.setTitle(),
+    ),
+  ],
+  hidden: const [BridgeSlashHidden(name: 'help', reason: 'not available')],
 );
 
 /// A craze session that offers settings.

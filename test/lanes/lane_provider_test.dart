@@ -108,6 +108,33 @@ void main() {
         ),
       );
     });
+
+    test('the missing-lane refusal is recognised through Riverpod\'s '
+        'ProviderException wrapper, and said by its cause', () {
+      final feed = _FakeFeed();
+      final container = _container(feed);
+      addTearDown(container.dispose);
+      const ref = (machine: 'mini3', kind: 'opencode', slug: '9');
+
+      Object? thrown;
+      try {
+        container.read(laneControllerProvider(ref));
+      } catch (e) {
+        thrown = e;
+      }
+      expect(
+        thrown,
+        isNot(isA<StateError>()),
+        reason: 'wrapped — why a bare `on StateError` caught nothing',
+      );
+      expect(laneMissing(thrown!), isTrue);
+      expect(laneFailureText(thrown), 'no agent lane on mini3/9 (opencode)');
+
+      // The controls: another failure is not a missing lane, and says itself.
+      expect(laneMissing(Exception('boom')), isFalse);
+      expect(laneMissing(ArgumentError('x')), isFalse);
+      expect(laneFailureText(Exception('boom')), 'Exception: boom');
+    });
   });
 
   group('laneStateProvider', () {
@@ -602,6 +629,11 @@ class _FakeSource implements LaneSource {
         approvals: const [],
         slashMenu: null,
       );
+
+  /// An opencode session cannot be renamed; nothing here asks it to.
+  @override
+  Future<String?> setTitle(LaneHandle handle, String title) =>
+      throw StateError('the provider cells never rename');
 
   @override
   void close(LaneHandle handle) {}
