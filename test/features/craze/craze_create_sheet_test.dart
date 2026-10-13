@@ -91,6 +91,7 @@ const _live = BridgeCrazeSnapshot(
     kind: 'craze',
     create: true,
     createOptions: true,
+    createTitle: false,
   ),
   truncated: false,
 );
@@ -412,6 +413,7 @@ void main() {
             kind: 'craze',
             create: true,
             createOptions: false,
+            createTitle: false,
           ),
           truncated: false,
         ),

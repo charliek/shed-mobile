@@ -1348,7 +1348,9 @@ mod tests {
             Some(BridgeSourceCapabilities {
                 kind: "craze".to_string(),
                 create: true,
-                create_options: true
+                create_options: true,
+                // The fake hub's `hello` advertises `createTitle` (craze 0.1.1).
+                create_title: true,
             })
         );
         assert!(
@@ -1416,6 +1418,7 @@ mod tests {
             provider: Some("grok".to_string()),
             prompt: Some("hello".to_string()),
             request_id: id.to_string(),
+            title: None,
         }
     }
 
@@ -1976,11 +1979,18 @@ mod tests {
         })
         .await
         .expect("a lost create answered in time");
-        assert_eq!(ids, [json!("req-lost"), json!("req-lost")], "one retry, same id");
+        assert_eq!(
+            ids,
+            [json!("req-lost"), json!("req-lost")],
+            "one retry, same id"
+        );
         let Err(BridgeLaneError::OutcomeUnknown { msg }) = lost else {
             panic!("a create lost twice: {lost:?}");
         };
-        assert!(msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN), "{msg}");
+        assert!(
+            msg.starts_with(shed_craze::errors::OUTCOME_UNKNOWN),
+            "{msg}"
+        );
 
         // A refusal craze answered: definite.
         let script = async {

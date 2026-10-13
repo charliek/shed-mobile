@@ -1613,6 +1613,8 @@ const _opencodeCaps = BridgeLaneCapabilities(
   historyCursor: false,
   settings: false,
   stop: false,
+  slash: false,
+  setTitle: false,
 );
 
 BridgeLaneCapabilities _caps({
@@ -1628,6 +1630,8 @@ BridgeLaneCapabilities _caps({
   historyCursor: false,
   settings: settings,
   stop: stop,
+  slash: false,
+  setTitle: false,
 );
 
 BridgeLaneSession _session({String title = '', String? permissionMode}) =>
@@ -1667,6 +1671,7 @@ BridgeLaneSnapshot _snap({
   settings: settings,
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
+  slashMenu: null,
 );
 
 /// A craze session that offers settings.

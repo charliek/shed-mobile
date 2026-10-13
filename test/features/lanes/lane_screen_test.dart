@@ -1611,6 +1611,8 @@ const _fixtureCaps = BridgeLaneCapabilities(
   historyCursor: true,
   settings: false,
   stop: false,
+  slash: false,
+  setTitle: false,
 );
 
 BridgeLaneSnapshot _snap({
@@ -1636,6 +1638,7 @@ BridgeLaneSnapshot _snap({
   settings: settings,
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
+  slashMenu: null,
 );
 
 BridgeLaneSession _session({required String title, String? permissionMode}) =>
@@ -1681,6 +1684,8 @@ BridgeLaneCapabilities _caps({
   historyCursor: true,
   settings: settings,
   stop: stop,
+  slash: false,
+  setTitle: false,
 );
 
 /// The [Text] inside the banner keyed [key].

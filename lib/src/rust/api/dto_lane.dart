@@ -9,8 +9,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_lane.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `from_view`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `from_view`, `set_title_outcome`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Whether this approval is still waiting on the human — **the only predicate a
 /// client gates its answer affordance on**.
@@ -301,6 +301,13 @@ class BridgeLaneCapabilities {
   /// The session can be ended from this client (a Stop button).
   final bool stop;
 
+  /// The session serves a `/` command catalog (plan 029): its snapshots may
+  /// carry [`BridgeLaneSnapshot::slash_menu`].
+  final bool slash;
+
+  /// The session can be renamed from this client ([`super::lane::lane_set_title`]).
+  final bool setTitle;
+
   const BridgeLaneCapabilities({
     required this.kind,
     required this.interject,
@@ -309,6 +316,8 @@ class BridgeLaneCapabilities {
     required this.historyCursor,
     required this.settings,
     required this.stop,
+    required this.slash,
+    required this.setTitle,
   });
 
   @override
@@ -319,7 +328,9 @@ class BridgeLaneCapabilities {
       approvals.hashCode ^
       historyCursor.hashCode ^
       settings.hashCode ^
-      stop.hashCode;
+      stop.hashCode ^
+      slash.hashCode ^
+      setTitle.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -332,7 +343,9 @@ class BridgeLaneCapabilities {
           approvals == other.approvals &&
           historyCursor == other.historyCursor &&
           settings == other.settings &&
-          stop == other.stop;
+          stop == other.stop &&
+          slash == other.slash &&
+          setTitle == other.setTitle;
 }
 
 /// One selectable value — a model, a mode, or one option's value (mirrors
@@ -421,16 +434,24 @@ class BridgeLaneCreateRequest {
   final String? prompt;
   final String requestId;
 
+  /// The session's title at create (plan 029); `None` leaves it to the agent.
+  final String? title;
+
   const BridgeLaneCreateRequest({
     required this.cwd,
     this.provider,
     this.prompt,
     required this.requestId,
+    this.title,
   });
 
   @override
   int get hashCode =>
-      cwd.hashCode ^ provider.hashCode ^ prompt.hashCode ^ requestId.hashCode;
+      cwd.hashCode ^
+      provider.hashCode ^
+      prompt.hashCode ^
+      requestId.hashCode ^
+      title.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -440,7 +461,8 @@ class BridgeLaneCreateRequest {
           cwd == other.cwd &&
           provider == other.provider &&
           prompt == other.prompt &&
-          requestId == other.requestId;
+          requestId == other.requestId &&
+          title == other.title;
 }
 
 /// What a create answered (mirrors `lane::LaneCreated`): the new session's row
@@ -1022,6 +1044,11 @@ class BridgeLaneSnapshot {
   /// Pending only, by [`lane_status_is_pending`]'s rule.
   final List<BridgeLaneApproval> approvals;
 
+  /// The session's `/` menu, resolved in Rust against its capabilities
+  /// (plan 029); `None` when the session has no catalog or does not say
+  /// `slash`. Every rule over it lives in the `slash_*` functions.
+  final BridgeSlashMenu? slashMenu;
+
   const BridgeLaneSnapshot({
     required this.messages,
     required this.full,
@@ -1034,6 +1061,7 @@ class BridgeLaneSnapshot {
     this.settings,
     required this.settingsFrames,
     required this.approvals,
+    this.slashMenu,
   });
 
   @override
@@ -1048,7 +1076,8 @@ class BridgeLaneSnapshot {
       capabilities.hashCode ^
       settings.hashCode ^
       settingsFrames.hashCode ^
-      approvals.hashCode;
+      approvals.hashCode ^
+      slashMenu.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1065,7 +1094,8 @@ class BridgeLaneSnapshot {
           capabilities == other.capabilities &&
           settings == other.settings &&
           settingsFrames == other.settingsFrames &&
-          approvals == other.approvals;
+          approvals == other.approvals &&
+          slashMenu == other.slashMenu;
 }
 
 /// How full the session's context is, when the agent says (mirrors
@@ -1102,6 +1132,239 @@ enum BridgeSendMode {
   interject,
 }
 
+/// What a rename answered ([`super::lane::lane_set_title`]). `warning` is set
+/// when the rename TOOK but craze could not record it (`index_write`): the
+/// person sees the new title, the draft clears, and the message is shown beside
+/// it — never a rollback or a retry. Every other failure is a
+/// [`BridgeLaneError`] instead.
+class BridgeSetTitleOutcome {
+  final String? warning;
+
+  const BridgeSetTitleOutcome({this.warning});
+
+  @override
+  int get hashCode => warning.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSetTitleOutcome &&
+          runtimeType == other.runtimeType &&
+          warning == other.warning;
+}
+
+@freezed
+sealed class BridgeSlashAccept with _$BridgeSlashAccept {
+  const BridgeSlashAccept._();
+
+  const factory BridgeSlashAccept.complete({
+    required String draft,
+    required int caret,
+  }) = BridgeSlashAccept_Complete;
+  const factory BridgeSlashAccept.dispatch({
+    required BridgeSlashDispatch dispatch,
+  }) = BridgeSlashAccept_Dispatch;
+}
+
+/// How a menu row was chosen (mirrors `slash_menu::SlashAcceptKey`).
+enum BridgeSlashAcceptKey { enter, tab, pick }
+
+@freezed
+sealed class BridgeSlashAction with _$BridgeSlashAction {
+  const BridgeSlashAction._();
+
+  const factory BridgeSlashAction.prompt() = BridgeSlashAction_Prompt;
+  const factory BridgeSlashAction.setTitle() = BridgeSlashAction_SetTitle;
+  const factory BridgeSlashAction.setMode({required String id}) =
+      BridgeSlashAction_SetMode;
+  const factory BridgeSlashAction.stop() = BridgeSlashAction_Stop;
+  const factory BridgeSlashAction.modelPicker() = BridgeSlashAction_ModelPicker;
+}
+
+@freezed
+sealed class BridgeSlashArg with _$BridgeSlashArg {
+  const BridgeSlashArg._();
+
+  const factory BridgeSlashArg.none() = BridgeSlashArg_None;
+  const factory BridgeSlashArg.optional() = BridgeSlashArg_Optional;
+  const factory BridgeSlashArg.required_() = BridgeSlashArg_Required;
+  const factory BridgeSlashArg.other({required String raw}) =
+      BridgeSlashArg_Other;
+}
+
+@freezed
+sealed class BridgeSlashDispatch with _$BridgeSlashDispatch {
+  const BridgeSlashDispatch._();
+
+  /// Send the draft as text, as without a menu.
+  const factory BridgeSlashDispatch.notCommand() =
+      BridgeSlashDispatch_NotCommand;
+
+  /// Send `text` as the prompt.
+  const factory BridgeSlashDispatch.prompt({required String text}) =
+      BridgeSlashDispatch_Prompt;
+
+  /// Run `action`; `arg` is the title for `SetTitle`, else `None`.
+  const factory BridgeSlashDispatch.run({
+    required BridgeSlashAction action,
+    String? arg,
+  }) = BridgeSlashDispatch_Run;
+
+  /// Refused: show `reason`, keep the draft.
+  const factory BridgeSlashDispatch.refuse({required String reason}) =
+      BridgeSlashDispatch_Refuse;
+}
+
+/// What the menu panel shows for a draft and caret (mirrors
+/// `slash_menu::SlashFilter`): `open` is exactly `!rows.is_empty()`; `token`
+/// keys an Esc dismissal.
+class BridgeSlashFilter {
+  final bool open;
+  final String token;
+  final List<BridgeSlashFilterRow> rows;
+
+  const BridgeSlashFilter({
+    required this.open,
+    required this.token,
+    required this.rows,
+  });
+
+  @override
+  int get hashCode => open.hashCode ^ token.hashCode ^ rows.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSlashFilter &&
+          runtimeType == other.runtimeType &&
+          open == other.open &&
+          token == other.token &&
+          rows == other.rows;
+}
+
+/// One row of an open menu (mirrors `slash_menu::SlashFilterRow`).
+class BridgeSlashFilterRow {
+  final BridgeSlashMenuRow row;
+
+  /// A turn is running and this row would be refused for it: draw it dimmed.
+  final bool dimmed;
+
+  const BridgeSlashFilterRow({required this.row, required this.dimmed});
+
+  @override
+  int get hashCode => row.hashCode ^ dimmed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSlashFilterRow &&
+          runtimeType == other.runtimeType &&
+          row == other.row &&
+          dimmed == other.dimmed;
+}
+
+/// A hidden builtin and why a typed command is refused for it (mirrors
+/// `slash_menu::SlashHidden`).
+class BridgeSlashHidden {
+  final String name;
+  final String reason;
+
+  const BridgeSlashHidden({required this.name, required this.reason});
+
+  @override
+  int get hashCode => name.hashCode ^ reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSlashHidden &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          reason == other.reason;
+}
+
+/// A session's resolved `/` menu (mirrors `slash_menu::SlashMenu`). Uncapped
+/// (P16): the panel scrolls. Hand it back to the `slash_*` functions as it was
+/// read from [`BridgeLaneSnapshot::slash_menu`].
+class BridgeSlashMenu {
+  final List<BridgeSlashMenuRow> rows;
+  final List<BridgeSlashHidden> hidden;
+
+  const BridgeSlashMenu({required this.rows, required this.hidden});
+
+  @override
+  int get hashCode => rows.hashCode ^ hidden.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSlashMenu &&
+          runtimeType == other.runtimeType &&
+          rows == other.rows &&
+          hidden == other.hidden;
+}
+
+/// One shown menu row (mirrors `slash_menu::SlashMenuRow`).
+class BridgeSlashMenuRow {
+  /// The token without its `/` — pass it to [`slash_accept`].
+  final String name;
+  final String? qualified;
+  final String? description;
+  final BridgeSlashSource source;
+  final BridgeSlashArg arg;
+  final String? argHint;
+  final bool whileWorking;
+  final BridgeSlashAction action;
+
+  const BridgeSlashMenuRow({
+    required this.name,
+    this.qualified,
+    this.description,
+    required this.source,
+    required this.arg,
+    this.argHint,
+    required this.whileWorking,
+    required this.action,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      qualified.hashCode ^
+      description.hashCode ^
+      source.hashCode ^
+      arg.hashCode ^
+      argHint.hashCode ^
+      whileWorking.hashCode ^
+      action.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeSlashMenuRow &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          qualified == other.qualified &&
+          description == other.description &&
+          source == other.source &&
+          arg == other.arg &&
+          argHint == other.argHint &&
+          whileWorking == other.whileWorking &&
+          action == other.action;
+}
+
+@freezed
+sealed class BridgeSlashSource with _$BridgeSlashSource {
+  const BridgeSlashSource._();
+
+  const factory BridgeSlashSource.builtin() = BridgeSlashSource_Builtin;
+  const factory BridgeSlashSource.agent() = BridgeSlashSource_Agent;
+  const factory BridgeSlashSource.plugin() = BridgeSlashSource_Plugin;
+  const factory BridgeSlashSource.skill() = BridgeSlashSource_Skill;
+  const factory BridgeSlashSource.other({required String raw}) =
+      BridgeSlashSource_Other;
+}
+
 /// What a source can do (mirrors `lane::SourceCapabilities`) — the
 /// machine-level half of the capabilities: whether a create, and its options,
 /// will be honoured on THIS source. A client hides the create sheet on a source
@@ -1112,14 +1375,22 @@ class BridgeSourceCapabilities {
   final bool create;
   final bool createOptions;
 
+  /// A create may carry a title (plan 029); a source that says no refuses one.
+  final bool createTitle;
+
   const BridgeSourceCapabilities({
     required this.kind,
     required this.create,
     required this.createOptions,
+    required this.createTitle,
   });
 
   @override
-  int get hashCode => kind.hashCode ^ create.hashCode ^ createOptions.hashCode;
+  int get hashCode =>
+      kind.hashCode ^
+      create.hashCode ^
+      createOptions.hashCode ^
+      createTitle.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1128,7 +1399,8 @@ class BridgeSourceCapabilities {
           runtimeType == other.runtimeType &&
           kind == other.kind &&
           create == other.create &&
-          createOptions == other.createOptions;
+          createOptions == other.createOptions &&
+          createTitle == other.createTitle;
 }
 
 @freezed

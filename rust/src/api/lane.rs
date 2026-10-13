@@ -71,6 +71,7 @@ use std::time::Duration;
 
 use flutter_rust_bridge::frb;
 use shed_app::lane_view::LaneView;
+use shed_app::slash_menu;
 use shed_core::lane::{AgentLane, AgentSource, LaneError, LaneEvent};
 use shed_opencode::OpencodeSource;
 
@@ -78,8 +79,11 @@ use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{bridge_rt, joined_on_bridge_rt, ACTIVE_LANES, ACTIVE_LANE_FORWARDERS};
 use super::dto_lane::{
-    BridgeLaneAnswer, BridgeLaneError, BridgeLaneSettingChange, BridgeLaneSnapshot, BridgeSendMode,
+    set_title_outcome, BridgeLaneAnswer, BridgeLaneError, BridgeLaneSettingChange,
+    BridgeLaneSnapshot, BridgeSendMode, BridgeSetTitleOutcome, BridgeSlashAccept,
+    BridgeSlashAcceptKey, BridgeSlashDispatch, BridgeSlashFilter, BridgeSlashMenu,
 };
+use super::dto_rc::BridgeRcActivity;
 
 /// The `agent_lane` kinds THIS BUILD has an adapter for.
 ///
@@ -732,6 +736,62 @@ pub async fn lane_set(
     .await
 }
 
+/// **Rename the session** (plan 029): craze's `session.setTitle`. Needs
+/// [`BridgeLaneCapabilities::set_title`].
+///
+/// `Ok` means the title changed; the new title arrives on the stream (a `meta`
+/// delta re-emits the session), so the header re-renders from the next snapshot.
+/// A rename that took but could not be recorded (craze's `index_write`) is `Ok`
+/// with [`BridgeSetTitleOutcome::warning`] set to the full message: clear the
+/// draft and show the warning, never roll back or retry. Every other refusal is
+/// a [`BridgeLaneError`] (an answer lost to a drop is
+/// [`BridgeLaneError::OutcomeUnknown`]).
+pub async fn lane_set_title(
+    lane: &BridgeLane,
+    title: String,
+) -> Result<BridgeSetTitleOutcome, BridgeLaneError> {
+    let client = lane.inner.client()?;
+    on_bridge_rt(async move { set_title_outcome(client.set_title(&title).await) }).await
+}
+
+/// **The menu panel for a draft** (plan 029, P5): a thin call into
+/// `shed_app::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
+/// `TextSelection.extentOffset`); `working` is [`slash_is_working`].
+#[frb(sync)]
+pub fn slash_filter(
+    menu: BridgeSlashMenu,
+    draft: String,
+    caret: u32,
+    working: bool,
+) -> BridgeSlashFilter {
+    slash_menu::filter(&menu.into(), &draft, caret, working).into()
+}
+
+/// **What sending a draft does** (plan 029, P5/P6): `slash_menu::dispatch`.
+#[frb(sync)]
+pub fn slash_dispatch(menu: BridgeSlashMenu, draft: String, working: bool) -> BridgeSlashDispatch {
+    slash_menu::dispatch(&menu.into(), &draft, working).into()
+}
+
+/// **What choosing a menu row does** (plan 029, P9): `slash_menu::accept`.
+/// `None` when there is nothing to accept (re-filter).
+#[frb(sync)]
+pub fn slash_accept(
+    menu: BridgeSlashMenu,
+    draft: String,
+    row_name: String,
+    key: BridgeSlashAcceptKey,
+    working: bool,
+) -> Option<BridgeSlashAccept> {
+    slash_menu::accept(&menu.into(), &draft, &row_name, key.into(), working).map(Into::into)
+}
+
+/// **Whether a turn is running** for the dim/refuse rule (plan 029, P23).
+#[frb(sync)]
+pub fn slash_is_working(activity: BridgeRcActivity) -> bool {
+    slash_menu::is_working(activity.into())
+}
+
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.
 ///
@@ -1173,8 +1233,8 @@ mod tests {
             history_cursor: true,
             settings: false,
             stop: true,
-            set_title: false,
             slash: false,
+            set_title: false,
         };
         lane.inner.apply(&LaneEvent::Reset {
             reason: "connect".to_string(),
@@ -1269,8 +1329,8 @@ mod tests {
             history_cursor: true,
             settings: true,
             stop: true,
-            set_title: false,
             slash: false,
+            set_title: false,
         };
         assert_eq!(lane_snapshot(&lane, None).settings_frames, 0);
         lane.inner.apply(&LaneEvent::Reset {

@@ -155,6 +155,67 @@ Future<void> laneSet({
   required BridgeLaneSettingChange change,
 }) => RustLib.instance.api.crateApiLaneLaneSet(lane: lane, change: change);
 
+/// **Rename the session** (plan 029): craze's `session.setTitle`. Needs
+/// [`BridgeLaneCapabilities::set_title`].
+///
+/// `Ok` means the title changed; the new title arrives on the stream (a `meta`
+/// delta re-emits the session), so the header re-renders from the next snapshot.
+/// A rename that took but could not be recorded (craze's `index_write`) is `Ok`
+/// with [`BridgeSetTitleOutcome::warning`] set to the full message: clear the
+/// draft and show the warning, never roll back or retry. Every other refusal is
+/// a [`BridgeLaneError`] (an answer lost to a drop is
+/// [`BridgeLaneError::OutcomeUnknown`]).
+Future<BridgeSetTitleOutcome> laneSetTitle({
+  required BridgeLane lane,
+  required String title,
+}) => RustLib.instance.api.crateApiLaneLaneSetTitle(lane: lane, title: title);
+
+/// **The menu panel for a draft** (plan 029, P5): a thin call into
+/// `shed_app::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
+/// `TextSelection.extentOffset`); `working` is [`slash_is_working`].
+BridgeSlashFilter slashFilter({
+  required BridgeSlashMenu menu,
+  required String draft,
+  required int caret,
+  required bool working,
+}) => RustLib.instance.api.crateApiLaneSlashFilter(
+  menu: menu,
+  draft: draft,
+  caret: caret,
+  working: working,
+);
+
+/// **What sending a draft does** (plan 029, P5/P6): `slash_menu::dispatch`.
+BridgeSlashDispatch slashDispatch({
+  required BridgeSlashMenu menu,
+  required String draft,
+  required bool working,
+}) => RustLib.instance.api.crateApiLaneSlashDispatch(
+  menu: menu,
+  draft: draft,
+  working: working,
+);
+
+/// **What choosing a menu row does** (plan 029, P9): `slash_menu::accept`.
+/// `None` when there is nothing to accept (re-filter).
+BridgeSlashAccept? slashAccept({
+  required BridgeSlashMenu menu,
+  required String draft,
+  required String rowName,
+  required BridgeSlashAcceptKey key,
+  required bool working,
+}) => RustLib.instance.api.crateApiLaneSlashAccept(
+  menu: menu,
+  draft: draft,
+  rowName: rowName,
+  key: key,
+  working: working,
+);
+
+/// **Whether a turn is running** for the dim/refuse rule (plan 029, P23).
+bool slashIsWorking({required BridgeRcActivity activity}) =>
+    RustLib.instance.api.crateApiLaneSlashIsWorking(activity: activity);
+
 /// End the lane — the SYNCHRONOUS co-primary teardown (a Riverpod `onDispose`
 /// calls this). Idempotent; `Drop` is the backstop.
 ///

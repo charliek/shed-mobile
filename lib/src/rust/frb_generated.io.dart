@@ -366,6 +366,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed dco_decode_box_autoadd_bridge_shed(dynamic raw);
 
   @protected
+  BridgeSlashAccept dco_decode_box_autoadd_bridge_slash_accept(dynamic raw);
+
+  @protected
+  BridgeSlashAction dco_decode_box_autoadd_bridge_slash_action(dynamic raw);
+
+  @protected
+  BridgeSlashDispatch dco_decode_box_autoadd_bridge_slash_dispatch(dynamic raw);
+
+  @protected
+  BridgeSlashMenu dco_decode_box_autoadd_bridge_slash_menu(dynamic raw);
+
+  @protected
   BridgeSourceCapabilities dco_decode_box_autoadd_bridge_source_capabilities(
     dynamic raw,
   );
@@ -632,6 +644,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeSessionRc dco_decode_bridge_session_rc(dynamic raw);
 
   @protected
+  BridgeSetTitleOutcome dco_decode_bridge_set_title_outcome(dynamic raw);
+
+  @protected
   BridgeShed dco_decode_bridge_shed(dynamic raw);
 
   @protected
@@ -639,6 +654,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeShedStatus dco_decode_bridge_shed_status(dynamic raw);
+
+  @protected
+  BridgeSlashAccept dco_decode_bridge_slash_accept(dynamic raw);
+
+  @protected
+  BridgeSlashAcceptKey dco_decode_bridge_slash_accept_key(dynamic raw);
+
+  @protected
+  BridgeSlashAction dco_decode_bridge_slash_action(dynamic raw);
+
+  @protected
+  BridgeSlashArg dco_decode_bridge_slash_arg(dynamic raw);
+
+  @protected
+  BridgeSlashDispatch dco_decode_bridge_slash_dispatch(dynamic raw);
+
+  @protected
+  BridgeSlashFilter dco_decode_bridge_slash_filter(dynamic raw);
+
+  @protected
+  BridgeSlashFilterRow dco_decode_bridge_slash_filter_row(dynamic raw);
+
+  @protected
+  BridgeSlashHidden dco_decode_bridge_slash_hidden(dynamic raw);
+
+  @protected
+  BridgeSlashMenu dco_decode_bridge_slash_menu(dynamic raw);
+
+  @protected
+  BridgeSlashMenuRow dco_decode_bridge_slash_menu_row(dynamic raw);
+
+  @protected
+  BridgeSlashSource dco_decode_bridge_slash_source(dynamic raw);
 
   @protected
   BridgeSourceCapabilities dco_decode_bridge_source_capabilities(dynamic raw);
@@ -723,6 +771,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<BridgeShedImage> dco_decode_list_bridge_shed_image(dynamic raw);
+
+  @protected
+  List<BridgeSlashFilterRow> dco_decode_list_bridge_slash_filter_row(
+    dynamic raw,
+  );
+
+  @protected
+  List<BridgeSlashHidden> dco_decode_list_bridge_slash_hidden(dynamic raw);
+
+  @protected
+  List<BridgeSlashMenuRow> dco_decode_list_bridge_slash_menu_row(dynamic raw);
 
   @protected
   List<List<String>> dco_decode_list_list_String(dynamic raw);
@@ -812,6 +871,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeSessionRc? dco_decode_opt_box_autoadd_bridge_session_rc(dynamic raw);
+
+  @protected
+  BridgeSlashAccept? dco_decode_opt_box_autoadd_bridge_slash_accept(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeSlashMenu? dco_decode_opt_box_autoadd_bridge_slash_menu(dynamic raw);
 
   @protected
   BridgeSourceCapabilities?
@@ -1201,6 +1268,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed sse_decode_box_autoadd_bridge_shed(SseDeserializer deserializer);
 
   @protected
+  BridgeSlashAccept sse_decode_box_autoadd_bridge_slash_accept(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashAction sse_decode_box_autoadd_bridge_slash_action(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashDispatch sse_decode_box_autoadd_bridge_slash_dispatch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashMenu sse_decode_box_autoadd_bridge_slash_menu(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSourceCapabilities sse_decode_box_autoadd_bridge_source_capabilities(
     SseDeserializer deserializer,
   );
@@ -1569,6 +1656,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeSessionRc sse_decode_bridge_session_rc(SseDeserializer deserializer);
 
   @protected
+  BridgeSetTitleOutcome sse_decode_bridge_set_title_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeShed sse_decode_bridge_shed(SseDeserializer deserializer);
 
   @protected
@@ -1576,6 +1668,57 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeShedStatus sse_decode_bridge_shed_status(SseDeserializer deserializer);
+
+  @protected
+  BridgeSlashAccept sse_decode_bridge_slash_accept(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashAcceptKey sse_decode_bridge_slash_accept_key(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashAction sse_decode_bridge_slash_action(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashArg sse_decode_bridge_slash_arg(SseDeserializer deserializer);
+
+  @protected
+  BridgeSlashDispatch sse_decode_bridge_slash_dispatch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashFilter sse_decode_bridge_slash_filter(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashFilterRow sse_decode_bridge_slash_filter_row(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashHidden sse_decode_bridge_slash_hidden(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashMenu sse_decode_bridge_slash_menu(SseDeserializer deserializer);
+
+  @protected
+  BridgeSlashMenuRow sse_decode_bridge_slash_menu_row(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashSource sse_decode_bridge_slash_source(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BridgeSourceCapabilities sse_decode_bridge_source_capabilities(
@@ -1698,6 +1841,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeSlashFilterRow> sse_decode_list_bridge_slash_filter_row(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeSlashHidden> sse_decode_list_bridge_slash_hidden(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<BridgeSlashMenuRow> sse_decode_list_bridge_slash_menu_row(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
 
   @protected
@@ -1801,6 +1959,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeSessionRc? sse_decode_opt_box_autoadd_bridge_session_rc(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashAccept? sse_decode_opt_box_autoadd_bridge_slash_accept(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeSlashMenu? sse_decode_opt_box_autoadd_bridge_slash_menu(
     SseDeserializer deserializer,
   );
 
@@ -2260,6 +2428,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_bridge_shed(
     BridgeShed self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_slash_accept(
+    BridgeSlashAccept self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_slash_action(
+    BridgeSlashAction self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_slash_dispatch(
+    BridgeSlashDispatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_slash_menu(
+    BridgeSlashMenu self,
     SseSerializer serializer,
   );
 
@@ -2744,6 +2936,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_set_title_outcome(
+    BridgeSetTitleOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_shed(BridgeShed self, SseSerializer serializer);
 
   @protected
@@ -2755,6 +2953,72 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_shed_status(
     BridgeShedStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_accept(
+    BridgeSlashAccept self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_accept_key(
+    BridgeSlashAcceptKey self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_action(
+    BridgeSlashAction self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_arg(
+    BridgeSlashArg self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_dispatch(
+    BridgeSlashDispatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_filter(
+    BridgeSlashFilter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_filter_row(
+    BridgeSlashFilterRow self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_hidden(
+    BridgeSlashHidden self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_menu(
+    BridgeSlashMenu self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_menu_row(
+    BridgeSlashMenuRow self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_slash_source(
+    BridgeSlashSource self,
     SseSerializer serializer,
   );
 
@@ -2903,6 +3167,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_bridge_slash_filter_row(
+    List<BridgeSlashFilterRow> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_slash_hidden(
+    List<BridgeSlashHidden> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_bridge_slash_menu_row(
+    List<BridgeSlashMenuRow> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_list_String(
     List<List<String>> self,
     SseSerializer serializer,
@@ -3025,6 +3307,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bridge_session_rc(
     BridgeSessionRc? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_slash_accept(
+    BridgeSlashAccept? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_slash_menu(
+    BridgeSlashMenu? self,
     SseSerializer serializer,
   );
 

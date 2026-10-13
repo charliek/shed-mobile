@@ -2646,6 +2646,7 @@ class _HeldViewSource extends _RecordingSource {
       settings: shown.settings,
       settingsFrames: shown.settingsFrames,
       approvals: shown.approvals,
+      slashMenu: shown.slashMenu,
     );
   }
 }

@@ -74,6 +74,7 @@ BridgeCrazeSnapshot _snap({
     kind: 'craze',
     create: create,
     createOptions: createOptions,
+    createTitle: false,
   ),
   truncated: false,
 );

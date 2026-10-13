@@ -232,6 +232,7 @@ void main() {
                 kind: 'craze',
                 create: create,
                 createOptions: options,
+                createTitle: false,
               ),
               truncated: false,
             ),

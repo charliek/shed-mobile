@@ -595,9 +595,12 @@ class _FakeSource implements LaneSource {
           historyCursor: false,
           settings: false,
           stop: false,
+          slash: false,
+          setTitle: false,
         ),
         settingsFrames: BigInt.zero,
         approvals: const [],
+        slashMenu: null,
       );
 
   @override
