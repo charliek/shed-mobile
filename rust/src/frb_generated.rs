@@ -46,7 +46,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 622265084;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1177393197;
 
 // Section: executor
 
@@ -1020,6 +1020,64 @@ fn wire__crate__api__craze__craze_create_impl(
                         let api_src_guard = api_src_guard.unwrap();
                         let output_ok =
                             crate::api::craze::craze_create(&*api_src_guard, api_request).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__craze__craze_create_held_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "craze_create_held",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_src = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeCrazeSource>,
+            >>::sse_decode(&mut deserializer);
+            let api_request =
+                <crate::api::dto_lane::BridgeLaneCreateRequest>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::dto_lane::BridgeLaneError>(
+                    (move || async move {
+                        let mut api_src_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_src, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_src_guard = Some(api_src.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_src_guard = api_src_guard.unwrap();
+                        let output_ok =
+                            crate::api::craze::craze_create_held(&*api_src_guard, api_request)
+                                .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -7045,94 +7103,95 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         18 => wire__crate__api__craze__craze_create_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__craze__craze_create_options_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__craze__craze_lane_open_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__craze__craze_source_nudges_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__craze__craze_source_open_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__roost__create_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__create_stream__create_shed_events_impl(
+        19 => wire__crate__api__craze__craze_create_held_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__craze__craze_create_options_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__craze__craze_lane_open_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__craze__craze_source_nudges_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__craze__craze_source_open_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__roost__create_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__create_stream__create_shed_events_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        32 => wire__crate__api__create_stream__create_shed_stream_impl(
+        33 => wire__crate__api__create_stream__create_shed_stream_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        33 => wire__crate__api__mint__demo_mint_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__lane__lane_answer_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__lane__lane_cancel_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__lane__lane_nudges_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__lane__lane_open_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__lane__lane_send_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__lane__lane_set_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__lane__lane_set_title_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__lane__lane_stop_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
+        34 => wire__crate__api__mint__demo_mint_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__lane__lane_answer_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__lane__lane_cancel_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__lane__lane_nudges_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__lane__lane_open_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__lane__lane_send_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__lane__lane_set_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__lane__lane_set_title_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__lane__lane_stop_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__bridge_rt__live_counters_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__preview__preview_add_server_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__roost_bootstrap__roost_bootstrap_begin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
+        54 => wire__crate__api__roost_bootstrap__roost_bootstrap_feed_exec_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
+        55 => wire__crate__api__roost_bootstrap__roost_bootstrap_install_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
+        57 => wire__crate__api__roost_bootstrap__roost_bootstrap_probe_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__client__set_credential_event_sink_impl(
+        60 => wire__crate__api__roost__roost_peek_close_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__roost__roost_peek_dump_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__roost__roost_peek_open_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__roost__roost_tab_close_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__roost__roost_tab_open_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__roost__roost_watcher_events_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__client__set_credential_event_sink_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
+        68 => wire__crate__api__mint__set_mint_sink_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__shed__shed_app_probe_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__shed__shed_core_probe_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__local_sse__spawn_create_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        77 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
+        78 => wire__crate__api__local_sse__spawn_status_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
+        79 => wire__crate__api__local_sse__spawn_watcher_test_sse_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__roost__stop_roost_watcher_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__mint__submit_mint_result_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7148,46 +7207,46 @@ fn pde_ffi_dispatcher_sync_impl(
         13 => wire__crate__api__local_sse__BridgeTestSse_base_url_impl(ptr, rust_vec_len, data_len),
         14 => wire__crate__api__local_sse__BridgeTestSse_stop_impl(ptr, rust_vec_len, data_len),
         17 => wire__crate__api__create_stream__cancel_create_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__craze__craze_fold_plan_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__craze__craze_jailed_bridge_argv_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__craze__craze_new_request_id_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__craze__craze_remote_command_impl(ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__craze__craze_source_close_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__craze__craze_source_note_reach_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__craze__craze_source_snapshot_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__lane__lane_close_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__dto_lane__lane_option_for_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
+        21 => wire__crate__api__craze__craze_fold_plan_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__craze__craze_jailed_bridge_argv_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__craze__craze_new_request_id_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__craze__craze_remote_command_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__craze__craze_source_close_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__craze__craze_source_note_reach_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__craze__craze_source_snapshot_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__lane__lane_close_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__dto_lane__lane_option_for_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__lane__lane_snapshot_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__dto_lane__lane_status_is_pending_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__mint__mint_request_is_token_free_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__roost_bootstrap__roost_bootstrap_close_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
+        56 => wire__crate__api__roost_bootstrap__roost_bootstrap_note_reach_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
+        58 => wire__crate__api__roost_bootstrap__roost_bootstrap_source_preview_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__client__shutdown_credential_event_sink_impl(
+        59 => wire__crate__api__roost__roost_capabilities_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__roost__roost_remote_command_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__client__shutdown_credential_event_sink_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        71 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__lane__slash_accept_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__lane__slash_dispatch_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__lane__slash_filter_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__lane__slash_is_working_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__mint__shutdown_mint_sink_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__lane__slash_accept_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__lane__slash_dispatch_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__lane__slash_filter_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__lane__slash_is_working_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

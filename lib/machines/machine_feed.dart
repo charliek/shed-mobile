@@ -1296,16 +1296,27 @@ class MachineFeed {
   /// it, and a row this read does NOT list is a session craze answered for
   /// that has already ended. The roster's own frame follows and replaces it.
   ///
+  /// [held] says the request REPLAYS a request id kept from an unknown outcome
+  /// (plan 026 §3.1, plan 029 P11): it then goes as [crazeCreateHeld], so only
+  /// craze's own answer about that request ends the id — a hub that cannot
+  /// take it now (no `createTitle` for a titled request, a dial that never
+  /// reached craze) is an unknown outcome again, never a definite refusal the
+  /// sheet would drop the id on. Every other submission is a NEW request
+  /// ([crazeCreate]).
+  ///
   /// Throws a [StateError] — before anything is sent — while the machine has
   /// no craze source.
   Future<BridgeLaneCreated> crazeCreateSession(
-    BridgeLaneCreateRequest request,
-  ) async {
+    BridgeLaneCreateRequest request, {
+    bool held = false,
+  }) async {
     final source = _crazeSource;
     if (source == null) {
       throw StateError('craze is not connected on ${machine.name}');
     }
-    final created = await crazeCreate(src: source, request: request);
+    final created = held
+        ? await crazeCreateHeld(src: source, request: request)
+        : await crazeCreate(src: source, request: request);
     // Only through the source that created it: a restart's replacement has
     // its own pull, and reading a retired handle would emit its last view.
     if (identical(source, _crazeSource)) _pullCraze(_generation);

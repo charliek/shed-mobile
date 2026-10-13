@@ -1237,7 +1237,10 @@ void main() {
       expect(_primaryLabel(tester), 'Try again');
       expect(
         rig.creates.sublist(before),
-        [(requestId: held, dropped: true), (requestId: held, dropped: true)],
+        [
+          (requestId: held, title: null, dropped: true),
+          (requestId: held, title: null, dropped: true),
+        ],
         reason: 'shed-craze\'s own retry, under the same id',
       );
 
@@ -1248,10 +1251,307 @@ void main() {
         what: 'the session the first attempt started, opened',
       );
       expect(rig.creates.sublist(before), [
-        (requestId: held, dropped: true),
-        (requestId: held, dropped: true),
-        (requestId: held, dropped: false),
+        (requestId: held, title: null, dropped: true),
+        (requestId: held, title: null, dropped: true),
+        (requestId: held, title: null, dropped: false),
       ], reason: 'Try again resumed the same request');
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_titled_create_carries_the_name_in_its_answer_and_first_seed',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled');
+      const name = 'Fix the login bug';
+      final before = rig.creates.length;
+      final replied = rig.createReplies.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field (craze 0.1.1 takes a title)',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        '  $name  ',
+      );
+      await _pumps(tester);
+      await _press(tester);
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the new session\'s transcript',
+      );
+      final sent = rig.creates.sublist(before);
+      expect(sent, hasLength(1));
+      expect(sent.single.title, name, reason: 'trimmed, sent');
+
+      // The FIRST frame, on the wire: the hub's answer to the create — the
+      // session's row, recorded as it came down, before the phone read it —
+      // already carries the name (P26).
+      final replies = rig.createReplies.sublist(replied);
+      expect(replies, hasLength(1), reason: 'one create, one answer');
+      final reply = replies.single;
+      expect(reply.requestId, sent.single.requestId);
+      expect(reply.error, isNull);
+      expect(reply.relayed, isTrue);
+      final answer = reply.session!;
+      expect(
+        (answer['row'] as Map?)?['title'],
+        name,
+        reason: 'the create\'s own answer — the session\'s row — is titled',
+      );
+      final host = answer['hostId']! as String;
+      final made = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .lastCreated!;
+      expect(made.hostId, host, reason: 'the transcript opened on that row');
+      expect(made.created.session.title, name, reason: 'as the phone read it');
+
+      // What the phone shows — EVENTUAL checks, not the first frame.
+      final ref = (machine: _local.name, kind: crazeLaneKind, slug: host);
+      await _until(
+        tester,
+        () =>
+            screen.container.read(laneStateProvider(ref)).value?.session !=
+            null,
+        what: 'the lane seeded',
+      );
+      expect(
+        screen.container.read(laneStateProvider(ref)).value!.session!.title,
+        name,
+        reason: 'the lane shows the title (eventually)',
+      );
+
+      // The FIRST seed, on the wire: the lane connection's first attach for
+      // this session (recorded before the lane could seed from it) is a fresh
+      // one, answered with a snapshot that already carries the name.
+      final sessionId = answer['sessionId']! as String;
+      bool attached(
+        ({
+          String? sessionId,
+          bool cursor,
+          String? hostId,
+          bool snapshot,
+          String? title,
+          Object? error,
+          bool relayed,
+        })
+        a,
+      ) => a.sessionId == sessionId && a.error == null;
+      await _until(
+        tester,
+        () => rig.attaches.any(attached),
+        what: 'the lane\'s attach reply on record',
+      );
+      final first = rig.attaches.firstWhere(attached);
+      expect(first.hostId, host);
+      expect(first.relayed, isTrue);
+      expect(
+        first.cursor,
+        isFalse,
+        reason: 'the lane\'s first attach is a fresh one',
+      );
+      expect(first.snapshot, isTrue, reason: 'answered with a snapshot');
+      expect(
+        first.title,
+        name,
+        reason: 'the lane\'s FIRST seed is already titled',
+      );
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_held_titled_replay_to_a_hub_without_create_title_keeps_its_id',
+    (tester) async {
+      // P11 (the sol review of M2+M4, item 5): Try again after an unknown
+      // outcome REPLAYS the titled request, and craze may already run the
+      // session the first attempt started. When the hub the replay reaches no
+      // longer says createTitle, the replay is unknown again — the id and the
+      // exact title kept, nothing sent — and once the capability is back the
+      // same request reaches craze, which answers with that one session. A
+      // replay sent as a NEW create would be refused definitely there and
+      // drop the id (a later submission could then start a second session).
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled-held');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        'Held name',
+      );
+      await _pumps(tester);
+      rig.dropCreates = true;
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-unknown'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the sheet to report an unknown outcome',
+        );
+      } finally {
+        rig.dropCreates = false;
+      }
+      CrazeDraft draft() =>
+          screen.container.read(crazeDraftProvider(_local.name));
+      final held = draft().requestId;
+      expect(held, startsWith('shed-'));
+
+      // The hub the replay reaches no longer says createTitle.
+      final hidden = rig.hiddenCreateTitles;
+      rig.hideCreateTitle = true;
+      try {
+        await _press(tester); // Try again: submitting from the tap on
+        await _until(
+          tester,
+          () => draft().phase != CrazePhase.submitting,
+          what: 'the replay answered',
+        );
+      } finally {
+        rig.hideCreateTitle = false;
+      }
+      expect(
+        draft().phase,
+        CrazePhase.unknown,
+        reason:
+            'a held replay the hub cannot take is unknown again, never '
+            'a definite refusal',
+      );
+      expect(draft().requestId, held, reason: 'the id is kept');
+      expect(draft().sentTitle, 'Held name', reason: 'and its exact title');
+      expect(_textAt('craze-create-unknown'), outcomeUnknownNote);
+      expect(
+        rig.hiddenCreateTitles - hidden,
+        greaterThanOrEqualTo(2),
+        reason:
+            'the replay and shed-craze\'s one retry each reached a hub '
+            'without createTitle (and the tap did start a replay)',
+      );
+      expect(
+        rig.creates.sublist(before),
+        hasLength(2),
+        reason: 'nothing was sent to a hub that cannot take the title',
+      );
+
+      // createTitle is back: Try again resumes the SAME request.
+      await _press(tester);
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the first attempt started, opened',
+      );
+      expect(
+        rig.creates.sublist(before),
+        [
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: false),
+        ],
+        reason: 'one request — the same id and title — every time it was sent',
+      );
+      expect(draft().lastCreated!.created.session.title, 'Held name');
+      await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_unknown_outcome_retries_with_the_same_title',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final screen = await _createScreen(tester, rig);
+      final dir = _mkdir('${rig.root}/w-titled-unknown');
+      final before = rig.creates.length;
+
+      await _chooseCraze(tester);
+      await _until(
+        tester,
+        () => find
+            .byKey(const ValueKey('craze-create-title'))
+            .evaluate()
+            .isNotEmpty,
+        what: 'the Name field',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-cwd')),
+        dir,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('craze-create-title')),
+        'Held name',
+      );
+      await _pumps(tester);
+      rig.dropCreates = true;
+      try {
+        await _press(tester);
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-create-unknown'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the sheet to report an unknown outcome',
+        );
+      } finally {
+        rig.dropCreates = false;
+      }
+      final held = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .requestId;
+      expect(held, startsWith('shed-'));
+      await _press(tester); // Try again
+      await _until(
+        tester,
+        () => find.byType(LaneScreen).evaluate().isNotEmpty,
+        what: 'the session the first attempt started, opened',
+      );
+      expect(
+        rig.creates.sublist(before),
+        [
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: true),
+          (requestId: held, title: 'Held name', dropped: false),
+        ],
+        reason: 'the same id AND the same title, every time',
+      );
+      final made = screen.container
+          .read(crazeDraftProvider(_local.name))
+          .lastCreated!;
+      expect(made.created.session.title, 'Held name');
       await _exactlyOneIn(tester, screen.feed, dir);
     },
     skip: skip,

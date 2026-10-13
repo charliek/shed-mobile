@@ -147,9 +147,65 @@ class CrazeRig {
   Completer<void>? holdCrazeDials;
 
   /// Every `session.create` a craze bridge of this rig carried, in order:
-  /// its request id, and whether it was [dropCreates]-dropped. What the
+  /// its request id, its `title` (as it left the phone; null when none was
+  /// sent), and whether it was [dropCreates]-dropped. What the
   /// create cells count sessions and ids by (the desktop rig's `creates.log`).
-  final List<({String? requestId, bool dropped})> creates = [];
+  final List<({String? requestId, String? title, bool dropped})> creates = [];
+
+  /// **The hub's REPLY to every `session.create`** a craze bridge of this rig
+  /// carried, in order (the desktop rig's `create-replies.log`): the request
+  /// id it answers, the `session` row it answered with (null on a refusal),
+  /// the JSON-RPC `error` (null on success), and whether it was [relayed] to
+  /// the phone at all (a [dropCreates] cut is not). Recorded as the line comes
+  /// DOWN the wire, before it is relayed — so it is on record by the time the
+  /// phone has read it: what the phone was FIRST told, which no read of its
+  /// state afterwards can prove (plan 029 P26).
+  final List<
+    ({
+      String? requestId,
+      Map<String, Object?>? session,
+      Object? error,
+      bool relayed,
+    })
+  >
+  createReplies = [];
+
+  /// **The reply to every `session.attach`** a craze bridge of this rig
+  /// carried — a lane's seed — in order (the desktop rig's `attaches.log`):
+  /// the craze session id it attached, whether it resumed from a `cursor`,
+  /// the `hostId` the reply names, whether it carried a `snapshot` (a fresh
+  /// seed) and that snapshot's `settings.title`, the JSON-RPC `error`, and
+  /// whether it was relayed. Recorded before it is relayed, as
+  /// [createReplies] is: a lane's FIRST seed as it reached the phone.
+  final List<
+    ({
+      String? sessionId,
+      bool cursor,
+      String? hostId,
+      bool snapshot,
+      String? title,
+      Object? error,
+      bool relayed,
+    })
+  >
+  attaches = [];
+
+  /// **A hub without `createTitle`** (plan 029 P11, craze 0.1.0's hello):
+  /// while set, every `hello` reply that states `createTitle` reaches the
+  /// phone WITHOUT it — the capability gone from the hub a create (or a held
+  /// replay of one) connects to, with everything else craze said intact.
+  /// [hiddenCreateTitles] counts the replies it edited.
+  bool hideCreateTitle = false;
+  int hiddenCreateTitles = 0;
+
+  /// The requests whose reply a bridge's next hub line may be, per bridge
+  /// (JSON-RPC ids are per connection), by the id as JSON: the method and its
+  /// params.
+  final Map<
+    Process,
+    Map<String, ({String method, Map<Object?, Object?> params})>
+  >
+  _asked = {};
 
   /// **A lost answer, exactly** (the desktop rig's `drop-creates`): while set,
   /// a bridge that carries a `session.create` relays it to the hub and then
@@ -271,6 +327,8 @@ class CrazeRig {
         return ProcessExecSession(
           process,
           inspect: (line) => _clientLine(line, process),
+          answer: (line, {required relayed}) =>
+              _hubLine(line, process, relayed: relayed),
         );
       },
       remoteCommand: remoteCommand,
@@ -292,6 +350,15 @@ class CrazeRig {
     if (msg is! Map) return false;
     final method = msg['method'];
     final params = msg['params'];
+    if (msg.containsKey('id') &&
+        (method == 'hello' ||
+            method == 'session.create' ||
+            method == 'session.attach')) {
+      (_asked[process] ??= {})[jsonEncode(msg['id'])] = (
+        method: method as String,
+        params: params is Map ? params : const {},
+      );
+    }
     if (method == 'sessions.subscribe' || method == 'session.connect') {
       connections.add((
         process: process,
@@ -316,9 +383,78 @@ class CrazeRig {
     final drop = dropCreates;
     creates.add((
       requestId: params is Map ? params['requestId'] as String? : null,
+      title: params is Map ? params['title'] as String? : null,
       dropped: drop,
     ));
     return drop;
+  }
+
+  /// One hub→client line on a craze bridge, before it is relayed: the reply
+  /// to a `session.create` is logged to [createReplies], to a
+  /// `session.attach` to [attaches], and a `hello` reply loses `createTitle`
+  /// while [hideCreateTitle] is set. Answers the line to relay in its place,
+  /// or null to relay it as it came.
+  String? _hubLine(String line, Process process, {required bool relayed}) {
+    final asked = _asked[process];
+    if (asked == null || asked.isEmpty) return null;
+    Object? msg;
+    try {
+      msg = jsonDecode(line);
+    } on FormatException {
+      return null;
+    }
+    if (msg is! Map || msg.containsKey('method') || !msg.containsKey('id')) {
+      return null;
+    }
+    final ask = asked.remove(jsonEncode(msg['id']));
+    if (ask == null) return null;
+    final raw = msg['result'];
+    final result = raw is Map
+        ? raw.cast<String, Object?>()
+        : const <String, Object?>{};
+    final error = msg['error'];
+    switch (ask.method) {
+      case 'session.create':
+        final session = result['session'];
+        createReplies.add((
+          requestId: ask.params['requestId'] as String?,
+          session: session is Map ? session.cast<String, Object?>() : null,
+          error: error,
+          relayed: relayed,
+        ));
+      case 'session.attach':
+        final snap = result['snapshot'];
+        final settings = snap is Map ? snap['settings'] : null;
+        final title = settings is Map ? settings['title'] : null;
+        final session = result['session'];
+        final hostId = session is Map ? session['hostId'] : null;
+        attaches.add((
+          sessionId: ask.params['sessionId'] as String?,
+          cursor: ask.params['cursor'] != null,
+          hostId: hostId is String ? hostId : null,
+          snapshot: snap is Map,
+          title: title is String ? title : null,
+          error: error,
+          relayed: relayed,
+        ));
+      case 'hello':
+        final caps = result['capabilities'];
+        if (!hideCreateTitle ||
+            caps is! Map ||
+            !caps.containsKey('createTitle')) {
+          return null;
+        }
+        hiddenCreateTitles++;
+        return jsonEncode({
+          ...msg.cast<String, Object?>(),
+          'result': {
+            ...result,
+            'capabilities': {...caps.cast<String, Object?>()}
+              ..remove('createTitle'),
+          },
+        });
+    }
+    return null;
   }
 
   /// The bridge carrying [hostId]'s lane NOW — the latest connection whose
@@ -825,8 +961,15 @@ class CrazeSetGate {
 /// it is relayed, and an answer of true CUTS the exchange there — nothing more
 /// is relayed back, and a second later the process is killed (the rig's
 /// [CrazeRig.dropCreates]).
+///
+/// The third is [answer], its mirror for the other direction: every line the
+/// far side writes is shown to it BEFORE it is relayed (and whether it will
+/// be relayed at all), and a non-null answer is relayed in its place — how the
+/// rig records what the phone was first told ([CrazeRig.createReplies],
+/// [CrazeRig.attaches]) and plays a hub without `createTitle`
+/// ([CrazeRig.hideCreateTitle]). With it, stdout is relayed a line at a time.
 class ProcessExecSession implements RoostExecSession {
-  ProcessExecSession(this.process, {this.inspect}) {
+  ProcessExecSession(this.process, {this.inspect, this.answer}) {
     // A write after the process has gone is a closed pipe, which is the far
     // side ending — the pump learns it from `done`, not from an error here.
     process.stdin.done.catchError((Object _) {});
@@ -853,9 +996,18 @@ class ProcessExecSession implements RoostExecSession {
     );
     process.stdout.listen(
       (chunk) {
-        if (!_cut) _stdout.add(_bytes(chunk));
+        if (answer != null) {
+          _down(chunk);
+        } else if (!_cut) {
+          _stdout.add(_bytes(chunk));
+        }
       },
       onDone: () async {
+        // A last line with no newline goes as it came.
+        if (_downLine.isNotEmpty && !_cut) {
+          _stdout.add(Uint8List.fromList(_downLine));
+        }
+        _downLine.clear();
         await _stderrDone.future.timeout(
           const Duration(seconds: 2),
           onTimeout: () {},
@@ -871,6 +1023,42 @@ class ProcessExecSession implements RoostExecSession {
 
   /// Shown every client line; true cuts the exchange (the class doc).
   final bool Function(String line)? inspect;
+
+  /// Shown every far-side line before it is relayed; a non-null answer is
+  /// relayed in its place (the class doc).
+  final String? Function(String line, {required bool relayed})? answer;
+
+  /// The far side's bytes since its last newline ([answer]'s relay).
+  final List<int> _downLine = [];
+
+  /// Relay [chunk] a line at a time, each shown to [answer] first.
+  void _down(List<int> chunk) {
+    final out = BytesBuilder(copy: false);
+    var start = 0;
+    while (true) {
+      final nl = chunk.indexOf(0x0a, start);
+      if (nl < 0) {
+        _downLine.addAll(chunk.sublist(start));
+        break;
+      }
+      _downLine.addAll(chunk.sublist(start, nl));
+      start = nl + 1;
+      final relayed = !_cut;
+      final line = utf8.decode(_downLine, allowMalformed: true);
+      final replaced = answer!(line, relayed: relayed);
+      if (relayed) {
+        if (replaced == null) {
+          out
+            ..add(Uint8List.fromList(_downLine))
+            ..addByte(0x0a);
+        } else {
+          out.add(utf8.encode('$replaced\n'));
+        }
+      }
+      _downLine.clear();
+    }
+    if (out.isNotEmpty) _stdout.add(out.takeBytes());
+  }
 
   /// The client's bytes since its last newline.
   final List<int> _line = [];

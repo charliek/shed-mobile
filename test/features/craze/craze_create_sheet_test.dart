@@ -84,6 +84,18 @@ const _grokNotReady = BridgeLaneCreateOptions(
   recentDirs: ['/home/u/proj', '/home/u/other'],
 );
 
+const _liveTitled = BridgeCrazeSnapshot(
+  rows: [],
+  live: true,
+  caps: BridgeSourceCapabilities(
+    kind: 'craze',
+    create: true,
+    createOptions: true,
+    createTitle: true,
+  ),
+  truncated: false,
+);
+
 const _live = BridgeCrazeSnapshot(
   rows: [],
   live: true,
@@ -143,6 +155,10 @@ class _FakeFeed implements MachineFeed {
   /// Every create this feed was asked for, in order.
   final requests = <BridgeLaneCreateRequest>[];
 
+  /// Whether each of [requests] went as a HELD replay (`crazeCreateHeld`)
+  /// rather than a new create (`crazeCreate`) — in step with [requests].
+  final replays = <bool>[];
+
   /// What each create answers, in turn: a [BridgeLaneCreated], an error to
   /// throw, or a [Completer] whose value (or error) is the answer.
   final answers = <Object>[];
@@ -191,9 +207,11 @@ class _FakeFeed implements MachineFeed {
 
   @override
   Future<BridgeLaneCreated> crazeCreateSession(
-    BridgeLaneCreateRequest request,
-  ) async {
+    BridgeLaneCreateRequest request, {
+    bool held = false,
+  }) async {
     requests.add(request);
+    replays.add(held);
     var answer = answers.removeAt(0);
     if (answer is Completer<Object>) answer = await answer.future;
     if (answer is! BridgeLaneCreated) throw answer;
@@ -748,6 +766,11 @@ void main() {
       ['shed-id-1', 'shed-id-1'],
       reason: 'Try again resumed the SAME request',
     );
+    expect(
+      feed.replays,
+      [false, true],
+      reason: 'a new create first; Try again goes as a HELD replay (P11)',
+    );
     expect(find.byType(LaneScreen), findsOneWidget);
   });
 
@@ -894,7 +917,238 @@ void main() {
       [for (final r in feed.requests) r.requestId],
       ['shed-id-1', 'shed-id-2'],
     );
+    expect(
+      feed.replays,
+      [false, false],
+      reason: 'a definite answer ended the id: Try again is a NEW create',
+    );
     expect(find.byType(LaneScreen), findsOneWidget);
+  });
+
+  testWidgets('the Name field shows when the hub takes a title, or while one '
+      'is typed', (tester) async {
+    final plain = _FakeFeed();
+    final container = await _pump(tester, plain);
+    await _chooseCraze(tester);
+    expect(_key('craze-create-title'), findsNothing);
+    expect(_key('craze-create-cwd'), findsOneWidget);
+    container
+        .read(crazeDraftProvider('mini3').notifier)
+        .edit(title: 'Typed earlier');
+    await tester.pump();
+    expect(_key('craze-create-title'), findsOneWidget);
+    expect(_field(tester, 'craze-create-title'), 'Typed earlier');
+  });
+
+  testWidgets('a new request without createTitle still carries the typed '
+      'title', (tester) async {
+    final feed = _FakeFeed()
+      ..answers.addAll([
+        const BridgeLaneError.badRequest(
+          msg: 'params.title is not supported by this hub',
+        ),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    container
+        .read(crazeDraftProvider('mini3').notifier)
+        .edit(title: '  Kept  ');
+    await tester.pump();
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _submit(tester);
+    expect(feed.requests.single.title, 'Kept');
+    expect(_key('craze-create-title'), findsOneWidget);
+    expect(
+      _text(tester, 'craze-create-title-problem'),
+      'params.title is not supported by this hub',
+    );
+  });
+
+  testWidgets('a bad_request naming a path with "title" stays a directory '
+      'error', (tester) async {
+    final feed = _FakeFeed(craze: _liveTitled)
+      ..answers.add(const BridgeLaneError.badRequest(msg: 'cwd /w/title nope'));
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/title');
+    await _submit(tester);
+    expect(_key('craze-create-title-problem'), findsNothing);
+    expect(_text(tester, 'craze-create-cwd-problem'), 'cwd /w/title nope');
+  });
+
+  testWidgets('CONTROL: a Name is sent trimmed; blank is omitted', (
+    tester,
+  ) async {
+    final feed = _FakeFeed(craze: _liveTitled)
+      ..answers.addAll([_created(), _created()]);
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    expect(find.text('Name (optional)'), findsOneWidget);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _type(tester, 'craze-create-title', '  Fix login  ');
+    await _submit(tester);
+    expect(feed.requests.single.title, 'Fix login');
+  });
+
+  testWidgets('CONTROL: a blank Name is never sent', (tester) async {
+    final feed = _FakeFeed(craze: _liveTitled)..answers.add(_created());
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _type(tester, 'craze-create-title', '   ');
+    await _submit(tester);
+    expect(feed.requests.single.title, isNull);
+  });
+
+  testWidgets('CONTROL: the held retry keeps the id AND the title; an edit '
+      'mints a new id', (tester) async {
+    final feed = _FakeFeed(craze: _liveTitled)
+      ..answers.addAll([
+        const BridgeLaneError.outcomeUnknown(msg: 'lost'),
+        const BridgeLaneError.outcomeUnknown(msg: 'lost again'),
+        _created(),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _type(tester, 'craze-create-title', 'Fix login');
+    await _submit(tester);
+    expect(container.read(crazeDraftProvider('mini3')).sentTitle, 'Fix login');
+    await _submit(tester);
+    expect(
+      [for (final r in feed.requests) (r.requestId, r.title)],
+      [('shed-id-1', 'Fix login'), ('shed-id-1', 'Fix login')],
+    );
+    await _type(tester, 'craze-create-title', 'Fix logout');
+    expect(container.read(crazeDraftProvider('mini3')).requestId, isNull);
+    await _submit(tester);
+    expect(feed.requests.last.requestId, 'shed-id-2');
+    expect(feed.requests.last.title, 'Fix logout');
+    expect(
+      feed.replays,
+      [false, true, false],
+      reason:
+          'only the retry of the held id is a held replay; the edit made '
+          'a NEW request',
+    );
+  });
+
+  testWidgets('CONTROL: Try again REPLAYS the held request — held, the same id '
+      'and title — and stays held while its answer is unknown (P11: a titled '
+      'replay whose hub no longer says createTitle)', (tester) async {
+    final feed = _FakeFeed(craze: _liveTitled)
+      ..answers.addAll([
+        const BridgeLaneError.outcomeUnknown(msg: 'lost'),
+        // What `craze_create_held` answers when the retry's hub lacks
+        // createTitle: unknown again, never a definite Failed.
+        const BridgeLaneError.outcomeUnknown(
+          msg:
+              'outcome unknown: the retry reached a hub that cannot name a '
+              'session',
+        ),
+        _created(),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _type(tester, 'craze-create-title', '  Fix login  ');
+    await _submit(tester);
+    await _submit(tester); // Try again: the hub has lost createTitle
+    final draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.unknown);
+    expect(draft.requestId, 'shed-id-1', reason: 'still held');
+    expect(draft.sentTitle, 'Fix login', reason: 'the exact title, still');
+    expect(_text(tester, 'craze-create-unknown'), outcomeUnknownNote);
+    expect(_submitLabel(tester), 'Try again');
+
+    await _submit(tester); // Try again: createTitle is back
+    expect(
+      [
+        for (final (i, r) in feed.requests.indexed)
+          (r.requestId, r.title, feed.replays[i]),
+      ],
+      [
+        ('shed-id-1', 'Fix login', false),
+        ('shed-id-1', 'Fix login', true),
+        ('shed-id-1', 'Fix login', true),
+      ],
+      reason: 'one request: every Try again replays it as a held create',
+    );
+    expect(find.byType(LaneScreen), findsOneWidget);
+  });
+
+  testWidgets('CONTROL: a held replay the feed could not send keeps its id; a '
+      'new create it could not send is a definite refusal', (tester) async {
+    const gone = 'craze is not connected on mini3';
+    final feed = _FakeFeed()
+      ..answers.addAll([
+        StateError(gone),
+        const BridgeLaneError.outcomeUnknown(msg: 'lost'),
+        StateError(gone),
+        _created(),
+      ]);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+
+    // A NEW create the feed refused before sending: definite.
+    await _submit(tester);
+    var draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.refused);
+    expect(draft.requestId, isNull, reason: 'nothing names this request');
+
+    await _submit(tester); // a new request, and its answer is lost
+    expect(container.read(crazeDraftProvider('mini3')).requestId, 'shed-id-2');
+
+    // The REPLAY the feed refused before sending: the first attempt may have
+    // started the session, so the outcome is still unknown and the id kept.
+    await _submit(tester);
+    draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.unknown);
+    expect(draft.requestId, 'shed-id-2', reason: 'still held');
+    expect(_text(tester, 'craze-create-unknown'), outcomeUnknownNote);
+
+    await _submit(tester);
+    expect(
+      [
+        for (final (i, r) in feed.requests.indexed)
+          (r.requestId, feed.replays[i]),
+      ],
+      [
+        ('shed-id-1', false),
+        ('shed-id-2', false),
+        ('shed-id-2', true),
+        ('shed-id-2', true),
+      ],
+    );
+    expect(find.byType(LaneScreen), findsOneWidget);
+  });
+
+  testWidgets('a refusal about the title is said under Name, others beside '
+      'the directory', (tester) async {
+    final feed = _FakeFeed(craze: _liveTitled)
+      ..answers.addAll([
+        const BridgeLaneError.badRequest(
+          msg: 'params.title is blank once normalized: send none instead',
+        ),
+        const BridgeLaneError.badRequest(msg: 'cwd /w/nope does not exist'),
+      ]);
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/a');
+    await _type(tester, 'craze-create-title', '\u200b');
+    await _submit(tester);
+    expect(
+      _text(tester, 'craze-create-title-problem'),
+      'params.title is blank once normalized: send none instead',
+    );
+    expect(_key('craze-create-cwd-problem'), findsNothing);
+    await _submit(tester);
+    expect(_key('craze-create-title-problem'), findsNothing);
+    expect(
+      _text(tester, 'craze-create-cwd-problem'),
+      'cwd /w/nope does not exist',
+    );
   });
 
   testWidgets('craze\'s bad_request is said beside the directory', (

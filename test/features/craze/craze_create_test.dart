@@ -189,6 +189,95 @@ void main() {
     );
   });
 
+  test('CONTROL: the title is fixed at submit; a held retry resends it, an '
+      'edit mints a new id, a blank one is omitted', () {
+    final first = const CrazeDraft(
+      cwd: '/w',
+      title: '  Fix login  ',
+    ).beginSubmit(() => 'shed-a');
+    expect(first.sentTitle, 'Fix login');
+    expect(first.request().title, 'Fix login');
+    final unknown = first.settle(const CrazeRefusal('outcome_unknown', 'lost'));
+    // The title in the form changes under a held id (a state the sheet cannot
+    // reach, as its fields are an edit away): the retry still sends the title
+    // it fixed, and the id.
+    final retry = CrazeDraft(
+      cwd: '/w',
+      title: 'Something else',
+      requestId: unknown.requestId,
+      sentCwd: unknown.sentCwd,
+      sentTitle: unknown.sentTitle,
+      phase: CrazePhase.unknown,
+    ).beginSubmit(() => fail('a held id is reused'));
+    expect(retry.request().requestId, 'shed-a');
+    expect(retry.request().title, 'Fix login', reason: 'never stripped');
+    final edited = unknown.edit(title: 'Fix logout');
+    expect(edited.requestId, isNull, reason: 'a title edit is another request');
+    expect(edited.sentTitle, isNull);
+    expect(edited.beginSubmit(() => 'shed-b').request().title, 'Fix logout');
+    final refused = first.settle(const CrazeRefusal('bad_request', 'no'));
+    expect(refused.sentTitle, isNull, reason: 'a definite answer drops it');
+    expect(refused.title, '  Fix login  ', reason: 'the form is kept');
+    for (final blank in ['', '   ', '\t\n']) {
+      final d = CrazeDraft(cwd: '/w', title: blank).beginSubmit(() => 'x');
+      expect(d.request().title, isNull, reason: 'blank is omitted: "$blank"');
+    }
+    // E13: nothing is dropped here whatever the hub takes; shed's gate refuses.
+    expect(
+      const CrazeDraft(
+        cwd: '/w',
+        title: ' T ',
+      ).beginSubmit(() => 'x').request().title,
+      'T',
+    );
+    // A held unknown outcome with no title stays titleless.
+    final none = const CrazeDraft(cwd: '/w').beginSubmit(() => 'n');
+    expect(
+      none
+          .settle(const CrazeRefusal('outcome_unknown', 'x'))
+          .beginSubmit(() => fail('reused'))
+          .request()
+          .title,
+      isNull,
+    );
+  });
+
+  test('a bad_request about the title is placed under Name', () {
+    final v = refusalView(
+      const CrazeRefusal(
+        'bad_request',
+        'params.title is blank once normalized: send none instead',
+      ),
+    );
+    expect(v.where, RefusalWhere.title);
+    expect(
+      refusalView(
+        const CrazeRefusal('bad_request', 'cwd /x does not exist'),
+      ).where,
+      RefusalWhere.cwd,
+    );
+  });
+
+  test('only craze\'s params.title wording is placed under Name', () {
+    expect(
+      refusalView(
+        const CrazeRefusal('bad_request', 'params.title must not be empty'),
+      ).where,
+      RefusalWhere.title,
+    );
+    for (final m in [
+      'cwd /w/title does not exist',
+      'cwd /w/Title/x is not a directory',
+      'the title is bad',
+    ]) {
+      expect(
+        refusalView(CrazeRefusal('bad_request', m)).where,
+        RefusalWhere.cwd,
+        reason: m,
+      );
+    }
+  });
+
   test('a directory under home is SHOWN as ~', () {
     expect(abbreviateHome('/home/me/w', '/home/me'), '~/w');
     expect(abbreviateHome('/home/me', '/home/me'), '~');
@@ -383,6 +472,35 @@ void main() {
       );
     },
   );
+
+  test('CONTROL: a held replay the feed could not send stays unknown; held '
+      'changes nothing Rust answered (P11)', () {
+    final gone = StateError('craze is not connected on mini3');
+    final replay = crazeRefusalOf(gone, held: true);
+    expect(
+      replay.code,
+      'outcome_unknown',
+      reason:
+          'nothing was sent THIS time, which says nothing about the request '
+          'the held id names: the id is kept',
+    );
+    expect(replay.message, startsWith('craze is not connected on mini3'));
+    expect(
+      crazeRefusalOf(gone).code,
+      'unavailable',
+      reason: 'a NEW request the feed could not send is definite',
+    );
+    // Rust's own answers to a replay are already `craze_create_held`'s
+    // reading: `held` does not second-guess them.
+    for (final e in const [
+      BridgeLaneError.failed(msg: 'Error: KEYCHAIN LOCKED'),
+      BridgeLaneError.badRequest(msg: 'params.title is blank once normalized'),
+      BridgeLaneError.unavailable(msg: 'busy'),
+      BridgeLaneError.outcomeUnknown(msg: 'lost'),
+    ]) {
+      expect(crazeRefusalOf(e, held: true), crazeRefusalOf(e), reason: '$e');
+    }
+  });
 
   test('refusals are shown by code', () {
     expect(

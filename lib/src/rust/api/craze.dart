@@ -9,7 +9,7 @@ import 'dto_rc.dart';
 import 'lane.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `apply`, `call`, `closed_error`, `empty`, `empty`, `fold`, `forward_loop`, `is_closed`, `lock`, `new`, `offline`, `open_on`, `roster_pump`, `snapshot`, `spawn_forwarder`, `teardown`, `touch`
+// These functions are ignored because they are not marked as `pub`: `apply`, `apply`, `call`, `closed_error`, `create_on`, `empty`, `empty`, `fold`, `forward_loop`, `is_closed`, `lock`, `new`, `offline`, `open_on`, `roster_pump`, `snapshot`, `spawn_forwarder`, `teardown`, `touch`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CrazeView`, `Cut`, `Pending`, `SourceInner`, `SourceState`, `SourceTasks`, `Staged`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `drop`, `drop`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -119,8 +119,10 @@ Future<BridgeLaneCreateOptions> crazeCreateOptions({
 }) => RustLib.instance.api.crateApiCrazeCrazeCreateOptions(src: src);
 
 /// Create a session — craze's `session.create{cwd, provider?, prompt?,
-/// requestId}`, on a connection of its own, retried once under the same id
-/// when its outcome is unknown (shed-craze's rule, plan 025 §3.3.3).
+/// title?, requestId}`, on a connection of its own, retried once under the
+/// same id when its outcome is unknown (shed-craze's rule, plan 025 §3.3.3).
+/// A NEW request: a request id held from an unknown outcome is replayed with
+/// [`craze_create_held`] instead.
 ///
 /// The new session's row is the source's at once (its created rows): this
 /// handle is nudged, so the row is listed — and a lane opens on its hostId —
@@ -137,6 +139,32 @@ Future<BridgeLaneCreated> crazeCreate({
   required BridgeCrazeSource src,
   required BridgeLaneCreateRequest request,
 }) => RustLib.instance.api.crateApiCrazeCrazeCreate(src: src, request: request);
+
+/// [`craze_create`] **REPLAYING a held request** — the sheet re-sending the
+/// request id (and the exact directory and title, plan 029 P11) it kept from
+/// an unknown outcome. Through shed-craze's
+/// [`create_held`](shed_core::lane::AgentSource::create_held) (plan 026
+/// §3.1), so every attempt — the first included — is a retry, and only
+/// craze's own answer about the request ends the id.
+///
+/// **What a refusal tells the caller about its request id:** the same
+/// variants as [`craze_create`], read the same way — but a replay reports
+/// [`BridgeLaneError::OutcomeUnknown`] for every failure that says nothing
+/// about the request: a dial that never reached craze, a hub that cannot
+/// create, a hub that does not say `createTitle` while the request carries a
+/// title (craze may have started the TITLED session the first attempt sent:
+/// a definite `Failed` there would end the id, and a later submission under a
+/// new one could start a second session), and this handle closed before the
+/// replay began as well as while it ran. The caller keeps the id on each.
+/// Only a created session, or craze's refusal of the request itself
+/// (`bad_request`, a replayed start failure), is definite.
+Future<BridgeLaneCreated> crazeCreateHeld({
+  required BridgeCrazeSource src,
+  required BridgeLaneCreateRequest request,
+}) => RustLib.instance.api.crateApiCrazeCrazeCreateHeld(
+  src: src,
+  request: request,
+);
 
 /// **Open one craze session's transcript** — the source's lane on `host_id`
 /// (the row's id, P11), as the SAME [`BridgeLane`] an opencode lane is, so every

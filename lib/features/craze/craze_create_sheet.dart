@@ -68,10 +68,20 @@ class CrazeDraftController extends Notifier<CrazeDraft> {
 
   /// An edit of the form ([CrazeDraft.edit]'s rule: any change mints a new id
   /// next time; nothing while a submission is in flight).
-  void edit({Object? provider = _keepProvider, String? cwd, String? prompt}) {
+  void edit({
+    Object? provider = _keepProvider,
+    String? cwd,
+    String? prompt,
+    String? title,
+  }) {
     state = identical(provider, _keepProvider)
-        ? state.edit(cwd: cwd, prompt: prompt)
-        : state.edit(provider: provider, cwd: cwd, prompt: prompt);
+        ? state.edit(cwd: cwd, prompt: prompt, title: title)
+        : state.edit(
+            provider: provider,
+            cwd: cwd,
+            prompt: prompt,
+            title: title,
+          );
   }
 
   /// **Run one submission of this machine's draft.** The request id is the
@@ -91,9 +101,18 @@ class CrazeDraftController extends Notifier<CrazeDraft> {
   /// [home] is the machine's home directory, which a `~` directory is
   /// expanded against when a NEW request begins ([CrazeDraft.beginSubmit]); a
   /// replay resends the directory it expanded the first time.
+  ///
+  /// **A replay goes as one** (plan 026 §3.1, plan 029 P11): a submission
+  /// that re-sends the id held from an unknown outcome ([replaysHeldRequest],
+  /// read BEFORE the submission starts — the desktop's `held`) is a held
+  /// create, so a hub that cannot take the request now (say, a titled one
+  /// where the hub no longer says `createTitle`) leaves the outcome unknown
+  /// and the id kept, rather than a definite refusal that would drop it and
+  /// let a later submission start a second session.
   Future<void> submit({String? home}) async {
     final current = state;
     if (current.phase == CrazePhase.submitting) return;
+    final held = replaysHeldRequest(current);
     final started = current.beginSubmit(
       ref.read(crazeRequestIdMintProvider),
       home: home,
@@ -106,7 +125,10 @@ class CrazeDraftController extends Notifier<CrazeDraft> {
     final stateHold = ref.listen(machineFeedProvider(origin), (_, _) {});
     try {
       final feed = feedHold.read();
-      final created = await feed.crazeCreateSession(started.request());
+      final created = await feed.crazeCreateSession(
+        started.request(),
+        held: held,
+      );
       // The feed folds the created row in before the create returns
       // (`MachineFeed.crazeCreateSession`), so a row it does NOT list now is a
       // session craze answered for that has already ended (a replayed answer).
@@ -119,7 +141,7 @@ class CrazeDraftController extends Notifier<CrazeDraft> {
       }
     } catch (e) {
       logDriveResult('craze-create', ok: false, error: e);
-      if (ref.mounted) state = state.settle(crazeRefusalOf(e));
+      if (ref.mounted) state = state.settle(crazeRefusalOf(e, held: held));
     } finally {
       feedHold.close();
       stateHold.close();
@@ -175,6 +197,7 @@ class CrazeCreateSheet extends ConsumerStatefulWidget {
 class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
   late final TextEditingController _cwd;
   late final TextEditingController _prompt;
+  late final TextEditingController _title;
   _OptionsLoad _load = const _Loading();
 
   /// The machine's home directory — what a typed `~` expands to; null until
@@ -193,6 +216,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
     final draft = ref.read(crazeDraftProvider(widget.origin));
     _cwd = TextEditingController(text: draft.cwd);
     _prompt = TextEditingController(text: draft.prompt);
+    _title = TextEditingController(text: draft.title);
     _read();
   }
 
@@ -200,6 +224,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
   void dispose() {
     _cwd.dispose();
     _prompt.dispose();
+    _title.dispose();
     super.dispose();
   }
 
@@ -283,6 +308,7 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
       // user just typed (the fields' own edits already match).
       if (_cwd.text != next.cwd) _cwd.text = next.cwd;
       if (_prompt.text != next.prompt) _prompt.text = next.prompt;
+      if (_title.text != next.title) _title.text = next.title;
       final created = next.lastCreated;
       if (created != null && !identical(created, prev?.lastCreated)) {
         widget.onCreated(created);
@@ -304,6 +330,10 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
     // Try again resends the held request as it was sent: its provider is not
     // re-checked against what craze lists now ([replaysHeldRequest]).
     final replaying = replaysHeldRequest(draft);
+    // The Name field shows when the machine's craze takes a title (plan 029
+    // D18) OR while a title is typed: a typed title is never hidden (E13).
+    final titled =
+        (craze?.caps?.createTitle ?? false) || draft.title.trim().isNotEmpty;
     final machineNote = crazeSheetNote(craze, widget.machine);
     final providers = options?.providers ?? const <BridgeLaneProvider>[];
     final noneReady = options != null && !providers.any(providerSelectable);
@@ -445,6 +475,25 @@ class _CrazeCreateSheetState extends ConsumerState<CrazeCreateSheet> {
           Text(
             refusal?.where == RefusalWhere.cwd ? refusal!.text : cwdProblem!,
             key: const ValueKey('craze-create-cwd-problem'),
+            style: sansStyle(fontSize: 12, color: c.errFg),
+          ),
+        ],
+        if (titled) ...[
+          const SizedBox(height: 14),
+          TextField(
+            key: const ValueKey('craze-create-title'),
+            controller: _title,
+            enabled: !submitting,
+            maxLines: 1,
+            decoration: const InputDecoration(labelText: 'Name (optional)'),
+            onChanged: (v) => _draft.edit(title: v),
+          ),
+        ],
+        if (refusal?.where == RefusalWhere.title) ...[
+          const SizedBox(height: 6),
+          Text(
+            refusal!.text,
+            key: const ValueKey('craze-create-title-problem'),
             style: sansStyle(fontSize: 12, color: c.errFg),
           ),
         ],
