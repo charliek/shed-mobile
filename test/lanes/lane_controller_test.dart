@@ -955,7 +955,7 @@ void main() {
     test('setTitle reaches the bridge with the title as given and answers '
         'the index_write WARNING as a success', () async {
       final rig = await slashRig();
-      expect(await rig.controller.setTitle('plan 029'), isNull);
+      expect(await rig.controller.setTitle('plan 029'), _done());
       expect(rig.bridge.titles, ['plan 029']);
       expect(rig.controller.state.composerError, isNull);
 
@@ -963,7 +963,7 @@ void main() {
           'renamed, but craze could not record it: disk full';
       expect(
         await rig.controller.setTitle('again'),
-        'renamed, but craze could not record it: disk full',
+        _done(warning: 'renamed, but craze could not record it: disk full'),
       );
       expect(rig.controller.state.composerError, isNull, reason: 'it took');
     });
@@ -974,7 +974,12 @@ void main() {
       rig.bridge.setTitleFailure = const BridgeLaneError.badRequest(
         msg: 'params.title is blank once normalized: send none instead',
       );
-      expect(await rig.controller.setTitle('x'), isNull);
+      expect(
+        await rig.controller.setTitle('x'),
+        _outcome<LaneVerbRefused>(
+          'params.title is blank once normalized: send none instead',
+        ),
+      );
       expect(rig.controller.state.composerError?.code, 'LANE_BAD_REQUEST');
       expect(
         rig.controller.state.composerError?.message,
@@ -986,7 +991,10 @@ void main() {
       rig.bridge.setTitleFailure = const BridgeLaneError.outcomeUnknown(
         msg: 'outcome unknown: the connection dropped',
       );
-      await rig.controller.setTitle('y');
+      expect(
+        await rig.controller.setTitle('y'),
+        _outcome<LaneVerbUnknown>(laneCommandOutcomeUnknown),
+      );
       expect(rig.controller.state.composerError?.code, laneOutcomeUnknownCode);
       expect(
         rig.controller.state.composerError?.message,
@@ -1088,10 +1096,184 @@ void main() {
       },
     );
 
+    test(
+      'each composer verb ANSWERS its own outcome — done, refused in '
+      'craze\'s words, unknown in its own wording — matching the state',
+      () async {
+        final rig = await slashRig();
+        const plan = BridgeLaneSettingChange.mode(id: 'plan');
+        final verbs = <String, Future<LaneVerbOutcome> Function()>{
+          'send': () => rig.controller.send('hi'),
+          'prompt row': () => rig.controller.send('/research x', command: true),
+          'rename': () => rig.controller.setTitle('t'),
+          'mode': () => rig.controller.setMode(plan),
+          'exit': () => rig.controller.stop(command: true),
+        };
+        void fail(Object? failure) => rig.bridge
+          ..sendFailure = failure
+          ..setTitleFailure = failure
+          ..setFailure = failure
+          ..stopFailure = failure;
+
+        for (final MapEntry(key: verb, value: run) in verbs.entries) {
+          fail(null);
+          expect(await run(), _done(), reason: verb);
+          expect(rig.controller.state.composerError, isNull, reason: verb);
+
+          fail(const BridgeLaneError.notAccepting());
+          final refused = await run();
+          expect(refused, isA<LaneVerbRefused>(), reason: verb);
+          expect(refused.error?.code, 'LANE_NOT_ACCEPTING', reason: verb);
+          expect(
+            identical(refused.error, rig.controller.state.composerError),
+            isTrue,
+            reason: '$verb: the same refusal the composer shows',
+          );
+
+          fail(const BridgeLaneError.outcomeUnknown(msg: 'lost'));
+          expect(
+            await run(),
+            _outcome<LaneVerbUnknown>(
+              verb == 'send'
+                  ? laneSendOutcomeUnknown
+                  : laneCommandOutcomeUnknown,
+            ),
+            reason: verb,
+          );
+          expect(
+            rig.controller.state.composerError?.code,
+            laneOutcomeUnknownCode,
+            reason: verb,
+          );
+        }
+      },
+    );
+
+    test('SUPERSEDED: a verb whose lane moved on before its source answered '
+        '— the controller closed by its provider\'s rebuild — answers '
+        'superseded in its "may have run" wording, never done, and lands '
+        'nothing on the state', () async {
+      const plan = BridgeLaneSettingChange.mode(id: 'plan');
+      // Each composer verb, held in flight at the source, with the wording a
+      // superseded call says.
+      final verbs =
+          <
+            String,
+            ({
+              void Function(_FakeLaneBridge bridge, Completer<void> gate) hold,
+              Future<LaneVerbOutcome> Function(LaneController c) run,
+              String unknown,
+            })
+          >{
+            'send': (
+              hold: (b, g) => b.holdSend = g,
+              run: (c) => c.send('hi'),
+              unknown: laneSendOutcomeUnknown,
+            ),
+            'prompt row': (
+              hold: (b, g) => b.holdSend = g,
+              run: (c) => c.send('/research x', command: true),
+              unknown: laneCommandOutcomeUnknown,
+            ),
+            'rename': (
+              hold: (b, g) => b.holdSetTitle = g,
+              run: (c) => c.setTitle('held'),
+              unknown: laneCommandOutcomeUnknown,
+            ),
+            'mode': (
+              hold: (b, g) => b.holdSet = g,
+              run: (c) => c.setMode(plan),
+              unknown: laneCommandOutcomeUnknown,
+            ),
+            'exit': (
+              hold: (b, g) => b.holdStop = g,
+              run: (c) => c.stop(command: true),
+              unknown: laneCommandOutcomeUnknown,
+            ),
+          };
+      // Whatever the source answers once the lane has moved on: a lost
+      // answer (the review's case), a definite refusal, and even an Ok.
+      final answers = <String, Object?>{
+        'unknown': const BridgeLaneError.outcomeUnknown(msg: 'dropped'),
+        'refused': const BridgeLaneError.notAccepting(),
+        'ok': null,
+      };
+      for (final MapEntry(key: verb, value: v) in verbs.entries) {
+        for (final MapEntry(key: answer, value: failure) in answers.entries) {
+          final why = '$verb answered $answer';
+          final rig = await slashRig();
+          final gate = Completer<void>();
+          v.hold(rig.bridge, gate);
+          rig.bridge
+            ..sendFailure = failure
+            ..setTitleFailure = failure
+            ..setFailure = failure
+            ..stopFailure = failure;
+          final pending = v.run(rig.controller);
+          await pumpEventQueue();
+
+          // The provider rebuilt: the old controller is closed (its
+          // generation moved) with the call still out.
+          await rig.controller.close();
+          gate.complete();
+          final outcome = await pending;
+
+          expect(outcome, _outcome<LaneVerbSuperseded>(v.unknown), reason: why);
+          expect(outcome.error?.code, laneOutcomeUnknownCode, reason: why);
+          expect(
+            rig.controller.state.composerError,
+            isNull,
+            reason: '$why: the fence keeps the lane\'s own state',
+          );
+          expect(rig.controller.state.stopError, isNull, reason: why);
+        }
+      }
+    });
+
+    test('SUPERSEDED: a re-open of the SAME controller (a new stamp) moves '
+        'the generation too — and the control: the same held call with no '
+        'move answers as itself', () async {
+      final rig = await slashRig();
+      rig.bridge
+        ..holdSetTitle = Completer<void>()
+        ..setTitleFailure = const BridgeLaneError.outcomeUnknown(msg: 'x');
+      final moved = rig.controller.setTitle('held');
+      await pumpEventQueue();
+      rig.stamps.add(
+        const BridgeAgentLaneStamp(
+          kind: crazeLaneKind,
+          sessionId: 'sess-2',
+          serverUrl: '',
+        ),
+      );
+      await pumpEventQueue();
+      rig.bridge.holdSetTitle!.complete();
+      expect(
+        await moved,
+        _outcome<LaneVerbSuperseded>(laneCommandOutcomeUnknown),
+      );
+      expect(rig.controller.state.composerError, isNull);
+
+      // CONTROL: held exactly as long, nothing moved — the lost answer is
+      // the lane's to say, and said.
+      rig.bridge.holdSetTitle = Completer<void>();
+      final still = rig.controller.setTitle('held again');
+      await pumpEventQueue();
+      rig.bridge.holdSetTitle!.complete();
+      expect(await still, _outcome<LaneVerbUnknown>(laneCommandOutcomeUnknown));
+      expect(
+        rig.controller.state.composerError?.message,
+        laneCommandOutcomeUnknown,
+      );
+    });
+
     test('with no lane open, rename and mode are refused without touching '
         'the bridge', () async {
       final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
-      expect(await rig.controller.setTitle('x'), isNull);
+      expect(
+        await rig.controller.setTitle('x'),
+        _outcome<LaneVerbRefused>('the lane is not open right now'),
+      );
       expect(rig.controller.state.composerError?.code, 'LANE_NOT_OPEN');
       await rig.controller.setMode(const BridgeLaneSettingChange.mode(id: 'x'));
       expect(rig.controller.state.composerError?.code, 'LANE_NOT_OPEN');
@@ -1693,12 +1875,17 @@ class _FakeLaneBridge implements LaneSource {
     return onSnapshot(sinceSeq);
   }
 
+  /// Parks `send` — a send in flight, for as long as a cell needs one.
+  Completer<void>? holdSend;
+
   @override
   Future<void> send(
     LaneHandle handle, {
     required String text,
     required BridgeSendMode mode,
   }) async {
+    final gate = holdSend;
+    if (gate != null) await gate.future;
     final failure = sendFailure;
     if (failure != null) throw failure;
     sent.add(text);
@@ -1723,9 +1910,14 @@ class _FakeLaneBridge implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// Parks `stop` after it is counted — a stop in flight.
+  Completer<void>? holdStop;
+
   @override
   Future<void> stop(LaneHandle handle) async {
     stops++;
+    final gate = holdStop;
+    if (gate != null) await gate.future;
     final failure = stopFailure;
     if (failure != null) throw failure;
   }
@@ -1754,9 +1946,14 @@ class _FakeLaneBridge implements LaneSource {
   /// What a rename that took answers with (craze's `index_write` warning).
   String? setTitleWarning;
 
+  /// Parks `setTitle` after the title is recorded — a rename in flight.
+  Completer<void>? holdSetTitle;
+
   @override
   Future<String?> setTitle(LaneHandle handle, String title) async {
     titles.add(title);
+    final gate = holdSetTitle;
+    if (gate != null) await gate.future;
     final failure = setTitleFailure;
     if (failure != null) throw failure;
     return setTitleWarning;
@@ -1956,3 +2153,12 @@ BridgeRcFeedMessage _row(int seq, String text) => BridgeRcFeedMessage(
   msgType: 'text',
   text: text,
 );
+
+/// A [LaneVerbDone] — with [warning], or none.
+Matcher _done({String? warning}) => isA<LaneVerbDone>()
+    .having((d) => d.warning, 'warning', warning)
+    .having((d) => d.error, 'error', isNull);
+
+/// A [T] outcome whose error says [message].
+Matcher _outcome<T extends LaneVerbOutcome>(String message) =>
+    isA<T>().having((o) => o.error?.message, 'error.message', message);

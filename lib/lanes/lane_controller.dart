@@ -75,6 +75,70 @@ const laneSendOutcomeUnknown =
 /// word for word. A plain send keeps [laneSendOutcomeUnknown].
 const laneCommandOutcomeUnknown = 'may have applied — check the session';
 
+/// **What ONE call of a composer verb came to** (plan 029 §3.5, P8) — the
+/// call's own answer, handed back to whoever made it, which is what a caller
+/// settles its draft from: [LaneVerbDone] clears it, every other outcome
+/// keeps it.
+///
+/// Never inferred from [LaneState] read back after the await. The lane lands
+/// a refusal on its state only while the call's generation is still its own
+/// (the generation fence, [LaneController._guardedVerb]); a call the lane
+/// moved on from — a re-open, a new stamp, a close because the lane's
+/// provider rebuilt — lands nothing, and "nothing on the state" is not "it
+/// took". That call answers [LaneVerbSuperseded], and only the caller is left
+/// to say it.
+sealed class LaneVerbOutcome {
+  const LaneVerbOutcome();
+
+  /// What to say for it — null exactly when it took ([LaneVerbDone]).
+  AppError? get error;
+}
+
+/// It took. [warning]: it took with a caveat — a rename craze applied but
+/// could not record (`index_write`, P19) — which the caller shows beside the
+/// cleared draft; never a rollback, never a retry.
+final class LaneVerbDone extends LaneVerbOutcome {
+  const LaneVerbDone({this.warning});
+
+  final String? warning;
+
+  @override
+  AppError? get error => null;
+}
+
+/// A definite refusal — craze's words, or no lane to send it on: it did not
+/// run. Also on [LaneState.composerError] (or the verb's own card).
+final class LaneVerbRefused extends LaneVerbOutcome {
+  const LaneVerbRefused(this.error);
+
+  @override
+  final AppError error;
+}
+
+/// The answer was lost to a drop (`LANE_OUTCOME_UNKNOWN`): it may have run,
+/// and nothing resends it. [error] says so in the verb's own wording
+/// ([laneSendOutcomeUnknown], [laneCommandOutcomeUnknown]) — as the lane's
+/// state does too.
+final class LaneVerbUnknown extends LaneVerbOutcome {
+  const LaneVerbUnknown(this.error);
+
+  @override
+  final AppError error;
+}
+
+/// **The lane moved on while the call was out** — its generation changed
+/// (a re-open, a new stamp, the controller closed by its provider's
+/// rebuild) — so its answer, WHATEVER it was, landed nothing on the lane's
+/// state. The request may have reached craze, so this is never a success:
+/// the draft stays, and [error] says the verb's "may have run" wording, which
+/// the CALLER shows — the lane that would have said it has let the answer go.
+final class LaneVerbSuperseded extends LaneVerbOutcome {
+  const LaneVerbSuperseded(this.error);
+
+  @override
+  final AppError error;
+}
+
 /// The stamp kind of a CRAZE session's lane (plan 025 §3.7.2).
 ///
 /// A craze row carries no stamp of roost's — its lane is the machine's craze
@@ -577,7 +641,10 @@ class LaneController {
   /// kept, the person decides. A `/` menu PROMPT row's send ([command], plan
   /// 029 §3.5) says the command wording instead ([laneCommandOutcomeUnknown]),
   /// as the desktop's does.
-  Future<void> send(
+  ///
+  /// Answers the call's own outcome ([LaneVerbOutcome]) — what the composer
+  /// settles its draft from.
+  Future<LaneVerbOutcome> send(
     String text, {
     BridgeSendMode mode = BridgeSendMode.queue,
     bool command = false,
@@ -593,17 +660,18 @@ class LaneController {
   ///
   /// The composer's verb: a refusal lands on [LaneState.composerError] —
   /// craze's own words, or, for an answer lost to a drop,
-  /// [laneCommandOutcomeUnknown] — and nothing is resent. Answers the warning
-  /// of a rename that TOOK but craze could not record (`index_write`): the
+  /// [laneCommandOutcomeUnknown] — and nothing is resent. Answers the call's
+  /// own outcome ([LaneVerbOutcome]); a rename that TOOK but craze could not
+  /// record (`index_write`) is a [LaneVerbDone] carrying the warning: the
   /// caller clears the draft and shows it beside the header that already says
   /// the new title — never a rollback, never a retry. Never throws.
-  Future<String?> setTitle(String title) async {
+  Future<LaneVerbOutcome> setTitle(String title) async {
     String? warning;
-    await _composerVerb(
+    final outcome = await _composerVerb(
       (handle) async => warning = await source.setTitle(handle, title),
       unknown: laneCommandOutcomeUnknown,
     );
-    return warning;
+    return outcome is LaneVerbDone ? LaneVerbDone(warning: warning) : outcome;
   }
 
   /// **Move the session to a mode from the composer** (plan 029 P7) — a `/`
@@ -616,15 +684,17 @@ class LaneController {
   /// [setSetting] returns early where the session does not say `settings`, and
   /// its marks are invisible from the composer anyway. So this does NOT
   /// require `caps.settings`, and re-selecting the mode the session is
-  /// already in still sends: the person asked for it. Never throws.
-  Future<void> setMode(BridgeLaneSettingChange change) => _composerVerb(
-    (handle) => source.set(handle, change),
-    unknown: laneCommandOutcomeUnknown,
-  );
+  /// already in still sends: the person asked for it. Never throws; answers
+  /// the call's own outcome ([LaneVerbOutcome]).
+  Future<LaneVerbOutcome> setMode(BridgeLaneSettingChange change) =>
+      _composerVerb(
+        (handle) => source.set(handle, change),
+        unknown: laneCommandOutcomeUnknown,
+      );
 
   /// Stop the turn in flight. `not_accepting` here means the turn ended between
   /// the render and the tap — an inline error next to the button, not a toast.
-  Future<void> cancel() => _composerVerb(source.cancel);
+  Future<LaneVerbOutcome> cancel() => _composerVerb(source.cancel);
 
   /// **End the SESSION** (plan 025 §3.7.3) — offered only when the snapshot's
   /// capabilities say `stop`, behind a confirm. Its `Ok` is the host's
@@ -638,7 +708,8 @@ class LaneController {
   /// [LaneState.composerError] in craze's words, a lost receipt there as
   /// [laneCommandOutcomeUnknown] — beside the draft that asked for it, as the
   /// desktop's `slashVerb` settles it. The header's Stop keeps the banner.
-  Future<void> stop({bool command = false}) => command
+  /// Either way the call's own outcome is answered ([LaneVerbOutcome]).
+  Future<LaneVerbOutcome> stop({bool command = false}) => command
       ? _composerVerb(source.stop, unknown: laneCommandOutcomeUnknown)
       : _guardedVerb(
           source.stop,
@@ -746,43 +817,62 @@ class LaneController {
   /// A verb whose refusal lands on [LaneState.composerError] — an answer
   /// LOST to a drop said as [unknown] (the verb's own wording for "it may
   /// have run") when it has one, as is otherwise.
-  Future<void> _composerVerb(
+  Future<LaneVerbOutcome> _composerVerb(
     Future<void> Function(LaneHandle) verb, {
     String? unknown,
   }) => _guardedVerb(
     verb,
+    unknown: unknown,
     clearError: () => _emit(_state.copyWith(clearComposerError: true)),
-    setError: (error) => _emit(
-      _state.copyWith(
-        composerError: unknown != null && error.code == laneOutcomeUnknownCode
-            ? AppError(laneOutcomeUnknownCode, unknown)
-            : error,
-      ),
-    ),
+    setError: (error) => _emit(_state.copyWith(composerError: error)),
   );
 
-  /// The shape every verb shares: no handle is a `_noLane()` refusal, a
-  /// refusal from a since-superseded generation is nobody's news, and
-  /// everything else never throws past here — a refusal is state, landed by
-  /// [setError] on whichever card raised it.
-  Future<void> _guardedVerb(
+  /// The shape every verb shares: no handle is a `_noLane()` refusal, a lost
+  /// answer is said as [unknown] when the verb has its own wording for it,
+  /// and everything else never throws past here — a refusal is state, landed
+  /// by [setError] on whichever card raised it.
+  ///
+  /// **The generation fence, for the lane's own state:** an answer from a
+  /// since-superseded generation is nobody's news here — it lands nothing,
+  /// success or refusal. Its CALLER still hears of it, as
+  /// [LaneVerbSuperseded], never as a success: the request may have reached
+  /// craze, and the lane that would have said how it went has let it go.
+  /// Every other call answers what it came to ([LaneVerbOutcome]).
+  Future<LaneVerbOutcome> _guardedVerb(
     Future<void> Function(LaneHandle) verb, {
     required void Function() clearError,
     required void Function(AppError error) setError,
+    String? unknown,
   }) async {
     final handle = _handle;
     if (handle == null) {
-      setError(_noLane());
-      return;
+      final error = _noLane();
+      setError(error);
+      return LaneVerbRefused(error);
     }
     final generation = _generation;
     clearError();
+    AppError? error;
     try {
       await verb(handle);
     } catch (e) {
-      if (generation != _generation) return;
-      setError(appErrorFrom(e));
+      error = appErrorFrom(e);
     }
+    if (generation != _generation) {
+      return LaneVerbSuperseded(
+        AppError(laneOutcomeUnknownCode, unknown ?? laneCommandOutcomeUnknown),
+      );
+    }
+    if (error == null) return const LaneVerbDone();
+    if (error.code == laneOutcomeUnknownCode) {
+      final lost = unknown == null
+          ? error
+          : AppError(laneOutcomeUnknownCode, unknown);
+      setError(lost);
+      return LaneVerbUnknown(lost);
+    }
+    setError(error);
+    return LaneVerbRefused(error);
   }
 
   Map<String, AppError> _withApprovalError(String id, AppError error) =>

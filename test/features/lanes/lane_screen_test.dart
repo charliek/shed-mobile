@@ -2222,6 +2222,117 @@ void main() {
       expect(_slashHighlighted(tester), 'research');
     });
 
+    testWidgets('HIGHLIGHT: a new CATALOG resets it even when every row\'s '
+        'name is the same — `plan` now behind another mode', (tester) async {
+      final rig = await _slashRig(tester);
+      await _type(tester, '/');
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'plan');
+
+      // CONTROL: a catalog equal BY VALUE — a fresh copy, as a new read
+      // converts — is no new catalog: the highlight stays.
+      rig.bump(
+        _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [...crazeMenu.rows],
+            hidden: [...crazeMenu.hidden],
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashHighlighted(tester), 'plan', reason: 'the same catalog');
+
+      // The same names in the same order, but `plan` is another mode now:
+      // Enter must not run its newly bound action from a highlight the
+      // person put on the old one.
+      rig.bump(
+        _slashSnap(
+          menu: BridgeSlashMenu(
+            rows: [
+              for (final row in crazeMenu.rows)
+                row.name == 'plan'
+                    ? slashRow(
+                        'plan',
+                        const BridgeSlashAction.setMode(id: 'architect'),
+                        description: 'Plan mode',
+                      )
+                    : row,
+            ],
+            hidden: crazeMenu.hidden,
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(_slashRows(), crazeMenuNames, reason: 'every name the same');
+      expect(_slashHighlighted(tester), 'model', reason: 'a new catalog');
+    });
+
+    testWidgets('SUPERSEDED: a rename whose lane was REBUILT before it '
+        'answered keeps the draft and says "may have applied" — never a '
+        'success — and a plain send says its own words', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>()
+        ..source.setTitleFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        )
+        ..source.holdSend = Completer<void>()
+        ..source.sendFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+      await _pumpSlash(tester, rig);
+      String? composerError() {
+        final f = find.byKey(const ValueKey('lane-composer-error'));
+        return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+      }
+
+      /// The lane's provider rebuilds — a new controller for the same row —
+      /// and the old one is closed, its generation moved, with the verb
+      /// still out. Its teardown awaits a subscription cancel that only the
+      /// real event loop finishes (see "a stale lane names the reason").
+      Future<void> rebuild() async {
+        ProviderScope.containerOf(
+          tester.element(find.byType(LaneScreen)),
+        ).invalidate(laneControllerProvider(_ref));
+        await _settle(tester);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await _settle(tester);
+      }
+
+      await _type(tester, '/rename held');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['held'], reason: 'the rename is in flight');
+      await rebuild();
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+
+      expect(_draft(tester), '/rename held', reason: 'kept: not a success');
+      expect(composerError(), laneCommandOutcomeUnknown);
+      expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      // A plain send the lane moved on from: kept, in the send's words.
+      await _type(tester, 'plain words');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.map((s) => s.text), ['plain words']);
+      expect(composerError(), isNull, reason: 'a new verb clears the last');
+      await rebuild();
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_draft(tester), 'plain words');
+      expect(composerError(), laneSendOutcomeUnknown);
+
+      // The next verb, on the live lane, clears what the screen said.
+      rig.source
+        ..holdSend = null
+        ..sendFailure = null;
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(rig.source.sends, hasLength(2));
+      expect(_draft(tester), '', reason: 'this one took');
+      expect(composerError(), isNull);
+    });
+
     testWidgets('DISMISSAL: a moment with no menu (a catalog on its way back) '
         'does not end an Esc dismissal; a different token does', (
       tester,
