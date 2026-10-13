@@ -126,9 +126,89 @@ void main() {
     expect(directoryProblem(''), isNotNull);
     expect(directoryProblem('   '), isNotNull);
     expect(directoryProblem('relative/path'), isNotNull);
-    expect(directoryProblem('~/w'), isNotNull);
+    expect(directoryProblem('~/w'), isNotNull, reason: 'home not known yet');
     expect(directoryProblem('/w/a'), isNull);
     expect(directoryProblem('  /w/a  '), isNull);
+  });
+
+  test('a ~ directory is taken once the home is known, and expanded', () {
+    const home = '/home/me';
+    expect(directoryProblem('~', home: home), isNull);
+    expect(directoryProblem(' ~/w ', home: home), isNull);
+    expect(
+      directoryProblem('~other/w', home: home),
+      isNotNull,
+      reason: 'another user\'s home is not resolvable',
+    );
+    expect(directoryProblem('w', home: home), isNotNull);
+    expect(expandHome(' ~/w/a ', home), '/home/me/w/a');
+    expect(expandHome('~', home), home);
+    expect(expandHome('~/w', '/home/me/'), '/home/me/w');
+    expect(expandHome('~/w', null), '~/w');
+    expect(expandHome('/abs', home), '/abs');
+    expect(expandHome('~other', home), '~other');
+    final r = const CrazeDraft(
+      cwd: '~/proj',
+    ).beginSubmit(() => 'shed-h', home: home).request();
+    expect(r.cwd, '/home/me/proj');
+  });
+
+  test('CONTROL: a replay resends the directory it EXPANDED, whatever the '
+      'home reads now', () {
+    final first = const CrazeDraft(
+      cwd: '~/proj',
+    ).beginSubmit(() => 'shed-a', home: '/home/me');
+    final unknown = first.settle(const CrazeRefusal('outcome_unknown', 'lost'));
+    expect(replaysHeldRequest(unknown), isTrue);
+    for (final later in ['/srv/me', null]) {
+      final retry = unknown.beginSubmit(
+        () => fail('a held id is reused'),
+        home: later,
+      );
+      expect(retry.request().requestId, 'shed-a');
+      expect(
+        retry.request().cwd,
+        '/home/me/proj',
+        reason: 'same id, same params: never a re-expansion',
+      );
+    }
+    final refused = first.settle(const CrazeRefusal('bad_request', 'no dir'));
+    expect(refused.sentCwd, isNull, reason: 'a definite answer drops both');
+    expect(
+      refused.beginSubmit(() => 'shed-b', home: '/srv/me').request().cwd,
+      '/srv/me/proj',
+    );
+    expect(
+      first
+          .settle(const CrazeRefusal('outcome_unknown', 'x'))
+          .edit(cwd: '/w')
+          .sentCwd,
+      isNull,
+      reason: 'an edit is another request',
+    );
+  });
+
+  test('a directory under home is SHOWN as ~', () {
+    expect(abbreviateHome('/home/me/w', '/home/me'), '~/w');
+    expect(abbreviateHome('/home/me', '/home/me'), '~');
+    expect(abbreviateHome('/home/meow', '/home/me'), '/home/meow');
+    expect(abbreviateHome('/home/me/w', null), '/home/me/w');
+  });
+
+  test('recent directories leave out scratch locations, and are capped', () {
+    expect(
+      visibleRecentDirs([
+        '/tmp/a',
+        '/w/1',
+        '/private/tmp/x',
+        '/var/folders/zz/T/y',
+        '/tmpfoo',
+        '/w/2',
+      ]),
+      ['/w/1', '/tmpfoo', '/w/2'],
+    );
+    final many = [for (var i = 0; i < 20; i++) '/w/$i'];
+    expect(visibleRecentDirs(many), many.take(recentDirsShown).toList());
   });
 
   test('CONTROL: an unknown outcome keeps the id, and the retry reuses it', () {

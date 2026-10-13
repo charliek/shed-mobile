@@ -392,21 +392,28 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       bottom: state != null && settingsOffered(state.capabilities)
           ? _settingsChip(state)
           : null,
-      // Two lines, like the watch screen: the slug is what you came looking
-      // for, and the session's name answers "which session is this" — from the
-      // LIVE session row once the stream has sent one (plan 025 §3.6.5).
+      // Two lines: the session's name is what you came looking for — from the
+      // LIVE session row once the stream has sent one (plan 025 §3.6.5) — and
+      // the slug (a craze hostId, a roost tab id) rides under it, small, for
+      // telling two alike-named sessions apart.
       titleSpacing: 0,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(widget.slug, style: const TextStyle(fontSize: 17)),
           Text(
             laneHeaderTitle(state?.session, widget.title),
             key: const ValueKey('lane-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11.5, color: context.shed.fg3),
+            style: const TextStyle(fontSize: 17),
+          ),
+          Text(
+            widget.slug,
+            key: const ValueKey('lane-slug'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: monoStyle(fontSize: 11.5, color: context.shed.fg3),
           ),
         ],
       ),

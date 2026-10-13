@@ -172,6 +172,12 @@ class _FakeFeed implements MachineFeed {
   void setCraze(BridgeCrazeSnapshot craze) =>
       push(_state.copyWith(craze: craze));
 
+  /// What `remoteHome` answers.
+  String? home = '/home/me';
+
+  @override
+  Future<String?> remoteHome() async => home;
+
   @override
   Future<BridgeLaneCreateOptions> crazeOptions() async {
     optionReads++;
@@ -539,7 +545,7 @@ void main() {
     await _type(tester, 'craze-create-cwd', 'relative/dir');
     expect(
       _text(tester, 'craze-create-cwd-problem'),
-      'an absolute path, starting with /',
+      'an absolute path, or one starting with ~/',
     );
     expect(_submitEnabled(tester), isFalse);
 
@@ -651,6 +657,27 @@ void main() {
     );
     expect(_lanes, [('mini3', crazeLaneKind, _newHost)]);
     expect(_key('craze-create-prompt-notice'), findsNothing);
+  });
+
+  testWidgets('a typed ~ path is sent expanded against the machine home', (
+    tester,
+  ) async {
+    final feed = _FakeFeed()..answers.add(_created());
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '~/projects/x');
+    expect(_key('craze-create-cwd-problem'), findsNothing);
+    await _submit(tester);
+    expect(feed.requests.single.cwd, '/home/me/projects/x');
+  });
+
+  testWidgets('without a known home, a ~ path is refused', (tester) async {
+    final feed = _FakeFeed()..home = null;
+    await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '~/projects/x');
+    expect(_key('craze-create-cwd-problem'), findsOneWidget);
+    expect(_submitEnabled(tester), isFalse);
   });
 
   testWidgets('a first prompt craze refused is said, and the session opens', (

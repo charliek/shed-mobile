@@ -105,7 +105,13 @@ class CrazeRig {
   String get crazeHome => '$root/ch';
   String get runtime => '$root/run';
   String get pathDir => '$root/path';
-  String get work => '$root/work';
+
+  /// The directory sessions run in — deliberately NOT under `/tmp`: the
+  /// create sheet hides scratch roots from its recent-directory chips
+  /// (`visibleRecentDirs`), and only the sockets need [root]'s short path. It
+  /// lives in the repo's ignored `build/`, one per rig, and goes with it.
+  String get work =>
+      '${Directory.current.path}/build/craze-rig/${root.split('/').last}/work';
 
   final List<Process> _fakeHosts = [];
 
@@ -192,7 +198,7 @@ class CrazeRig {
       Directory(dir).createSync();
       _chmod('0700', dir);
     }
-    Directory(rig.work).createSync();
+    Directory(rig.work).createSync(recursive: true);
     void copy(String from, String name) {
       final to = '${rig.pathDir}/$name';
       File(from).copySync(to);
@@ -609,10 +615,12 @@ class CrazeRig {
         (await processes()).isNotEmpty) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    try {
-      Directory(root).deleteSync(recursive: true);
-    } on FileSystemException {
-      // A process killed a moment ago may still be closing a file under it.
+    for (final dir in [root, Directory(work).parent.path]) {
+      try {
+        Directory(dir).deleteSync(recursive: true);
+      } on FileSystemException {
+        // A process killed a moment ago may still be closing a file under it.
+      }
     }
     return left;
   }

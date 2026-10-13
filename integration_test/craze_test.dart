@@ -1084,12 +1084,17 @@ void main() {
       expect(_providerSelected(tester, 'cursor'), isFalse);
       expect(_providerSelected(tester, 'grok'), isTrue);
 
-      // craze's recent directories, one tap each.
+      // craze's recent directories, one tap each. A chip reads `~/…` under
+      // the machine's home when the feed has learned it, so match either
+      // spelling; the field below gets the real, absolute directory.
       final recent = _recentDirs();
-      expect(recent, contains(rig.work));
-      await tester.tap(
-        find.byKey(ValueKey('craze-recent-dir-${recent.indexOf(rig.work)}')),
+      final at = recent.indexWhere(
+        (d) =>
+            d == rig.work ||
+            (d.startsWith('~/') && rig.work.endsWith(d.substring(1))),
       );
+      expect(at, isNonNegative, reason: '${rig.work} among $recent');
+      await tester.tap(find.byKey(ValueKey('craze-recent-dir-$at')));
       await _pumps(tester);
       expect(_fieldText(tester, 'craze-create-cwd'), rig.work);
 
