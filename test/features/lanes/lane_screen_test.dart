@@ -1505,13 +1505,19 @@ void main() {
         open: true,
         token: '/re',
         rows: [BridgeSlashFilterRow(row: crazeMenu.rows[1], dimmed: false)],
+        start: 0,
       );
       expect(slashMenuUp(open, null), isTrue);
       expect(slashMenuUp(open, '/re'), isFalse, reason: 'dismissed for it');
       expect(slashMenuUp(open, '/r'), isTrue, reason: 'another token');
       expect(
         slashMenuUp(
-          const BridgeSlashFilter(open: false, token: '/zz', rows: []),
+          const BridgeSlashFilter(
+            open: false,
+            token: '/zz',
+            rows: [],
+            start: 0,
+          ),
           null,
         ),
         isFalse,

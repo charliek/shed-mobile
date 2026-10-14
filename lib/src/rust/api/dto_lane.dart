@@ -1217,20 +1217,27 @@ sealed class BridgeSlashDispatch with _$BridgeSlashDispatch {
 
 /// What the menu panel shows for a draft and caret (mirrors
 /// `slash_menu::SlashFilter`): `open` is exactly `!rows.is_empty()`; `token`
-/// keys an Esc dismissal.
+/// keys an Esc dismissal; `start` is where a reset highlight lands.
 class BridgeSlashFilter {
   final bool open;
   final String token;
   final List<BridgeSlashFilterRow> rows;
 
+  /// The row the highlight starts on: the first row that is not dimmed,
+  /// else 0 (0 when closed). The screen resets its highlight here, so a
+  /// menu opened mid-turn starts on a row Enter acts on (plan 030 FU8).
+  final int start;
+
   const BridgeSlashFilter({
     required this.open,
     required this.token,
     required this.rows,
+    required this.start,
   });
 
   @override
-  int get hashCode => open.hashCode ^ token.hashCode ^ rows.hashCode;
+  int get hashCode =>
+      open.hashCode ^ token.hashCode ^ rows.hashCode ^ start.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1239,7 +1246,8 @@ class BridgeSlashFilter {
           runtimeType == other.runtimeType &&
           open == other.open &&
           token == other.token &&
-          rows == other.rows;
+          rows == other.rows &&
+          start == other.start;
 }
 
 /// One row of an open menu (mirrors `slash_menu::SlashFilterRow`).

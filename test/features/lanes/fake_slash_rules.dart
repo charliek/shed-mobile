@@ -35,12 +35,22 @@ class FakeSlashRules implements SlashRules {
     filters.add((draft: draft, caret: caret, working: working));
     final command = _parse(draft);
     if (command == null) {
-      return const BridgeSlashFilter(open: false, token: '', rows: []);
+      return const BridgeSlashFilter(
+        open: false,
+        token: '',
+        rows: [],
+        start: 0,
+      );
     }
     final token = '/${command.typed}';
     final at = caret > draft.length ? draft.length : caret;
     if (at == 0 || at > token.length) {
-      return BridgeSlashFilter(open: false, token: token, rows: const []);
+      return BridgeSlashFilter(
+        open: false,
+        token: token,
+        rows: const [],
+        start: 0,
+      );
     }
     final query = _fold(command.typed);
     final buckets = List.generate(4, (_) => <BridgeSlashMenuRow>[]);
@@ -62,7 +72,12 @@ class FakeSlashRules implements SlashRules {
         for (final row in bucket)
           BridgeSlashFilterRow(row: row, dimmed: working && _waits(row)),
     ];
-    return BridgeSlashFilter(open: rows.isNotEmpty, token: token, rows: rows);
+    return BridgeSlashFilter(
+      open: rows.isNotEmpty,
+      token: token,
+      rows: rows,
+      start: 0,
+    );
   }
 
   @override

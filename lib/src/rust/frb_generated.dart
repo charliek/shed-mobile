@@ -5244,12 +5244,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BridgeSlashFilter dco_decode_bridge_slash_filter(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return BridgeSlashFilter(
       open: dco_decode_bool(arr[0]),
       token: dco_decode_String(arr[1]),
       rows: dco_decode_list_bridge_slash_filter_row(arr[2]),
+      start: dco_decode_u_32(arr[3]),
     );
   }
 
@@ -8352,7 +8353,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_open = sse_decode_bool(deserializer);
     var var_token = sse_decode_String(deserializer);
     var var_rows = sse_decode_list_bridge_slash_filter_row(deserializer);
-    return BridgeSlashFilter(open: var_open, token: var_token, rows: var_rows);
+    var var_start = sse_decode_u_32(deserializer);
+    return BridgeSlashFilter(
+      open: var_open,
+      token: var_token,
+      rows: var_rows,
+      start: var_start,
+    );
   }
 
   @protected
@@ -11522,6 +11529,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.open, serializer);
     sse_encode_String(self.token, serializer);
     sse_encode_list_bridge_slash_filter_row(self.rows, serializer);
+    sse_encode_u_32(self.start, serializer);
   }
 
   @protected

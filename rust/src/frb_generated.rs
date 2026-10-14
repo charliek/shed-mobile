@@ -6078,10 +6078,12 @@ impl SseDecode for crate::api::dto_lane::BridgeSlashFilter {
         let mut var_token = <String>::sse_decode(deserializer);
         let mut var_rows =
             <Vec<crate::api::dto_lane::BridgeSlashFilterRow>>::sse_decode(deserializer);
+        let mut var_start = <u32>::sse_decode(deserializer);
         return crate::api::dto_lane::BridgeSlashFilter {
             open: var_open,
             token: var_token,
             rows: var_rows,
+            start: var_start,
         };
     }
 }
@@ -9715,6 +9717,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::dto_lane::BridgeSlashFilter {
             self.open.into_into_dart().into_dart(),
             self.token.into_into_dart().into_dart(),
             self.rows.into_into_dart().into_dart(),
+            self.start.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -11740,6 +11743,7 @@ impl SseEncode for crate::api::dto_lane::BridgeSlashFilter {
         <bool>::sse_encode(self.open, serializer);
         <String>::sse_encode(self.token, serializer);
         <Vec<crate::api::dto_lane::BridgeSlashFilterRow>>::sse_encode(self.rows, serializer);
+        <u32>::sse_encode(self.start, serializer);
     }
 }
 
