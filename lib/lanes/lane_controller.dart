@@ -997,15 +997,19 @@ class LaneController {
       return;
     }
     if (stamp == _stamp) return;
+    final otherSession = stamp.sessionId != _stamp.sessionId;
     _stamp = stamp;
     // A new stamp revives a lane that was given up on: whatever was permanent
     // about the old one was a property of the old one.
     _abandoned = false;
     _backoff = laneRetryBase;
-    unawaited(_reopenNow());
+    unawaited(_reopenNow(otherSession: otherSession));
   }
 
-  Future<void> _reopenNow() async {
+  /// Re-open against the stamp [reconcile] just took. [otherSession]: it
+  /// names a different agent session, not the same one on a new port (a
+  /// restarted tab) — what decides whether the verbs' own errors go too.
+  Future<void> _reopenNow({required bool otherSession}) async {
     await _dropHandle(releaseLease: true);
     // A change in flight on the old session settles nothing on the new one.
     _presses.clear();
@@ -1021,7 +1025,11 @@ class LaneController {
         ended: false,
         clearStale: true,
         clearError: true,
-        clearComposerError: true,
+        // What a verb said — a refusal, or a lost answer's "may have run" —
+        // is about the SESSION it was sent to: gone with it, kept when the
+        // same session only moved port (it is still that session's news).
+        clearComposerError: otherSession,
+        clearStopError: otherSession,
         retrying: false,
         abandoned: false,
       ),

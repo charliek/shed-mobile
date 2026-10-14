@@ -146,6 +146,12 @@ class LaneScreen extends ConsumerStatefulWidget {
 /// may still touch the box.
 typedef _Draft = ({String text, int rev});
 
+/// What only the screen is left to say for a verb whose lane MOVED ON before
+/// it answered ([LaneVerbSuperseded]) — and the agent session it was said
+/// for: the session id of the stamp the verb was addressed to. Shown only
+/// while the lane is still addressed to that session (`_said`).
+typedef _Lost = ({String session, String text});
+
 class _LaneScreenState extends ConsumerState<LaneScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
@@ -177,7 +183,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
   // ---- the `/` menu's screen state (plan 029 §3.5) ------------------------
 
-  /// The highlighted row — an index into the open menu's rows.
+  /// The highlighted row — an index into the open menu's rows. Every reset
+  /// puts it on the filter's `start` — the first row that is not dimmed — so
+  /// a menu opened mid-turn starts on a row Enter acts on (plan 030 FU8).
   int _highlight = 0;
 
   /// Bumped on every edit of the draft's text. A command captures the draft
@@ -198,8 +206,10 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
   /// What the last `/` command left to say beside the composer: a refusal
   /// (the draft kept to fix) or a rename's warning (it took, with a caveat).
-  /// Gone with the next edit of the draft.
-  ({String text, bool warning})? _note;
+  /// Gone with the next edit of the draft, and said only while the lane is on
+  /// the SESSION it was said for ([_onSession]) — a rename's caveat about
+  /// session A is not session B's, whatever stamp the row moves to.
+  ({String? session, String text, bool warning})? _note;
 
   /// What a composer verb said whose lane MOVED ON before it answered
   /// ([LaneVerbSuperseded] — a re-open, or the lane's provider rebuilt and
@@ -207,8 +217,17 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// craze, so the draft stays, and this screen is the only one left to say
   /// so — the lane has let the answer go. Shown where the lane's own
   /// [LaneState.composerError] is, and lives as that does: until the next
-  /// composer verb runs.
-  String? _lost;
+  /// composer verb runs — and only on the SESSION it was said for (a new
+  /// stamp on the row is another session, where the lane clears its own
+  /// error too; a reconnect to the same one keeps it). Cancel is a composer
+  /// verb, and says it here too.
+  _Lost? _lost;
+
+  /// What the HEADER's Stop said whose lane moved on before it answered — the
+  /// [_lost] of the Stop banner: shown in it while the lane's own
+  /// [LaneState.stopError] is null and the lane is still on the session it
+  /// was said for, and gone when the header's Stop next runs (as that is).
+  _Lost? _stopLost;
 
   /// The draft as last seen — so an EDIT, not a caret move, clears [_note].
   String _lastDraft = '';
@@ -352,30 +371,73 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     required void Function(bool value) setBusy,
     required String logKey,
     required Future<LaneVerbOutcome> Function(LaneController controller) verb,
-    void Function(LaneVerbDone done)? onDone,
+    void Function(LaneVerbDone done, String session)? onDone,
+  }) => _outcomeCall(
+    busy: busy,
+    setBusy: setBusy,
+    logKey: logKey,
+    // A new composer verb, as the lane clears its own composer error.
+    lost: (lost) => _lost = lost,
+    verb: verb,
+    // Reached only when the outcome has no error: a [LaneVerbDone].
+    onSuccess: (outcome, session) {
+      _clearIfCurrent(draft);
+      if (outcome case final LaneVerbDone done) onDone?.call(done, session);
+    },
+  );
+
+  /// **A verb whose own outcome is the screen's to settle** — [_guarded]
+  /// around [verb], answering the outcome (null when nothing ran). A
+  /// [LaneVerbSuperseded] landed nothing on the lane's state, so this screen
+  /// says it, through [lost]: cleared as the verb starts (the lane clears its
+  /// own error then too) and set to the outcome's "may have run" wording when
+  /// the lane moved on before it answered — tagged with the session the verb
+  /// was addressed to ([_Lost]), the stamp's as the verb started. [onSuccess]
+  /// runs only for an outcome with no error (a [LaneVerbDone]), while
+  /// mounted, with that session.
+  Future<LaneVerbOutcome?> _outcomeCall({
+    required bool busy,
+    required void Function(bool value) setBusy,
+    required String logKey,
+    required void Function(_Lost? lost) lost,
+    required Future<LaneVerbOutcome> Function(LaneController controller) verb,
+    void Function(LaneVerbOutcome outcome, String session)? onSuccess,
   }) async {
     LaneVerbOutcome? outcome;
+    String? session;
     await _guarded(
       busy: busy,
       setBusy: setBusy,
       logKey: logKey,
       run: (controller) async {
-        // A new composer verb, as the lane clears its own composer error.
-        setState(() => _lost = null);
+        session = controller.stamp.sessionId;
+        setState(() => lost(null));
         final answered = outcome = await verb(controller);
         return answered.error;
       },
-      // Reached only when the outcome has no error: a [LaneVerbDone].
-      onSuccess: () {
-        _clearIfCurrent(draft);
-        if (outcome case final LaneVerbDone done) onDone?.call(done);
-      },
+      onSuccess: () => onSuccess?.call(outcome!, session!),
     );
     if (outcome case LaneVerbSuperseded(:final error) when mounted) {
-      setState(() => _lost = error.message);
+      setState(() => lost((session: session!, text: error.message)));
     }
     return outcome;
   }
+
+  /// The agent session the lane is addressed to NOW — its stamp's session
+  /// id; null when the row has no lane. What a screen-local note is said for.
+  String? _session() => _laneController()?.stamp.sessionId;
+
+  /// Whether the lane is still addressed to [session]: a re-open, a
+  /// reconnect, the lane's provider rebuilding, or the same session on a new
+  /// port keeps it; a new stamp naming another session does not, and that
+  /// session never hears the old one's notes. The lane is read only when
+  /// there is a session to compare.
+  bool _onSession(String? session) => session != null && session == _session();
+
+  /// [lost]'s words while the lane is still on the session they were said
+  /// for ([_onSession]); null otherwise.
+  String? _said(_Lost? lost) =>
+      lost != null && _onSession(lost.session) ? lost.text : null;
 
   /// **Recomputed at send time**, from the freshest state — the toggle records
   /// an intent, not a mode. An adapter that cannot interject answers
@@ -389,15 +451,15 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       ? BridgeSendMode.interject
       : BridgeSendMode.queue;
 
-  Future<void> _cancel() => _guarded(
+  /// Cancel the turn — a composer verb: a refusal is the lane's to say
+  /// ([LaneState.composerError]), and a cancel whose lane moved on before it
+  /// answered is this screen's ([_lost]) — it may have reached craze.
+  Future<void> _cancel() => _outcomeCall(
     busy: _sending,
     setBusy: (v) => _sending = v,
     logKey: 'lane-cancel',
-    run: (controller) async {
-      // A composer verb: the lane clears its composer error, and so is this.
-      setState(() => _lost = null);
-      return (await controller.cancel()).error;
-    },
+    lost: (lost) => _lost = lost,
+    verb: (controller) => controller.cancel(),
   );
 
   /// **Stop the SESSION — after asking.** Stop ends the agent, not just this
@@ -451,11 +513,15 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     final live = _live();
     if (live == null || !laneStopOffered(live)) return;
     if (draft == null) {
-      await _guarded(
+      // The header's Stop: a refusal or a lost receipt is the lane's banner
+      // ([LaneState.stopError]); a stop whose lane moved on before it
+      // answered is this screen's ([_stopLost]), in the same banner.
+      await _outcomeCall(
         busy: _stopping,
         setBusy: (v) => _stopping = v,
         logKey: 'lane-stop',
-        run: (controller) async => (await controller.stop()).error,
+        lost: (lost) => _stopLost = lost,
+        verb: (controller) => controller.stop(),
       );
       return;
     }
@@ -513,7 +579,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// stale answer; this one cannot be stale). A new answer that lists
   /// something else ([_sameEntries]), or one from a new catalog — the menu
   /// changed by value ([sameSlashMenu]), whatever its rows are called — puts
-  /// the highlight back on its first row (P9).
+  /// the highlight back on the answer's `start`: its first row that is not
+  /// dimmed (P9, plan 030 FU8). A working flip alone lists the same entries,
+  /// so it moves no highlight.
   BridgeSlashFilter? _filterNow(LaneState state) {
     final menu = _menuOf(state);
     if (menu == null) return null;
@@ -536,7 +604,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     if (last == null ||
         !sameSlashMenu(last.menu, menu) ||
         !_sameEntries(last.filter, filter)) {
-      _highlight = 0;
+      _highlight = filter.start;
     }
     _filtered = (
       menu: menu,
@@ -565,9 +633,10 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// * an Esc dismissal ends once a filter reports a DIFFERENT token; no
   ///   filter at all (the session's menu gone for a moment — a reseed, a
   ///   catalog on its way back) changes nothing;
-  /// * the highlight goes back to the first row on every filter or catalog
-  ///   change ([_filterNow], [_sameEntries], [sameSlashMenu]); a caret move
-  ///   inside the token, or a frame that changes none of them, keeps it.
+  /// * the highlight goes back to the filter's `start` (its first live row)
+  ///   on every filter or catalog change ([_filterNow], [_sameEntries],
+  ///   [sameSlashMenu]); a caret move inside the token, a working flip, or a
+  ///   frame that changes none of them, keeps it.
   ///
   /// `up`: the panel is on screen.
   ({BridgeSlashMenu? menu, BridgeSlashFilter? filter, bool up}) _slashView(
@@ -678,10 +747,14 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     _inputFocus.requestFocus();
   }
 
-  /// Enter or Tab with the menu up: the highlighted row ([_slashView] keeps
-  /// the highlight inside the open rows).
-  void _acceptHighlighted(BridgeSlashFilter filter, BridgeSlashAcceptKey key) =>
-      _acceptRow(filter.rows[_highlight].row.name, key);
+  /// Enter or Tab with the menu up: the highlighted row. [_slashView] resets
+  /// the highlight on every change of rows, so it is inside them — clamped
+  /// anyway, so no index can outlive the rows it was taken on.
+  void _acceptHighlighted(BridgeSlashFilter filter, BridgeSlashAcceptKey key) {
+    final rows = filter.rows;
+    if (rows.isEmpty) return;
+    _acceptRow(rows[_highlight.clamp(0, rows.length - 1)].row.name, key);
+  }
 
   /// The draft in the box now, with its revision.
   _Draft _capture() => (text: _input.text, rev: _draftRev);
@@ -769,7 +842,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       case BridgeSlashDispatch_Refuse(:final reason):
         // Refused HERE, nothing sent: the reason inline, the draft kept.
         logDriveResult('lane-slash', ok: false, error: reason);
-        setState(() => _note = (text: reason, warning: false));
+        setState(
+          () => _note = (session: _session(), text: reason, warning: false),
+        );
       case BridgeSlashDispatch_Prompt(:final text):
         // A prompt row (`/research deep dive`): its CANONICAL text (E8) as a
         // prompt — queued during a turn like any prompt, an interject when the
@@ -813,7 +888,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     _Draft draft, {
     required String logKey,
     required Future<LaneVerbOutcome> Function(LaneController controller) verb,
-    void Function(LaneVerbDone done)? onDone,
+    void Function(LaneVerbDone done, String session)? onDone,
   }) async {
     setState(() => _note = null);
     final hadFocus = _inputFocus.hasFocus;
@@ -843,8 +918,10 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     verb: (c) => c.setTitle(title),
     // After the clear, whose edit wipes the note — and shown whether or not
     // the draft was still this one: the rename took.
-    onDone: (done) {
-      if (done.warning case final text?) _note = (text: text, warning: true);
+    onDone: (done, session) {
+      if (done.warning case final text?) {
+        _note = (session: session, text: text, warning: true);
+      }
     },
   );
 
@@ -913,13 +990,11 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               'This lane is gone: ${laneFailureText(async.error!)}',
             ),
           if (state.stale != null) _staleBanner(context, state),
-          if (state.stopError case final error?)
-            _banner(
-              context,
-              'lane-stop-error',
-              ShedStatusTone.err,
-              error.message,
-            ),
+          // The lane's refusal or lost receipt — or, for a header Stop whose
+          // lane moved on before it answered, what only this screen is left
+          // to say ([_stopLost]), on the session it was said for.
+          if (state.stopError?.message ?? _said(_stopLost) case final message?)
+            _banner(context, 'lane-stop-error', ShedStatusTone.err, message),
           if (_laneNote(state) case final note?) _noteBanner(context, note),
           // Only the `/` menu and the composer read the draft: a keystroke
           // or a caret move rebuilds them, never the transcript.
@@ -1377,7 +1452,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     final enabled = _composerEnabled(state);
     // The lane's own refusal or lost answer — or, for a verb whose lane moved
     // on before it answered, what only this screen is left to say ([_lost]).
-    final error = state.composerError?.message ?? _lost;
+    final error = state.composerError?.message ?? _said(_lost);
     return SafeArea(
       top: false,
       child: Container(
@@ -1427,8 +1502,11 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
               children: [
                 // The `/` button (P24): only on a session with a menu, and
                 // only on an EMPTY draft — it starts a command, it never
-                // edits one.
-                if (offersMenu && _input.text.isEmpty)
+                // edits one. Gone on an ABANDONED lane (nothing can run
+                // there), not on an ended one: `ended` stays set through a
+                // transient re-open, and the button would blink while Send
+                // stays enabled (plan 030 FU9). Disabled only while sending.
+                if (offersMenu && _input.text.isEmpty && !state.abandoned)
                   IconButton(
                     key: const ValueKey('lane-slash-button'),
                     tooltip: 'Commands',
@@ -1501,8 +1579,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
             // What a `/` command left to say: a refusal (the draft kept to
             // fix) or a rename that took with a caveat — said only while the
             // session offers the menu it was said against (no catalog, or no
-            // `slash`, no note: D11).
-            if ((menu != null ? _note : null) case final note?)
+            // `slash`, no note: D11), and only on the session it was said for.
+            if ((menu != null && _onSession(_note?.session) ? _note : null)
+                case final note?)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(

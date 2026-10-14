@@ -1190,6 +1190,19 @@ void main() {
               run: (c) => c.stop(command: true),
               unknown: laneCommandOutcomeUnknown,
             ),
+            // Not composer COMMANDS, but their screens settle them from
+            // the outcome too (plan 030 FU11): Cancel, and the header's
+            // Stop.
+            'cancel': (
+              hold: (b, g) => b.holdCancel = g,
+              run: (c) => c.cancel(),
+              unknown: laneCommandOutcomeUnknown,
+            ),
+            'stop': (
+              hold: (b, g) => b.holdStop = g,
+              run: (c) => c.stop(),
+              unknown: laneCommandOutcomeUnknown,
+            ),
           };
       // Whatever the source answers once the lane has moved on: a lost
       // answer (the review's case), a definite refusal, and even an Ok.
@@ -1206,6 +1219,7 @@ void main() {
           v.hold(rig.bridge, gate);
           rig.bridge
             ..sendFailure = failure
+            ..cancelFailure = failure
             ..setTitleFailure = failure
             ..setFailure = failure
             ..stopFailure = failure;
@@ -1265,6 +1279,56 @@ void main() {
         rig.controller.state.composerError?.message,
         laneCommandOutcomeUnknown,
       );
+    });
+
+    test('a verb\'s own errors belong to the SESSION it was sent to: a '
+        'refused Stop and a lost send survive the same session moving port, '
+        'and go with a stamp for another session (plan 030 FU11)', () async {
+      final rig = _Rig();
+      await rig.controller.open();
+      rig.bridge.stopFailure = const BridgeLaneError.notAccepting();
+      expect(await rig.controller.stop(), isA<LaneVerbRefused>());
+      rig.bridge.sendFailure = const BridgeLaneError.outcomeUnknown(msg: 'x');
+      expect(await rig.controller.send('hi'), isA<LaneVerbUnknown>());
+      void bothKept(String why) {
+        expect(
+          rig.controller.state.stopError?.code,
+          'LANE_NOT_ACCEPTING',
+          reason: why,
+        );
+        expect(
+          rig.controller.state.composerError?.message,
+          laneSendOutcomeUnknown,
+          reason: why,
+        );
+      }
+
+      bothKept('session A');
+
+      // A restarted tab: A on a new port — re-opened, still A's news.
+      rig.stamps.add(
+        const BridgeAgentLaneStamp(
+          kind: 'opencode',
+          sessionId: 'sess-1',
+          serverUrl: 'http://127.0.0.1:2500',
+        ),
+      );
+      await pumpEventQueue();
+      expect(rig.bridge.specs.last.reportedUrl, 'http://127.0.0.1:2500');
+      bothKept('the same session on a new port');
+
+      // Another session: neither is B's.
+      rig.stamps.add(
+        const BridgeAgentLaneStamp(
+          kind: 'opencode',
+          sessionId: 'sess-2',
+          serverUrl: 'http://127.0.0.1:2500',
+        ),
+      );
+      await pumpEventQueue();
+      expect(rig.bridge.specs.last.sessionId, 'sess-2', reason: 're-opened');
+      expect(rig.controller.state.stopError, isNull);
+      expect(rig.controller.state.composerError, isNull);
     });
 
     test('with no lane open, rename and mode are refused without touching '
@@ -1892,8 +1956,14 @@ class _FakeLaneBridge implements LaneSource {
     modes.add(mode);
   }
 
+  /// Parks `cancel` — a cancel in flight. (Not [_FakeHandle.holdCancel],
+  /// which parks the nudge stream's cancel.)
+  Completer<void>? holdCancel;
+
   @override
   Future<void> cancel(LaneHandle handle) async {
+    final gate = holdCancel;
+    if (gate != null) await gate.future;
     final failure = cancelFailure;
     if (failure != null) throw failure;
     cancels++;

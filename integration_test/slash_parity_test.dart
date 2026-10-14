@@ -117,6 +117,19 @@ void main() {
       },
       {true, false},
     );
+    // `start` is compared past dimmed rows AND on an open list whose every
+    // row is dimmed (the "else 0" of the rule), not only on idle answers.
+    final answers = [
+      for (final c in _filters)
+        real.filter(c.menu, c.draft, c.caret, c.working),
+    ];
+    expect(answers.any((f) => f.start > 0), isTrue);
+    expect(
+      answers.any(
+        (f) => f.open && f.start == 0 && f.rows.every((r) => r.dimmed),
+      ),
+      isTrue,
+    );
   });
 }
 
@@ -125,9 +138,10 @@ void main() {
 // ---------------------------------------------------------------------------
 
 /// A filter answer as text: the generated `==` compares its row LIST by
-/// identity, so two equal answers would never be equal.
+/// identity, so two equal answers would never be equal. `start` (the row a
+/// reset highlight lands on, plan 030 FU8) is part of every answer compared.
 String _showFilter(BridgeSlashFilter f) =>
-    'open=${f.open} token=${_q(f.token)} rows=[${[for (final r in f.rows) '${r.row.name}${r.dimmed ? '(dimmed)' : ''}'].join(', ')}]';
+    'open=${f.open} token=${_q(f.token)} start=${f.start} rows=[${[for (final r in f.rows) '${r.row.name}${r.dimmed ? '(dimmed)' : ''}'].join(', ')}]';
 
 String _q(String s) => '"${s.replaceAll('\n', r'\n')}"';
 
@@ -156,6 +170,13 @@ final _big = BridgeSlashMenu(
       ),
   ],
   hidden: const [],
+);
+
+/// Only the rows of the hub's menu that wait for a turn: while one runs,
+/// EVERY row is dimmed, and the highlight starts on row 0 (plan 030 FU8).
+final _waiting = BridgeSlashMenu(
+  rows: crazeMenu.rows.where((r) => crazeWaitingRows.contains(r.name)).toList(),
+  hidden: crazeMenu.hidden,
 );
 
 /// The highlight cell's replacement catalog: a new first row.
@@ -219,6 +240,10 @@ final _filters = <_Filter>[
   _f('/'),
   _f('/', working: true),
   _f('/', caret: 0),
+  // Where the highlight starts mid-turn: past the dimmed rows (`/a` lists
+  // two waiting rows first), and on row 0 when every row is dimmed.
+  _f('/a', working: true),
+  _f('/', menu: _waiting, working: true, label: 'all-waiting'),
   // The highlight cells' tokens, and a caret moved inside one.
   _f('/r'),
   _f('/re'),
