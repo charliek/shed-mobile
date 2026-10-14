@@ -9,6 +9,7 @@ import 'package:shed_mobile/features/machines/roost_bootstrap_offer.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/machines/roost_bootstrap_flow.dart';
+import 'package:shed_mobile/machines/roost_wired_agents.g.dart';
 import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/src/rust/api/roost.dart';
 import 'package:shed_mobile/src/rust/api/roost_bootstrap.dart';
@@ -307,6 +308,20 @@ void main() {
   });
 
   group('the consent sheet', () {
+    test('the hooks sentence names the GENERATED agent list, in its order, in '
+        'the copy\'s fixed words (plan 030, shed#362)', () {
+      // `kRoostWiredAgents` is rendered from shed-core's ROOST_WIRED_AGENTS
+      // and held to it by the Rust crate's tests; this holds the SENTENCE to
+      // that list, so a hand-typed copy fails here once the list moves.
+      expect(kRoostWiredAgents, isNotEmpty);
+      expect(
+        kRoostHooksSentence,
+        'roost-session will also wire its hooks into the agents already '
+        'configured there — ${kRoostWiredAgents.join(', ')} — and nothing '
+        'else.',
+      );
+    });
+
     testWidgets('a probe runs first, and the sheet says target, plan and what '
         'will be written', (tester) async {
       final rig = _Rig(steps: [_probed(_probe())]);

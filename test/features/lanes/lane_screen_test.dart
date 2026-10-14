@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/lanes/slash_keys.dart';
+import 'package:shed_mobile/features/lanes/slash_menu_panel.dart';
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
@@ -1505,13 +1506,19 @@ void main() {
         open: true,
         token: '/re',
         rows: [BridgeSlashFilterRow(row: crazeMenu.rows[1], dimmed: false)],
+        start: 0,
       );
       expect(slashMenuUp(open, null), isTrue);
       expect(slashMenuUp(open, '/re'), isFalse, reason: 'dismissed for it');
       expect(slashMenuUp(open, '/r'), isTrue, reason: 'another token');
       expect(
         slashMenuUp(
-          const BridgeSlashFilter(open: false, token: '/zz', rows: []),
+          const BridgeSlashFilter(
+            open: false,
+            token: '/zz',
+            rows: [],
+            start: 0,
+          ),
           null,
         ),
         isFalse,
@@ -1558,6 +1565,58 @@ void main() {
       await _type(tester, '');
       expect(button, findsOneWidget, reason: 'empty again');
       expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('FU9: an ABANDONED lane with a catalog shows no / button; a '
+        'live one does (plan 030)', (tester) async {
+      final rig = await _slashRig(tester);
+      final button = find.byKey(const ValueKey('lane-slash-button'));
+      expect(button, findsOneWidget, reason: 'a live lane keeps it');
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+
+      // A final Down: the lane is given up on, its catalog still on the
+      // state. The abandon's teardown needs the real event loop (see "a
+      // stale lane names the reason").
+      rig.bump(_slashSnap(stale: 'session_closed', ended: true));
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(find.textContaining('given up on'), findsOneWidget);
+      expect(button, findsNothing, reason: 'nothing can run here');
+    });
+
+    testWidgets('FU9: a lane RE-OPENING after a non-final Down keeps its / '
+        'button, enabled — `ended` is not `abandoned` (plan 030, PC7)', (
+      tester,
+    ) async {
+      final rig = await _slashRig(tester);
+      final button = find.byKey(const ValueKey('lane-slash-button'));
+
+      rig.bump(_slashSnap(stale: 'hub connection lost', ended: true));
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(
+        tester.widget<Text>(_bannerText('lane-note')).data,
+        'Reconnecting…',
+        reason: 'ended, waiting out the re-open backoff',
+      );
+      expect(button, findsOneWidget, reason: 'no blink while it re-opens');
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('lane-send')))
+            .onPressed,
+        isNotNull,
+        reason: 'as Send stays enabled',
+      );
+
+      // The re-open lands on a healthy session: still there.
+      rig.source.current = _slashSnap();
+      await tester.pump(laneRetryBase * 2);
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+      expect(button, findsOneWidget);
     });
 
     testWidgets('CONTROL: no menu without caps.slash or without a catalog — '
@@ -2268,6 +2327,162 @@ void main() {
       expect(_slashHighlighted(tester), 'model', reason: 'a new catalog');
     });
 
+    testWidgets('HIGHLIGHT: opened mid-turn it starts on the first LIVE row, '
+        'past a dimmed one, so Enter acts at once (plan 030 FU8)', (
+      tester,
+    ) async {
+      final rig = await _slashRig(
+        tester,
+        _slashSnap(activity: BridgeRcActivity.working),
+      );
+
+      await _type(tester, '/');
+      expect(_slashRows().take(2), ['model', 'rename']);
+      expect(
+        find.byKey(const ValueKey('lane-slash-after-model')),
+        findsOneWidget,
+        reason: 'row 0 is dimmed: the start is not row 0 by accident',
+      );
+      expect(_slashHighlighted(tester), 'rename', reason: 'the first live row');
+
+      // `rename` takes a title: Enter COMPLETES it — no refusal, nothing sent.
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.rules.accepts.last.row, 'rename');
+      expect(_draft(tester), '/rename ');
+      expect(_slashRefusal(tester), isNull);
+      expect(rig.source.titles, isEmpty);
+      expect(rig.source.sends, isEmpty);
+
+      // A new token resets to ITS start: `/a` lists two waiting rows first.
+      await _type(tester, '/a');
+      expect(_slashRows(), ['ask', 'agent', 'rename', 'plan', 'research']);
+      expect(_slashHighlighted(tester), 'rename');
+    });
+
+    testWidgets('HIGHLIGHT: a start below more dimmed rows than the panel has '
+        'room for is SCROLLED INTO VIEW as the panel opens — Enter never '
+        'accepts a row nobody can see (plan 030 FU8)', (tester) async {
+      // A phone with its keyboard up: the panel gets a few rows' height, and
+      // the first live row sits under twelve that wait for the turn.
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+      addTearDown(tester.view.reset);
+      final rig = _Rig(
+        snapshot: _slashSnap(
+          activity: BridgeRcActivity.working,
+          menu: _deepWorkingMenu,
+        ),
+      );
+      await _pump(tester, rig);
+
+      await _type(tester, '/');
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      final list = tester.getRect(
+        find.byKey(const ValueKey('lane-slash-list')),
+      );
+      expect(
+        list.height,
+        lessThan(12 * slashMenuRowExtent),
+        reason: 'at scroll 0 the start row would be below the panel',
+      );
+      expect(_slashHighlighted(tester), 'live');
+      final row = tester.getRect(
+        find.byKey(const ValueKey('lane-slash-row-live')),
+      );
+      expect(row.top, greaterThanOrEqualTo(list.top - 0.5), reason: 'shown');
+      expect(row.bottom, lessThanOrEqualTo(list.bottom + 0.5), reason: 'shown');
+
+      // Enter takes the row on screen: a prompt row completes.
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.rules.accepts.last.row, 'live');
+      expect(_draft(tester), '/live ');
+      expect(rig.source.sends, isEmpty);
+    });
+
+    testWidgets('HIGHLIGHT: the keyboard opening UNDER an open menu shrinks '
+        'the panel and the highlight is scrolled back into view — Enter '
+        'still takes a row on screen (plan 030 FU8)', (tester) async {
+      // The menu opens with the keyboard down — the `/` button tapped — and
+      // the live row sits under twelve that wait for the turn.
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final rig = _Rig(
+        snapshot: _slashSnap(
+          activity: BridgeRcActivity.working,
+          menu: _deepWorkingMenu,
+        ),
+      );
+      await _pump(tester, rig);
+      await tester.tap(find.byKey(const ValueKey('lane-slash-button')));
+      await _settle(tester);
+      final list = find.byKey(const ValueKey('lane-slash-list'));
+      final live = find.byKey(const ValueKey('lane-slash-row-live'));
+      void liveShown(String when) {
+        final l = tester.getRect(list);
+        final r = tester.getRect(live);
+        expect(r.top, greaterThanOrEqualTo(l.top - 0.5), reason: when);
+        expect(r.bottom, lessThanOrEqualTo(l.bottom + 0.5), reason: when);
+      }
+
+      expect(_slashHighlighted(tester), 'live');
+      liveShown('the keyboard down');
+      final roomy = tester.getRect(list).height;
+
+      // Then the keyboard comes up: the dock shrinks, the rows and the
+      // highlight do not change.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      expect(
+        tester.getRect(list).height,
+        lessThan(roomy - slashMenuRowExtent),
+        reason: 'the panel lost more than a row of room',
+      );
+      expect(_slashHighlighted(tester), 'live');
+      liveShown('the keyboard up');
+
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.rules.accepts.last.row, 'live');
+      expect(_draft(tester), '/live ');
+    });
+
+    testWidgets('HIGHLIGHT: a working flip moves no highlight — the row the '
+        'person arrowed to stays; Enter on it is refused "runs after this '
+        'turn", Tab still completes it (plan 030 FU8)', (tester) async {
+      final rig = await _slashRig(tester);
+
+      await _type(tester, '/');
+      expect(_slashHighlighted(tester), 'model', reason: 'idle: row 0 is live');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await _press(tester, LogicalKeyboardKey.arrowDown);
+      expect(_slashHighlighted(tester), 'plan');
+      expect(find.byKey(const ValueKey('lane-slash-after-plan')), findsNothing);
+
+      rig.bump(_slashSnap(activity: BridgeRcActivity.working));
+      await _settle(tester);
+      expect(rig.rules.filters.last.working, isTrue, reason: 'refiltered');
+      expect(
+        find.byKey(const ValueKey('lane-slash-after-plan')),
+        findsOneWidget,
+      );
+      expect(
+        _slashHighlighted(tester),
+        'plan',
+        reason: 'kept, not moved to the start',
+      );
+
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_slashRefusal(tester), '/plan: runs after this turn');
+      expect(_draft(tester), '/');
+      expect(rig.source.sets, isEmpty, reason: 'nothing was sent');
+
+      await _press(tester, LogicalKeyboardKey.tab);
+      expect(_draft(tester), '/plan ', reason: 'completed for after the turn');
+      expect(rig.source.sets, isEmpty);
+    });
+
     testWidgets('SUPERSEDED: a rename whose lane was REBUILT before it '
         'answered keeps the draft and says "may have applied" — never a '
         'success — and a plain send says its own words', (tester) async {
@@ -2281,23 +2496,8 @@ void main() {
           msg: 'outcome unknown: the connection dropped',
         );
       await _pumpSlash(tester, rig);
-      String? composerError() {
-        final f = find.byKey(const ValueKey('lane-composer-error'));
-        return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
-      }
-
-      /// The lane's provider rebuilds — a new controller for the same row —
-      /// and the old one is closed, its generation moved, with the verb
-      /// still out. Its teardown awaits a subscription cancel that only the
-      /// real event loop finishes (see "a stale lane names the reason").
-      Future<void> rebuild() async {
-        ProviderScope.containerOf(
-          tester.element(find.byType(LaneScreen)),
-        ).invalidate(laneControllerProvider(_ref));
-        await _settle(tester);
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-        await _settle(tester);
-      }
+      String? composerError() => _composerError(tester);
+      Future<void> rebuild() => _rebuildLane(tester);
 
       await _type(tester, '/rename held');
       await _press(tester, LogicalKeyboardKey.enter);
@@ -2331,6 +2531,176 @@ void main() {
       expect(rig.source.sends, hasLength(2));
       expect(_draft(tester), '', reason: 'this one took');
       expect(composerError(), isNull);
+    });
+
+    testWidgets('SUPERSEDED: a Cancel whose lane was REBUILT before it '
+        'answered says "may have run" in the composer — not nothing — and '
+        'the next composer verb clears it (plan 030 FU11)', (tester) async {
+      // Even an Ok: the lane that would have said how it went let it go.
+      final rig = _Rig(snapshot: _slashSnap(activity: BridgeRcActivity.working))
+        ..source.holdCancel = Completer<void>();
+      await _pumpSlash(tester, rig);
+
+      await tester.tap(find.byKey(const ValueKey('lane-cancel')));
+      await _settle(tester);
+      expect(rig.source.cancels, 1, reason: 'the cancel is in flight');
+      await _rebuildLane(tester);
+      rig.source.holdCancel!.complete();
+      await _settle(tester);
+
+      expect(_composerError(tester), laneCommandOutcomeUnknown);
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      // The next composer verb, on the live lane, clears what it said.
+      rig.source.holdCancel = null;
+      await tester.tap(find.byKey(const ValueKey('lane-cancel')));
+      await _settle(tester);
+      expect(rig.source.cancels, 2);
+      expect(_composerError(tester), isNull);
+    });
+
+    testWidgets('SUPERSEDED: a header Stop whose lane was REBUILT before it '
+        'answered says "may have run" in the Stop banner, and the next Stop '
+        'clears it (plan 030 FU11)', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdStop = Completer<void>();
+      await _pumpSlash(tester, rig);
+
+      await _confirmHeaderStop(tester);
+      expect(rig.source.stops, 1, reason: 'the stop is in flight');
+      await _rebuildLane(tester);
+      rig.source.holdStop!.complete();
+      await _settle(tester);
+
+      expect(
+        tester.widget<Text>(_bannerText('lane-stop-error')).data,
+        laneCommandOutcomeUnknown,
+      );
+      expect(
+        _composerError(tester),
+        isNull,
+        reason: 'the header\'s, not the composer\'s',
+      );
+      expect(tester.takeException(), isNull);
+
+      // The next Stop clears it — here one that goes through.
+      rig.source.holdStop = null;
+      await _confirmHeaderStop(tester);
+      expect(rig.source.stops, 2);
+      expect(find.byKey(const ValueKey('lane-stop-error')), findsNothing);
+    });
+
+    testWidgets('SUPERSEDED: what a lost Cancel or header Stop said belongs '
+        'to the SESSION it was said for — a reconnect to that session keeps '
+        'both; a new stamp naming another session shows neither (plan 030 '
+        'FU11)', (tester) async {
+      const working = BridgeRcActivity.working;
+      final rig = _Rig(snapshot: _slashSnap(activity: working))
+        ..source.holdCancel = Completer<void>()
+        ..source.holdStop = Completer<void>();
+      await _pumpSlash(tester, rig);
+      String? banner() {
+        final f = _bannerText('lane-stop-error');
+        return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+      }
+
+      void bothSaid(String why) {
+        expect(_composerError(tester), laneCommandOutcomeUnknown, reason: why);
+        expect(banner(), laneCommandOutcomeUnknown, reason: why);
+      }
+
+      // Session A (`sess-7`): a Cancel, then a header Stop, each lost to a
+      // provider rebuild — itself a reconnect to A, so the Cancel's note
+      // outlives the second one.
+      await tester.tap(find.byKey(const ValueKey('lane-cancel')));
+      await _settle(tester);
+      await _rebuildLane(tester);
+      rig.source.holdCancel!.complete();
+      await _settle(tester);
+      await _confirmHeaderStop(tester);
+      await _rebuildLane(tester);
+      rig.source.holdStop!.complete();
+      await _settle(tester);
+      bothSaid('session A, across a rebuild');
+
+      // CONTROL: a non-final Down re-opened on the same stamp — A again.
+      rig.bump(
+        _slashSnap(
+          activity: working,
+          stale: 'hub connection lost',
+          ended: true,
+        ),
+      );
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      rig.source.current = _slashSnap(activity: working);
+      await tester.pump(laneRetryBase * 2);
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+      bothSaid('a reconnect to A');
+
+      // CONTROL: a restarted tab — a new stamp, but A's session on a new
+      // port. Still A.
+      rig.feed.restamp(url: 'http://127.0.0.1:2500');
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(rig.source.specs.last.reportedUrl, 'http://127.0.0.1:2500');
+      bothSaid('the same session on a new port');
+
+      // A new stamp naming session B: neither of A's notes is B's.
+      rig.feed.restamp(session: 'sess-8');
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(rig.source.specs.last.sessionId, 'sess-8', reason: 'B is open');
+      expect(banner(), isNull, reason: 'A\'s Stop is not B\'s');
+      expect(_composerError(tester), isNull, reason: 'nor A\'s Cancel');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('NOTES: a rename\'s "could not record" warning belongs to the '
+        'session it was said for — a reconnect to it keeps the note; a new '
+        'stamp naming another session, menu and all, does not show it (plan '
+        '030)', (tester) async {
+      const warning =
+          'renamed, but craze could not record it: write index: disk full';
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.setTitleWarning = warning;
+      await _pumpSlash(tester, rig);
+      final note = find.byKey(const ValueKey('lane-slash-warning'));
+      Future<void> restamp({String? session, String? url}) async {
+        rig.feed.restamp(session: session, url: url);
+        await _settle(tester);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await _settle(tester);
+      }
+
+      await _type(tester, '/rename on A');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['on A']);
+      expect(note, findsOneWidget);
+
+      // CONTROLS: reconnects to A — the lane's provider rebuilt, then A on a
+      // new port (a restarted tab).
+      await _rebuildLane(tester);
+      expect(note, findsOneWidget, reason: 'a rebuild: still A');
+      await restamp(url: 'http://127.0.0.1:2500');
+      expect(rig.source.specs.last.reportedUrl, 'http://127.0.0.1:2500');
+      expect(note, findsOneWidget, reason: 'the same session on a new port');
+
+      // Session B, which offers the menu too: A's caveat is not B's.
+      await restamp(session: 'sess-8');
+      expect(rig.source.specs.last.sessionId, 'sess-8', reason: 'B is open');
+      expect(
+        find.byKey(const ValueKey('lane-slash-button')),
+        findsOneWidget,
+        reason: 'B offers the menu: the note goes with A, not with a catalog',
+      );
+      expect(note, findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('DISMISSAL: a moment with no menu (a catalog on its way back) '
@@ -3101,9 +3471,14 @@ class _FakeSource implements LaneSource {
     if (failure != null) throw failure;
   }
 
+  /// When set, `cancel` awaits it — a cancel in flight.
+  Completer<void>? holdCancel;
+
   @override
   Future<void> cancel(LaneHandle handle) async {
     cancels++;
+    final hold = holdCancel;
+    if (hold != null) await hold.future;
     final failure = sendFailure;
     if (failure != null) throw failure;
   }
@@ -3185,6 +3560,22 @@ class _FakeFeed implements MachineFeed {
   /// leaves: the next build of `laneControllerProvider` refuses.
   bool laneGone = false;
 
+  /// The row's lane stamp — the agent session behind the tab, and where its
+  /// server answers. Moved by [restamp].
+  String sessionId = 'sess-7';
+  String serverUrl = 'http://127.0.0.1:2421';
+
+  final _updates = StreamController<MachineFeedState>.broadcast();
+
+  /// A new lane stamp on the row, as the machine feed's next poll says it:
+  /// another agent session behind the same tab ([session]), or the same one
+  /// on a new port (a restarted tab, [url]). The lane reconciles against it.
+  void restamp({String? session, String? url}) {
+    sessionId = session ?? sessionId;
+    serverUrl = url ?? serverUrl;
+    _updates.add(state);
+  }
+
   @override
   MachineRecord get machine => _mini3;
 
@@ -3207,16 +3598,15 @@ class _FakeFeed implements MachineFeed {
           tabId: 7,
           agentLane: BridgeAgentLaneStamp(
             kind: kind,
-            sessionId: 'sess-7',
-            serverUrl: 'http://127.0.0.1:2421',
+            sessionId: sessionId,
+            serverUrl: serverUrl,
           ),
         ),
     ],
   );
 
   @override
-  Stream<MachineFeedState> get updates =>
-      const Stream<MachineFeedState>.empty();
+  Stream<MachineFeedState> get updates => _updates.stream;
 
   @override
   Future<LaneLease> acquireForward(int remotePort) async =>
@@ -3240,6 +3630,22 @@ final _slashCaps = _caps(
   setTitle: true,
 );
 
+/// Twelve rows that wait for a turn, then one that does not (`live`, a
+/// prompt): mid-turn the highlight starts below more dimmed rows than a
+/// keyboard-squeezed panel has room for.
+final _deepWorkingMenu = BridgeSlashMenu(
+  rows: [
+    for (var i = 0; i < 12; i++)
+      slashRow('wait-$i', BridgeSlashAction.setMode(id: 'mode-$i')),
+    slashRow(
+      'live',
+      const BridgeSlashAction.prompt(),
+      source: const BridgeSlashSource.agent(),
+    ),
+  ],
+  hidden: const [],
+);
+
 /// A seeded craze session carrying [menu] (the hub-created session's menu by
 /// default).
 BridgeLaneSnapshot _slashSnap({
@@ -3247,11 +3653,15 @@ BridgeLaneSnapshot _slashSnap({
   BridgeLaneCapabilities? caps,
   BridgeSlashMenu? menu,
   List<BridgeRcFeedMessage> rows = const [],
+  String? stale,
+  bool ended = false,
 }) => _snap(
   rows: rows,
   activity: activity,
   capabilities: caps ?? _slashCaps,
   slashMenu: menu ?? crazeMenu,
+  stale: stale,
+  ended: ended,
 );
 
 /// [_pump], on a view tall enough that a menu of the hub's seven rows lays
@@ -3323,6 +3733,34 @@ String? _slashHighlighted(WidgetTester tester) {
     if (semantics.properties.selected ?? false) return name;
   }
   return null;
+}
+
+/// The header's Stop, confirmed: its button, then the dialog's "Stop
+/// session".
+Future<void> _confirmHeaderStop(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('lane-stop')));
+  await _settle(tester);
+  await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
+  await _settle(tester);
+}
+
+/// What the composer's error slot says, or null.
+String? _composerError(WidgetTester tester) {
+  final f = find.byKey(const ValueKey('lane-composer-error'));
+  return f.evaluate().isEmpty ? null : tester.widget<Text>(f).data;
+}
+
+/// The lane's provider rebuilds — a new controller for the same row — and
+/// the old one is closed, its generation moved, with any verb still out. Its
+/// teardown awaits a subscription cancel that only the real event loop
+/// finishes (see "a stale lane names the reason").
+Future<void> _rebuildLane(WidgetTester tester) async {
+  ProviderScope.containerOf(
+    tester.element(find.byType(LaneScreen)),
+  ).invalidate(laneControllerProvider(_ref));
+  await _settle(tester);
+  await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  await _settle(tester);
 }
 
 /// The refusal the composer shows for a `/` command, or null.

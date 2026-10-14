@@ -1919,6 +1919,104 @@ mod tests {
         }
     }
 
+    // ---- the phone's consent copy, held to roost's wired agents ----
+
+    /// Where the phone's copy of shed-core's `ROOST_WIRED_AGENTS` lives: a
+    /// checked-in Dart file whose whole content this crate's tests render.
+    const WIRED_AGENTS_DART: &str = "lib/machines/roost_wired_agents.g.dart";
+
+    /// **The phone names the agents roost-session wires its hooks into from
+    /// shed-core's own list** (plan 030, shed#362). `kRoostHooksSentence` is
+    /// built from `kRoostWiredAgents`, and the file declaring that list
+    /// ([`WIRED_AGENTS_DART`]) is GENERATED: its entire content is
+    /// [`render_wired_agents_dart`] of `ROOST_WIRED_AGENTS`, compared here
+    /// byte for byte — nothing in the file is parsed, so no comment, string
+    /// or second declaration can stand in for the list. A re-pin that changes
+    /// the constant fails this until the file is regenerated:
+    /// `SHED_MOBILE_REGEN=1 make cargo-test` rewrites it (and passes).
+    #[test]
+    fn the_wired_agents_dart_file_is_rendered_from_the_constant() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(WIRED_AGENTS_DART);
+        let rendered = render_wired_agents_dart(&shed_core::roost::bootstrap::ROOST_WIRED_AGENTS);
+        if std::env::var_os("SHED_MOBILE_REGEN").is_some_and(|v| v == "1") {
+            std::fs::write(&path, &rendered)
+                .unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+            eprintln!("SHED_MOBILE_REGEN=1: rewrote {}", path.display());
+            return;
+        }
+        let actual = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+        assert!(
+            actual == rendered,
+            "{} has drifted from shed-core's ROOST_WIRED_AGENTS — regenerate it with \
+             `SHED_MOBILE_REGEN=1 make cargo-test`. Expected content:\n{rendered}\n\
+             Actual content:\n{actual}",
+            path.display()
+        );
+    }
+
+    /// The renderer's own shape: the one-line form while it fits `dart
+    /// format`'s 80 columns, one element per line (trailing comma) past them —
+    /// what the formatter leaves either way, so the format gate never touches
+    /// the file — and the generated header first.
+    #[test]
+    fn render_wired_agents_dart_is_already_formatted() {
+        let short = render_wired_agents_dart(&["claude", "codex"]);
+        assert!(short.starts_with("// GENERATED CODE - DO NOT MODIFY BY HAND\n"));
+        assert!(short
+            .ends_with("\nconst List<String> kRoostWiredAgents = <String>['claude', 'codex'];\n"));
+        let long = render_wired_agents_dart(&["claude", "codex", "cursor", "grok", "opencode"]);
+        assert!(long.ends_with(
+            "\nconst List<String> kRoostWiredAgents = <String>[\n  'claude',\n  'codex',\n  \
+             'cursor',\n  'grok',\n  'opencode',\n];\n"
+        ));
+        assert!(long.lines().all(|l| l.chars().count() <= 80));
+    }
+
+    /// The whole of [`WIRED_AGENTS_DART`] for `agents`. Panics on a name it
+    /// could not put in a single-quoted Dart literal as is.
+    fn render_wired_agents_dart(agents: &[&str]) -> String {
+        for agent in agents {
+            assert!(
+                !agent.is_empty()
+                    && agent.chars().all(|c| c.is_ascii_lowercase()
+                        || c.is_ascii_digit()
+                        || c == '-'
+                        || c == '_'),
+                "an agent name the renderer will not quote: {agent:?}"
+            );
+        }
+        let head = "const List<String> kRoostWiredAgents = <String>[";
+        let quoted: Vec<String> = agents.iter().map(|a| format!("'{a}'")).collect();
+        let one_line = format!("{head}{}];", quoted.join(", "));
+        let list = if one_line.chars().count() <= 80 {
+            one_line
+        } else {
+            let mut list = format!("{head}\n");
+            for q in &quoted {
+                list.push_str(&format!("  {q},\n"));
+            }
+            list.push_str("];");
+            list
+        };
+        format!(
+            "// GENERATED CODE - DO NOT MODIFY BY HAND\n\
+             //\n\
+             // Rendered from shed-core's `ROOST_WIRED_AGENTS` — the agents\n\
+             // roost-session wires its hooks into, in the order the hooks request\n\
+             // sends them — by the Rust test\n\
+             // `the_wired_agents_dart_file_is_rendered_from_the_constant`\n\
+             // (rust/src/api/mint.rs), which fails when this file drifts from it.\n\
+             // Regenerate with `SHED_MOBILE_REGEN=1 make cargo-test`.\n\
+             \n\
+             /// shed-core's `ROOST_WIRED_AGENTS`, in its order (plan 030, shed#362).\n\
+             {list}\n"
+        )
+    }
+
     // ---- the add-server bundle parse: behavior inherited from Dart ----
 
     /// **A regression guard, not a cross-implementation parity test.**

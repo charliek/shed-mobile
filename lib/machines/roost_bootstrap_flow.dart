@@ -26,6 +26,7 @@ import 'dart:io';
 
 import '../src/rust/api/roost_bootstrap.dart';
 import '../ssh/roost_bootstrap_runner.dart';
+import 'roost_wired_agents.g.dart';
 
 // ---------------------------------------------------------------------------
 // the bridge, behind a seam
@@ -218,9 +219,15 @@ const String kRoostDefaultDest = '~/.local/bin/roost-session';
 /// is true under last-writer-wins: at session protocol 5 there is no lease, hook
 /// wiring is open to every one of your clients, they all send the same thing,
 /// and roost records which one wrote them last. No warning sentence is added.
-const String kRoostHooksSentence =
+///
+/// The agents are [kRoostWiredAgents] — shed-core's `ROOST_WIRED_AGENTS`, the
+/// list the hooks request actually sends, in its order — from a file the Rust
+/// crate's tests GENERATE and check byte for byte against the constant
+/// (`rust/src/api/mint.rs`), so a re-pin that changes the list fails the cargo
+/// leg until the file is regenerated (plan 030, shed#362).
+final String kRoostHooksSentence =
     'roost-session will also wire its hooks into the agents already configured '
-    'there — claude, codex, cursor, opencode, grok — and nothing else.';
+    'there — ${kRoostWiredAgents.join(', ')} — and nothing else.';
 
 /// **What the user is being asked to consent to** — the four required lines
 /// (what, where, from where, and the hooks sentence), plus the Update-only

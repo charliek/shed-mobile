@@ -7,10 +7,11 @@ import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 /// drive the composer's `/` menu at all.
 ///
 /// It follows the module's documented rules for the menus these tests build
-/// (the four filter buckets and the caret rule, the grammar and its guard, the
-/// three accept keys — `slash_menu.rs`'s module doc), and RECORDS every call,
-/// so a cell asserts what the SCREEN asked (the draft as typed, the UTF-16
-/// caret, the key, the working flag) as well as what it did with the answer.
+/// (the four filter buckets and the caret rule, the row a highlight starts
+/// on, the grammar and its guard, the three accept keys — `slash_menu.rs`'s
+/// module doc), and RECORDS every call, so a cell asserts what the SCREEN
+/// asked (the draft as typed, the UTF-16 caret, the key, the working flag) as
+/// well as what it did with the answer.
 /// It is a test double, not a port: nothing in `lib/` decides a command, and
 /// the real rules are driven end to end against the real hub by
 /// `integration_test/craze_test.dart`'s `/` menu cells.
@@ -35,12 +36,22 @@ class FakeSlashRules implements SlashRules {
     filters.add((draft: draft, caret: caret, working: working));
     final command = _parse(draft);
     if (command == null) {
-      return const BridgeSlashFilter(open: false, token: '', rows: []);
+      return const BridgeSlashFilter(
+        open: false,
+        token: '',
+        rows: [],
+        start: 0,
+      );
     }
     final token = '/${command.typed}';
     final at = caret > draft.length ? draft.length : caret;
     if (at == 0 || at > token.length) {
-      return BridgeSlashFilter(open: false, token: token, rows: const []);
+      return BridgeSlashFilter(
+        open: false,
+        token: token,
+        rows: const [],
+        start: 0,
+      );
     }
     final query = _fold(command.typed);
     final buckets = List.generate(4, (_) => <BridgeSlashMenuRow>[]);
@@ -62,7 +73,15 @@ class FakeSlashRules implements SlashRules {
         for (final row in bucket)
           BridgeSlashFilterRow(row: row, dimmed: working && _waits(row)),
     ];
-    return BridgeSlashFilter(open: rows.isNotEmpty, token: token, rows: rows);
+    // The row a highlight starts on, as the module computes it: the first
+    // row that is not dimmed, else 0 (also 0 when closed, above).
+    final live = rows.indexWhere((r) => !r.dimmed);
+    return BridgeSlashFilter(
+      open: rows.isNotEmpty,
+      token: token,
+      rows: rows,
+      start: live < 0 ? 0 : live,
+    );
   }
 
   @override

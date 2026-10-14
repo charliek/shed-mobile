@@ -23,8 +23,10 @@ const slashMenuMaxHeightFraction = 0.4;
 /// (`slash_keys.dart`). The desktop's `SlashMenu.tsx`.
 ///
 /// * **Capped at 40 % of the viewport's height, and it scrolls** (P24): a
-///   catalog has no row cap (P16), and 600 rows lay out lazily. ↑/↓ keep the
-///   highlighted row in view.
+///   catalog has no row cap (P16), and 600 rows lay out lazily. The
+///   highlighted row is kept in view — from the first frame (it may start
+///   below dimmed rows), as ↑/↓ move it, and when the room the panel gets
+///   changes under it (the keyboard opening).
 /// * **A while-working row is DIMMED, not hidden** (X7/P29) — a deliberate
 ///   deviation from this app's hidden-never-disabled rule: the gate is
 ///   TEMPORAL, not a capability the session lacks, and craze's guidance is to
@@ -57,6 +59,22 @@ class SlashMenuPanel extends StatefulWidget {
 
 class _SlashMenuPanelState extends State<SlashMenuPanel> {
   final _scroll = ScrollController();
+
+  /// The height the list was last laid out against — so a change to the room
+  /// alone (the keyboard opening under an open menu, approvals arriving)
+  /// reveals the highlight again ([build]).
+  double? _room;
+
+  /// The panel opens on the highlight it is given — the filter's `start`, which
+  /// mid-turn can sit below dimmed rows past what the panel has room for (a
+  /// keyboard up, approvals sharing the space): revealed once the first frame
+  /// has laid out, so Enter never accepts a row the person cannot see (plan
+  /// 030 FU8).
+  @override
+  void initState() {
+    super.initState();
+    _reveal();
+  }
 
   @override
   void didUpdateWidget(SlashMenuPanel old) {
@@ -117,18 +135,31 @@ class _SlashMenuPanelState extends State<SlashMenuPanel> {
             child: Semantics(
               label: 'Commands',
               container: true,
-              child: ListView.builder(
-                key: const ValueKey('lane-slash-list'),
-                controller: _scroll,
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                itemExtent: slashMenuRowExtent,
-                itemCount: widget.rows.length,
-                itemBuilder: (context, i) => _SlashRow(
-                  row: widget.rows[i],
-                  highlighted: i == widget.highlight,
-                  onPick: widget.onPick,
-                ),
+              // The room the list gets can shrink with nothing else changing
+              // — the keyboard opening after the menu did — which leaves the
+              // scroll offset where it was and the highlight below the
+              // viewport. A change of room reveals it again (cheap: one check
+              // per layout, a reveal only when the height moved; the mount's
+              // own is [initState]'s).
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final room = constraints.maxHeight;
+                  if (_room != null && _room != room) _reveal();
+                  _room = room;
+                  return ListView.builder(
+                    key: const ValueKey('lane-slash-list'),
+                    controller: _scroll,
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemExtent: slashMenuRowExtent,
+                    itemCount: widget.rows.length,
+                    itemBuilder: (context, i) => _SlashRow(
+                      row: widget.rows[i],
+                      highlighted: i == widget.highlight,
+                      onPick: widget.onPick,
+                    ),
+                  );
+                },
               ),
             ),
           ),

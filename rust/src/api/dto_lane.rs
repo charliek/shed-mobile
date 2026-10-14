@@ -1107,13 +1107,17 @@ impl From<BridgeSlashFilterRow> for SlashFilterRow {
 
 /// What the menu panel shows for a draft and caret (mirrors
 /// `slash_menu::SlashFilter`): `open` is exactly `!rows.is_empty()`; `token`
-/// keys an Esc dismissal.
+/// keys an Esc dismissal; `start` is where a reset highlight lands.
 #[frb(unignore)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeSlashFilter {
     pub open: bool,
     pub token: String,
     pub rows: Vec<BridgeSlashFilterRow>,
+    /// The row the highlight starts on: the first row that is not dimmed,
+    /// else 0 (0 when closed). The screen resets its highlight here, so a
+    /// menu opened mid-turn starts on a row Enter acts on (plan 030 FU8).
+    pub start: u32,
 }
 
 impl From<SlashFilter> for BridgeSlashFilter {
@@ -1122,6 +1126,7 @@ impl From<SlashFilter> for BridgeSlashFilter {
             open: f.open,
             token: f.token,
             rows: f.rows.into_iter().map(Into::into).collect(),
+            start: f.start,
         }
     }
 }
@@ -1132,6 +1137,7 @@ impl From<BridgeSlashFilter> for SlashFilter {
             open: f.open,
             token: f.token,
             rows: f.rows.into_iter().map(Into::into).collect(),
+            start: f.start,
         }
     }
 }
@@ -2769,6 +2775,10 @@ mod tests {
         let bf: BridgeSlashFilter = f.clone().into();
         assert_eq!(SlashFilter::from(bf.clone()), f);
         assert!(bf.open && bf.rows.iter().any(|r| r.dimmed));
+        // Mid-turn the four method/picker rows wait; `review` (a prompt) is
+        // the first live row, and `start` crosses the bridge as 4.
+        assert_eq!(bf.start, 4);
+        assert!(bf.rows[..4].iter().all(|r| r.dimmed) && !bf.rows[4].dimmed);
         // The tolerant mirrors keep an unknown word.
         for src in [
             LaneSlashSource::Other("future".to_string()),

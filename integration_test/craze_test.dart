@@ -1891,11 +1891,14 @@ void main() {
       );
       await _pumps(tester);
       await tester.tap(find.byKey(const ValueKey('lane-send')));
-      await _until(
-        tester,
-        () => find.byKey(const ValueKey('lane-cancel')).evaluate().isNotEmpty,
-        what: 'the running turn\'s Cancel',
-      );
+      // Cancel shows once the turn runs — which the stream can say before
+      // the send's own answer is back — and is pressable only once the
+      // composer is no longer busy with that send.
+      await _until(tester, () {
+        final cancel = find.byKey(const ValueKey('lane-cancel'));
+        return cancel.evaluate().isNotEmpty &&
+            tester.widget<ButtonStyleButton>(cancel).enabled;
+      }, what: 'the running turn\'s Cancel, pressable');
       expect(lane().state.activity, BridgeRcActivity.working);
       await tester.tap(find.byKey(const ValueKey('lane-cancel')));
       await _until(
@@ -2896,8 +2899,8 @@ void main() {
       await _until(tester, () => mode() == 'ask', what: 'ask mode');
       await _until(
         tester,
-        () => _fieldText(tester, 'lane-input').isEmpty,
-        what: 'the draft cleared',
+        () => _fieldText(tester, 'lane-input').isEmpty && _composerIdle(tester),
+        what: 'the draft cleared and the composer idle',
       );
 
       // A tap on a row that takes no argument runs it at once.
@@ -2909,6 +2912,13 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('lane-slash-row-plan')));
       await _until(tester, () => mode() == 'plan', what: 'plan mode');
+      // The mode lands on the settings before `session.set` answers; the
+      // composer is busy until it does, and an Enter meanwhile is dropped.
+      await _until(
+        tester,
+        () => _fieldText(tester, 'lane-input').isEmpty && _composerIdle(tester),
+        what: 'the tapped row\'s verb answered (the composer idle)',
+      );
 
       // Re-selecting the current mode still sends (P7).
       await _typeDraft(tester, '/plan');
@@ -3387,6 +3397,23 @@ String _textAt(String key) {
 
 String _fieldText(WidgetTester tester, String key) =>
     tester.widget<TextField>(find.byKey(ValueKey(key))).controller!.text;
+
+/// **The composer takes a new command** — the field enabled and Send there
+/// to press (a verb in flight shows a spinner in its place): what a person
+/// waits for before the next one. The lane's STATE can say a verb took (a
+/// mode on the settings, a turn running) before the verb's own answer is
+/// back, and until it is, the composer is busy and a command typed or sent
+/// meanwhile is dropped by design (one at a time, plan 029 E15) — so a step
+/// that runs a verb and then the next one waits for THIS, not the state.
+bool _composerIdle(WidgetTester tester) {
+  final send = find.byKey(const ValueKey('lane-send'));
+  return send.evaluate().isNotEmpty &&
+      tester.widget<IconButton>(send).onPressed != null &&
+      (tester
+              .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+              .enabled ??
+          true);
+}
 
 String _primaryLabel(WidgetTester tester) => tester
     .widget<Text>(
