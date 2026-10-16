@@ -78,7 +78,9 @@ import 'slash_menu_panel.dart';
 ///
 /// **The settings chip** (plan 025 §3.10) rides the AppBar on a session whose
 /// capabilities say `settings` — and nowhere else, hidden, never disabled: the
-/// current model, effort and fast ([settingsChip]), and a tap opens the
+/// current model, effort and fast ([settingsChip]) — the effort being the
+/// option the snapshot names ([LaneState.effortOption], the shared core's
+/// reading, plan 032 PC14h), never a guess made here — and a tap opens the
 /// session's settings sheet ([LaneSettingsSheet]).
 ///
 /// ## The `/` menu (plan 029 §3.5, D17)
@@ -95,7 +97,13 @@ import 'slash_menu_panel.dart';
 /// (`LaneController.setTitle`), a mode (`LaneController.setMode` — the
 /// composer's verb, errors in the composer, P7), Stop behind its existing
 /// confirm, the model picker (the existing settings sheet), a prompt row as a
-/// prompt of its canonical spelling (E8). The draft's fate after each is §3.5's
+/// prompt of its canonical spelling (E8). `/effort` (plan 032 §3.2): bare, it
+/// opens the settings sheet as `/model` does; with a level the shared
+/// dispatch matched, it is a set of that effort bound to its model
+/// (`LaneController.setEffort` — the composer's verb, errors in the composer
+/// as a mode's are), sent even at the current level (craze's rule: a dropped
+/// no-op could lose a concurrent change), where the sheet's press on its
+/// current value sends nothing. The draft's fate after each is §3.5's
 /// table, from the verb's own outcome ([LaneVerbOutcome]): cleared on success
 /// and when the picker opens; kept on a refusal (said inline), an unknown
 /// outcome ("may have applied — check the session"; a call whose lane moved
@@ -868,7 +876,19 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
           case BridgeSlashAction_Stop():
             return _stopFromComposer(draft);
           case BridgeSlashAction_ModelPicker():
-            return _openModelPicker(draft);
+          case BridgeSlashAction_EffortPicker():
+            // `/model`, bare `/effort`: the settings sheet, whose model list
+            // and effort row are those pickers.
+            return _openPicker(draft);
+          case BridgeSlashAction_SetEffort(:final change):
+            // `/effort <level>` (plan 032 §3.2): the composer's verb, its
+            // errors here as a mode's — a `stale_model` (the model moved
+            // since the menu) included. Always sent, the current level too.
+            return _commandVerb(
+              draft,
+              logKey: 'lane-effort',
+              verb: (c) => c.setEffort(change),
+            );
           case BridgeSlashAction_Prompt():
             // Never answered as a Run: a prompt row's answer is Prompt.
             return;
@@ -936,9 +956,11 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     return _confirmStop(draft: draft);
   }
 
-  /// `/model`: the model picker IS the session's settings sheet (X2 — no
-  /// inline model): the draft clears and the sheet opens on this lane.
-  void _openModelPicker(_Draft draft) {
+  /// `/model`, and a bare `/effort`: the model picker and the effort picker
+  /// ARE the session's settings sheet (X2 — no inline model; the effort row is
+  /// the option the menu was resolved on): the draft clears and the sheet
+  /// opens on this lane.
+  void _openPicker(_Draft draft) {
     _clearIfCurrent(draft);
     setState(() => _note = null);
     unawaited(showLaneSettingsSheet(context, _ref));
@@ -995,7 +1017,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
           // to say ([_stopLost]), on the session it was said for.
           if (state.stopError?.message ?? _said(_stopLost) case final message?)
             _banner(context, 'lane-stop-error', ShedStatusTone.err, message),
-          if (_laneNote(state) case final note?) _noteBanner(context, note),
+          if (laneNoteText(state) case final note?) _noteBanner(context, note),
           // Only the `/` menu and the composer read the draft: a keystroke
           // or a caret move rebuilds them, never the transcript.
           Expanded(
@@ -1096,7 +1118,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
           key: const ValueKey('lane-settings-chip'),
           avatar: Icon(Icons.tune, size: 16, color: context.shed.accent),
           label: Text(
-            settingsChip(state.settings ?? noSettings),
+            settingsChip(state.settings ?? noSettings, state.effortOption),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: sansStyle(
@@ -1144,6 +1166,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     });
   }
 
+  /// `departing=t`: a craze lane whose row left, waiting out its grace on its
+  /// own connection ([LaneState.departing]) — nothing on screen says so.
   /// `slash=<shown>/<open>`: how many rows the session's menu shows (`-` — no
   /// menu at all), and how many the panel lists right now (0 — closed).
   void _log(LaneState state, BridgeSlashMenu? menu, int open) {
@@ -1155,6 +1179,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       'screen=lane machine=${widget.machine} session=$session '
       'generation=${state.generation} stale=${state.stale ?? '-'} '
       'approvals=${state.approvals.length} activity=${state.activity.wire} '
+      'departing=${state.departing ? 't' : 'f'} '
       'slash=${menu == null ? '-/-' : '${menu.rows.length}/$open'}',
     );
   }
@@ -1231,22 +1256,6 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     ShedStatusTone.warn,
     laneStaleBannerText(state.stale!, ended: state.ended),
   );
-
-  /// A lane-level note that is not staleness: an open that was refused, a
-  /// credential refresh that failed, a re-open waiting out its backoff, or a
-  /// lane that has been given up on. Null when there is nothing to say.
-  String? _laneNote(LaneState state) {
-    final error = state.error;
-    if (state.abandoned) {
-      return error == null
-          ? 'This lane has been given up on — its row or session is gone.'
-          : 'This lane has been given up on: ${error.message}';
-    }
-    if (error != null) {
-      return state.retrying ? 'Reconnecting: ${error.message}' : error.message;
-    }
-    return state.retrying ? 'Reconnecting…' : null;
-  }
 
   Widget _noteBanner(BuildContext context, String text) =>
       _banner(context, 'lane-note', ShedStatusTone.warn, text);
@@ -1642,6 +1651,34 @@ String laneStaleBannerText(String stale, {required bool ended}) {
   // ("reconnecting… · reconnecting") would be noise.
   if (reason.isEmpty || reason == 'reconnecting') return 'reconnecting…';
   return 'reconnecting… · $reason';
+}
+
+/// **The lane-level note** — what is not staleness: an open that was
+/// refused, a credential refresh that failed, a re-open waiting out its
+/// backoff, or a lane that has been given up on. Null when there is nothing
+/// to say.
+///
+/// **A lane that ENDED for good says so in its ended banner, and only
+/// there** (plan 032 §3.1.2): a session stopped (`session_closed`), gone
+/// (`unknown_session`) or never started (`start_failed: …`) is given up on
+/// too — nothing re-opens it — but the banner's reason is the whole story,
+/// and "given up on" under a normal Stop would say something went wrong. The
+/// note stays for a lane given up on WITHOUT a final `Down` (its row left and
+/// no end came — a craze lane's departure grace ran out), and for one given
+/// up on an error.
+@visibleForTesting
+String? laneNoteText(LaneState state) {
+  final error = state.error;
+  if (state.abandoned) {
+    if (state.ended && laneDownIsFinal(state.stale ?? '')) return null;
+    return error == null
+        ? 'This lane has been given up on — its row or session is gone.'
+        : 'This lane has been given up on: ${error.message}';
+  }
+  if (error != null) {
+    return state.retrying ? 'Reconnecting: ${error.message}' : error.message;
+  }
+  return state.retrying ? 'Reconnecting…' : null;
 }
 
 /// **Whether Stop can be pressed** — the header's button, and the confirm's

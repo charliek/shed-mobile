@@ -27,6 +27,19 @@ const laneRetryBase = Duration(seconds: 1);
 /// The ceiling on the re-open ladder.
 const laneRetryMax = Duration(seconds: 30);
 
+/// **How long a craze lane outlives its row** (plan 032 §3.1) — the
+/// desktop's `CRAZE_DEPART_GRACE`.
+///
+/// craze 0.2.0 drops a stopping session from its roster AT ONCE, ahead of the
+/// session's last events (its closing records, then `session_closed`), so a
+/// row that leaves is not yet a lane that ended. The lane keeps its own
+/// connection this long for them ([LaneController.reconcile]). The hub's
+/// round is 1 s and a stop's tool teardown takes seconds; a host that died
+/// with no final event hands the lane a final `unknown_session` on its redial
+/// anyway, so this only bounds the worst case — and an offline source, which
+/// emits no stamps to cancel it, is bounded by it too.
+const crazeDepartGrace = Duration(seconds: 10);
+
 /// The `Down` reason a lane ends with when the agent does not know this
 /// session (opencode: a reseed answered 404; craze: `unknown_session` on
 /// connect or attach). One of the three [laneDownIsFinal] reasons.
@@ -177,6 +190,12 @@ typedef LaneFramePull = void Function(void Function() pull);
 /// durations instead of on a test that sleeps for 39 seconds.
 typedef LaneDelay = Future<void> Function(Duration wait);
 
+/// Start a one-shot timer that runs `fire` after `wait` — the departure grace
+/// ([crazeDepartGrace]). Injected, as [LaneDelay] is, so a test fires the
+/// grace instead of sleeping through it (and can fire one that was
+/// cancelled, to prove the fence rather than the cancel).
+typedef LaneTimer = Timer Function(Duration wait, void Function() fire);
+
 /// Production batching: **at most one snapshot pull per animation frame**,
 /// which is what the desktop's rAF batch does.
 ///
@@ -227,6 +246,14 @@ void scheduleOnNextFrame(void Function() pull) {
 /// install the old handle behind the new one's back, and the screen would
 /// render a transcript from a transport nobody holds.
 ///
+/// ## A row that leaves before its lane ends
+///
+/// A craze session's row can leave its roster ahead of the session's last
+/// events (craze 0.2.0's Stop), so an open craze lane outlives its row by a
+/// grace ([crazeDepartGrace]) on its own connection before it is given up on
+/// — see [reconcile]. The grace is fenced like everything else: by its
+/// handle generation, and by its own identity.
+///
 /// ## What this class deliberately does not do
 ///
 /// It does not fold (Rust does), it does not own the SSH connection or the
@@ -247,8 +274,10 @@ class LaneController {
     Stream<BridgeAgentLaneStamp?>? stamps,
     LaneFramePull? schedulePull,
     LaneDelay? delay,
+    LaneTimer? timer,
   }) : _schedulePull = schedulePull ?? scheduleOnNextFrame,
-       _delay = delay ?? ((d) => Future<void>.delayed(d)) {
+       _delay = delay ?? ((d) => Future<void>.delayed(d)),
+       _timer = timer ?? Timer.new {
     _stamp = stamp;
     // A real check, not `assert`: this invariant must hold in release builds
     // too, or a machine-reach lane with no forward fails later and confusingly
@@ -307,6 +336,7 @@ class LaneController {
 
   final LaneFramePull _schedulePull;
   final LaneDelay _delay;
+  final LaneTimer _timer;
 
   final _controller = StreamController<LaneState>.broadcast();
   LaneState _state = LaneState();
@@ -350,6 +380,11 @@ class LaneController {
   /// The generation whose `ended` has already been acted on, so a second
   /// snapshot carrying the same `ended` does not start a second re-open.
   int? _endHandled;
+
+  /// The departure grace a craze lane is waiting out, or null — see
+  /// [reconcile]. At most one: a repeated `null` neither stacks another nor
+  /// extends this one.
+  _Departure? _departure;
 
   Duration _backoff = laneRetryBase;
 
@@ -606,6 +641,7 @@ class LaneController {
           slashMenu: sameSlashMenu(_state.slashMenu, snap.slashMenu)
               ? _state.slashMenu
               : snap.slashMenu,
+          effortOption: snap.effortOption,
         ),
         settingsSeen: _framesBefore + _framesNow,
       ),
@@ -617,10 +653,20 @@ class LaneController {
 
   /// The lane's subscription ENDED on a terminal `Down`. Dart re-opens — unless
   /// the reason says no re-open can ever succeed ([laneDownIsFinal]).
+  ///
+  /// **A departing lane re-opens nothing** (plan 032 PC14c): its row is no
+  /// longer listed, so a re-open would go to a source that has nothing to
+  /// open. An end that is not final waits out the grace instead, unhandled —
+  /// the grace's last read decides ([_departureExpired]), or the row's
+  /// return hands it back to the ladder ([_returned]). A final end is the
+  /// departure's whole point: it ends the lane here, and the grace with it
+  /// ([_dropHandle]).
   void _onEnded(int generation, String reason) {
     if (_endHandled == generation) return;
+    final gone = laneDownIsFinal(reason);
+    if (!gone && _departure != null) return;
     _endHandled = generation;
-    if (laneDownIsFinal(reason)) {
+    if (gone) {
       // The session is gone, closed, or never started. Re-opening would ask the
       // same question and get the same answer, forever. The transcript stays.
       unawaited(_abandon());
@@ -691,6 +737,20 @@ class LaneController {
         (handle) => source.set(handle, change),
         unknown: laneCommandOutcomeUnknown,
       );
+
+  /// **Set the effort from the composer** (plan 032 §3.2) — `/effort <level>`:
+  /// craze's `session.set` with [change], the shared rules' `SetEffort` (a
+  /// `Config` of the effort option, bound to the model the menu was resolved
+  /// on — so a session that has moved off it refuses `stale_model`).
+  ///
+  /// The composer's verb, exactly as [setMode] is: its refusal on
+  /// [LaneState.composerError], a lost answer as [laneCommandOutcomeUnknown],
+  /// never a sheet row's mark. And it ALWAYS sends, the current level
+  /// included — craze's rule for the inline level (a dropped no-op could lose
+  /// a concurrent change) — where the sheet's press on its current value
+  /// sends nothing ([pressSends]). Never throws.
+  Future<LaneVerbOutcome> setEffort(BridgeLaneSettingChange change) =>
+      setMode(change);
 
   /// Stop the turn in flight. `not_accepting` here means the turn ended between
   /// the render and the tap — an inline error next to the button, not a toast.
@@ -922,8 +982,14 @@ class LaneController {
   /// lane re-reads the CURRENT source ([crazeSourceEpoch]) rather than relying
   /// on a notification — a replacement that went live while the drop was
   /// pending has already sent its only one.
+  ///
+  /// **Not while departing** (plan 032 PC14c): a lane whose row has left
+  /// keeps the handle it has — a re-open through the replacement would ask a
+  /// source that no longer lists the row — and the grace decides
+  /// ([_departureExpired]). A row that returns re-runs this ([_returned]).
   void _syncCrazeSource() {
     if (_closed || _abandoned || _opening || _leaving) return;
+    if (_departure != null) return;
     if (_stamp.kind != crazeLaneKind) return;
     final live = crazeSourceEpoch?.call();
     if (_handle != null) {
@@ -985,18 +1051,49 @@ class LaneController {
   /// while the screen showed a live-looking transcript. So the whole
   /// `{kind, sessionId, serverUrl}` stamp is compared:
   ///
-  /// * **gone** → close and stop retrying;
+  /// * **gone** → close and stop retrying — except an open craze lane, which
+  ///   DEPARTS first (below);
   /// * **changed** → close, give the forward back (the port may have moved) and
   ///   re-open against the new stamp, immediately — a new stamp is news, not a
   ///   failure, so it does not wait out a backoff.
+  ///
+  /// ## A craze lane outlives its row by a grace (plan 032 §3.1.2)
+  ///
+  /// craze 0.2.0 drops a stopping session's row ahead of the session's last
+  /// events, so for a CRAZE lane — the one kind whose rows leave ahead of its
+  /// stream — "gone" on an open, live lane arms ONE timer
+  /// ([crazeDepartGrace]) instead of giving up, and the lane keeps its own
+  /// connection meanwhile:
+  ///
+  /// * **a final `Down` in the grace** (a Stop's `session_closed`) ends the
+  ///   lane as any final end does ([_onEnded]) — its banner says why, and
+  ///   nothing says "given up on";
+  /// * **the row listed again** cancels the grace — before the same-stamp
+  ///   return below, so a row that left and came back unchanged does not
+  ///   leave it running ([_returned]); a CHANGED stamp then re-opens as
+  ///   always;
+  /// * **the grace runs out** → one read at once ([_departureExpired]), and
+  ///   unless it holds a final `Down`, the lane is given up on as today.
+  ///
+  /// Repeated `null`s neither stack timers nor extend the grace. A lane with
+  /// no handle (opening, waiting for a source, out on its re-open ladder) has
+  /// no connection to wait on, and every other kind keeps the rule above.
   void reconcile(BridgeAgentLaneStamp? stamp) {
     if (_closed) return;
     if (stamp == null) {
-      if (_abandoned) return;
+      if (_abandoned || _departure != null) return;
+      if (_stamp.kind == crazeLaneKind && _handle != null && !_state.ended) {
+        _depart();
+        return;
+      }
       unawaited(_abandon());
       return;
     }
-    if (stamp == _stamp) return;
+    final returned = _cancelDeparture();
+    if (stamp == _stamp) {
+      if (returned) _returned();
+      return;
+    }
     final otherSession = stamp.sessionId != _stamp.sessionId;
     _stamp = stamp;
     // A new stamp revives a lane that was given up on: whatever was permanent
@@ -1004,6 +1101,62 @@ class LaneController {
     _abandoned = false;
     _backoff = laneRetryBase;
     unawaited(_reopenNow(otherSession: otherSession));
+  }
+
+  /// Arm the departure grace — one timer, fenced to the handle generation it
+  /// was armed in ([_departureExpired]).
+  void _depart() {
+    final departure = _Departure(_generation);
+    _departure = departure;
+    departure.timer = _timer(
+      crazeDepartGrace,
+      () => _departureExpired(departure),
+    );
+    _emit(_state.copyWith(departing: true));
+  }
+
+  /// End the departure, if there is one — the row returned, or its handle is
+  /// going ([_dropHandle]). Whether there was one.
+  bool _cancelDeparture() {
+    final departure = _departure;
+    if (departure == null) return false;
+    _departure = null;
+    departure.timer.cancel();
+    _emit(_state.copyWith(departing: false));
+    return true;
+  }
+
+  /// The row came back within the grace, the same stamp: what the departure
+  /// held back takes today's path now — an end that is not final its
+  /// re-open ladder ([_onEnded]), a source retired meanwhile the move to the
+  /// live one ([_syncCrazeSource]).
+  void _returned() {
+    if (_handle != null && _state.ended) {
+      _onEnded(_generation, _state.stale ?? '');
+    }
+    _syncCrazeSource();
+  }
+
+  /// The grace ran out. A timer that is no longer the lane's departure (it
+  /// was cancelled, or replaced by a later one) or whose handle generation
+  /// has moved on does NOTHING.
+  ///
+  /// Otherwise: ONE read, now — not on the next frame ([_onNudge]'s
+  /// batching), since the lane is about to be closed — so the session's last
+  /// rows and a final `Down` that landed late are on screen. A final `Down`
+  /// in it ends the lane through [_onEnded] (the departure still set while
+  /// it reads, so an end that is NOT final re-opens nothing); otherwise the
+  /// lane is given up on, as a vanished row always was.
+  void _departureExpired(_Departure departure) {
+    if (!identical(departure, _departure)) return;
+    if (departure.generation != _generation || _closed || _abandoned) return;
+    try {
+      _pull(departure.generation);
+    } finally {
+      // Even past a read that threw: the grace's promise is that the lane
+      // ENDS, never that it waits on.
+      if (!_closed && !_abandoned) unawaited(_abandon());
+    }
   }
 
   /// Re-open against the stamp [reconcile] just took. [otherSession]: it
@@ -1065,9 +1218,10 @@ class LaneController {
 
   // ---- teardown -----------------------------------------------------------
 
-  /// **End the lane.** Closes the handle, gives the forward back, cancels the
-  /// nudge subscription and bumps the generation. Idempotent — the provider's
-  /// `onDispose` calls it, and so may a screen that is done.
+  /// **End the lane.** Cancels a departure grace, closes the handle, gives
+  /// the forward back, cancels the nudge subscription and bumps the
+  /// generation. Idempotent — the provider's `onDispose` calls it, and so may
+  /// a screen that is done.
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
@@ -1080,6 +1234,9 @@ class LaneController {
   }
 
   Future<void> _dropHandle({required bool releaseLease}) async {
+    // A departure is waiting on THIS handle; whatever replaces it — a re-open,
+    // an abandon, a close — has decided the lane's future instead.
+    _cancelDeparture();
     _generation++;
     _pullPending = false;
     _endHandled = null;
@@ -1130,6 +1287,16 @@ class LaneController {
     _state = next;
     if (!_controller.isClosed) _controller.add(next);
   }
+}
+
+/// One departure grace: its timer, and the handle generation it was armed in
+/// — what [LaneController._departureExpired] fences on, with the departure's
+/// own identity.
+final class _Departure {
+  _Departure(this.generation);
+
+  final int generation;
+  late final Timer timer;
 }
 
 /// Whether a failed open can never succeed, so the ladder must not run.

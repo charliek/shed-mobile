@@ -233,6 +233,7 @@ void main() {
                 create: create,
                 createOptions: options,
                 createTitle: false,
+                reopen: false,
               ),
               truncated: false,
             ),

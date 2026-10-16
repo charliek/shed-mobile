@@ -94,6 +94,27 @@ header says).
 A start failure shows craze's cause verbatim (monospace); craze's
 `bad_request` is shown beside the directory.
 
+#### Resuming a saved session
+
+craze 0.2.0 remembers the sessions it ran, and the sheet can run one again
+(plan 032 §3.4): where its create options say the hub can **reopen** (read
+from the same hub `hello`, so a hub from before 0.2.0 shows nothing new), the
+sheet carries a `New | Resume` control. It opens on New. The rules are
+`lib/features/craze/craze_resume.dart` (the desktop's Resume rules, ported
+rule for rule); the state lives above the screen, per machine, like the
+create's form.
+
+| Part | Behaviour |
+|---|---|
+| The list | Read from craze (`sessions.saved`, the 50 most recent) the first time Resume is chosen after the sheet opens, and never cached. Each row shows its title (or "Untitled"), its provider, its workspace (under the machine's home, as `~/…`, once the feed knows the home) and when it was last active. When craze has more, the list says "Showing the 50 most recent." A failed read says why, with Retry. |
+| Resume | One reopen at a time, through craze's `session.reopen` on a connection of its own. The row reads "Resuming… (this can take a few minutes)" — craze allows 200 s for an answer, and a lost answer is sent again once — and every other button, the New/Resume control included, waits. |
+| Resumed | The screen gives way to the session's transcript at once: the feed folds the session's row in before the reopen returns, as it does a created one. A session that ended again before it was listed opens nothing (said, and the screen closes). |
+| Cannot run here (`gone`) | craze no longer knows the id, or its directory is gone: the row is dropped, and the sheet says why where it was. |
+| Failed to start | craze's cause, verbatim (monospace), on the row; the row stays, and Resume works again. Any other definite refusal reads the same, in plain words. |
+| Unavailable | Transient — a hub that cannot reopen, a busy one, or an answer lost twice: said on the row with **Retry**. A reopen means "ensure it runs", so trying again joins whatever the first try started. |
+| Leaving | Keeps the reopen running (the feed is held until it settles); its session then simply appears as a row, and coming back finds the row still resuming. A reopen that lands with no sheet on screen opens nothing — nor does one landing while the sheet is leaving (Back pressed, the screen still animating away): only a sheet whose screen is the current one navigates, for a create's landing too. The outcome is kept all the same: a resumed session simply appears as a row, and a refused one's row reads as it settled. |
+| A new incarnation | What the state belongs to is the machine's feed: a feed rebuilt meanwhile (the machine removed and added again under the same name) starts the sheet afresh on New, and a reopen the old one left running lands nowhere. A reopen whose answer came through a craze connection the feed had already replaced (a restart racing it) is not opened; its row says so, and Resume again joins it. |
+
 ### A craze session's transcript
 
 The transcript screen is the same one an opencode lane opens, and it takes
@@ -108,7 +129,8 @@ when it opened.
 | Cancel | Offered only when the capabilities say `cancel`, and only while a turn is running. |
 | Interject | Offered only when the capabilities say `interject`, and live only while a turn is running. |
 | Reconnecting | The lane's own connection dropped and craze is resuming it from where it was: the banner says "reconnecting…", the transcript stays on screen, and when the resume lands the banner goes — the same transcript, nothing re-read. |
-| Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened; any other end is re-opened on a backoff. |
+| Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened, and the banner is all the screen says: the composer is off and nothing adds "given up on". Any other end is re-opened on a backoff ("Reconnecting…"). |
+| A stopped session's last rows | craze 0.2.0 drops a stopping session from its list at once, ahead of the session's last events. So when a craze session's row leaves while its transcript is open and live, the transcript keeps its own connection for a 10-second grace: the closing rows still arrive, and the stop's `session_closed` ends it as above. A row listed again in that time changes nothing. While the grace runs, an end that is not final and a restart of the machine's craze connection re-open nothing; the grace decides. If it runs out with no end, the transcript reads once more and is given up on: "This lane has been given up on — its row or session is gone." A lane given up on an error says "This lane has been given up on: <error>". An opencode row that leaves gives its lane up at once, as before. |
 | A lost answer | A send whose answer was lost — the connection dropped while it was in flight — may or may not have started a turn and is never resent: the typed text stays, and the screen says to check the transcript before sending again. |
 | Settings | The settings chip and sheet, below. |
 
@@ -130,6 +152,30 @@ leaves if the session stops offering them.
 | A refusal | Shown on its own row; an option refused because the model changed under it says "the model changed; try again". Trying again is a new change. |
 | A lost answer | The connection dropped before craze answered: the change may have run, and it is never resent. The row says "not confirmed" until the session next says what its settings are (when the lane resumes), which replaces the mark with the real value. |
 | Closing | The marks belong to the transcript, not the sheet: closing the sheet while a change is in flight loses nothing. |
+| Where a model's effort lands | On a native session (craze 0.2.0's per-model effort facts), every model in the list but the current one carries a dim `effort → <level>` under its name: the level a switch to that model lands on — the session's last choice on it, else craze's memory of that model, else its default. A native model switch moves the effort with the model, so this says where to before the press. The current model shows none (its effort row does), and an ACP session (cursor, grok) states no facts, so its models show none. |
+
+**Which option is the effort** is not the phone's call: the shared core reads
+it (craze's own `EffortOption` rule) and the lane's snapshot names it, and the
+chip shows that option's value — the same reading the `/effort` command is
+judged by. A model whose options name none has no effort in its chip.
+
+### A craze session's `/` menu
+
+On a session whose capabilities say `slash`, a `/` draft opens a menu above the
+composer listing the commands the session can run (an empty draft offers a `/`
+button that starts one). What it lists, what a typed command does, and when a
+command is refused are the shared core's rules (`shed_app::slash_menu`, reached
+over the bridge — the phone decides none of it): a rename, a mode, Stop (behind
+its confirm), `/model` (the settings sheet), and the agent's own commands sent
+as prompts. A command that waits for the turn is dimmed while one runs, and
+refused "runs after this turn".
+
+| `/effort` | Behaviour |
+|---|---|
+| Shown | craze 0.2.0's builtin `/effort`, only while the session's current model has an effort option. A model switch is a settings change alone, the session's commands unchanged, and the row follows it: gone on a model with no effort (typed, it is refused "the current model has no effort setting"), back on one that has. |
+| Bare | `/effort` (Enter, or a tap on the row) opens the settings sheet, as `/model` does; the draft clears and nothing is sent. |
+| `/effort <level>` | Sets the effort from the composer: one `session.set` of the effort option, bound to the model the menu was resolved on, so a session that has moved to another model refuses it (shown in the composer, as a mode's refusal is). The level matches craze's way: its id exactly, else its id in any case, else its name; `default` is the model's default level, which only a native session's effort facts state. An inline level is **always sent**, even the current one — craze's rule, since a dropped no-op could lose a change made elsewhere at the same moment — where a press on the sheet's current value sends nothing. |
+| A level naming nothing | Refused in craze's own words (`no effort bogus: one of low, medium, high, xhigh`), the draft kept. It is judged before the turn: mid-turn, a level naming nothing is refused for that, a valid one "runs after this turn". |
 
 ## Kinds
 

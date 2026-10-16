@@ -2740,6 +2740,451 @@ as String,
 }
 
 /// @nodoc
+mixin _$BridgeLaneReopenError {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneReopenError);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeLaneReopenError()';
+}
+
+
+}
+
+/// @nodoc
+class $BridgeLaneReopenErrorCopyWith<$Res>  {
+$BridgeLaneReopenErrorCopyWith(BridgeLaneReopenError _, $Res Function(BridgeLaneReopenError) __);
+}
+
+
+/// Adds pattern-matching-related methods to [BridgeLaneReopenError].
+extension BridgeLaneReopenErrorPatterns on BridgeLaneReopenError {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeLaneReopenError_Gone value)?  gone,TResult Function( BridgeLaneReopenError_StartFailed value)?  startFailed,TResult Function( BridgeLaneReopenError_Unavailable value)?  unavailable,TResult Function( BridgeLaneReopenError_Lane value)?  lane,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone() when gone != null:
+return gone(_that);case BridgeLaneReopenError_StartFailed() when startFailed != null:
+return startFailed(_that);case BridgeLaneReopenError_Unavailable() when unavailable != null:
+return unavailable(_that);case BridgeLaneReopenError_Lane() when lane != null:
+return lane(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeLaneReopenError_Gone value)  gone,required TResult Function( BridgeLaneReopenError_StartFailed value)  startFailed,required TResult Function( BridgeLaneReopenError_Unavailable value)  unavailable,required TResult Function( BridgeLaneReopenError_Lane value)  lane,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone():
+return gone(_that);case BridgeLaneReopenError_StartFailed():
+return startFailed(_that);case BridgeLaneReopenError_Unavailable():
+return unavailable(_that);case BridgeLaneReopenError_Lane():
+return lane(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeLaneReopenError_Gone value)?  gone,TResult? Function( BridgeLaneReopenError_StartFailed value)?  startFailed,TResult? Function( BridgeLaneReopenError_Unavailable value)?  unavailable,TResult? Function( BridgeLaneReopenError_Lane value)?  lane,}){
+final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone() when gone != null:
+return gone(_that);case BridgeLaneReopenError_StartFailed() when startFailed != null:
+return startFailed(_that);case BridgeLaneReopenError_Unavailable() when unavailable != null:
+return unavailable(_that);case BridgeLaneReopenError_Lane() when lane != null:
+return lane(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String msg)?  gone,TResult Function( String msg)?  startFailed,TResult Function( String msg)?  unavailable,TResult Function( BridgeLaneError error)?  lane,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone() when gone != null:
+return gone(_that.msg);case BridgeLaneReopenError_StartFailed() when startFailed != null:
+return startFailed(_that.msg);case BridgeLaneReopenError_Unavailable() when unavailable != null:
+return unavailable(_that.msg);case BridgeLaneReopenError_Lane() when lane != null:
+return lane(_that.error);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String msg)  gone,required TResult Function( String msg)  startFailed,required TResult Function( String msg)  unavailable,required TResult Function( BridgeLaneError error)  lane,}) {final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone():
+return gone(_that.msg);case BridgeLaneReopenError_StartFailed():
+return startFailed(_that.msg);case BridgeLaneReopenError_Unavailable():
+return unavailable(_that.msg);case BridgeLaneReopenError_Lane():
+return lane(_that.error);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String msg)?  gone,TResult? Function( String msg)?  startFailed,TResult? Function( String msg)?  unavailable,TResult? Function( BridgeLaneError error)?  lane,}) {final _that = this;
+switch (_that) {
+case BridgeLaneReopenError_Gone() when gone != null:
+return gone(_that.msg);case BridgeLaneReopenError_StartFailed() when startFailed != null:
+return startFailed(_that.msg);case BridgeLaneReopenError_Unavailable() when unavailable != null:
+return unavailable(_that.msg);case BridgeLaneReopenError_Lane() when lane != null:
+return lane(_that.error);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneReopenError_Gone extends BridgeLaneReopenError {
+  const BridgeLaneReopenError_Gone({required this.msg}): super._();
+  
+
+ final  String msg;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneReopenError_GoneCopyWith<BridgeLaneReopenError_Gone> get copyWith => _$BridgeLaneReopenError_GoneCopyWithImpl<BridgeLaneReopenError_Gone>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneReopenError_Gone&&(identical(other.msg, msg) || other.msg == msg));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,msg);
+
+@override
+String toString() {
+  return 'BridgeLaneReopenError.gone(msg: $msg)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneReopenError_GoneCopyWith<$Res> implements $BridgeLaneReopenErrorCopyWith<$Res> {
+  factory $BridgeLaneReopenError_GoneCopyWith(BridgeLaneReopenError_Gone value, $Res Function(BridgeLaneReopenError_Gone) _then) = _$BridgeLaneReopenError_GoneCopyWithImpl;
+@useResult
+$Res call({
+ String msg
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneReopenError_GoneCopyWithImpl<$Res>
+    implements $BridgeLaneReopenError_GoneCopyWith<$Res> {
+  _$BridgeLaneReopenError_GoneCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneReopenError_Gone _self;
+  final $Res Function(BridgeLaneReopenError_Gone) _then;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? msg = null,}) {
+  return _then(BridgeLaneReopenError_Gone(
+msg: null == msg ? _self.msg : msg // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneReopenError_StartFailed extends BridgeLaneReopenError {
+  const BridgeLaneReopenError_StartFailed({required this.msg}): super._();
+  
+
+ final  String msg;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneReopenError_StartFailedCopyWith<BridgeLaneReopenError_StartFailed> get copyWith => _$BridgeLaneReopenError_StartFailedCopyWithImpl<BridgeLaneReopenError_StartFailed>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneReopenError_StartFailed&&(identical(other.msg, msg) || other.msg == msg));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,msg);
+
+@override
+String toString() {
+  return 'BridgeLaneReopenError.startFailed(msg: $msg)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneReopenError_StartFailedCopyWith<$Res> implements $BridgeLaneReopenErrorCopyWith<$Res> {
+  factory $BridgeLaneReopenError_StartFailedCopyWith(BridgeLaneReopenError_StartFailed value, $Res Function(BridgeLaneReopenError_StartFailed) _then) = _$BridgeLaneReopenError_StartFailedCopyWithImpl;
+@useResult
+$Res call({
+ String msg
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneReopenError_StartFailedCopyWithImpl<$Res>
+    implements $BridgeLaneReopenError_StartFailedCopyWith<$Res> {
+  _$BridgeLaneReopenError_StartFailedCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneReopenError_StartFailed _self;
+  final $Res Function(BridgeLaneReopenError_StartFailed) _then;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? msg = null,}) {
+  return _then(BridgeLaneReopenError_StartFailed(
+msg: null == msg ? _self.msg : msg // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneReopenError_Unavailable extends BridgeLaneReopenError {
+  const BridgeLaneReopenError_Unavailable({required this.msg}): super._();
+  
+
+ final  String msg;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneReopenError_UnavailableCopyWith<BridgeLaneReopenError_Unavailable> get copyWith => _$BridgeLaneReopenError_UnavailableCopyWithImpl<BridgeLaneReopenError_Unavailable>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneReopenError_Unavailable&&(identical(other.msg, msg) || other.msg == msg));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,msg);
+
+@override
+String toString() {
+  return 'BridgeLaneReopenError.unavailable(msg: $msg)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneReopenError_UnavailableCopyWith<$Res> implements $BridgeLaneReopenErrorCopyWith<$Res> {
+  factory $BridgeLaneReopenError_UnavailableCopyWith(BridgeLaneReopenError_Unavailable value, $Res Function(BridgeLaneReopenError_Unavailable) _then) = _$BridgeLaneReopenError_UnavailableCopyWithImpl;
+@useResult
+$Res call({
+ String msg
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeLaneReopenError_UnavailableCopyWithImpl<$Res>
+    implements $BridgeLaneReopenError_UnavailableCopyWith<$Res> {
+  _$BridgeLaneReopenError_UnavailableCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneReopenError_Unavailable _self;
+  final $Res Function(BridgeLaneReopenError_Unavailable) _then;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? msg = null,}) {
+  return _then(BridgeLaneReopenError_Unavailable(
+msg: null == msg ? _self.msg : msg // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeLaneReopenError_Lane extends BridgeLaneReopenError {
+  const BridgeLaneReopenError_Lane({required this.error}): super._();
+  
+
+ final  BridgeLaneError error;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeLaneReopenError_LaneCopyWith<BridgeLaneReopenError_Lane> get copyWith => _$BridgeLaneReopenError_LaneCopyWithImpl<BridgeLaneReopenError_Lane>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeLaneReopenError_Lane&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,error);
+
+@override
+String toString() {
+  return 'BridgeLaneReopenError.lane(error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeLaneReopenError_LaneCopyWith<$Res> implements $BridgeLaneReopenErrorCopyWith<$Res> {
+  factory $BridgeLaneReopenError_LaneCopyWith(BridgeLaneReopenError_Lane value, $Res Function(BridgeLaneReopenError_Lane) _then) = _$BridgeLaneReopenError_LaneCopyWithImpl;
+@useResult
+$Res call({
+ BridgeLaneError error
+});
+
+
+$BridgeLaneErrorCopyWith<$Res> get error;
+
+}
+/// @nodoc
+class _$BridgeLaneReopenError_LaneCopyWithImpl<$Res>
+    implements $BridgeLaneReopenError_LaneCopyWith<$Res> {
+  _$BridgeLaneReopenError_LaneCopyWithImpl(this._self, this._then);
+
+  final BridgeLaneReopenError_Lane _self;
+  final $Res Function(BridgeLaneReopenError_Lane) _then;
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
+  return _then(BridgeLaneReopenError_Lane(
+error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as BridgeLaneError,
+  ));
+}
+
+/// Create a copy of BridgeLaneReopenError
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$BridgeLaneErrorCopyWith<$Res> get error {
+  
+  return $BridgeLaneErrorCopyWith<$Res>(_self.error, (value) {
+    return _then(_self.copyWith(error: value));
+  });
+}
+}
+
+/// @nodoc
 mixin _$BridgeLaneSettingChange {
 
  String get id;
@@ -3485,7 +3930,7 @@ extension BridgeSlashActionPatterns on BridgeSlashAction {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashAction_Prompt value)?  prompt,TResult Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult Function( BridgeSlashAction_SetMode value)?  setMode,TResult Function( BridgeSlashAction_Stop value)?  stop,TResult Function( BridgeSlashAction_ModelPicker value)?  modelPicker,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSlashAction_Prompt value)?  prompt,TResult Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult Function( BridgeSlashAction_SetMode value)?  setMode,TResult Function( BridgeSlashAction_Stop value)?  stop,TResult Function( BridgeSlashAction_ModelPicker value)?  modelPicker,TResult Function( BridgeSlashAction_EffortPicker value)?  effortPicker,TResult Function( BridgeSlashAction_SetEffort value)?  setEffort,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt() when prompt != null:
@@ -3493,7 +3938,9 @@ return prompt(_that);case BridgeSlashAction_SetTitle() when setTitle != null:
 return setTitle(_that);case BridgeSlashAction_SetMode() when setMode != null:
 return setMode(_that);case BridgeSlashAction_Stop() when stop != null:
 return stop(_that);case BridgeSlashAction_ModelPicker() when modelPicker != null:
-return modelPicker(_that);case _:
+return modelPicker(_that);case BridgeSlashAction_EffortPicker() when effortPicker != null:
+return effortPicker(_that);case BridgeSlashAction_SetEffort() when setEffort != null:
+return setEffort(_that);case _:
   return orElse();
 
 }
@@ -3511,7 +3958,7 @@ return modelPicker(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashAction_Prompt value)  prompt,required TResult Function( BridgeSlashAction_SetTitle value)  setTitle,required TResult Function( BridgeSlashAction_SetMode value)  setMode,required TResult Function( BridgeSlashAction_Stop value)  stop,required TResult Function( BridgeSlashAction_ModelPicker value)  modelPicker,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSlashAction_Prompt value)  prompt,required TResult Function( BridgeSlashAction_SetTitle value)  setTitle,required TResult Function( BridgeSlashAction_SetMode value)  setMode,required TResult Function( BridgeSlashAction_Stop value)  stop,required TResult Function( BridgeSlashAction_ModelPicker value)  modelPicker,required TResult Function( BridgeSlashAction_EffortPicker value)  effortPicker,required TResult Function( BridgeSlashAction_SetEffort value)  setEffort,}){
 final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt():
@@ -3519,7 +3966,9 @@ return prompt(_that);case BridgeSlashAction_SetTitle():
 return setTitle(_that);case BridgeSlashAction_SetMode():
 return setMode(_that);case BridgeSlashAction_Stop():
 return stop(_that);case BridgeSlashAction_ModelPicker():
-return modelPicker(_that);}
+return modelPicker(_that);case BridgeSlashAction_EffortPicker():
+return effortPicker(_that);case BridgeSlashAction_SetEffort():
+return setEffort(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -3533,7 +3982,7 @@ return modelPicker(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashAction_Prompt value)?  prompt,TResult? Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult? Function( BridgeSlashAction_SetMode value)?  setMode,TResult? Function( BridgeSlashAction_Stop value)?  stop,TResult? Function( BridgeSlashAction_ModelPicker value)?  modelPicker,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSlashAction_Prompt value)?  prompt,TResult? Function( BridgeSlashAction_SetTitle value)?  setTitle,TResult? Function( BridgeSlashAction_SetMode value)?  setMode,TResult? Function( BridgeSlashAction_Stop value)?  stop,TResult? Function( BridgeSlashAction_ModelPicker value)?  modelPicker,TResult? Function( BridgeSlashAction_EffortPicker value)?  effortPicker,TResult? Function( BridgeSlashAction_SetEffort value)?  setEffort,}){
 final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt() when prompt != null:
@@ -3541,7 +3990,9 @@ return prompt(_that);case BridgeSlashAction_SetTitle() when setTitle != null:
 return setTitle(_that);case BridgeSlashAction_SetMode() when setMode != null:
 return setMode(_that);case BridgeSlashAction_Stop() when stop != null:
 return stop(_that);case BridgeSlashAction_ModelPicker() when modelPicker != null:
-return modelPicker(_that);case _:
+return modelPicker(_that);case BridgeSlashAction_EffortPicker() when effortPicker != null:
+return effortPicker(_that);case BridgeSlashAction_SetEffort() when setEffort != null:
+return setEffort(_that);case _:
   return null;
 
 }
@@ -3558,14 +4009,16 @@ return modelPicker(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  prompt,TResult Function()?  setTitle,TResult Function( String id)?  setMode,TResult Function()?  stop,TResult Function()?  modelPicker,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  prompt,TResult Function()?  setTitle,TResult Function( String id)?  setMode,TResult Function()?  stop,TResult Function()?  modelPicker,TResult Function( String option,  String forModel,  List<BridgeLaneChoice> levels,  String? defaultLevel)?  effortPicker,TResult Function( BridgeLaneSettingChange change)?  setEffort,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt() when prompt != null:
 return prompt();case BridgeSlashAction_SetTitle() when setTitle != null:
 return setTitle();case BridgeSlashAction_SetMode() when setMode != null:
 return setMode(_that.id);case BridgeSlashAction_Stop() when stop != null:
 return stop();case BridgeSlashAction_ModelPicker() when modelPicker != null:
-return modelPicker();case _:
+return modelPicker();case BridgeSlashAction_EffortPicker() when effortPicker != null:
+return effortPicker(_that.option,_that.forModel,_that.levels,_that.defaultLevel);case BridgeSlashAction_SetEffort() when setEffort != null:
+return setEffort(_that.change);case _:
   return orElse();
 
 }
@@ -3583,14 +4036,16 @@ return modelPicker();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  prompt,required TResult Function()  setTitle,required TResult Function( String id)  setMode,required TResult Function()  stop,required TResult Function()  modelPicker,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  prompt,required TResult Function()  setTitle,required TResult Function( String id)  setMode,required TResult Function()  stop,required TResult Function()  modelPicker,required TResult Function( String option,  String forModel,  List<BridgeLaneChoice> levels,  String? defaultLevel)  effortPicker,required TResult Function( BridgeLaneSettingChange change)  setEffort,}) {final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt():
 return prompt();case BridgeSlashAction_SetTitle():
 return setTitle();case BridgeSlashAction_SetMode():
 return setMode(_that.id);case BridgeSlashAction_Stop():
 return stop();case BridgeSlashAction_ModelPicker():
-return modelPicker();}
+return modelPicker();case BridgeSlashAction_EffortPicker():
+return effortPicker(_that.option,_that.forModel,_that.levels,_that.defaultLevel);case BridgeSlashAction_SetEffort():
+return setEffort(_that.change);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -3604,14 +4059,16 @@ return modelPicker();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  prompt,TResult? Function()?  setTitle,TResult? Function( String id)?  setMode,TResult? Function()?  stop,TResult? Function()?  modelPicker,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  prompt,TResult? Function()?  setTitle,TResult? Function( String id)?  setMode,TResult? Function()?  stop,TResult? Function()?  modelPicker,TResult? Function( String option,  String forModel,  List<BridgeLaneChoice> levels,  String? defaultLevel)?  effortPicker,TResult? Function( BridgeLaneSettingChange change)?  setEffort,}) {final _that = this;
 switch (_that) {
 case BridgeSlashAction_Prompt() when prompt != null:
 return prompt();case BridgeSlashAction_SetTitle() when setTitle != null:
 return setTitle();case BridgeSlashAction_SetMode() when setMode != null:
 return setMode(_that.id);case BridgeSlashAction_Stop() when stop != null:
 return stop();case BridgeSlashAction_ModelPicker() when modelPicker != null:
-return modelPicker();case _:
+return modelPicker();case BridgeSlashAction_EffortPicker() when effortPicker != null:
+return effortPicker(_that.option,_that.forModel,_that.levels,_that.defaultLevel);case BridgeSlashAction_SetEffort() when setEffort != null:
+return setEffort(_that.change);case _:
   return null;
 
 }
@@ -3812,6 +4269,159 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class BridgeSlashAction_EffortPicker extends BridgeSlashAction {
+  const BridgeSlashAction_EffortPicker({required this.option, required this.forModel, required final  List<BridgeLaneChoice> levels, this.defaultLevel}): _levels = levels,super._();
+  
+
+ final  String option;
+ final  String forModel;
+ final  List<BridgeLaneChoice> _levels;
+ List<BridgeLaneChoice> get levels {
+  if (_levels is EqualUnmodifiableListView) return _levels;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_levels);
+}
+
+ final  String? defaultLevel;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashAction_EffortPickerCopyWith<BridgeSlashAction_EffortPicker> get copyWith => _$BridgeSlashAction_EffortPickerCopyWithImpl<BridgeSlashAction_EffortPicker>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_EffortPicker&&(identical(other.option, option) || other.option == option)&&(identical(other.forModel, forModel) || other.forModel == forModel)&&const DeepCollectionEquality().equals(other._levels, _levels)&&(identical(other.defaultLevel, defaultLevel) || other.defaultLevel == defaultLevel));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,option,forModel,const DeepCollectionEquality().hash(_levels),defaultLevel);
+
+@override
+String toString() {
+  return 'BridgeSlashAction.effortPicker(option: $option, forModel: $forModel, levels: $levels, defaultLevel: $defaultLevel)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashAction_EffortPickerCopyWith<$Res> implements $BridgeSlashActionCopyWith<$Res> {
+  factory $BridgeSlashAction_EffortPickerCopyWith(BridgeSlashAction_EffortPicker value, $Res Function(BridgeSlashAction_EffortPicker) _then) = _$BridgeSlashAction_EffortPickerCopyWithImpl;
+@useResult
+$Res call({
+ String option, String forModel, List<BridgeLaneChoice> levels, String? defaultLevel
+});
+
+
+
+
+}
+/// @nodoc
+class _$BridgeSlashAction_EffortPickerCopyWithImpl<$Res>
+    implements $BridgeSlashAction_EffortPickerCopyWith<$Res> {
+  _$BridgeSlashAction_EffortPickerCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashAction_EffortPicker _self;
+  final $Res Function(BridgeSlashAction_EffortPicker) _then;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? option = null,Object? forModel = null,Object? levels = null,Object? defaultLevel = freezed,}) {
+  return _then(BridgeSlashAction_EffortPicker(
+option: null == option ? _self.option : option // ignore: cast_nullable_to_non_nullable
+as String,forModel: null == forModel ? _self.forModel : forModel // ignore: cast_nullable_to_non_nullable
+as String,levels: null == levels ? _self._levels : levels // ignore: cast_nullable_to_non_nullable
+as List<BridgeLaneChoice>,defaultLevel: freezed == defaultLevel ? _self.defaultLevel : defaultLevel // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class BridgeSlashAction_SetEffort extends BridgeSlashAction {
+  const BridgeSlashAction_SetEffort({required this.change}): super._();
+  
+
+ final  BridgeLaneSettingChange change;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$BridgeSlashAction_SetEffortCopyWith<BridgeSlashAction_SetEffort> get copyWith => _$BridgeSlashAction_SetEffortCopyWithImpl<BridgeSlashAction_SetEffort>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSlashAction_SetEffort&&(identical(other.change, change) || other.change == change));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,change);
+
+@override
+String toString() {
+  return 'BridgeSlashAction.setEffort(change: $change)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $BridgeSlashAction_SetEffortCopyWith<$Res> implements $BridgeSlashActionCopyWith<$Res> {
+  factory $BridgeSlashAction_SetEffortCopyWith(BridgeSlashAction_SetEffort value, $Res Function(BridgeSlashAction_SetEffort) _then) = _$BridgeSlashAction_SetEffortCopyWithImpl;
+@useResult
+$Res call({
+ BridgeLaneSettingChange change
+});
+
+
+$BridgeLaneSettingChangeCopyWith<$Res> get change;
+
+}
+/// @nodoc
+class _$BridgeSlashAction_SetEffortCopyWithImpl<$Res>
+    implements $BridgeSlashAction_SetEffortCopyWith<$Res> {
+  _$BridgeSlashAction_SetEffortCopyWithImpl(this._self, this._then);
+
+  final BridgeSlashAction_SetEffort _self;
+  final $Res Function(BridgeSlashAction_SetEffort) _then;
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? change = null,}) {
+  return _then(BridgeSlashAction_SetEffort(
+change: null == change ? _self.change : change // ignore: cast_nullable_to_non_nullable
+as BridgeLaneSettingChange,
+  ));
+}
+
+/// Create a copy of BridgeSlashAction
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$BridgeLaneSettingChangeCopyWith<$Res> get change {
+  
+  return $BridgeLaneSettingChangeCopyWith<$Res>(_self.change, (value) {
+    return _then(_self.copyWith(change: value));
+  });
+}
+}
 
 /// @nodoc
 mixin _$BridgeSlashArg {
@@ -4976,14 +5586,15 @@ extension BridgeSourceOfflinePatterns on BridgeSourceOffline {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult Function( BridgeSourceOffline_Failed value)?  failed,TResult Function( BridgeSourceOffline_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult Function( BridgeSourceOffline_Failed value)?  failed,TResult Function( BridgeSourceOffline_NoHub value)?  noHub,TResult Function( BridgeSourceOffline_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled() when notInstalled != null:
 return notInstalled(_that);case BridgeSourceOffline_TooOld() when tooOld != null:
 return tooOld(_that);case BridgeSourceOffline_Unreachable() when unreachable != null:
 return unreachable(_that);case BridgeSourceOffline_Failed() when failed != null:
-return failed(_that);case BridgeSourceOffline_Other() when other != null:
+return failed(_that);case BridgeSourceOffline_NoHub() when noHub != null:
+return noHub(_that);case BridgeSourceOffline_Other() when other != null:
 return other(_that);case _:
   return orElse();
 
@@ -5002,14 +5613,15 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSourceOffline_NotInstalled value)  notInstalled,required TResult Function( BridgeSourceOffline_TooOld value)  tooOld,required TResult Function( BridgeSourceOffline_Unreachable value)  unreachable,required TResult Function( BridgeSourceOffline_Failed value)  failed,required TResult Function( BridgeSourceOffline_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( BridgeSourceOffline_NotInstalled value)  notInstalled,required TResult Function( BridgeSourceOffline_TooOld value)  tooOld,required TResult Function( BridgeSourceOffline_Unreachable value)  unreachable,required TResult Function( BridgeSourceOffline_Failed value)  failed,required TResult Function( BridgeSourceOffline_NoHub value)  noHub,required TResult Function( BridgeSourceOffline_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled():
 return notInstalled(_that);case BridgeSourceOffline_TooOld():
 return tooOld(_that);case BridgeSourceOffline_Unreachable():
 return unreachable(_that);case BridgeSourceOffline_Failed():
-return failed(_that);case BridgeSourceOffline_Other():
+return failed(_that);case BridgeSourceOffline_NoHub():
+return noHub(_that);case BridgeSourceOffline_Other():
 return other(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -5024,14 +5636,15 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult? Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult? Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult? Function( BridgeSourceOffline_Failed value)?  failed,TResult? Function( BridgeSourceOffline_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( BridgeSourceOffline_NotInstalled value)?  notInstalled,TResult? Function( BridgeSourceOffline_TooOld value)?  tooOld,TResult? Function( BridgeSourceOffline_Unreachable value)?  unreachable,TResult? Function( BridgeSourceOffline_Failed value)?  failed,TResult? Function( BridgeSourceOffline_NoHub value)?  noHub,TResult? Function( BridgeSourceOffline_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled() when notInstalled != null:
 return notInstalled(_that);case BridgeSourceOffline_TooOld() when tooOld != null:
 return tooOld(_that);case BridgeSourceOffline_Unreachable() when unreachable != null:
 return unreachable(_that);case BridgeSourceOffline_Failed() when failed != null:
-return failed(_that);case BridgeSourceOffline_Other() when other != null:
+return failed(_that);case BridgeSourceOffline_NoHub() when noHub != null:
+return noHub(_that);case BridgeSourceOffline_Other() when other != null:
 return other(_that);case _:
   return null;
 
@@ -5049,13 +5662,14 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  notInstalled,TResult Function()?  tooOld,TResult Function()?  unreachable,TResult Function()?  failed,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  notInstalled,TResult Function()?  tooOld,TResult Function()?  unreachable,TResult Function()?  failed,TResult Function()?  noHub,TResult Function( String raw)?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled() when notInstalled != null:
 return notInstalled();case BridgeSourceOffline_TooOld() when tooOld != null:
 return tooOld();case BridgeSourceOffline_Unreachable() when unreachable != null:
 return unreachable();case BridgeSourceOffline_Failed() when failed != null:
-return failed();case BridgeSourceOffline_Other() when other != null:
+return failed();case BridgeSourceOffline_NoHub() when noHub != null:
+return noHub();case BridgeSourceOffline_Other() when other != null:
 return other(_that.raw);case _:
   return orElse();
 
@@ -5074,13 +5688,14 @@ return other(_that.raw);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  notInstalled,required TResult Function()  tooOld,required TResult Function()  unreachable,required TResult Function()  failed,required TResult Function( String raw)  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  notInstalled,required TResult Function()  tooOld,required TResult Function()  unreachable,required TResult Function()  failed,required TResult Function()  noHub,required TResult Function( String raw)  other,}) {final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled():
 return notInstalled();case BridgeSourceOffline_TooOld():
 return tooOld();case BridgeSourceOffline_Unreachable():
 return unreachable();case BridgeSourceOffline_Failed():
-return failed();case BridgeSourceOffline_Other():
+return failed();case BridgeSourceOffline_NoHub():
+return noHub();case BridgeSourceOffline_Other():
 return other(_that.raw);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -5095,13 +5710,14 @@ return other(_that.raw);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  notInstalled,TResult? Function()?  tooOld,TResult? Function()?  unreachable,TResult? Function()?  failed,TResult? Function( String raw)?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  notInstalled,TResult? Function()?  tooOld,TResult? Function()?  unreachable,TResult? Function()?  failed,TResult? Function()?  noHub,TResult? Function( String raw)?  other,}) {final _that = this;
 switch (_that) {
 case BridgeSourceOffline_NotInstalled() when notInstalled != null:
 return notInstalled();case BridgeSourceOffline_TooOld() when tooOld != null:
 return tooOld();case BridgeSourceOffline_Unreachable() when unreachable != null:
 return unreachable();case BridgeSourceOffline_Failed() when failed != null:
-return failed();case BridgeSourceOffline_Other() when other != null:
+return failed();case BridgeSourceOffline_NoHub() when noHub != null:
+return noHub();case BridgeSourceOffline_Other() when other != null:
 return other(_that.raw);case _:
   return null;
 
@@ -5230,6 +5846,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
   return 'BridgeSourceOffline.failed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class BridgeSourceOffline_NoHub extends BridgeSourceOffline {
+  const BridgeSourceOffline_NoHub(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BridgeSourceOffline_NoHub);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'BridgeSourceOffline.noHub()';
 }
 
 

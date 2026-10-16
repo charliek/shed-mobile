@@ -22,8 +22,8 @@
 //! the SSH connection and serves a fixed loopback port whose every accepted
 //! connection execs [`craze_remote_command`] — craze's published ladder ending in
 //! `craze bridge --hub` — and Rust is handed nothing but the port (D10). Every
-//! connection is its own exec: the roster's, every `createOptions`, every create
-//! and every open transcript's.
+//! connection is its own exec: the roster's, every `createOptions`, every create,
+//! every saved list and reopen (plan 032 §3.4), and every open transcript's.
 //!
 //! # The same three sentences as a lane
 //!
@@ -57,10 +57,11 @@
 //!
 //! # The created rows, and the one change no frame announces
 //!
-//! A session this source created is openable at once — `CrazeSource` keeps the
-//! create's own row until its roster lists it — and the snapshot lists those
-//! rows ([`shed_craze::CrazeSource::created_rows`], read AT the snapshot, never
-//! copied). A created session that ends before any roster listed it leaves that
+//! A session this source created — or reopened (plan 032 §3.4: a reopen's row
+//! is a created row too, and a fresh one) — is openable at once:
+//! `CrazeSource` keeps the answer's own row until its roster lists it, and the
+//! snapshot lists those rows ([`shed_craze::CrazeSource::created_rows`], read
+//! AT the snapshot, never copied). A created session that ends before any roster listed it leaves that
 //! set with no roster frame to say so (plan 025 Amendment A16, the ghost row),
 //! so the source's [`on_created_gone`](shed_craze::CrazeSource::on_created_gone)
 //! hook is wired to this handle's dirty bit: the end raises a nudge, and the
@@ -71,8 +72,8 @@
 //! The feed owns the handle and closes it with [`craze_source_close`] — before
 //! cancelling its nudge stream (the lane's deadlock rule), and before opening
 //! the next one on a restarted tunnel's new port. Closing stops the roster pump
-//! (and so its connection) and cuts short every `createOptions`/`create` still
-//! in flight on the handle. Lanes opened through it ([`craze_lane_open`]) are
+//! (and so its connection) and cuts short every `createOptions`/`create`/
+//! `saved`/`reopen` still in flight on the handle. Lanes opened through it ([`craze_lane_open`]) are
 //! [`BridgeLane`]s and are closed through the lane API like any other.
 
 use std::collections::BTreeMap;
@@ -82,20 +83,20 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use flutter_rust_bridge::frb;
 use shed_app::craze_rows::{fold_plan, RoostTabRef};
-use shed_core::lane::{
-    AgentSource, LaneError, LaneSession, SourceCapabilities, SourceEvent, SourceOffline,
-};
+use shed_core::lane::{AgentSource, LaneSession, SourceCapabilities, SourceEvent, SourceOffline};
 use shed_craze::{CrazeDial, CrazeSource, TcpDial};
 use tokio::sync::{watch, Notify};
 
 use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::{
-    bridge_rt, ACTIVE_CRAZE_FORWARDERS, ACTIVE_CRAZE_SOURCES, PENDING_CRAZE_CALLS,
+    bridge_rt, joined_on_bridge_rt, ACTIVE_CRAZE_FORWARDERS, ACTIVE_CRAZE_SOURCES,
+    PENDING_CRAZE_CALLS,
 };
 use super::dto_lane::{
     BridgeLaneCreateOptions, BridgeLaneCreateRequest, BridgeLaneCreated, BridgeLaneError,
-    BridgeLaneSession, BridgeSourceCapabilities, BridgeSourceOffline,
+    BridgeLaneReopenError, BridgeLaneReopened, BridgeLaneSavedSessions, BridgeLaneSession,
+    BridgeSourceCapabilities, BridgeSourceOffline,
 };
 use super::lane::{on_bridge_rt, open_adapter, BridgeLane};
 
@@ -250,8 +251,9 @@ pub struct BridgeCrazeOffline {
 /// * `offline` — why it is not live, once it has said; `None` while it has
 ///   never said anything (connecting). `NotInstalled` is QUIET (the machine
 ///   simply has no craze); `TooOld` asks the person to update craze there.
-/// * `caps` — what a create may do here (`create`, `create_options`), from
-///   the hub's `hello`; `None` until a seed carried them.
+/// * `caps` — what a create may do here (`create`, `create_options`), and
+///   whether saved sessions can be reopened (`reopen`), from the hub's
+///   `hello`; `None` until a seed carried them.
 /// * `truncated` — the hub cut its roster to a bound of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeCrazeSnapshot {
@@ -520,19 +522,21 @@ impl SourceInner {
     }
 
     /// Run one source call on its own connection, counted, and **cut short by
-    /// the handle's close** — the feed owns every `createOptions` and `create`
-    /// in flight (plan 025 §3.7.2), so a torn-down feed never leaves one holding
-    /// a connection to a machine the phone has let go of.
+    /// the handle's close** — the feed owns every `createOptions`, `create`,
+    /// `saved` and `reopen` in flight (plan 025 §3.7.2), so a torn-down feed
+    /// never leaves one holding a connection to a machine the phone has let go
+    /// of.
     ///
-    /// The call's own answer is the inner `Result`; a close answers [`Cut`],
-    /// saying WHEN, because for a create the two are different answers: closed
-    /// before it began, nothing was sent (a definite "try again"); closed while
-    /// it ran, craze may already have the request — an outcome the caller does
-    /// not know, and must retry under the same request id ([`craze_create`]).
-    async fn call<T, F, Fut>(&self, f: F) -> Result<Result<T, LaneError>, Cut>
+    /// The call's own answer is `Ok`; a close answers [`Cut`], saying WHEN,
+    /// because for a create the two are different answers: closed before it
+    /// began, nothing was sent (a definite "try again"); closed while it ran,
+    /// craze may already have the request — an outcome the caller does not
+    /// know, and must retry under the same request id ([`craze_create`]). A
+    /// reopen reads the two alike ([`craze_reopen`]): retrying one is safe.
+    async fn call<R, F, Fut>(&self, f: F) -> Result<R, Cut>
     where
         F: FnOnce(CrazeSource) -> Fut,
-        Fut: Future<Output = Result<T, LaneError>>,
+        Fut: Future<Output = R>,
     {
         let mut closed = self.closed.subscribe();
         if *closed.borrow() {
@@ -916,6 +920,112 @@ async fn create_on(
 }
 
 // ---------------------------------------------------------------------------
+// saved sessions, reopened (plan 032 §3.4, M3)
+// ---------------------------------------------------------------------------
+
+/// **The machine's saved sessions** — craze's `sessions.saved{limit: 50}`,
+/// newest first, `more` when craze left some out; read afresh on every call,
+/// on a connection of its own, exactly as [`craze_create_options`] reads the
+/// create options (each call is its own exec of the bridge, which Ensures a
+/// hub: the sheet's Resume chosen is an explicit user action).
+///
+/// A hub whose `hello` does not say `reopen` is
+/// [`BridgeLaneError::Unavailable`] in the one older-hub wording
+/// (`shed_craze::errors::reopen_unsupported`), nothing sent; a closed source
+/// is the quiet `Unavailable` a read always is.
+pub async fn craze_saved(
+    src: &BridgeCrazeSource,
+) -> Result<BridgeLaneSavedSessions, BridgeLaneError> {
+    let inner = Arc::clone(&src.inner);
+    on_bridge_rt(async move {
+        match inner
+            .call(|source| async move { source.saved().await })
+            .await
+        {
+            Ok(answer) => answer.map(Into::into).map_err(Into::into),
+            // A read changes nothing on the far side: closed before or during
+            // it, the answer is the same quiet "try again".
+            Err(_) => Err(inner.closed_error()),
+        }
+    })
+    .await
+}
+
+/// **Ensure the saved session `id` is running** — craze's `session.reopen
+/// {id}` (`id` exactly as [`craze_saved`] listed it: opaque), on a connection
+/// of its own, through shed-craze's rule: [`REOPEN_DEADLINE`] for each answer,
+/// a lost answer sent again ONCE, and a reopen that may have started the
+/// session waking the roster. It can take minutes, at worst two deadlines
+/// plus the dials, which the sheet says.
+///
+/// **The answer's row is integrated as a create's is**: the source keeps it
+/// as a created row — FRESH, so a tombstone for its hostId does not refuse it
+/// (plan 032 PC14f) — and this handle is nudged, so the snapshot lists the
+/// row, and a lane opens on its hostId ([`craze_lane_open`]), before the
+/// roster has caught up. `joined` says craze joined a session something
+/// already ran rather than starting one.
+///
+/// **Refusals keep [`BridgeLaneReopenError`]'s split** — what a client DOES
+/// next, never read from text: `Gone` (drop the row), `StartFailed` (show the
+/// cause, keep the row), `Unavailable` (transient — a lost answer included —
+/// offer Retry), `Lane` (anything else, keep the row). A hub without `reopen`
+/// is `Unavailable` in the older-hub words, nothing sent.
+///
+/// **This handle's close is `Unavailable` too, before the reopen or during
+/// it**: closed before, nothing was sent; closed while it ran, craze may have
+/// the reopen — and runs it on regardless (no cancellation) — but a reopen
+/// means "ensure it runs", so trying again joins whatever it started (PC14d).
+/// Nothing else is distinct about it, so nothing else tells it apart.
+///
+/// [`REOPEN_DEADLINE`]: shed_craze::REOPEN_DEADLINE
+pub async fn craze_reopen(
+    src: &BridgeCrazeSource,
+    id: String,
+) -> Result<BridgeLaneReopened, BridgeLaneReopenError> {
+    let inner = Arc::clone(&src.inner);
+    let joined = joined_on_bridge_rt(async move {
+        let answer = match inner
+            .call(|source| async move { source.reopen(&id).await })
+            .await
+        {
+            Ok(answer) => answer,
+            Err(Cut::Before) => {
+                return Err(BridgeLaneReopenError::Unavailable {
+                    msg: format!(
+                        "the craze source for {} was closed before the reopen began; \
+                         nothing was sent — try again once craze is back",
+                        inner.machine
+                    ),
+                })
+            }
+            Err(Cut::During) => {
+                return Err(BridgeLaneReopenError::Unavailable {
+                    msg: format!(
+                        "{} (the craze source for {} was closed while the reopen was in flight)",
+                        shed_craze::errors::REOPEN_LOST,
+                        inner.machine
+                    ),
+                })
+            }
+        };
+        let reopened = answer.map_err(BridgeLaneReopenError::from)?;
+        // The source holds the row now (its created rows): re-read, as a
+        // create's row is.
+        inner.touch();
+        Ok(reopened.into())
+    })
+    .await;
+    match joined {
+        Ok(answer) => answer,
+        Err(e) => Err(BridgeLaneReopenError::Lane {
+            error: BridgeLaneError::Failed {
+                msg: format!("bridge task join error: {e}"),
+            },
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // lanes
 // ---------------------------------------------------------------------------
 
@@ -968,14 +1078,16 @@ mod tests {
     use std::time::Duration;
 
     use serde_json::{json, Value};
+    use shed_core::lane::LaneError;
     use shed_core::rc::RcActivity;
     use shed_craze::testing::{
-        attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0, roster_row,
-        session_caps, session_info, snapshot_at, HubEnd, ScriptedDial,
+        attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0,
+        reopen_hub_capabilities, roster_row, session_caps, session_info, snapshot_at, HubEnd,
+        ScriptedDial,
     };
 
     use crate::api::bridge_rt::live_counters;
-    use crate::api::dto_lane::{BridgeLaneSettingChange, BridgeSendMode};
+    use crate::api::dto_lane::{BridgeLaneSavedSession, BridgeLaneSettingChange, BridgeSendMode};
     use crate::api::lane::{
         lane_close, lane_send, lane_set, lane_snapshot, lane_stop, pump_finished,
     };
@@ -1075,6 +1187,7 @@ mod tests {
             create: true,
             create_options: true,
             create_title: false,
+            reopen: false,
         }
     }
 
@@ -1404,6 +1517,8 @@ mod tests {
                 create_options: true,
                 // The fake hub's `hello` advertises `createTitle` (craze 0.1.1).
                 create_title: true,
+                // ...and, a 0.1.1 hello, no `reopen` (plan 032 §3.4).
+                reopen: false,
             })
         );
         assert!(
@@ -2206,6 +2321,486 @@ mod tests {
 
         craze_source_close(&src);
         assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **`reopen` rides the hub's `hello` across the bridge** (plan 032
+    /// §3.4, PC11): a 0.2.0 hub's says it, so the snapshot's source
+    /// capabilities and the create options — read from the SAME `hello` —
+    /// both carry `reopen`, which is what the create sheet gates its resume
+    /// mode on (M3); a 0.1.1 hub's says nothing, and both are false.
+    #[tokio::test]
+    async fn reopen_rides_the_hello_into_the_snapshot_and_the_create_options() {
+        let _g = test_guard();
+        for (caps, want) in [
+            (reopen_hub_capabilities(), true),
+            (full_hub_capabilities(), false),
+        ] {
+            let (dial, mut conns) = ScriptedDial::new();
+            let src = open_on("mini3".to_string(), dial);
+            let mut roster = next_conn(&mut conns).await;
+            roster.hello("epoch-1", caps.clone()).await;
+            roster.subscribed("sub-1", "epoch-1", json!([])).await;
+            assert!(
+                until(Duration::from_secs(10), || craze_source_snapshot(&src).live).await,
+                "{caps}: the seed never reached the snapshot"
+            );
+            assert_eq!(
+                craze_source_snapshot(&src).caps.map(|c| c.reopen),
+                Some(want),
+                "{caps}"
+            );
+
+            let script = async {
+                let mut hub = next_conn(&mut conns).await;
+                hub.hello("epoch-1", caps.clone()).await;
+                let req = hub.expect("sessions.createOptions").await;
+                hub.reply(
+                    &req,
+                    json!({"providers": [{"id": "grok", "label": "grok", "state": "ready"}]}),
+                )
+                .await;
+                hub
+            };
+            let (options, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+                tokio::join!(craze_create_options(&src), script)
+            })
+            .await
+            .expect("the create options answered in time");
+            let options = options.expect("the hub answered its options");
+            assert_eq!(options.reopen, want, "{caps}");
+            assert_eq!(options.providers[0].id, "grok");
+
+            craze_source_close(&src);
+        }
+        assert_eq!(live_counters().active_craze_sources, 0);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    // ---- saved sessions, reopened (plan 032 §3.4, M3) ----
+
+    /// A saved session's id — its craze id, as `sessions.saved` lists it.
+    const SAVED_ID: &str = "0190ab12-cd34-7ef0-8123-456789abcdef";
+    /// The craze `sessionId` a reopened session runs under.
+    const SAVED_SESSION: &str = "session-saved";
+    /// The hostId a scripted reopen answers with.
+    const REOPENED: &str = "dddddddddddd";
+
+    /// `session.reopen`'s answer: the session's roster row on [`REOPENED`],
+    /// `joined` as given.
+    fn reopen_result(joined: bool) -> Value {
+        json!({"session": roster_row(REOPENED, SAVED_SESSION, "/w/saved",
+                                     json!({"title": "the saved one", "activity": "idle",
+                                            "pendingAsks": 0})),
+               "joined": joined})
+    }
+
+    /// The next connection as a 0.2.0 hub (it says `reopen`) that reads one
+    /// `session.reopen`: that connection and the request.
+    async fn reopen_asked(
+        conns: &mut tokio::sync::mpsc::UnboundedReceiver<HubEnd>,
+    ) -> (HubEnd, Value) {
+        let mut hub = next_conn(conns).await;
+        hub.hello("epoch-1", reopen_hub_capabilities()).await;
+        let req = hub.expect("session.reopen").await;
+        (hub, req)
+    }
+
+    /// A source whose roster is seeded EMPTY by a 0.2.0 hub and live — its hub
+    /// end handed back, to be KEPT ([`listed_roster`]'s reason).
+    async fn empty_roster(
+        conns: &mut tokio::sync::mpsc::UnboundedReceiver<HubEnd>,
+        src: &BridgeCrazeSource,
+    ) -> HubEnd {
+        let mut roster = next_conn(conns).await;
+        roster.hello("epoch-1", reopen_hub_capabilities()).await;
+        roster.subscribed("sub-1", "epoch-1", json!([])).await;
+        assert!(until(Duration::from_secs(10), || craze_source_snapshot(src).live).await);
+        roster
+    }
+
+    /// **The saved list crosses the bridge whole** (plan 032 §3.4):
+    /// `sessions.saved{limit: 50}` on a connection of its own, craze's order
+    /// kept, each row's title (a blank one is none), workspace and times, and
+    /// `more` as craze says it.
+    #[tokio::test]
+    async fn the_saved_list_crosses_the_bridge_in_crazes_order() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = empty_roster(&mut conns, &src).await;
+
+        let script = async {
+            let mut hub = next_conn(&mut conns).await;
+            hub.hello("epoch-1", reopen_hub_capabilities()).await;
+            let req = hub.expect("sessions.saved").await;
+            assert_eq!(
+                req["params"],
+                json!({"limit": 50}),
+                "fifty, and nothing else"
+            );
+            assert_eq!(
+                live_counters().pending_craze_calls,
+                1,
+                "the read is counted"
+            );
+            hub.reply(
+                &req,
+                json!({"sessions": [
+                    {"id": SAVED_ID, "crazeSessionId": SAVED_ID, "provider": "cursor",
+                     "providerSessionId": "7c1f9e2a", "workspace": "/home/me/lumen",
+                     "title": "fix the flaky test", "createdAt": "2026-10-12T09:00:00Z",
+                     "updatedAt": "2026-10-12T10:00:00Z"},
+                    {"id": "grok:4f1e2d3c", "provider": "grok", "providerSessionId": "4f1e2d3c",
+                     "workspace": "/home/me/lumen", "title": "  ",
+                     "createdAt": "0001-01-01T00:00:00Z", "updatedAt": "2026-10-11T10:00:00Z"}],
+                    "more": true}),
+            )
+            .await;
+            hub
+        };
+        let (saved, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_saved(&src), script)
+        })
+        .await
+        .expect("the saved list answered in time");
+        let ms = |t: &str| shed_core::time::rfc3339_unix_ms(t).unwrap();
+        assert_eq!(
+            saved.expect("the hub listed its saved sessions"),
+            BridgeLaneSavedSessions {
+                sessions: vec![
+                    BridgeLaneSavedSession {
+                        id: SAVED_ID.to_string(),
+                        provider: "cursor".to_string(),
+                        workspace: "/home/me/lumen".to_string(),
+                        title: Some("fix the flaky test".to_string()),
+                        updated_unix_ms: ms("2026-10-12T10:00:00Z"),
+                        created_unix_ms: Some(ms("2026-10-12T09:00:00Z")),
+                    },
+                    BridgeLaneSavedSession {
+                        id: "grok:4f1e2d3c".to_string(),
+                        provider: "grok".to_string(),
+                        workspace: "/home/me/lumen".to_string(),
+                        title: None,
+                        updated_unix_ms: ms("2026-10-11T10:00:00Z"),
+                        created_unix_ms: None,
+                    },
+                ],
+                more: true,
+            }
+        );
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **A reopen's row is integrated as a create's is** (plan 032 §3.4): the
+    /// request is `{id}` alone, on a connection of its own; the answer carries
+    /// the row and `joined`; the row is the source's at once — a nudge raised,
+    /// the snapshot listing it before any roster has — and a lane opens on its
+    /// hostId and seeds.
+    #[tokio::test]
+    async fn a_reopens_row_is_listed_at_once_and_its_lane_opens() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let sink = CountingSink::new(false);
+        assert!(spawn_forwarder(&src.inner, sink.push_fn()));
+        let _roster = empty_roster(&mut conns, &src).await;
+        // Everything so far acknowledged: the nudge below is the reopen's.
+        craze_source_snapshot(&src);
+        let before = sink.pushes();
+
+        let (reopened, req) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_reopen(&src, SAVED_ID.to_string()), async {
+                let (mut hub, req) = reopen_asked(&mut conns).await;
+                assert_eq!(
+                    live_counters().pending_craze_calls,
+                    1,
+                    "the reopen is counted"
+                );
+                hub.reply(&req, reopen_result(false)).await;
+                req
+            })
+        })
+        .await
+        .expect("the reopen answered in time");
+        assert_eq!(
+            req["params"],
+            json!({ "id": SAVED_ID }),
+            "the id, and nothing else"
+        );
+        let reopened = reopened.expect("craze reopened the session");
+        assert_eq!(reopened.session.id, REOPENED);
+        assert_eq!(reopened.session.title, "the saved one");
+        assert!(!reopened.joined, "craze started a host for it");
+        assert_eq!(live_counters().pending_craze_calls, 0);
+        assert!(
+            until(Duration::from_secs(5), || sink.pushes() > before).await,
+            "the reopen's row reached the source and nothing nudged the phone"
+        );
+        assert_eq!(
+            snap_ids(&craze_source_snapshot(&src)),
+            [REOPENED],
+            "the reopen's row is listed at once, before any roster has it"
+        );
+
+        let lane = craze_lane_open(&src, REOPENED.to_string())
+            .await
+            .expect("the reopened session's lane opens");
+        let info = session_info(REOPENED, SAVED_SESSION, "INC-1", session_caps(true));
+        let mut hub = next_conn(&mut conns).await;
+        let splice = hub.splice(REOPENED).await;
+        assert_eq!(splice["params"]["sessionId"], REOPENED);
+        hub.listed(host_session_row(&info, json!({}))).await;
+        let attach = hub
+            .attached(attach_result(
+                "s-1",
+                &info,
+                ("INC-1", 1),
+                Some(snapshot_at("INC-1", 1, json!({}))),
+                None,
+            ))
+            .await;
+        assert_eq!(
+            attach["params"]["sessionId"], SAVED_SESSION,
+            "the lane binds the reopened row's craze session"
+        );
+        hub.synchronized("s-1", 1).await;
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None)
+                .generation
+                >= 1)
+            .await,
+            "the reopened session's lane never seeded"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+        assert_eq!(live_counters().active_craze_sources, 0);
+    }
+
+    /// **Each reopen refusal lands on its own variant** (plan 032 §3.4, PC10)
+    /// — what a client DOES next, never read from text: `unknown_session` and
+    /// `not_accepting`/`not_resumable` are `Gone` (drop the row);
+    /// `not_accepting`/`start_failed` is `StartFailed` with craze's cause (keep
+    /// it); `unavailable` is `Unavailable` (Retry); `bad_request` and anything
+    /// else are the lane contract's own error under `Lane`. None is resent.
+    #[tokio::test]
+    async fn each_reopen_refusal_lands_on_its_own_variant() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), Arc::clone(&dial) as Arc<dyn CrazeDial>);
+        let _roster = empty_roster(&mut conns, &src).await;
+        let cases = [
+            (
+                "unknown_session",
+                "unknown_session",
+                json!({}),
+                BridgeLaneReopenError::Gone {
+                    msg: "unknown_session/unknown_session".to_string(),
+                },
+            ),
+            (
+                "not_accepting",
+                "not_resumable",
+                json!({}),
+                BridgeLaneReopenError::Gone {
+                    msg: "not_accepting/not_resumable".to_string(),
+                },
+            ),
+            (
+                "not_accepting",
+                "start_failed",
+                json!({"cause": "KEYCHAIN LOCKED"}),
+                BridgeLaneReopenError::StartFailed {
+                    msg: "could not start: KEYCHAIN LOCKED".to_string(),
+                },
+            ),
+            (
+                "unavailable",
+                "busy",
+                json!({}),
+                BridgeLaneReopenError::Unavailable {
+                    msg: "unavailable/busy".to_string(),
+                },
+            ),
+            (
+                "bad_request",
+                "bad_id",
+                json!({}),
+                BridgeLaneReopenError::Lane {
+                    error: BridgeLaneError::BadRequest {
+                        msg: "bad_request/bad_id".to_string(),
+                    },
+                },
+            ),
+            (
+                "internal",
+                "boom",
+                json!({}),
+                BridgeLaneReopenError::Lane {
+                    error: BridgeLaneError::Failed {
+                        msg: "internal/boom".to_string(),
+                    },
+                },
+            ),
+        ];
+        for (code, reason, extra, want) in cases {
+            let dials = dial.dials();
+            let (refused, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+                tokio::join!(craze_reopen(&src, SAVED_ID.to_string()), async {
+                    let (mut hub, req) = reopen_asked(&mut conns).await;
+                    hub.refuse(&req, code, reason, extra.clone()).await;
+                    hub
+                })
+            })
+            .await
+            .expect("the refusal answered in time");
+            assert_eq!(refused, Err(want), "{code}/{reason}");
+            assert_eq!(dial.dials(), dials + 1, "{code}/{reason}: never resent");
+        }
+        assert!(
+            craze_source_snapshot(&src).rows.is_empty(),
+            "a refused reopen lists nothing"
+        );
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **A lost answer is Retry, not an unknown outcome** (PC14d): a reopen
+    /// whose answer is lost on BOTH sends — the connection ending after craze
+    /// read it, then the one resend's — is `Unavailable`, starting with
+    /// shed-craze's `REOPEN_LOST` ("Retry is safe": a reopen joins whatever it
+    /// started), never the create's `OutcomeUnknown`.
+    #[tokio::test]
+    async fn two_lost_reopen_answers_are_unavailable_and_retry_is_safe() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = empty_roster(&mut conns, &src).await;
+        let (lost, ids) = tokio::time::timeout(Duration::from_secs(20), async {
+            tokio::join!(craze_reopen(&src, SAVED_ID.to_string()), async {
+                let mut ids = Vec::new();
+                for _ in 0..2 {
+                    let (hub, req) = reopen_asked(&mut conns).await;
+                    ids.push(req["params"]["id"].clone());
+                    hub.close().await;
+                }
+                ids
+            })
+        })
+        .await
+        .expect("a lost reopen answered in time");
+        assert_eq!(
+            ids,
+            [json!(SAVED_ID), json!(SAVED_ID)],
+            "one resend, same id"
+        );
+        let Err(BridgeLaneReopenError::Unavailable { msg }) = lost else {
+            panic!("a reopen lost twice: {lost:?}");
+        };
+        assert!(msg.starts_with(shed_craze::REOPEN_LOST), "{msg}");
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **A hub without `reopen` is asked nothing** (plan 032 §3.4): its
+    /// `hello` (craze 0.1.1, pid 5150) says no `reopen`, so the saved list is
+    /// `Unavailable` and the reopen `Unavailable` — both in the ONE older-hub
+    /// wording, naming the upgrade's remedy — and each connection closes with
+    /// nothing written on it.
+    #[tokio::test]
+    async fn a_hub_without_reopen_is_asked_nothing_across_the_bridge() {
+        let _g = test_guard();
+        let older = shed_craze::reopen_unsupported_by("0.1.1", Some(5150));
+        assert!(older.ends_with("end it with kill 5150"), "{older}");
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = empty_roster(&mut conns, &src).await;
+
+        let (saved, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_saved(&src), async {
+                let mut hub = next_conn(&mut conns).await;
+                hub.hello_from("epoch-1", full_hub_capabilities(), "0.1.1")
+                    .await;
+                assert!(hub.recv().await.is_none(), "saved: nothing was sent");
+            })
+        })
+        .await
+        .expect("the saved list answered in time");
+        assert_eq!(
+            saved,
+            Err(BridgeLaneError::Unavailable { msg: older.clone() })
+        );
+
+        let (reopen, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_reopen(&src, SAVED_ID.to_string()), async {
+                let mut hub = next_conn(&mut conns).await;
+                hub.hello_from("epoch-1", full_hub_capabilities(), "0.1.1")
+                    .await;
+                assert!(hub.recv().await.is_none(), "reopen: nothing was sent");
+            })
+        })
+        .await
+        .expect("the reopen answered in time");
+        assert_eq!(
+            reopen,
+            Err(BridgeLaneReopenError::Unavailable { msg: older })
+        );
+        assert!(
+            no_dial_within(&mut conns, Duration::from_millis(500)).await,
+            "nothing was lost, so nothing is resent"
+        );
+        craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **The feed owns a reopen in flight, and its close is Retry**: closing
+    /// the source cuts the reopen short (no connection held to a machine the
+    /// phone let go of), and since craze may have it, the answer is
+    /// `REOPEN_LOST`'s `Unavailable` — a reopen joins what it started. A
+    /// source closed BEFORE a reopen or a saved read began sends nothing and
+    /// is the quiet `Unavailable` too.
+    #[tokio::test]
+    async fn a_close_cuts_a_reopen_short_and_a_closed_source_sends_nothing() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = next_conn(&mut conns).await;
+        let script = async {
+            let (hub, _req) = reopen_asked(&mut conns).await;
+            assert_eq!(live_counters().pending_craze_calls, 1);
+            craze_source_close(&src);
+            hub
+        };
+        let (answer, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(craze_reopen(&src, SAVED_ID.to_string()), script)
+        })
+        .await
+        .expect("a reopen in flight outlived its source's close");
+        let Err(BridgeLaneReopenError::Unavailable { msg }) = answer else {
+            panic!("a reopen cut short by a close: {answer:?}");
+        };
+        assert!(msg.starts_with(shed_craze::REOPEN_LOST), "{msg}");
+        assert_eq!(live_counters().pending_craze_calls, 0);
+
+        let before = craze_reopen(&src, SAVED_ID.to_string()).await;
+        assert!(
+            matches!(&before, Err(BridgeLaneReopenError::Unavailable { msg })
+                if msg.contains("nothing was sent")),
+            "{before:?}"
+        );
+        let saved = craze_saved(&src).await;
+        assert!(
+            matches!(saved, Err(BridgeLaneError::Unavailable { .. })),
+            "{saved:?}"
+        );
+        assert!(
+            no_dial_within(&mut conns, Duration::from_millis(300)).await,
+            "a closed source dials nothing"
+        );
+        assert_eq!(live_counters().pending_craze_calls, 0);
+        assert_eq!(live_counters().active_craze_sources, 0);
     }
 
     /// A closed source refuses everything that would dial — a lane, a create —

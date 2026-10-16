@@ -155,6 +155,7 @@ void main() {
           create: true,
           createOptions: true,
           createTitle: false,
+          reopen: false,
         ),
         truncated: false,
       ),

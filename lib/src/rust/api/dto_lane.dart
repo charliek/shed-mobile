@@ -10,7 +10,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'dto_lane.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `from_view`, `set_title_outcome`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Whether this approval is still waiting on the human — **the only predicate a
 /// client gates its answer affordance on**.
@@ -359,16 +359,26 @@ class BridgeLaneChoice {
   final int? rank;
   final String? description;
 
+  /// A MODEL's effort facts (plan 032 §3.3) — `None` on a mode, on an
+  /// option's value, and on a model whose agent states none (every ACP
+  /// session's, an older host's, a model with no effort control).
+  final BridgeLaneModelEffort? effort;
+
   const BridgeLaneChoice({
     required this.id,
     required this.name,
     this.rank,
     this.description,
+    this.effort,
   });
 
   @override
   int get hashCode =>
-      id.hashCode ^ name.hashCode ^ rank.hashCode ^ description.hashCode;
+      id.hashCode ^
+      name.hashCode ^
+      rank.hashCode ^
+      description.hashCode ^
+      effort.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -378,7 +388,8 @@ class BridgeLaneChoice {
           id == other.id &&
           name == other.name &&
           rank == other.rank &&
-          description == other.description;
+          description == other.description &&
+          effort == other.effort;
 }
 
 /// What a create can start on a machine (mirrors `lane::LaneCreateOptions`):
@@ -395,15 +406,25 @@ class BridgeLaneCreateOptions {
   /// Newest first.
   final List<String> recentDirs;
 
+  /// The source can list saved sessions and reopen one (plan 032 §3.4,
+  /// PC11) — read from the SAME answer these options came from (craze: the
+  /// same hub `hello`), so a create sheet knows whether to offer its resume
+  /// mode even on a source with no live roster.
+  final bool reopen;
+
   const BridgeLaneCreateOptions({
     required this.providers,
     this.defaultProvider,
     required this.recentDirs,
+    required this.reopen,
   });
 
   @override
   int get hashCode =>
-      providers.hashCode ^ defaultProvider.hashCode ^ recentDirs.hashCode;
+      providers.hashCode ^
+      defaultProvider.hashCode ^
+      recentDirs.hashCode ^
+      reopen.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -412,7 +433,8 @@ class BridgeLaneCreateOptions {
           runtimeType == other.runtimeType &&
           providers == other.providers &&
           defaultProvider == other.defaultProvider &&
-          recentDirs == other.recentDirs;
+          recentDirs == other.recentDirs &&
+          reopen == other.reopen;
 }
 
 /// A create, as the phone asks for it (mirrors `lane::LaneCreateRequest`) — a
@@ -584,6 +606,46 @@ sealed class BridgeLaneError with _$BridgeLaneError implements FrbException {
       BridgeLaneError_OutcomeUnknown;
 }
 
+/// What a model says about its effort before it is chosen (mirrors
+/// `lane::LaneModelEffort`) — craze 0.2.0's per-model **effort facts**, a
+/// native session's alone (plan 032 §3.3).
+///
+/// The CURRENT model's effort is never read from here: it is its effort
+/// option's `current` ([`BridgeLaneSnapshot::effort_option`]). What this adds
+/// is the level a switch to a model the session is NOT on would land on —
+/// the settings sheet's dim `effort → <level>` under that model.
+class BridgeLaneModelEffort {
+  /// The levels the model offers, in its order (craze caps them at 8).
+  final List<String> efforts;
+
+  /// The model's default level.
+  final String? defaultEffort;
+
+  /// The level a switch to this model lands on: the session's own last
+  /// choice on it, else the one craze's model memory keeps, else its
+  /// default.
+  final String? switchEffort;
+
+  const BridgeLaneModelEffort({
+    required this.efforts,
+    this.defaultEffort,
+    this.switchEffort,
+  });
+
+  @override
+  int get hashCode =>
+      efforts.hashCode ^ defaultEffort.hashCode ^ switchEffort.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneModelEffort &&
+          runtimeType == other.runtimeType &&
+          efforts == other.efforts &&
+          defaultEffort == other.defaultEffort &&
+          switchEffort == other.switchEffort;
+}
+
 @freezed
 sealed class BridgeLanePromptOutcome with _$BridgeLanePromptOutcome {
   const BridgeLanePromptOutcome._();
@@ -700,6 +762,117 @@ class BridgeLaneQuestion {
           options == other.options &&
           multiple == other.multiple &&
           custom == other.custom;
+}
+
+@freezed
+sealed class BridgeLaneReopenError
+    with _$BridgeLaneReopenError
+    implements FrbException {
+  const BridgeLaneReopenError._();
+
+  const factory BridgeLaneReopenError.gone({required String msg}) =
+      BridgeLaneReopenError_Gone;
+  const factory BridgeLaneReopenError.startFailed({required String msg}) =
+      BridgeLaneReopenError_StartFailed;
+  const factory BridgeLaneReopenError.unavailable({required String msg}) =
+      BridgeLaneReopenError_Unavailable;
+  const factory BridgeLaneReopenError.lane({required BridgeLaneError error}) =
+      BridgeLaneReopenError_Lane;
+}
+
+/// A reopen's answer (mirrors `lane::LaneReopened`): the running session's
+/// row — openable at once by its id, as a create's is — and whether the
+/// source joined a session already running (`true`) or started one (`false`).
+class BridgeLaneReopened {
+  final BridgeLaneSession session;
+  final bool joined;
+
+  const BridgeLaneReopened({required this.session, required this.joined});
+
+  @override
+  int get hashCode => session.hashCode ^ joined.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneReopened &&
+          runtimeType == other.runtimeType &&
+          session == other.session &&
+          joined == other.joined;
+}
+
+/// One saved session (mirrors `lane::LaneSavedSession`): a session the
+/// machine remembers that nothing runs now, which a reopen can run again.
+/// Inbound.
+class BridgeLaneSavedSession {
+  /// What a reopen takes — OPAQUE to a client, never the row id a reopen
+  /// answers with.
+  final String id;
+
+  /// The provider it ran under (`cursor`, `grok`, `native`, …).
+  final String provider;
+
+  /// The directory it ran in, absolute, as the machine recorded it — not
+  /// checked to exist still.
+  final String workspace;
+  final String? title;
+
+  /// When it was last active, Unix epoch milliseconds.
+  final PlatformInt64 updatedUnixMs;
+
+  /// When it was created; `None` when the machine recorded no time.
+  final PlatformInt64? createdUnixMs;
+
+  const BridgeLaneSavedSession({
+    required this.id,
+    required this.provider,
+    required this.workspace,
+    this.title,
+    required this.updatedUnixMs,
+    this.createdUnixMs,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      provider.hashCode ^
+      workspace.hashCode ^
+      title.hashCode ^
+      updatedUnixMs.hashCode ^
+      createdUnixMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneSavedSession &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          provider == other.provider &&
+          workspace == other.workspace &&
+          title == other.title &&
+          updatedUnixMs == other.updatedUnixMs &&
+          createdUnixMs == other.createdUnixMs;
+}
+
+/// The saved sessions, newest first, and whether the source left some out —
+/// a client then says it shows only the most recent (mirrors
+/// `lane::LaneSavedSessions`).
+class BridgeLaneSavedSessions {
+  final List<BridgeLaneSavedSession> sessions;
+  final bool more;
+
+  const BridgeLaneSavedSessions({required this.sessions, required this.more});
+
+  @override
+  int get hashCode => sessions.hashCode ^ more.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeLaneSavedSessions &&
+          runtimeType == other.runtimeType &&
+          sessions == other.sessions &&
+          more == other.more;
 }
 
 /// One agent session as the contract sees it (mirrors `lane::LaneSession`).
@@ -1049,6 +1222,14 @@ class BridgeLaneSnapshot {
   /// `slash`. Every rule over it lives in the `slash_*` functions.
   final BridgeSlashMenu? slashMenu;
 
+  /// The id of [`Self::settings`]' EFFORT option — craze's `EffortOption`
+  /// rule, run once by the shared core (`LaneSettings::effort_option`, plan
+  /// 032 §3.2, PC14h) — or `None` when there are no settings or they name
+  /// none. What the chip shows as the effort: the phone reads it from here
+  /// and ports no rule of its own, so its chip and the `/effort` row are the
+  /// one reading.
+  final String? effortOption;
+
   const BridgeLaneSnapshot({
     required this.messages,
     required this.full,
@@ -1062,6 +1243,7 @@ class BridgeLaneSnapshot {
     required this.settingsFrames,
     required this.approvals,
     this.slashMenu,
+    this.effortOption,
   });
 
   @override
@@ -1077,7 +1259,8 @@ class BridgeLaneSnapshot {
       settings.hashCode ^
       settingsFrames.hashCode ^
       approvals.hashCode ^
-      slashMenu.hashCode;
+      slashMenu.hashCode ^
+      effortOption.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1095,7 +1278,8 @@ class BridgeLaneSnapshot {
           settings == other.settings &&
           settingsFrames == other.settingsFrames &&
           approvals == other.approvals &&
-          slashMenu == other.slashMenu;
+          slashMenu == other.slashMenu &&
+          effortOption == other.effortOption;
 }
 
 /// How full the session's context is, when the agent says (mirrors
@@ -1179,6 +1363,22 @@ sealed class BridgeSlashAction with _$BridgeSlashAction {
       BridgeSlashAction_SetMode;
   const factory BridgeSlashAction.stop() = BridgeSlashAction_Stop;
   const factory BridgeSlashAction.modelPicker() = BridgeSlashAction_ModelPicker;
+
+  /// The effort picker: the current model's effort option (`option`, what
+  /// a `Config` change names), that model (`for_model`), the option's
+  /// values in the agent's order (`levels`), and the model's default level
+  /// where its effort facts state one the option offers (`default_level`).
+  const factory BridgeSlashAction.effortPicker({
+    required String option,
+    required String forModel,
+    required List<BridgeLaneChoice> levels,
+    String? defaultLevel,
+  }) = BridgeSlashAction_EffortPicker;
+
+  /// Set the effort: `lane_set(change)`.
+  const factory BridgeSlashAction.setEffort({
+    required BridgeLaneSettingChange change,
+  }) = BridgeSlashAction_SetEffort;
 }
 
 @freezed
@@ -1386,11 +1586,16 @@ class BridgeSourceCapabilities {
   /// A create may carry a title (plan 029); a source that says no refuses one.
   final bool createTitle;
 
+  /// The source can list its saved sessions and reopen one (plan 032 §3.4):
+  /// a client offers its resume entry only where this is true.
+  final bool reopen;
+
   const BridgeSourceCapabilities({
     required this.kind,
     required this.create,
     required this.createOptions,
     required this.createTitle,
+    required this.reopen,
   });
 
   @override
@@ -1398,7 +1603,8 @@ class BridgeSourceCapabilities {
       kind.hashCode ^
       create.hashCode ^
       createOptions.hashCode ^
-      createTitle.hashCode;
+      createTitle.hashCode ^
+      reopen.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1408,7 +1614,8 @@ class BridgeSourceCapabilities {
           kind == other.kind &&
           create == other.create &&
           createOptions == other.createOptions &&
-          createTitle == other.createTitle;
+          createTitle == other.createTitle &&
+          reopen == other.reopen;
 }
 
 @freezed
@@ -1421,6 +1628,7 @@ sealed class BridgeSourceOffline with _$BridgeSourceOffline {
   const factory BridgeSourceOffline.unreachable() =
       BridgeSourceOffline_Unreachable;
   const factory BridgeSourceOffline.failed() = BridgeSourceOffline_Failed;
+  const factory BridgeSourceOffline.noHub() = BridgeSourceOffline_NoHub;
   const factory BridgeSourceOffline.other({required String raw}) =
       BridgeSourceOffline_Other;
 }

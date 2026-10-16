@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/bridge_adapters.dart';
+import 'package:shed_mobile/features/lanes/lane_screen.dart'
+    show laneNoteText, laneStaleBannerText;
 import 'package:shed_mobile/lanes/lane_controller.dart';
 import 'package:shed_mobile/lanes/lane_settings.dart';
 import 'package:shed_mobile/lanes/lane_source.dart';
@@ -34,6 +36,10 @@ import 'fake_lane_lease.dart';
 /// 4. **Only `ended` re-opens a lane, never `stale`** (plan 025 §3.2.4). An
 ///    adapter resuming from its cursor marks the view stale and clears it again
 ///    without the lane ending; a re-open there throws the cursor away.
+/// 5. **A craze lane outlives its row by a grace** (plan 032 §3.1.2). craze
+///    0.2.0 drops a stopping session's row ahead of its last events; a lane
+///    given up on at the row's departure froze on its last frame and never
+///    read the `session_closed` that ends it.
 void main() {
   group('open', () {
     test('runs forward, then lane_open — in that order', () async {
@@ -488,6 +494,13 @@ void main() {
           reason: 'the transcript stays',
         );
         expect(rig.controller.state.stale, reason);
+        expect(
+          laneNoteText(rig.controller.state),
+          isNull,
+          reason:
+              'its ended banner says why; nothing says "given up on" '
+              '(plan 032 §3.1.2)',
+        );
 
         // And it stays ended: a later open() is a no-op.
         await rig.controller.open();
@@ -639,13 +652,16 @@ void main() {
   });
 
   group('full-stamp reconciliation', () {
-    test('a vanished row closes the lane and ends the retries', () async {
+    test('a vanished row closes a NON-craze lane at once and ends the '
+        'retries — no grace (plan 032 §3.1.2 is craze lanes only)', () async {
       final rig = _Rig();
       await rig.controller.open();
 
       rig.stamps.add(null);
       await pumpEventQueue();
 
+      expect(rig.timers, isEmpty, reason: 'an opencode lane never departs');
+      expect(rig.controller.state.departing, isFalse);
       expect(rig.controller.state.abandoned, isTrue);
       expect(rig.bridge.handles.single.closed, isTrue);
       expect(rig.leases.single.releases, 1);
@@ -715,6 +731,336 @@ void main() {
       expect(rig.bridge.opens, 2);
       expect(rig.controller.state.abandoned, isFalse);
       expect(rig.bridge.specs.last.sessionId, 'sess-2');
+    });
+  });
+
+  group('a craze lane outlives its row by a grace (plan 032 §3.1.2)', () {
+    _Rig crazeRig() => _Rig(kind: crazeLaneKind, serverUrl: '');
+
+    /// A craze lane, open, whose row just left a live roster.
+    Future<_Rig> departed() async {
+      final rig = crazeRig();
+      await rig.controller.open();
+      rig.stamps.add(null);
+      await pumpEventQueue();
+      return rig;
+    }
+
+    /// The craze row listed again, unchanged.
+    void relisted(_Rig rig) => rig.stamps.add(rig.controller.stamp);
+
+    /// The same session's lane reached by ANOTHER stamp.
+    const otherStamp = BridgeAgentLaneStamp(
+      kind: crazeLaneKind,
+      sessionId: 'sess-2',
+      serverUrl: '',
+    );
+
+    /// Land [snap] on the lane as the bridge would: a nudge, then the frame.
+    Future<void> deliver(_Rig rig, BridgeLaneSnapshot snap) async {
+      rig.bridge.onSnapshot = (_) => snap;
+      rig.bridge.handles.last.nudges.deliver();
+      rig.pumpFrame();
+      await pumpEventQueue();
+    }
+
+    const givenUp =
+        'This lane has been given up on — its row or session is gone.';
+
+    test('a vanished row does not give the lane up before the grace: it '
+        'keeps its connection, and the session\'s last rows land', () async {
+      final rig = await departed();
+
+      expect(crazeDepartGrace, const Duration(seconds: 10));
+      expect(rig.timers.single.duration, crazeDepartGrace);
+      expect(rig.controller.state.departing, isTrue);
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.bridge.handles.single.closed, isFalse);
+      expect(rig.delays, isEmpty);
+
+      await deliver(rig, _snap(messages: [_row(1, 'late words')], full: false));
+      expect(
+        rig.controller.state.rows.single.text,
+        'late words',
+        reason: 'the session\'s words after its row left are still read',
+      );
+      expect(rig.controller.state.abandoned, isFalse);
+    });
+
+    test(
+      'a repeated null neither stacks a timer nor extends the grace',
+      () async {
+        final rig = await departed();
+        final first = rig.timers.single;
+
+        rig.stamps
+          ..add(null)
+          ..add(null);
+        await pumpEventQueue();
+        expect(rig.timers, [first], reason: 'one timer, never a second');
+        expect(first.cancelled, isFalse, reason: 'nor the first one restarted');
+
+        first.fire();
+        await pumpEventQueue();
+        expect(
+          rig.controller.state.abandoned,
+          isTrue,
+          reason: 'the grace runs out when the FIRST null said',
+        );
+      },
+    );
+
+    test('the same stamp returning cancels the grace; a removal after it '
+        'gets a fresh one', () async {
+      final rig = await departed();
+      final first = rig.timers.single;
+
+      relisted(rig);
+      await pumpEventQueue();
+      expect(first.cancelled, isTrue);
+      expect(rig.controller.state.departing, isFalse);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.bridge.handles.single.closed, isFalse);
+      expect(rig.bridge.crazeOpened, [
+        'sess-1',
+      ], reason: 'the same lane, never re-opened');
+
+      rig.stamps.add(null);
+      await pumpEventQueue();
+      expect(rig.timers, hasLength(2), reason: 'a fresh grace');
+      expect(rig.timers.last.cancelled, isFalse);
+      expect(rig.controller.state.departing, isTrue);
+    });
+
+    test('a changed stamp in the grace takes today\'s path: the grace '
+        'cancelled, the lane re-opened against it at once', () async {
+      final rig = await departed();
+
+      rig.stamps.add(otherStamp);
+      await pumpEventQueue();
+      expect(rig.timers.single.cancelled, isTrue);
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-2']);
+      expect(rig.bridge.handles.first.closed, isTrue);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.controller.state.departing, isFalse);
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(rig.delays, isEmpty, reason: 'news, not a failure');
+    });
+
+    test('a final Down in the grace ends the lane with its reason — the '
+        'ended banner, and NO "given up on" note', () async {
+      final rig = await departed();
+
+      await deliver(
+        rig,
+        _snap(
+          messages: [_row(1, 'closing words')],
+          stale: laneSessionClosed,
+          ended: true,
+          capabilities: _caps(kind: 'craze', stop: true),
+        ),
+      );
+      final state = rig.controller.state;
+      expect(rig.timers.single.cancelled, isTrue);
+      expect(state.departing, isFalse);
+      expect(state.abandoned, isTrue);
+      expect(state.ended, isTrue);
+      expect(state.stale, laneSessionClosed);
+      expect(state.rows.single.text, 'closing words');
+      expect(rig.delays, isEmpty, reason: 'a final end re-opens nothing');
+      expect(rig.bridge.handles.single.closed, isTrue);
+      expect(
+        laneStaleBannerText(state.stale!, ended: state.ended),
+        laneSessionClosed,
+      );
+      expect(laneNoteText(state), isNull);
+    });
+
+    test('the grace running out reads ONE snapshot at once — not on the next '
+        'frame — then gives the lane up, with the note', () async {
+      final rig = await departed();
+      final reads = rig.bridge.snapshots;
+      // The session's last row is waiting, and a nudge for it is queued for
+      // the next frame, which has not come.
+      rig.bridge.onSnapshot = (_) =>
+          _snap(messages: [_row(1, 'the last word')], full: false);
+      rig.bridge.handles.single.nudges.deliver();
+
+      rig.timers.single.fire();
+      expect(rig.bridge.snapshots, reads + 1, reason: 'read at once');
+      expect(rig.controller.state.rows.single.text, 'the last word');
+      await pumpEventQueue();
+      rig.pumpFrame();
+      expect(
+        rig.bridge.snapshots,
+        reads + 1,
+        reason: 'ONE read: the queued frame\'s pull is fenced',
+      );
+
+      final state = rig.controller.state;
+      expect(state.abandoned, isTrue);
+      expect(state.ended, isFalse, reason: 'no final Down came');
+      expect(state.departing, isFalse);
+      expect(rig.bridge.handles.single.closed, isTrue);
+      expect(laneNoteText(state), givenUp);
+      await rig.controller.open();
+      expect(rig.bridge.crazeOpened, ['sess-1'], reason: 'gone is gone');
+    });
+
+    test('a final Down in the grace\'s last read ends the lane with that '
+        'reason', () async {
+      final rig = await departed();
+      rig.bridge.onSnapshot = (_) =>
+          _snap(stale: laneUnknownSession, ended: true);
+
+      rig.timers.single.fire();
+      await pumpEventQueue();
+      final state = rig.controller.state;
+      expect(state.abandoned, isTrue);
+      expect(state.ended, isTrue);
+      expect(state.stale, laneUnknownSession);
+      expect(laneNoteText(state), isNull);
+      expect(rig.delays, isEmpty);
+    });
+
+    test('close in the grace cancels it, and its timer firing anyway does '
+        'nothing', () async {
+      final rig = await departed();
+      final reads = rig.bridge.snapshots;
+
+      await rig.controller.close();
+      expect(rig.timers.single.cancelled, isTrue);
+      rig.timers.single.fire();
+      await pumpEventQueue();
+      expect(rig.bridge.snapshots, reads, reason: 'nothing read');
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(rig.bridge.closes, 1, reason: 'closed once, by close()');
+    });
+
+    test('a stale timer does nothing: a grace cancelled by a return, or by a '
+        're-open, fired anyway', () async {
+      final rig = await departed();
+      final cancelledByReturn = rig.timers.single;
+      relisted(rig);
+      await pumpEventQueue();
+      rig.stamps.add(null);
+      await pumpEventQueue();
+      final live = rig.timers.last;
+      final reads = rig.bridge.snapshots;
+
+      cancelledByReturn.fire();
+      await pumpEventQueue();
+      expect(rig.bridge.snapshots, reads, reason: 'nothing read');
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(
+        rig.controller.state.departing,
+        isTrue,
+        reason: 'the live grace is untouched',
+      );
+      expect(live.cancelled, isFalse);
+
+      // A changed stamp re-opens the lane — a new handle generation — and
+      // the grace it cancelled, fired, touches the new handle not at all.
+      rig.stamps.add(otherStamp);
+      await pumpEventQueue();
+      expect(live.cancelled, isTrue);
+      live.fire();
+      await pumpEventQueue();
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.bridge.handles.last.closed, isFalse);
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-2']);
+    });
+
+    test('a craze lane with no connection to wait on — out on its re-open '
+        'ladder — is given up on at once', () async {
+      final rig = crazeRig();
+      await rig.controller.open();
+      await deliver(rig, _snap(stale: 'unreachable', ended: true));
+      expect(rig.delays, [const Duration(seconds: 1)]);
+
+      rig.stamps.add(null);
+      await pumpEventQueue();
+      expect(rig.timers, isEmpty, reason: 'no handle, no grace');
+      expect(rig.controller.state.abandoned, isTrue);
+    });
+
+    test('an end that is NOT final in the grace re-opens nothing: the grace '
+        'decides (PC14c)', () async {
+      final rig = await departed();
+
+      await deliver(rig, _snap(stale: 'unreachable', ended: true));
+      expect(rig.delays, isEmpty, reason: 'no re-open ladder');
+      expect(rig.bridge.crazeOpened, ['sess-1']);
+      expect(rig.bridge.handles.single.closed, isFalse);
+      expect(rig.controller.state.ended, isTrue);
+      expect(rig.controller.state.abandoned, isFalse);
+      expect(rig.controller.state.departing, isTrue);
+
+      rig.timers.single.fire();
+      await pumpEventQueue();
+      expect(rig.controller.state.abandoned, isTrue);
+      expect(rig.delays, isEmpty);
+      expect(rig.bridge.crazeOpened, ['sess-1']);
+      expect(
+        laneNoteText(rig.controller.state),
+        givenUp,
+        reason: 'an end, but not a final one',
+      );
+    });
+
+    test('…and the row returning hands that end back to the re-open '
+        'ladder', () async {
+      final rig = await departed();
+      await deliver(rig, _snap(stale: 'unreachable', ended: true));
+
+      relisted(rig);
+      await pumpEventQueue();
+      expect(rig.delays, [const Duration(seconds: 1)]);
+      expect(rig.bridge.handles.single.closed, isTrue);
+
+      rig.bridge.onSnapshot = (_) => _snap();
+      rig.releaseDelay();
+      await pumpEventQueue();
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.controller.state.abandoned, isFalse);
+    });
+
+    test('a source retirement in the grace re-opens nothing: the grace '
+        'decides (PC14c)', () async {
+      final rig = await departed();
+
+      await rig.crazeSource(null);
+      await rig.crazeSource(2);
+      expect(rig.bridge.crazeOpened, [
+        'sess-1',
+      ], reason: 'the replacement no longer lists the row');
+      expect(
+        rig.bridge.handles.single.closed,
+        isFalse,
+        reason: 'the handle it has is the one its last read is from',
+      );
+      expect(rig.controller.state.departing, isTrue);
+
+      rig.timers.single.fire();
+      await pumpEventQueue();
+      expect(rig.controller.state.abandoned, isTrue);
+      expect(rig.bridge.crazeOpened, ['sess-1']);
+      expect(rig.bridge.handles.single.closed, isTrue);
+    });
+
+    test('…and the row returning moves the lane to the live source', () async {
+      final rig = await departed();
+      await rig.crazeSource(2);
+
+      relisted(rig);
+      await pumpEventQueue();
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
+      expect(rig.bridge.handles.first.closed, isTrue);
+      expect(rig.controller.isOpen, isTrue);
+      expect(rig.delays, isEmpty, reason: 'at once, as a source move is');
     });
   });
 
@@ -946,6 +1292,17 @@ void main() {
     test('sameSlashMenu compares by value, not by list identity', () {
       expect(sameSlashMenu(_menu(), _menu()), isTrue);
       expect(sameSlashMenu(_menu(), _menu(name: 'title')), isFalse);
+      // An effort picker's levels are a list too (plan 032): two fresh
+      // conversions of one picker are the same menu, another level is not.
+      expect(sameSlashMenu(_effortMenu(), _effortMenu()), isTrue);
+      expect(
+        sameSlashMenu(_effortMenu(), _effortMenu(levels: ['low', 'max'])),
+        isFalse,
+      );
+      expect(
+        sameSlashMenu(_effortMenu(), _effortMenu(forModel: 'glm-5.2')),
+        isFalse,
+      );
       expect(sameSlashMenu(null, null), isTrue);
       expect(sameSlashMenu(_menu(), null), isFalse);
       // The generated `==` alone says two equal menus differ.
@@ -1006,6 +1363,60 @@ void main() {
       rig.bridge.setTitleFailure = null;
       await rig.controller.setTitle('z');
       expect(rig.controller.state.composerError, isNull);
+    });
+
+    test('setEffort is the composer\'s verb (plan 032 §3.2): the current '
+        'level re-sends, and its refusal is the composer\'s — never a row '
+        'mark', () async {
+      final rig = await slashRig();
+      const low = BridgeLaneSettingChange.config(
+        id: 'effort',
+        value: 'low',
+        forModel: 'grok-4.6',
+      );
+      expect(await rig.controller.setEffort(low), _done());
+      expect(await rig.controller.setEffort(low), _done());
+      expect(rig.bridge.sets, [
+        low,
+        low,
+      ], reason: 'an inline level always sends');
+      expect(rig.controller.state.composerError, isNull);
+
+      // `stale_model` reaches a client as `not_accepting`: the composer's
+      // refusal, as a mode's is — the sheet's marks untouched.
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+      await rig.controller.setEffort(low);
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_ACCEPTING');
+      expect(rig.controller.state.settingMarks, isEmpty);
+
+      rig.bridge.setFailure = const BridgeLaneError.outcomeUnknown(msg: 'lost');
+      expect(
+        await rig.controller.setEffort(low),
+        _outcome<LaneVerbUnknown>(laneCommandOutcomeUnknown),
+      );
+      expect(rig.bridge.sets, hasLength(4), reason: 'never resent');
+    });
+
+    test('the effort option rides every snapshot verbatim — a null replaces '
+        'it (plan 032 PC14h)', () async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(),
+        effortOption: 'effort',
+      );
+      await rig.controller.open();
+      expect(rig.controller.state.effortOption, 'effort');
+
+      // A model with no effort option: the core names none, and the lane
+      // says none — never "keep what you had".
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(model: 'composer-2.5'),
+      );
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      expect(rig.controller.state.effortOption, isNull);
     });
 
     test('setMode sends on a session WITHOUT settings, re-selecting the same '
@@ -1789,6 +2200,7 @@ class _Rig {
       stamps: stamps.stream,
       schedulePull: _frames.add,
       delay: _delay,
+      timer: _startTimer,
     );
     addTearDown(() async {
       await stamps.close();
@@ -1847,6 +2259,16 @@ class _Rig {
   Future<void> _delay(Duration wait) {
     delays.add(wait);
     return _delayGate.future;
+  }
+
+  /// Every timer the controller started — the departure grace — in order.
+  /// None runs on its own: a cell fires it ([_FakeTimer.fire]).
+  final List<_FakeTimer> timers = [];
+
+  Timer _startTimer(Duration wait, void Function() fire) {
+    final timer = _FakeTimer(wait, fire);
+    timers.add(timer);
+    return timer;
   }
 
   /// What the controller is handed as the machine feed's craze opener — the
@@ -2039,6 +2461,26 @@ class _FakeLaneBridge implements LaneSource {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// A timer that runs only when a cell says so — and runs even when it was
+/// cancelled, for the [_StubbornNudges] reason: a cancelled timer that never
+/// fires cannot tell a controller that FENCES a stale grace from one that
+/// merely cancelled it.
+class _FakeTimer implements Timer {
+  _FakeTimer(this.duration, this.fire);
+
+  final Duration duration;
+
+  /// Run the callback now, cancelled or not.
+  final void Function() fire;
+  bool cancelled = false;
+
+  @override
+  void cancel() => cancelled = true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeHandle implements LaneHandle {
   late final _StubbornNudges nudges = _StubbornNudges(this);
   bool closed = false;
@@ -2153,6 +2595,7 @@ BridgeLaneSnapshot _snap({
   int settingsFrames = 0,
   List<BridgeLaneApproval> approvals = const [],
   BridgeSlashMenu? slashMenu,
+  String? effortOption,
 }) => BridgeLaneSnapshot(
   messages: messages,
   full: full,
@@ -2166,6 +2609,7 @@ BridgeLaneSnapshot _snap({
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
   slashMenu: slashMenu,
+  effortOption: effortOption,
 );
 
 /// A one-row `/` menu (plan 029): a builtin rename, freshly built — a new
@@ -2182,6 +2626,29 @@ BridgeSlashMenu _menu({String name = 'rename'}) => BridgeSlashMenu(
     ),
   ],
   hidden: const [BridgeSlashHidden(name: 'help', reason: 'not available')],
+);
+
+/// A one-row `/` menu holding craze 0.2.0's `/effort` (plan 032), freshly
+/// built — its levels a new list every call, as every FRB conversion's are.
+BridgeSlashMenu _effortMenu({
+  List<String> levels = const ['low', 'high'],
+  String forModel = 'grok-4.6',
+}) => BridgeSlashMenu(
+  rows: [
+    BridgeSlashMenuRow(
+      name: 'effort',
+      source: const BridgeSlashSource.builtin(),
+      arg: const BridgeSlashArg.optional(),
+      whileWorking: false,
+      action: BridgeSlashAction.effortPicker(
+        option: 'effort',
+        forModel: forModel,
+        levels: [for (final l in levels) BridgeLaneChoice(id: l, name: l)],
+        defaultLevel: 'high',
+      ),
+    ),
+  ],
+  hidden: const [],
 );
 
 /// A craze session that offers settings.

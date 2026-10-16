@@ -371,7 +371,7 @@ disabled — not on the kind.
 | `lane-activity` | activity chip, in the shared `rcActivityDisplay` colours (absent for `unknown`) |
 | `lane-activity-unknown` | the placeholder shown instead of the chip when activity is `unknown` |
 | `lane-stale` | stale banner — carries the transport's OWN reason, never a generic "disconnected" |
-| `lane-note` | lane-level note: a refused open, a failed credential refresh, `Reconnecting…`, or a lane that has been given up on |
+| `lane-note` | lane-level note: a refused open, a failed credential refresh, `Reconnecting…`, or a lane that has been given up on WITHOUT a final end (its row left and no end came, or an error). A lane that ended for good (`session_closed`, `unknown_session`, `start_failed: …`) shows only its `lane-stale` banner, no note (plan 032 §3.1.2) |
 | `lane-list` / `lane-msg-<seq>` | the transcript, newest at the bottom (auto-scrolls only when already at the bottom) |
 | `lane-empty` | "No messages yet" |
 | `lane-approvals` | the scroll container holding the pending approval cards (above the composer) |
@@ -421,9 +421,12 @@ note/warning still shows). One command at a time — a second Enter while one is
 in flight does nothing.
 
 MSTATE: `screen=lane machine=<name> session=<agent session id> generation=N
-stale=<reason|-> approvals=N activity=<wire> slash=<shown>/<open>` —
-`<shown>` the rows the session's menu lists, `<open>` the rows the panel shows
-right now (0 closed); `slash=-/-` when the session has no menu.
+stale=<reason|-> approvals=N activity=<wire> departing=<t|f>
+slash=<shown>/<open>` — `departing=t` while a craze lane whose row left waits
+out its 10 s departure grace on its own connection (plan 032 §3.1.2; nothing
+on screen says so); `<shown>` the rows the session's menu lists, `<open>` the
+rows the panel shows right now (0 closed); `slash=-/-` when the session has no
+menu.
 MRESULT: `lane-send ok|error=…` (a prompt row too), `lane-cancel ok|error=…`,
 `lane-answer ok|error=…`, `lane-stop ok|error=…` (the header's Stop and
 `/exit`), `lane-rename ok|error=…`, `lane-mode ok|error=…` (a `/` mode row),

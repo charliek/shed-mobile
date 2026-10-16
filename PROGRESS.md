@@ -199,6 +199,92 @@ once roost's own R9 work settled, in PR #23 (`fb21620`).
 
 ---
 
+## Plan 032 — craze 0.2.0's features on the phone  (shed PR 1 first; this repo's PR 2)
+shed pins craze 0.2.0 and, in plan 032's PR 1, reads its features: a craze lane
+that outlives its row by a grace (W1), `/effort` and the per-model effort facts
+in the shared slash rule (W2, W3), resuming a saved session (W4). The phone
+re-pins onto that and follows in three items: M1 (the re-pin, the DTO mirror,
+`/effort`), M2 (W1's grace on the phone), M3 (Resume).
+- [x] **M1** — re-pin all seven `charliek/shed` lines to the shed branch
+      head (`4b5204c`; `roost-ipc` unchanged), so the integration harness runs
+      craze 0.2.0. The final pin is shed#425's merge commit, `ebba655`. The
+      FRB mirror follows every new shed type the phone exposes or matches: the slash
+      action's `EffortPicker`/`SetEffort` (both `From`s), `LaneChoice.effort`
+      (`BridgeLaneModelEffort`), the snapshot's `effort_option`,
+      `SourceOffline::NoHub`, `reopen` on the source capabilities and the create
+      options, and the saved/reopen DTOs (`BridgeLaneSavedSession(s)`,
+      `BridgeLaneReopened`, `BridgeLaneReopenError`) for M3 — each vouched for
+      in the FRB-surface test. `/effort` on the phone: bare, it opens the
+      settings sheet as `/model` does; `/effort <level>` is the composer's
+      `LaneController.setEffort` (`lane-effort`), always sent, its refusal in the
+      composer as a mode's is. The chip reads the snapshot's `effortOption`, the
+      shared core's reading — the Dart `_isEffort`/`_effortRank`/`effortOption`
+      port and its tests are gone — and the sheet's model list draws a dim
+      `effort → <switch level, else default>` under every model but the current
+      one (drive key `lane-setting-secondary-model:model-<id>`, MSTATE
+      `effort=`/`lands=`). The widget tests' `/` double and the parity table
+      gain the effort rows; `craze_test.dart` gains the desktop's (2e) cells on
+      the permodel session, and its menu cells list 0.2.0's `/effort`.
+- [x] **M2** — W1 on the phone: a craze lane outlives its row by a grace (the
+      Stop freeze, plan 032 §3.1.2). `LaneController.reconcile(null)` on an
+      open, live CRAZE lane arms one `crazeDepartGrace` (10 s) timer instead of
+      giving up — idempotent, fenced by its handle generation and its own
+      identity, injected as a `LaneTimer` — and the lane keeps its own
+      connection: a final `Down` in the grace ends it through `_onEnded`; the
+      same stamp listed again cancels it (before the same-stamp return, then
+      hands back whatever the departure held: a non-final end to the re-open
+      ladder, a retired source to the live one); a changed stamp takes today's
+      path; `_onEnded`, `close` and `_dropHandle` (every handle replacement)
+      cancel it. While departing, a non-final end and a source retirement
+      re-open nothing (PC14c). At expiry the lane reads ONE snapshot at once (not
+      on the next frame) — a final `Down` in it ends the lane with that reason,
+      otherwise it is given up on as before. Other kinds keep today's rule.
+      `LaneState.departing` rides the drive log (`departing=t|f` before
+      `slash=` in the lane's MSTATE). The note (`laneNoteText`, now pure): a
+      lane that ENDED for good shows its ended banner alone, "given up on —
+      its row or session is gone" stays for one abandoned with no final `Down`,
+      "given up on: <error>" for errors. Tests: 14 controller cells (every §7
+      "W1, phone" bullet; eight mutations of the controller each fail at least
+      one) plus the re-based opencode vanished-row cell; four widget cells and
+      two re-based note cells; and `craze_test.dart`'s
+      `a_lane_outlives_its_stopping_row_and_ends_visibly` (`hang_next`, a
+      send, `mark_stopping`, a late `text` and `end`, `quit` → ended
+      `unknown_session`, no note), which fails without the fix.
+- [x] **M3** — resume a saved craze session (W4). Rust: `craze_saved` and
+      `craze_reopen` beside `craze_create_options`/`craze_create`, each on the
+      source's own connection under the handle's close (`SourceInner::call`
+      now takes any answer); a reopen's row is the source's created row (fresh,
+      PC14f), so the handle is nudged and the snapshot lists it at once; the
+      handle's close, before or during a reopen, is `Unavailable` (Retry is
+      safe), never an unknown outcome. Bridge cells on `ScriptedDial`: the
+      saved list, a reopen's row listed with a nudge and its lane opened,
+      every `LaneReopenError` variant, two lost answers, a hub without
+      `reopen` asked nothing, a close cutting a reopen short. Dart: the
+      desktop's `crazeResume.ts` ported rule for rule
+      (`lib/features/craze/craze_resume.dart`, unit-tested case for case);
+      `MachineFeed.incarnation` (the phone's `source_gen`: a feed rebuilt is a
+      new one, a stop/start is not), `crazeSavedSessions`,
+      `crazeReopenSession` (folds the row in before it returns; `superseded`
+      when the source it went through was replaced); `crazeResumeProvider`
+      (per machine, above the sheet; holds the feed while a reopen runs and
+      observes a rebuilt one); the sheet's `New | Resume` control, saved rows,
+      "Resuming… (this can take a few minutes)", and drive keys
+      (`craze-mode-*`, `craze-saved-*`) plus MSTATE `mode=`/`modes=`/`saved=`/
+      `rows=`/`gone=` and MRESULT `craze-saved`/`craze-resume`; the create
+      screen opens the transcript on a landing, and reopens on the craze
+      choice while a reopen runs. Widget cells for the sheet; two
+      `craze_test.dart` cells against the real hub (resumed into
+      `grok-load`'s replayed transcript; a gone row dropped), the rig seeding
+      craze's index under its `flock` and logging every reopen and reply.
+      Review fixes: a sheet navigates on a create's or a reopen's landing only
+      while its route is the current one (Back pressed, the screen still
+      animating away, it opens and pops nothing; the outcome still lands), and
+      `_settleReopens` fails the cell when a reopen never settles — after the
+      rig's new `stop()` (craze off its PATH, every process ended), never
+      restoring the agent under it.
+
+---
+
 ## Log
 - 2026-06-28: M8 — multi-shed navigation + cross-host views, in 7 gated commits (data layer → desktop shell → mobile shell → Sheds → Sessions → System → polish). New responsive `AppShell` (LayoutBuilder at 900px: desktop sidebar / mobile bottom-tabs; shared `appSectionProvider`) behind the preserved `_Home` onboarding gate; three cross-host sections (Sheds/Sessions/System) rendering one independently-loaded group per host via the shared `HostGroups`. New `lib/app/` (app_section, app_shell, desktop_scaffold, mobile_scaffold), `lib/widgets/` atoms (RuntimeBadge, KindChip, OpenPill, CardShell, ThemeToggleButton, HostGroups/HostBanner), `lib/features/{sheds/all_sheds_view+shed_card+shed_actions, rc/all_sessions_view+session_card, system/system_view+system_card}`. ShedClient.getSystemDf/restartShed; SystemDiskUsage/DiskTotals DTOs; per-host providers (hostSystemDfProvider HTTP; hostSessionsProvider SSH fan-out). **Plan panel-reviewed** (Codex+Kimi+CodeRabbit) in docs/PLAN-m8-multished.md (84a315f); blockers folded in (lazy section render vs IndexedStack, tested rcSlugFromTmux, string kindColor, split P2a/P2b, per-host AsyncValue+timeouts). **Sessions pivoted HTTP→SSH** after discovering `/api/sessions` returns tmux rows without the rc classification (the CLI SSH-enriches via `enrichSessionsRC`) — confirmed live (HTTP=0 rc sessions, SSH shows them); the rich view fans `shed-ext-rc list` over SSH per running shed, matching the desktop reference. API-gap ticket noted (populate rc server-side). Each commit: make check → drive-verified on macOS (light+dark; all sections with real data across 3 hosts — vz/firecracker badges, restart/stop, sessions kind/state, df breakdown) + the breakpoint/card widget tests → /simplify (shared ThemeToggleButton/CardShell/runAction, KindChip dedup, resolve-rec-once, refresh parity) → /codex:rescue (fixed throwing JSON casts, mounted guard, cross-provider invalidation after per-shed kill/create). Release tree-shake = 0. Mobile rich cards are widget-tested (the Pixel-8 emulator's key isn't trusted by the test servers — standing M4 gate — so add-server/real-data there is blocked). Deferred (PROGRESS M8): the desktop Add stays a secure pushed route (not the mock's fingerprint-skipping modal), nav count chips / host-tile badges (lazy-load tension), global-empty owl-ghost.
 - 2026-06-27: M7 — design-system retheme to the imported claude.ai/design "Shed App" mockup, in 5 gated commits (theme foundation → server list → sheds+sessions → forms → terminal+aux). New `lib/theme/` (ShedColors ThemeExtension = single source of truth projected onto the ColorScheme; light/dark ThemeData with IBM Plex via google_fonts; persisted themeModeProvider switcher) + `lib/widgets/` atoms (OwlLogo/OwlGhost via flutter_svg, CountChip, EmptyState, StatusDot/StatusBadge, SquareIconButton, ErrorRetry, AppBarCountTitle, PrimaryButton). Accent flipped indigo→orange `#F2541B`; terminal chrome forced dark to match the untouched xterm view. Each commit: make check (137 tests) → /simplify (4 agents) → /codex:rescue → push → CI green; drive-verified on macOS + the Pixel 8 emulator (toggle flips & persists; the visual pass caught & fixed an illegal non-uniform-Border+borderRadius on the session kind chip that the analyzer missed). Deps added: google_fonts, flutter_svg. Note: marionette can't tap macOS AppBar actions (the OS title-bar dead-zone swallows the top ~28px) — AppBar-action verification done on Android, where there's no title bar.

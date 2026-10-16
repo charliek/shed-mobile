@@ -6,8 +6,8 @@ import '../src/rust/api/dto_rc.dart';
 import 'lane_settings.dart';
 
 /// The facts a lane's snapshot carries about the SESSION rather than its
-/// transcript — its live row, its capabilities, its settings and its resolved
-/// `/` menu — as one value.
+/// transcript — its live row, its capabilities, its settings, its resolved
+/// `/` menu and which of its options is the effort — as one value.
 ///
 /// One value because they are replaced TOGETHER, verbatim, from one snapshot
 /// and never merged field by field: the live view is the newer truth,
@@ -19,6 +19,7 @@ typedef LaneLive = ({
   BridgeLaneCapabilities? capabilities,
   BridgeLaneSettings? settings,
   BridgeSlashMenu? slashMenu,
+  String? effortOption,
 });
 
 /// Nothing known about the session yet — what a fresh lane, or a lane re-opened
@@ -28,6 +29,7 @@ const LaneLive laneLiveUnknown = (
   capabilities: null,
   settings: null,
   slashMenu: null,
+  effortOption: null,
 );
 
 /// **One agent lane, as a screen renders it** (plan 018 §3.11).
@@ -58,6 +60,7 @@ class LaneState {
     this.capabilities,
     this.settings,
     this.slashMenu,
+    this.effortOption,
     this.error,
     this.approvalErrors = const {},
     this.composerError,
@@ -66,6 +69,7 @@ class LaneState {
     this.settingsSeen = 0,
     this.retrying = false,
     this.abandoned = false,
+    this.departing = false,
     // `BigInt.zero` is not a compile-time constant, which is the only reason
     // this class is not `const`.
   }) : generation = generation ?? BigInt.zero;
@@ -93,7 +97,9 @@ class LaneState {
 
   /// The lifecycle: the lane's subscription ENDED (a `Down`), and the
   /// controller is re-opening it (see [retrying]) or has given up (see
-  /// [abandoned]). The one fact a re-open is keyed on (plan 025 §3.2.4).
+  /// [abandoned]) — or, on a departing craze lane whose end is not final,
+  /// lets its grace decide ([departing]). The one fact a re-open is keyed on
+  /// (plan 025 §3.2.4).
   final bool ended;
 
   /// The asks still waiting on the human, oldest first. Pending only — Rust
@@ -128,6 +134,13 @@ class LaneState {
   /// same is what lets the composer re-filter only when something it reads
   /// moved (the desktop's "replace the menu only when its value changes").
   final BridgeSlashMenu? slashMenu;
+
+  /// The id of [settings]' EFFORT option, as the shared core reads it
+  /// (craze's `EffortOption` rule, `BridgeLaneSnapshot.effortOption`, plan
+  /// 032 PC14h) — null when there are no settings or they name none. What
+  /// the chip shows as the effort ([settingsChip]); the phone ports no rule
+  /// of its own, so the chip and the `/effort` row are one reading.
+  final String? effortOption;
 
   /// A lane-level failure: the open was refused. Distinct from the two inline
   /// errors below, which belong to one control.
@@ -176,6 +189,13 @@ class LaneState {
   /// **Terminal** — the only way back is a new stamp on the row.
   final bool abandoned;
 
+  /// A CRAZE lane whose row left its source and which is waiting out the
+  /// departure grace (`crazeDepartGrace`, plan 032 §3.1.2) on its own
+  /// connection — for the session's last rows and its final `Down`. Nothing
+  /// on screen says so (the lane is still live, its transcript still
+  /// growing); the drive log does (`departing=t`).
+  final bool departing;
+
   LaneState copyWith({
     List<BridgeRcFeedMessage>? rows,
     BridgeRcActivity? activity,
@@ -192,6 +212,7 @@ class LaneState {
     int? settingsSeen,
     bool? retrying,
     bool? abandoned,
+    bool? departing,
     bool clearStale = false,
     bool clearError = false,
     bool clearComposerError = false,
@@ -207,6 +228,7 @@ class LaneState {
     capabilities: live == null ? capabilities : live.capabilities,
     settings: live == null ? settings : live.settings,
     slashMenu: live == null ? slashMenu : live.slashMenu,
+    effortOption: live == null ? effortOption : live.effortOption,
     error: clearError ? null : (error ?? this.error),
     approvalErrors: approvalErrors ?? this.approvalErrors,
     composerError: clearComposerError
@@ -217,6 +239,7 @@ class LaneState {
     settingsSeen: settingsSeen ?? this.settingsSeen,
     retrying: retrying ?? this.retrying,
     abandoned: abandoned ?? this.abandoned,
+    departing: departing ?? this.departing,
   );
 }
 

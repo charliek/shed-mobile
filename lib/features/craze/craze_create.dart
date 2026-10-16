@@ -510,5 +510,8 @@ String _offlineWords(BridgeSourceOffline cause) => switch (cause) {
   BridgeSourceOffline_TooOld() => 'too old',
   BridgeSourceOffline_Unreachable() => 'unreachable',
   BridgeSourceOffline_Failed() => 'failed',
+  // Plan 032 §3.5's attach-only dial finding no hub. The phone's tunnel runs
+  // `bridge --hub`, which starts one, so it never draws this today.
+  BridgeSourceOffline_NoHub() => 'no hub running',
   BridgeSourceOffline_Other(:final raw) => raw.replaceAll('_', ' '),
 };
