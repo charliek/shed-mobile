@@ -12,8 +12,8 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
 # shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5" }
+shed-core = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
+shed-app  = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
 # The opencode agent-lane adapter (plan 015), reached the same way and pinned
 # to the SAME rev as shed-core/shed-app — one shed tree, one rev. It is
 # named here rather than reached through shed-app because shed-app does not
@@ -23,7 +23,7 @@ shed-app  = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356c
 # It had not been on a phone before that plan, so `android-build` is the first
 # thing that would notice a dependency it cannot cross-compile; the gate
 # checks it for `aarch64-linux-android` explicitly.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5" }
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
 # The craze agent-lane adapter (plan 025): a machine's craze hub as an
 # `AgentSource`, and each of its sessions as an `AgentLane`. Named for the
 # same reason shed-opencode is — the client chooses the adapter — and pinned
@@ -33,7 +33,7 @@ shed-opencode = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf
 # the lock guard and the Android check cover it from the first commit that
 # names it — and it must cross-compile for `aarch64-linux-android`, which
 # shed-craze's own manifest promises (no reqwest, no chrono).
-shed-craze = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5" }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
 # roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
 # reached through shed-app, for two things shed-app does not re-export: the
 # `TabOpenParams` a `tab.open` takes, and `ssh::remote_command()` — the opaque
@@ -89,7 +89,7 @@ base64 = "0.22"
 # A dev-dependency (resolver v2) so the feature is enabled for `cargo test` and
 # NEVER for a shipped build — the same shape shed-app uses for the same fake.
 # Same git+rev as the [dependencies] entry above; cargo unifies them.
-shed-core = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5", features = ["test-support"] }
+shed-core = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
 # The opencode agent-lane adapter's in-process double
 # (`shed_opencode::testing::FakeOpencode`), behind the SAME non-default
 # `test-support` feature and the SAME git+rev as the `[dependencies]` entry
@@ -100,7 +100,7 @@ shed-core = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356c
 # a real loopback HTTP server instead of a re-implementation of one, which is
 # the whole point: the thing under test is the bridge's dispatch, its roster GET
 # and its pump, and a hand-rolled fake adapter would test none of them.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5", features = ["test-support"] }
+shed-opencode = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
 # The craze adapter's scripted hub (`shed_craze::testing::ScriptedDial`: every
 # connection an in-memory duplex the test plays craze on), behind the same
 # non-default `test-support` feature and the SAME git+rev — `test-support = []`,
@@ -108,7 +108,7 @@ shed-opencode = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf
 # REAL `CrazeSource` — its roster pump, its created rows, a lane opened through
 # it and the session's end said back to it (plan 025 Amendment A16) — instead
 # of a re-implementation of one.
-shed-craze = { git = "https://github.com/charliek/shed", rev = "4b5204cf31eaf356cfc38b3c109e50b71d30fdf5", features = ["test-support"] }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
