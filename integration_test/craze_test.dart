@@ -2021,8 +2021,14 @@ void main() {
       await _pumps(tester);
       expect(find.byKey(const ValueKey('lane-stop-confirm')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('lane-stop-keep')));
-      await _pumps(tester);
-      expect(find.byKey(const ValueKey('lane-stop-confirm')), findsNothing);
+      // Waited for, not pumped past: the dialog's exit transition outlasts
+      // `_pumps` on a fast frame clock.
+      await _until(
+        tester,
+        () =>
+            find.byKey(const ValueKey('lane-stop-confirm')).evaluate().isEmpty,
+        what: 'Keep to close the confirm',
+      );
       expect(controller.state.ended, isFalse);
 
       // Every state from the Stop on: a final end is given up on AT ONCE —
