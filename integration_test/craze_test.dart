@@ -4861,10 +4861,36 @@ Future<void> _menuReady(
   what: 'the session\'s / menu',
 );
 
-/// Set the composer's draft as typed (focusing it), the caret at its end.
+/// Set the composer's draft as typed (focusing it), the caret at its end —
+/// and prove it landed.
+///
+/// **The focus is handed back first, and waited for.** A composer verb
+/// disables the field while it runs, which drops its focus, and one that
+/// took hands the caret back to no one (a person taps the field again) —
+/// here only when a pump lands while the verb is out, so a loaded machine
+/// loses the focus and a fast one never does. `WidgetTester.enterText`
+/// requests the keyboard only for an editable the binding has not focused
+/// before, and under integration_test the binding never hears the old
+/// connection close: on the same field it focuses nothing, and the text goes
+/// to no client and is dropped in silence — no menu, and the Enter after it
+/// reaches nothing (lane_test's `typeInComposer` met the same trap).
+/// `requestKeyboard` is what a tap on the field runs, without the tap's caret
+/// move or double-tap selection.
 Future<void> _typeDraft(WidgetTester tester, String text) async {
-  await tester.enterText(find.byKey(const ValueKey('lane-input')), text);
+  final input = find.byKey(const ValueKey('lane-input'));
+  tester
+      .state<EditableTextState>(
+        find.descendant(of: input, matching: find.byType(EditableText)),
+      )
+      .requestKeyboard();
+  await _until(
+    tester,
+    () => tester.widget<TextField>(input).focusNode!.hasFocus,
+    what: 'the composer focused',
+  );
+  await tester.enterText(input, text);
   await _pumps(tester);
+  expect(_fieldText(tester, 'lane-input'), text, reason: 'the draft typed');
 }
 
 /// The menu panel's rows on screen (built), by name, in the order drawn.
