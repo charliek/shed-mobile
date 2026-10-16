@@ -205,10 +205,10 @@ that outlives its row by a grace (W1), `/effort` and the per-model effort facts
 in the shared slash rule (W2, W3), resuming a saved session (W4). The phone
 re-pins onto that and follows in three items: M1 (the re-pin, the DTO mirror,
 `/effort`), M2 (W1's grace on the phone), M3 (Resume).
-- [x] **M1** (this commit) — re-pin all seven `charliek/shed` lines to the
-      shed branch head (`4b5204c`, TEMPORARY until PR 1 merges; `roost-ipc`
-      unchanged), so the integration harness runs craze 0.2.0. The FRB mirror
-      follows every new shed type the phone exposes or matches: the slash
+- [x] **M1** — re-pin all seven `charliek/shed` lines to the shed branch
+      head (`4b5204c`; `roost-ipc` unchanged), so the integration harness runs
+      craze 0.2.0. The final pin is shed#425's merge commit, `ebba655`. The
+      FRB mirror follows every new shed type the phone exposes or matches: the slash
       action's `EffortPicker`/`SetEffort` (both `From`s), `LaneChoice.effort`
       (`BridgeLaneModelEffort`), the snapshot's `effort_option`,
       `SourceOffline::NoHub`, `reopen` on the source capabilities and the create

@@ -586,4 +586,17 @@ void main() {
     );
     expect(relativeAge(0, now), '', reason: 'no time');
   });
+
+  test('equal states hash alike, however their rows were built', () {
+    const a = CrazeResume(
+      gen: 1,
+      rows: {'x': SavedIdle(), 'y': SavedResuming(2)},
+    );
+    final b = CrazeResume(
+      gen: 1,
+      rows: {'y': const SavedResuming(2)},
+    ).copyWith(rows: {'y': const SavedResuming(2), 'x': const SavedIdle()});
+    expect(b, a);
+    expect(b.hashCode, a.hashCode);
+  });
 }

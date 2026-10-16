@@ -277,9 +277,19 @@ class CrazeResume {
       other.gone == gone &&
       identical(other.landed, landed);
 
+  // `rows` by value and in no order, as `mapEquals` compares it (a
+  // `MapEntry` hashes by identity).
   @override
-  int get hashCode =>
-      Object.hash(gen, mode, load, Object.hashAll(rows.entries), gone, landed);
+  int get hashCode => Object.hash(
+    gen,
+    mode,
+    load,
+    Object.hashAllUnordered(
+      rows.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    gone,
+    landed,
+  );
 }
 
 /// What the sheet says under a list craze cut short.
