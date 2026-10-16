@@ -4,6 +4,7 @@ import 'package:stridelabs_drive/stridelabs_drive.dart';
 
 import '../craze/craze_create.dart';
 import '../craze/craze_create_sheet.dart';
+import '../craze/craze_resume.dart';
 import '../create/create_rc_target.dart';
 import '../lanes/lane_screen.dart';
 import '../../lanes/lane_controller.dart';
@@ -61,10 +62,15 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
     // A craze create still running — or one whose outcome is unknown, which
     // only "Try again" here can resolve — reopens on the craze choice, so the
     // same form and the same request id are what the person sees.
+    // A reopen still running (plan 032 §3.4) does too: the sheet shows it as
+    // it was left.
     final origin = widget.target.crazeOrigin;
     if (origin != null) {
       final phase = ref.read(crazeDraftProvider(origin)).phase;
-      if (phase == CrazePhase.submitting || phase == CrazePhase.unknown) {
+      final reopening = resumingId(ref.read(crazeResumeProvider(origin)));
+      if (phase == CrazePhase.submitting ||
+          phase == CrazePhase.unknown ||
+          reopening != null) {
         _kind = const BridgeRcKind.craze();
         _crazeChosen = true;
       }
@@ -77,36 +83,68 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
   /// take. A session that has already ended has no transcript to open.
   void _crazeCreated(String origin, CrazeCreated c) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final navigator = Navigator.of(context);
     logDriveState(
       'screen=craze-create created=${c.hostId} ended=${c.ended} '
       'prompt=${c.created.prompt}',
     );
     if (c.ended) {
-      messenger?.showSnackBar(const SnackBar(content: Text(crazeCreatedEnded)));
-      navigator.pop();
+      _crazeEnded(crazeCreatedEnded);
       return;
     }
     final notice = promptNotice(c.created);
     if (notice != null) {
-      messenger?.showSnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(
           key: const ValueKey('craze-create-prompt-notice'),
           content: Text(notice.join('\n')),
         ),
       );
     }
-    navigator.pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => LaneScreen(
-          machine: origin,
-          kind: crazeLaneKind,
-          slug: c.hostId,
-          title: c.created.session.title,
-        ),
-      ),
+    _openCrazeTranscript(origin, c.hostId, c.created.session.title);
+  }
+
+  /// A reopen landed while the craze sheet was on screen (plan 032 §3.4):
+  /// this screen gives way to the session's transcript — at once, the feed
+  /// folded its row in before the reopen returned — as a create's does. A
+  /// session that has already ended again has no transcript to open (said,
+  /// and the screen closes, as a create's ended session does); a
+  /// `superseded` answer is said on its row, and the sheet stays.
+  void _crazeResumed(String origin, CrazeResumed r) {
+    if (!mounted) return;
+    logDriveState(
+      'screen=craze-create resumed=${r.hostId} landing=${r.landing.name} '
+      'joined=${r.reopened.joined}',
     );
+    switch (r.landing) {
+      case ReopenLanding.open:
+        _openCrazeTranscript(origin, r.hostId, r.reopened.session.title);
+      case ReopenLanding.ended:
+        _crazeEnded(resumedEnded);
+      case ReopenLanding.superseded || ReopenLanding.dropped:
+        break;
+    }
+  }
+
+  /// This screen gives way to the craze session [hostId]'s transcript.
+  void _openCrazeTranscript(String origin, String hostId, String title) =>
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => LaneScreen(
+            machine: origin,
+            kind: crazeLaneKind,
+            slug: hostId,
+            title: title,
+          ),
+        ),
+      );
+
+  /// A craze session with no transcript to open — it has already ended:
+  /// [note] says so, and the screen closes.
+  void _crazeEnded(String note) {
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(note)));
+    Navigator.of(context).pop();
   }
 
   @override
@@ -329,6 +367,7 @@ class _CreateRcScreenState extends ConsumerState<CreateRcScreen> {
                 origin: crazeOrigin,
                 machine: widget.target.label,
                 onCreated: (c) => _crazeCreated(crazeOrigin, c),
+                onResumed: (r) => _crazeResumed(crazeOrigin, r),
               ),
             // The optional detail fields, offered only where the target can
             // actually carry them: a roost-backed machine titles its own tab

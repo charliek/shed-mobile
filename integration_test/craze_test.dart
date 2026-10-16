@@ -174,6 +174,26 @@
 //   with no effort facts — refused in craze's words, the draft kept.
 // * **glm-5.2's `reasoning`** counts as its effort: named by the lane, a
 //   level sent as a `reasoning` change bound to glm-5.2, the chip following.
+//
+// ## The cells (plan 032 M3: resume a saved session, §3.4)
+//
+// craze 0.2.0's saved sessions through the create sheet's Resume half — the
+// desktop's (2b') cells. Each seeds craze's session index
+// (`$CRAZE_HOME/sessions.jsonl`, under craze's own `flock` and an atomic
+// rename) before its feed's first bridge births the hub:
+//
+// * **a saved session resumes** — the sheet offers `New | Resume` on this
+//   0.2.0 hub and opens on New; Resume lists the seeded session (title,
+//   provider, workspace, age) beside a second one; its Resume sends ONE
+//   `session.reopen` (its dial held, so "Resuming…" and every other button
+//   disabled can be read); on craze's answer the screen gives way to the
+//   transcript, which shows what the fake agent's `grok-load` replays; read
+//   afresh, the session — running — is no longer saved. The rig's agent is
+//   restored only after every reopen sent has been answered; one that never
+//   is stops the rig and fails the cell instead.
+// * **one that cannot run is dropped** — a session whose directory went is
+//   listed, and its Resume is craze's `not_resumable`: the row leaves the
+//   list, the sheet says why where it was, and nothing starts.
 import 'dart:async';
 import 'dart:io';
 
@@ -186,6 +206,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shed_mobile/features/craze/craze_create.dart';
 import 'package:shed_mobile/features/craze/craze_create_sheet.dart';
+import 'package:shed_mobile/features/craze/craze_resume.dart';
 import 'package:shed_mobile/features/create/create_rc_target.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/machines/machine_sessions_view.dart';
@@ -1692,6 +1713,249 @@ void main() {
         reason: 'a NEW id after a definite failure',
       );
       await _exactlyOneIn(tester, screen.feed, dir);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  // -------------------------------------------------------------------------
+  // resume a saved session (plan 032 M3, §3.4)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'a_saved_session_resumes_into_its_transcript',
+    (tester) async {
+      final rig = await _rig(bins!);
+      // craze's reopen recipe: the index holds a saved grok session — and a
+      // second one whose directory never existed, still LISTED (craze stats
+      // no workspace when it lists) — written BEFORE the hub reads it (the
+      // feed's first bridge births the hub), and the agent is the fake's
+      // `grok-load`, which replays a short transcript on every
+      // `session/load`.
+      final work = _mkdir('${rig.home}/resume-me');
+      final gone = '${rig.root}/w-resume-gone';
+      await rig.seedSaved([
+        CrazeRig.savedRow(
+          crazeId: _savedId,
+          providerSession: 'mob-saved',
+          cwd: work,
+          title: 'a saved phone session',
+          updatedAt: '2026-10-12T10:00:00Z',
+        ),
+        CrazeRig.savedRow(
+          crazeId: _goneId,
+          providerSession: 'mob-gone',
+          cwd: gone,
+          title: 'a session whose directory went',
+          updatedAt: '2026-10-11T10:00:00Z',
+        ),
+      ]);
+      rig.setGrokAgent(rig.scriptAgent('grok-load'));
+      ProviderContainer? container;
+      try {
+        final screen = await _createScreen(tester, rig);
+        container = screen.container;
+        await _chooseCraze(tester);
+        // On this 0.2.0 hub the sheet offers New | Resume (its create options
+        // say `reopen`) and opens on New.
+        await _until(
+          tester,
+          () => find.byKey(const ValueKey('craze-mode')).evaluate().isNotEmpty,
+          what: 'New | Resume offered',
+        );
+        expect(_modeSemantics(tester, 'new').properties.selected, isTrue);
+        await tester.tap(find.byKey(const ValueKey('craze-mode-resume')));
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-saved-title-$_savedId'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the saved list, read on the first choice of Resume',
+        );
+        expect(_textAt('craze-saved-title-$_savedId'), 'a saved phone session');
+        expect(_textAt('craze-saved-provider-$_savedId'), 'grok');
+        expect(_textAt('craze-saved-workspace-$_savedId'), work);
+        expect(_textAt('craze-saved-updated-$_savedId'), isNotEmpty);
+        expect(_resumeLabelAt(tester, _savedId), 'Resume');
+        expect(
+          find.byKey(const ValueKey('craze-saved-$_goneId')),
+          findsOneWidget,
+          reason: 'a session whose directory went is still listed',
+        );
+        expect(
+          find.byKey(const ValueKey('craze-create-submit')),
+          findsNothing,
+          reason: 'no Create in the Resume half',
+        );
+
+        // Its Resume sends ONE `session.reopen` — its dial held, so the
+        // running state can be read: the row says "Resuming…", and every
+        // other button (the other row's, the mode control) waits.
+        final sent = rig.reopens.length;
+        rig.holdCrazeDials = Completer<void>();
+        try {
+          await _press(tester, 'craze-saved-resume-$_savedId');
+          await _until(
+            tester,
+            () => _resumeLabelAt(tester, _savedId) == resumingLabel,
+            what: 'the row resuming',
+          );
+          expect(_resumeEnabledAt(tester, _savedId), isFalse);
+          expect(
+            _resumeEnabledAt(tester, _goneId),
+            isFalse,
+            reason: 'one at a time: the other row waits',
+          );
+          expect(
+            _modeSemantics(tester, 'new').properties.enabled,
+            isFalse,
+            reason: 'the mode waits',
+          );
+          // Pressed anyway, the other row's button sends nothing.
+          await tester.tap(
+            find.byKey(const ValueKey('craze-saved-resume-$_goneId')),
+            warnIfMissed: false,
+          );
+          await _pumps(tester);
+        } finally {
+          rig.holdCrazeDials?.complete();
+          rig.holdCrazeDials = null;
+        }
+
+        // On craze's answer the screen gives way to the session's transcript,
+        // which shows the replayed answer.
+        await _until(
+          tester,
+          () => find.byType(LaneScreen).evaluate().isNotEmpty,
+          what: 'the resumed session\'s transcript',
+          timeout: const Duration(seconds: 75),
+        );
+        expect(
+          rig.reopens.sublist(sent),
+          [_savedId],
+          reason: 'one reopen; the refused press sent nothing',
+        );
+        final host = tester.widget<LaneScreen>(find.byType(LaneScreen)).slug;
+        expect(rig.reopenReplies.last.hostId, host);
+        expect(rig.reopenReplies.last.joined, isFalse, reason: 'started');
+        final ref = (machine: _local.name, kind: crazeLaneKind, slug: host);
+        await _until(
+          tester,
+          () =>
+              screen.container
+                  .read(laneStateProvider(ref))
+                  .value
+                  ?.rows
+                  .any((r) => r.text?.contains(_replayed) ?? false) ??
+              false,
+          what: 'the replayed answer in the resumed transcript',
+        );
+        final row = _row(screen.feed.state, host);
+        expect(row?.session.cwd, work);
+        expect(row?.session.provider, 'grok');
+
+        // Read afresh on the next open: running, it is no longer saved.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await _showCreateScreen(tester, screen.container);
+        await _chooseCraze(tester);
+        await _until(
+          tester,
+          () => find.byKey(const ValueKey('craze-mode')).evaluate().isNotEmpty,
+          what: 'New | Resume offered again',
+        );
+        await tester.tap(find.byKey(const ValueKey('craze-mode-resume')));
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-saved-$_goneId'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the saved list, read afresh',
+        );
+        expect(
+          find.byKey(const ValueKey('craze-saved-$_savedId')),
+          findsNothing,
+          reason: 'running, it is no longer saved',
+        );
+      } finally {
+        // Any reopen still outstanding is settled — with `grok-load` still
+        // the agent — before the rig's agent is restored, so craze never runs
+        // one under an agent that cannot load a session. One that never
+        // settles stops the rig and fails the cell instead: this restore is
+        // then not reached ([_settleReopens]).
+        await _settleReopens(tester, rig, container);
+        rig.setGrokAgent(rig.grokEcho);
+      }
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_saved_session_that_cannot_run_is_dropped_from_the_list',
+    (tester) async {
+      final rig = await _rig(bins!);
+      final gone = '${rig.root}/w-resume-gone';
+      expect(Directory(gone).existsSync(), isFalse);
+      await rig.seedSaved([
+        CrazeRig.savedRow(
+          crazeId: _goneId,
+          providerSession: 'mob-gone',
+          cwd: gone,
+          title: 'a session whose directory went',
+          updatedAt: '2026-10-11T10:00:00Z',
+        ),
+      ]);
+      ProviderContainer? container;
+      try {
+        final screen = await _createScreen(tester, rig);
+        container = screen.container;
+        await _chooseCraze(tester);
+        await _until(
+          tester,
+          () => find.byKey(const ValueKey('craze-mode')).evaluate().isNotEmpty,
+          what: 'New | Resume offered',
+        );
+        await tester.tap(find.byKey(const ValueKey('craze-mode-resume')));
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-saved-resume-$_goneId'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the saved list',
+        );
+        await _press(tester, 'craze-saved-resume-$_goneId');
+        // craze refuses it `not_accepting`/`not_resumable` — `gone`: the row
+        // leaves the list, and the sheet says why where it was.
+        await _until(
+          tester,
+          () => find
+              .byKey(const ValueKey('craze-saved-gone'))
+              .evaluate()
+              .isNotEmpty,
+          what: 'the gone row\'s note',
+        );
+        expect(
+          find.byKey(const ValueKey('craze-saved-$_goneId')),
+          findsNothing,
+          reason: 'the row is dropped',
+        );
+        final note = _textAt('craze-saved-gone');
+        expect(note, contains('a session whose directory went'));
+        expect(note, contains('no longer a directory'));
+        expect(_modeSemantics(tester, 'resume').properties.selected, isTrue);
+        expect(
+          _modeSemantics(tester, 'new').properties.enabled,
+          isTrue,
+          reason: 'nothing runs: the mode is free',
+        );
+        expect(rig.reopenReplies.last.error, isNotNull);
+        expect(_rowsIn(screen.feed, gone), isEmpty, reason: 'no session');
+      } finally {
+        await _settleReopens(tester, rig, container);
+      }
     },
     skip: skip,
     timeout: _cell,
@@ -3772,8 +4036,12 @@ Future<void> _chooseCraze(WidgetTester tester) async {
 }
 
 /// Press the sheet's primary button (Create / Try again).
-Future<void> _press(WidgetTester tester) async {
-  final button = find.byKey(const ValueKey('craze-create-submit'));
+/// Press the button at [key] — the sheet's Create unless said.
+Future<void> _press(
+  WidgetTester tester, [
+  String key = 'craze-create-submit',
+]) async {
+  final button = find.byKey(ValueKey(key));
   await tester.ensureVisible(button);
   await _pumps(tester);
   await tester.tap(button);
@@ -3797,17 +4065,19 @@ List<String> _providerRows() => find
     .map((e) => (e.widget.key! as ValueKey<String>).value)
     .toList();
 
-bool _providerSelected(WidgetTester tester, String provider) => tester
-    .widget<Semantics>(
+/// The semantics of the control at [key].
+Semantics _semanticsAt(WidgetTester tester, String key) =>
+    tester.widget<Semantics>(
       find
           .descendant(
-            of: find.byKey(ValueKey('craze-provider-$provider')),
+            of: find.byKey(ValueKey(key)),
             matching: find.byType(Semantics),
           )
           .first,
-    )
-    .properties
-    .selected!;
+    );
+
+bool _providerSelected(WidgetTester tester, String provider) =>
+    _semanticsAt(tester, 'craze-provider-$provider').properties.selected!;
 
 /// craze's recent directories, as the sheet shows them.
 List<String> _recentDirs() {
@@ -3857,10 +4127,14 @@ bool _composerIdle(WidgetTester tester) {
           true);
 }
 
-String _primaryLabel(WidgetTester tester) => tester
+/// The label of the button at [key] — the sheet's Create unless said.
+String _primaryLabel(
+  WidgetTester tester, [
+  String key = 'craze-create-submit',
+]) => tester
     .widget<Text>(
       find.descendant(
-        of: find.byKey(const ValueKey('craze-create-submit')),
+        of: find.byKey(ValueKey(key)),
         matching: find.byType(Text),
       ),
     )
@@ -3972,6 +4246,74 @@ Future<void> _until(
     await tester.pump(const Duration(milliseconds: 50));
   }
   if (!done()) fail('timed out waiting for $what');
+}
+
+/// The saved sessions the resume cells seed (craze ids, as craze mints
+/// them): one that resumes, and one whose directory never existed — still
+/// listed, refused `not_resumable` when reopened.
+const _savedId = '0192f0aa-6666-7000-8000-0000000phone';
+const _goneId = '0192f0aa-6666-7000-8000-00000000gone';
+
+/// What the fake agent's `grok-load` replays on every `session/load` — the
+/// resumed transcript's proof (craze's reopen recipe, and shed-craze's).
+const _replayed = 'the workspace holds main.py and README.md';
+
+/// The create sheet's mode segment [mode]'s semantics (`new`, `resume`).
+Semantics _modeSemantics(WidgetTester tester, String mode) =>
+    _semanticsAt(tester, 'craze-mode-$mode');
+
+/// The saved row [id]'s button label: Resume, Resuming…, or Retry.
+String _resumeLabelAt(WidgetTester tester, String id) =>
+    _primaryLabel(tester, 'craze-saved-resume-$id');
+
+bool _resumeEnabledAt(WidgetTester tester, String id) =>
+    tester
+        .widget<FilledButton>(find.byKey(ValueKey('craze-saved-resume-$id')))
+        .onPressed !=
+    null;
+
+/// **Settle every reopen a resume cell left outstanding** before it restores
+/// the rig (the desktop's `_settle_reopens`): a dial still held is released,
+/// craze's answer to every `session.reopen` the rig carried comes down the
+/// wire ([CrazeRig.reopenReplies]), and the app lands it — no reopen left
+/// running in [container]'s Resume state.
+///
+/// **Bounded, and loud.** Still outstanding at the deadline, the rig is
+/// STOPPED ([CrazeRig.stop]: craze off its PATH, then its hub and every other
+/// process of it gone), so that reopen can go no further — no redial can birth
+/// a hub to carry it again under whatever agent the caller would restore —
+/// and the cell FAILS, naming what was outstanding. The throw is what keeps
+/// the caller's restore from running on that path: the rig it would restore
+/// is stopped, and its teardown removes it. (Thrown from the caller's
+/// `finally`, it stands in for any failure the cell already had — one that
+/// left a reopen outstanding, whose state it names.)
+Future<void> _settleReopens(
+  WidgetTester tester,
+  CrazeRig rig,
+  ProviderContainer? container,
+) async {
+  rig.holdCrazeDials?.complete();
+  rig.holdCrazeDials = null;
+  String? running() => container == null
+      ? null
+      : resumingId(container.read(crazeResumeProvider(_local.name)));
+  bool settled() =>
+      rig.reopenReplies.length >= rig.reopens.length && running() == null;
+  final deadline = DateTime.now().add(const Duration(seconds: 75));
+  while (!settled() && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  if (settled()) return;
+  final outstanding =
+      '${rig.reopens.length} reopen(s) sent ${rig.reopens}, '
+      '${rig.reopenReplies.length} answered, '
+      'the app still resuming ${running() ?? '-'}';
+  final left = await rig.stop();
+  fail(
+    'timed out settling the cell\'s reopens ($outstanding): the rig was '
+    'stopped instead of having its agent restored'
+    '${left.isEmpty ? '' : ' — still running after the stop: $left'}',
+  );
 }
 
 CrazeMachineRow? _row(MachineFeedState? state, String hostId) {

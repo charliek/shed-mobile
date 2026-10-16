@@ -235,6 +235,19 @@ class CrazeRig {
       if (v.method == method) v.params,
   ];
 
+  /// Every `session.reopen` a craze bridge of this rig carried — the saved
+  /// id it named, in order (the desktop rig's `reopens.log`, plan 032 §3.4).
+  final List<String?> reopens = [];
+
+  /// **The hub's REPLY to every `session.reopen`** a craze bridge of this rig
+  /// carried, in order (the desktop rig's `reopen-replies.log`): the saved
+  /// id it answers, the running session's hostId and `joined` (null on a
+  /// refusal), and the JSON-RPC `error` (null on success). Recorded as the
+  /// line comes DOWN the wire — how a cell knows craze has answered every
+  /// reopen it sent before it changes the agent under them.
+  final List<({String? id, String? hostId, bool? joined, Object? error})>
+  reopenReplies = [];
+
   /// **A settings change's answer, lost** (the desktop rig's `drop-sets`):
   /// while set, a bridge that carries a `session.set` relays it to the hub and
   /// then relays nothing back, and a second later the bridge is killed — the
@@ -366,7 +379,8 @@ class CrazeRig {
     if (msg.containsKey('id') &&
         (method == 'hello' ||
             method == 'session.create' ||
-            method == 'session.attach')) {
+            method == 'session.attach' ||
+            method == 'session.reopen')) {
       (_asked[process] ??= {})[jsonEncode(msg['id'])] = (
         method: method as String,
         params: params is Map ? params : const {},
@@ -378,6 +392,10 @@ class CrazeRig {
         method: method as String,
         hostId: params is Map ? params['sessionId'] as String? : null,
       ));
+      return false;
+    }
+    if (method == 'session.reopen') {
+      reopens.add(params is Map ? params['id'] as String? : null);
       return false;
     }
     if (method == 'session.setTitle' ||
@@ -460,6 +478,16 @@ class CrazeRig {
           title: title is String ? title : null,
           error: error,
           relayed: relayed,
+        ));
+      case 'session.reopen':
+        final session = result['session'];
+        final hostId = session is Map ? session['hostId'] : null;
+        final joined = result['joined'];
+        reopenReplies.add((
+          id: ask.params['id'] as String?,
+          hostId: hostId is String ? hostId : null,
+          joined: joined is bool ? joined : null,
+          error: error,
         ));
       case 'hello':
         final caps = result['capabilities'];
@@ -590,6 +618,68 @@ class CrazeRig {
 
   /// The fake agent this rig's grok runs by default.
   String get grokEcho => '$pathDir/craze-fake-agent';
+
+  /// **Seed craze's session index** (`$CRAZE_HOME/sessions.jsonl`, plan 032
+  /// §3.4) with [rows] — [savedRow]'s shape — the way craze's own writer adds
+  /// to it (`sessions.Store.Upsert`): under the index's lock file, flock'd,
+  /// the index read whole and replaced by an atomic rename. craze's lock is a
+  /// `flock(2)`, which Dart's own `RandomAccessFile.lock` (an `fcntl` lock)
+  /// does not exclude, so the lock is held by util-linux's `flock(1)` for the
+  /// length of the write. A cell seeds BEFORE its feed starts — the feed's
+  /// first bridge births the hub, which then reads it (craze's own recipe);
+  /// the lock and the rename keep a write racing a running hub's whole too.
+  Future<void> seedSaved(List<Map<String, Object?>> rows) async {
+    final index = File('$crazeHome/sessions.jsonl');
+    final holder = await Process.start('flock', [
+      '-x',
+      '${index.path}.lock',
+      '/bin/sh',
+      '-c',
+      'echo locked; read _',
+    ]);
+    final stdout = holder.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    try {
+      final locked = await stdout.first.timeout(const Duration(seconds: 10));
+      if (locked != 'locked') {
+        throw StateError('flock(1) said $locked, not that it holds the lock');
+      }
+      var text = index.existsSync() ? index.readAsStringSync() : '';
+      if (text.isNotEmpty && !text.endsWith('\n')) text += '\n';
+      text += [for (final r in rows) '${jsonEncode(r)}\n'].join();
+      final tmp = File('$crazeHome/sessions.jsonl.shedtest');
+      tmp.writeAsStringSync(text, flush: true);
+      _chmod('0600', tmp.path);
+      tmp.renameSync(index.path);
+    } finally {
+      await holder.stdin.close();
+      await holder.exitCode.timeout(const Duration(seconds: 10));
+    }
+  }
+
+  /// One row of craze's session index as craze writes it — craze's reopen
+  /// recipe's shape (`shed_craze::testing::saved_index_row`, the desktop's
+  /// `_saved_row`): a grok session whose provider id is [providerSession],
+  /// run in [cwd], titled [title], last active at [updatedAt], its craze id
+  /// [crazeId] (what `sessions.saved` lists it by and `session.reopen`
+  /// takes).
+  static Map<String, Object?> savedRow({
+    required String crazeId,
+    required String providerSession,
+    required String cwd,
+    required String title,
+    required String updatedAt,
+  }) => {
+    'sessionId': providerSession,
+    'provider': 'grok',
+    'cwd': cwd,
+    'title': title,
+    'pinned': false,
+    'createdAt': '2026-10-12T09:00:00Z',
+    'updatedAt': updatedAt,
+    'crazeId': crazeId,
+  };
 
   /// Point `[agents]` at [agents] (provider → agent binary); grok stays the
   /// default provider. A provider named here is READY to craze (cursor needs
@@ -768,12 +858,34 @@ class CrazeRig {
     if (craze.existsSync()) craze.renameSync('$pathDir/craze.off');
   }
 
-  /// craze's own `cleanup`: every fake host's stdin closed; SIGTERM to every
-  /// process whose program is one of this rig's copies (re-read just before
-  /// each signal; never pid 0 or 1, never this process); a bounded wait; the
-  /// same again with the fake hosts; SIGKILL as the backstop. Answers what was
-  /// still running at the end — nothing, normally.
+  /// craze's own `cleanup` ([stop]), and then the namespace's directories
+  /// removed. Answers what was still running at the end — nothing, normally.
   Future<List<String>> teardown() async {
+    final left = await stop();
+    for (final dir in [root, Directory(work).parent.path]) {
+      try {
+        Directory(dir).deleteSync(recursive: true);
+      } on FileSystemException {
+        // A process killed a moment ago may still be closing a file under it
+        // (or an earlier [teardown] already removed it).
+      }
+    }
+    return left;
+  }
+
+  /// **Stop every process of this namespace's — its hub, its hosts, its
+  /// bridges — and keep any from starting again**, its directories left in
+  /// place: craze is taken off the PATH first ([uninstall]), so no bridge can
+  /// redial — and birth another hub to carry a request again — while the rest
+  /// goes; then craze's own `cleanup`: every fake host's stdin closed;
+  /// SIGTERM to every process whose program is one of this rig's copies
+  /// (re-read just before each signal; never pid 0 or 1, never this
+  /// process); a bounded wait; the same again with the fake hosts; SIGKILL as
+  /// the backstop. Answers what was still running at the end — nothing,
+  /// normally. What a cell that cannot settle a request does before it
+  /// changes the rig under it; [teardown] runs it too (again is harmless).
+  Future<List<String>> stop() async {
+    uninstall();
     for (final b in [..._stopped]) {
       resume(b);
     }
@@ -801,13 +913,6 @@ class CrazeRig {
     while (DateTime.now().isBefore(deadline) &&
         (await processes()).isNotEmpty) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    for (final dir in [root, Directory(work).parent.path]) {
-      try {
-        Directory(dir).deleteSync(recursive: true);
-      } on FileSystemException {
-        // A process killed a moment ago may still be closing a file under it.
-      }
     }
     return left;
   }

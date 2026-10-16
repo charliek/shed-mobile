@@ -765,7 +765,9 @@ class BridgeLaneQuestion {
 }
 
 @freezed
-sealed class BridgeLaneReopenError with _$BridgeLaneReopenError {
+sealed class BridgeLaneReopenError
+    with _$BridgeLaneReopenError
+    implements FrbException {
   const BridgeLaneReopenError._();
 
   const factory BridgeLaneReopenError.gone({required String msg}) =

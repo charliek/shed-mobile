@@ -94,6 +94,27 @@ header says).
 A start failure shows craze's cause verbatim (monospace); craze's
 `bad_request` is shown beside the directory.
 
+#### Resuming a saved session
+
+craze 0.2.0 remembers the sessions it ran, and the sheet can run one again
+(plan 032 §3.4): where its create options say the hub can **reopen** (read
+from the same hub `hello`, so a hub from before 0.2.0 shows nothing new), the
+sheet carries a `New | Resume` control. It opens on New. The rules are
+`lib/features/craze/craze_resume.dart` (the desktop's Resume rules, ported
+rule for rule); the state lives above the screen, per machine, like the
+create's form.
+
+| Part | Behaviour |
+|---|---|
+| The list | Read from craze (`sessions.saved`, the 50 most recent) the first time Resume is chosen after the sheet opens, and never cached. Each row shows its title (or "Untitled"), its provider, its workspace (under the machine's home, as `~/…`, once the feed knows the home) and when it was last active. When craze has more, the list says "Showing the 50 most recent." A failed read says why, with Retry. |
+| Resume | One reopen at a time, through craze's `session.reopen` on a connection of its own. The row reads "Resuming… (this can take a few minutes)" — craze allows 200 s for an answer, and a lost answer is sent again once — and every other button, the New/Resume control included, waits. |
+| Resumed | The screen gives way to the session's transcript at once: the feed folds the session's row in before the reopen returns, as it does a created one. A session that ended again before it was listed opens nothing (said, and the screen closes). |
+| Cannot run here (`gone`) | craze no longer knows the id, or its directory is gone: the row is dropped, and the sheet says why where it was. |
+| Failed to start | craze's cause, verbatim (monospace), on the row; the row stays, and Resume works again. Any other definite refusal reads the same, in plain words. |
+| Unavailable | Transient — a hub that cannot reopen, a busy one, or an answer lost twice: said on the row with **Retry**. A reopen means "ensure it runs", so trying again joins whatever the first try started. |
+| Leaving | Keeps the reopen running (the feed is held until it settles); its session then simply appears as a row, and coming back finds the row still resuming. A reopen that lands with no sheet on screen opens nothing — nor does one landing while the sheet is leaving (Back pressed, the screen still animating away): only a sheet whose screen is the current one navigates, for a create's landing too. The outcome is kept all the same: a resumed session simply appears as a row, and a refused one's row reads as it settled. |
+| A new incarnation | What the state belongs to is the machine's feed: a feed rebuilt meanwhile (the machine removed and added again under the same name) starts the sheet afresh on New, and a reopen the old one left running lands nowhere. A reopen whose answer came through a craze connection the feed had already replaced (a restart racing it) is not opened; its row says so, and Resume again joins it. |
+
 ### A craze session's transcript
 
 The transcript screen is the same one an opencode lane opens, and it takes

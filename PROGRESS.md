@@ -250,6 +250,38 @@ re-pins onto that and follows in three items: M1 (the re-pin, the DTO mirror,
       `a_lane_outlives_its_stopping_row_and_ends_visibly` (`hang_next`, a
       send, `mark_stopping`, a late `text` and `end`, `quit` → ended
       `unknown_session`, no note), which fails without the fix.
+- [x] **M3** — resume a saved craze session (W4). Rust: `craze_saved` and
+      `craze_reopen` beside `craze_create_options`/`craze_create`, each on the
+      source's own connection under the handle's close (`SourceInner::call`
+      now takes any answer); a reopen's row is the source's created row (fresh,
+      PC14f), so the handle is nudged and the snapshot lists it at once; the
+      handle's close, before or during a reopen, is `Unavailable` (Retry is
+      safe), never an unknown outcome. Bridge cells on `ScriptedDial`: the
+      saved list, a reopen's row listed with a nudge and its lane opened,
+      every `LaneReopenError` variant, two lost answers, a hub without
+      `reopen` asked nothing, a close cutting a reopen short. Dart: the
+      desktop's `crazeResume.ts` ported rule for rule
+      (`lib/features/craze/craze_resume.dart`, unit-tested case for case);
+      `MachineFeed.incarnation` (the phone's `source_gen`: a feed rebuilt is a
+      new one, a stop/start is not), `crazeSavedSessions`,
+      `crazeReopenSession` (folds the row in before it returns; `superseded`
+      when the source it went through was replaced); `crazeResumeProvider`
+      (per machine, above the sheet; holds the feed while a reopen runs and
+      observes a rebuilt one); the sheet's `New | Resume` control, saved rows,
+      "Resuming… (this can take a few minutes)", and drive keys
+      (`craze-mode-*`, `craze-saved-*`) plus MSTATE `mode=`/`modes=`/`saved=`/
+      `rows=`/`gone=` and MRESULT `craze-saved`/`craze-resume`; the create
+      screen opens the transcript on a landing, and reopens on the craze
+      choice while a reopen runs. Widget cells for the sheet; two
+      `craze_test.dart` cells against the real hub (resumed into
+      `grok-load`'s replayed transcript; a gone row dropped), the rig seeding
+      craze's index under its `flock` and logging every reopen and reply.
+      Review fixes: a sheet navigates on a create's or a reopen's landing only
+      while its route is the current one (Back pressed, the screen still
+      animating away, it opens and pops nothing; the outcome still lands), and
+      `_settleReopens` fails the cell when a reopen never settles — after the
+      rig's new `stop()` (craze off its PATH, every process ended), never
+      restoring the agent under it.
 
 ---
 

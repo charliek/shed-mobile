@@ -166,6 +166,51 @@ Future<BridgeLaneCreated> crazeCreateHeld({
   request: request,
 );
 
+/// **The machine's saved sessions** — craze's `sessions.saved{limit: 50}`,
+/// newest first, `more` when craze left some out; read afresh on every call,
+/// on a connection of its own, exactly as [`craze_create_options`] reads the
+/// create options (each call is its own exec of the bridge, which Ensures a
+/// hub: the sheet's Resume chosen is an explicit user action).
+///
+/// A hub whose `hello` does not say `reopen` is
+/// [`BridgeLaneError::Unavailable`] in the one older-hub wording
+/// (`shed_craze::errors::reopen_unsupported`), nothing sent; a closed source
+/// is the quiet `Unavailable` a read always is.
+Future<BridgeLaneSavedSessions> crazeSaved({required BridgeCrazeSource src}) =>
+    RustLib.instance.api.crateApiCrazeCrazeSaved(src: src);
+
+/// **Ensure the saved session `id` is running** — craze's `session.reopen
+/// {id}` (`id` exactly as [`craze_saved`] listed it: opaque), on a connection
+/// of its own, through shed-craze's rule: [`REOPEN_DEADLINE`] for each answer,
+/// a lost answer sent again ONCE, and a reopen that may have started the
+/// session waking the roster. It can take minutes, at worst two deadlines
+/// plus the dials, which the sheet says.
+///
+/// **The answer's row is integrated as a create's is**: the source keeps it
+/// as a created row — FRESH, so a tombstone for its hostId does not refuse it
+/// (plan 032 PC14f) — and this handle is nudged, so the snapshot lists the
+/// row, and a lane opens on its hostId ([`craze_lane_open`]), before the
+/// roster has caught up. `joined` says craze joined a session something
+/// already ran rather than starting one.
+///
+/// **Refusals keep [`BridgeLaneReopenError`]'s split** — what a client DOES
+/// next, never read from text: `Gone` (drop the row), `StartFailed` (show the
+/// cause, keep the row), `Unavailable` (transient — a lost answer included —
+/// offer Retry), `Lane` (anything else, keep the row). A hub without `reopen`
+/// is `Unavailable` in the older-hub words, nothing sent.
+///
+/// **This handle's close is `Unavailable` too, before the reopen or during
+/// it**: closed before, nothing was sent; closed while it ran, craze may have
+/// the reopen — and runs it on regardless (no cancellation) — but a reopen
+/// means "ensure it runs", so trying again joins whatever it started (PC14d).
+/// Nothing else is distinct about it, so nothing else tells it apart.
+///
+/// [`REOPEN_DEADLINE`]: shed_craze::REOPEN_DEADLINE
+Future<BridgeLaneReopened> crazeReopen({
+  required BridgeCrazeSource src,
+  required String id,
+}) => RustLib.instance.api.crateApiCrazeCrazeReopen(src: src, id: id);
+
 /// **Open one craze session's transcript** — the source's lane on `host_id`
 /// (the row's id, P11), as the SAME [`BridgeLane`] an opencode lane is, so every
 /// `lane_*` verb serves it.
@@ -222,8 +267,9 @@ class BridgeCrazeOffline {
 /// * `offline` — why it is not live, once it has said; `None` while it has
 ///   never said anything (connecting). `NotInstalled` is QUIET (the machine
 ///   simply has no craze); `TooOld` asks the person to update craze there.
-/// * `caps` — what a create may do here (`create`, `create_options`), from
-///   the hub's `hello`; `None` until a seed carried them.
+/// * `caps` — what a create may do here (`create`, `create_options`), and
+///   whether saved sessions can be reopened (`reopen`), from the hub's
+///   `hello`; `None` until a seed carried them.
 /// * `truncated` — the hub cut its roster to a bound of its own.
 class BridgeCrazeSnapshot {
   final List<BridgeLaneSession> rows;

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/features/craze/craze_create.dart';
 import 'package:shed_mobile/features/craze/craze_create_sheet.dart';
+import 'package:shed_mobile/features/craze/craze_resume.dart';
 import 'package:shed_mobile/features/create/create_rc_target.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/rc/create_rc_screen.dart';
@@ -176,6 +177,65 @@ class _FakeFeed implements MachineFeed {
   int builds = 0;
   int disposals = 0;
 
+  /// The feed's incarnation (`MachineFeed.incarnation`) — a cell that
+  /// rebuilds the feed provider onto ANOTHER fake gives it a larger one.
+  @override
+  int incarnation = 1;
+
+  /// What `crazeSavedSessions` answers, in turn: a [BridgeLaneSavedSessions],
+  /// an error to throw, or a [Completer] whose value (or error) is the
+  /// answer.
+  final savedAnswers = <Object>[];
+  int savedReads = 0;
+
+  /// Every reopen this feed was asked for, by saved id, in order.
+  final reopens = <String>[];
+
+  /// What each reopen answers, in turn: a [BridgeLaneReopened], an error to
+  /// throw, or a [Completer] whose value (or error) is the answer.
+  final reopenAnswers = <Object>[];
+
+  /// A reopened session is listed — the real feed folds it in before it
+  /// returns. False: it ended again before it was listed.
+  bool listReopened = true;
+
+  /// The reopen's answer came through a craze source the feed has let go of.
+  bool reopenSuperseded = false;
+
+  /// The next of [answers]' scripted answers: a [T], an error to throw, or a
+  /// [Completer] whose value (or error) is the answer.
+  static Future<T> _next<T extends Object>(List<Object> answers) async {
+    var answer = answers.removeAt(0);
+    if (answer is Completer<Object>) answer = await answer.future;
+    if (answer is! T) throw answer;
+    return answer;
+  }
+
+  /// List [session] — as the real feed folds a created or reopened row in
+  /// before it returns.
+  void _list(BridgeLaneSession session) => _state = _state.copyWith(
+    craze: BridgeCrazeSnapshot(
+      rows: [..._state.craze!.rows, session],
+      live: true,
+      caps: _live.caps,
+      truncated: false,
+    ),
+  );
+
+  @override
+  Future<BridgeLaneSavedSessions> crazeSavedSessions() {
+    savedReads++;
+    return _next(savedAnswers);
+  }
+
+  @override
+  Future<CrazeReopenAnswer> crazeReopenSession(String id) async {
+    reopens.add(id);
+    final answer = await _next<BridgeLaneReopened>(reopenAnswers);
+    if (listReopened && !reopenSuperseded) _list(answer.session);
+    return (reopened: answer, superseded: reopenSuperseded);
+  }
+
   @override
   MachineRecord get machine => _mini3;
 
@@ -216,19 +276,8 @@ class _FakeFeed implements MachineFeed {
   }) async {
     requests.add(request);
     replays.add(held);
-    var answer = answers.removeAt(0);
-    if (answer is Completer<Object>) answer = await answer.future;
-    if (answer is! BridgeLaneCreated) throw answer;
-    if (listCreated) {
-      _state = _state.copyWith(
-        craze: BridgeCrazeSnapshot(
-          rows: [..._state.craze!.rows, answer.session],
-          live: true,
-          caps: _live.caps,
-          truncated: false,
-        ),
-      );
-    }
+    final answer = await _next<BridgeLaneCreated>(answers);
+    if (listCreated) _list(answer.session);
     return answer;
   }
 
@@ -275,16 +324,23 @@ final _lanes = <(String, String, String)>[];
 
 /// Pump a navigator whose home pushes the create screen for mini3 (so a
 /// created session's transcript REPLACES it, and a pop returns home).
+///
+/// [then] are the feeds the provider builds AFTER [feed], in turn (the last
+/// one again past the end): a cell that rebuilds the feed provider — the
+/// machine removed and added again — gets a new incarnation.
 Future<ProviderContainer> _pump(
   WidgetTester tester,
   _FakeFeed feed, {
   _Mint? mint,
   bool open = true,
+  List<_FakeFeed> then = const [],
 }) async {
   _lanes.clear();
   await tester.binding.setSurfaceSize(const Size(500, 1400));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final m = mint ?? _Mint();
+  final feeds = [feed, ...then];
+  var built = 0;
   await tester.pumpWidget(
     ProviderScope(
       retry: (_, _) => null,
@@ -292,15 +348,18 @@ Future<ProviderContainer> _pump(
         machinesProvider.overrideWith((ref) async => const [_mini3]),
         identitiesProvider.overrideWith((ref) async => <SSHKeyPair>[]),
         machineFeedControllerProvider('mini3').overrideWith((ref) {
-          feed.builds++;
-          ref.onDispose(() => feed.disposals++);
-          return feed;
+          final f = feeds[built < feeds.length ? built : feeds.length - 1];
+          built++;
+          f.builds++;
+          ref.onDispose(() => f.disposals++);
+          return f;
         }),
         // The state stream holds the feed, as production's does.
         machineFeedProvider('mini3').overrideWith((ref) async* {
-          ref.watch(machineFeedControllerProvider('mini3'));
-          yield feed.state;
-          yield* feed.changes.stream;
+          final f =
+              ref.watch(machineFeedControllerProvider('mini3')) as _FakeFeed;
+          yield f.state;
+          yield* f.changes.stream;
         }),
         crazeRequestIdMintProvider.overrideWithValue(m.call),
         laneStateProvider.overrideWith((ref, key) {
@@ -352,6 +411,18 @@ Future<void> _chooseCraze(WidgetTester tester) async {
   await _settle(tester);
 }
 
+/// Press Back and stop partway through the create screen's reverse
+/// animation: the screen — and the sheet in it, its listeners live — still
+/// mounted, its route no longer the current one.
+Future<void> _leaveMidway(WidgetTester tester) async {
+  await tester.pageBack();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  final sheet = find.byType(CrazeCreateSheet, skipOffstage: false);
+  expect(sheet, findsOneWidget, reason: 'still animating away');
+  expect(ModalRoute.isCurrentOf(tester.element(sheet)), isFalse);
+}
+
 Finder _key(String k) => find.byKey(ValueKey(k));
 
 bool _submitEnabled(WidgetTester tester) {
@@ -364,26 +435,22 @@ bool _submitEnabled(WidgetTester tester) {
   return button.onPressed != null;
 }
 
-String _submitLabel(WidgetTester tester) => tester
-    .widget<Text>(
-      find.descendant(
-        of: _key('craze-create-submit'),
-        matching: find.byType(Text),
-      ),
-    )
+/// The label of the button at [key].
+String _buttonLabel(WidgetTester tester, String key) => tester
+    .widget<Text>(find.descendant(of: _key(key), matching: find.byType(Text)))
     .data!;
 
-bool _selected(WidgetTester tester, String provider) => tester
-    .widget<Semantics>(
-      find
-          .descendant(
-            of: _key('craze-provider-$provider'),
-            matching: find.byType(Semantics),
-          )
-          .first,
-    )
-    .properties
-    .selected!;
+String _submitLabel(WidgetTester tester) =>
+    _buttonLabel(tester, 'craze-create-submit');
+
+/// The semantics of the control at [key].
+Semantics _semanticsAt(WidgetTester tester, String key) =>
+    tester.widget<Semantics>(
+      find.descendant(of: _key(key), matching: find.byType(Semantics)).first,
+    );
+
+bool _selected(WidgetTester tester, String provider) =>
+    _semanticsAt(tester, 'craze-provider-$provider').properties.selected!;
 
 String _field(WidgetTester tester, String key) =>
     tester.widget<TextField>(_key(key)).controller!.text;
@@ -1262,6 +1329,36 @@ void main() {
     expect(find.byType(LaneScreen), findsNothing);
   });
 
+  testWidgets('CONTROL: a create landing while the sheet is LEAVING — Back '
+      'pressed, its screen still animating away — navigates nowhere: the '
+      'screen beneath stays, the draft still spent', (tester) async {
+    final pending = Completer<Object>();
+    final feed = _FakeFeed()..answers.add(pending);
+    final container = await _pump(tester, feed);
+    await _chooseCraze(tester);
+    await _type(tester, 'craze-create-cwd', '/w/leaving');
+    await _submit(tester);
+
+    await _leaveMidway(tester);
+    pending.complete(_created());
+    await tester.pump();
+    expect(
+      find.byType(CrazeCreateSheet, skipOffstage: false),
+      findsOneWidget,
+      reason: 'it landed while the sheet was still mounted',
+    );
+    expect(container.read(crazeDraftProvider('mini3')).lastCreated, isNotNull);
+
+    await _settle(tester);
+    expect(find.byType(LaneScreen), findsNothing, reason: 'nothing pushed');
+    expect(find.byType(CreateRcScreen), findsNothing, reason: 'Back finished');
+    expect(_key('open-create'), findsOneWidget, reason: 'the screen beneath');
+    final draft = container.read(crazeDraftProvider('mini3'));
+    expect(draft.phase, CrazePhase.idle);
+    expect(draft.cwd, '', reason: 'spent: the session is simply a row');
+    expect(draft.lastCreated?.hostId, _newHost);
+  });
+
   testWidgets('an unknown outcome reopens on the craze choice', (tester) async {
     final feed = _FakeFeed()
       ..answers.add(const BridgeLaneError.outcomeUnknown(msg: 'lost'));
@@ -1276,4 +1373,531 @@ void main() {
     expect(_text(tester, 'craze-create-unknown'), outcomeUnknownNote);
     expect(_submitLabel(tester), 'Try again');
   });
+
+  // -------------------------------------------------------------------------
+  // Resume (plan 032 §3.4, M3)
+  // -------------------------------------------------------------------------
+
+  group('Resume', () {
+    testWidgets('CONTROL: New | Resume is offered exactly where the options '
+        'say reopen, and the sheet opens on New', (tester) async {
+      final feed = _FakeFeed()..options = _recipeReopen;
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      expect(_key('craze-mode'), findsOneWidget);
+      expect(_modeSelected(tester, 'new'), isTrue);
+      expect(_modeEnabled(tester, 'resume'), isTrue);
+      expect(_key('craze-create-submit'), findsOneWidget, reason: 'New');
+      expect(feed.savedReads, 0, reason: 'nothing read until Resume');
+    });
+
+    testWidgets('a hub before 0.2.0 (no reopen) offers no Resume', (
+      tester,
+    ) async {
+      await _pump(tester, _FakeFeed());
+      await _chooseCraze(tester);
+      expect(_key('craze-create-sheet'), findsOneWidget);
+      expect(_key('craze-mode'), findsNothing);
+      expect(_key('craze-create-submit'), findsOneWidget);
+    });
+
+    testWidgets('CONTROL: Resume reads the list on its FIRST choice — the '
+        'title (or Untitled), provider, workspace with the home as ~, age, '
+        'and "Showing the 50 most recent."', (tester) async {
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList(more: true));
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      expect(feed.savedReads, 1);
+      expect(_modeSelected(tester, 'resume'), isTrue);
+      expect(
+        _key('craze-create-submit'),
+        findsNothing,
+        reason: 'no Create in the Resume half',
+      );
+      expect(_text(tester, 'craze-saved-title-$_savedA'), 'fix the parser');
+      expect(_text(tester, 'craze-saved-title-$_savedB'), 'Untitled');
+      expect(_text(tester, 'craze-saved-provider-$_savedA'), 'grok');
+      expect(
+        _text(tester, 'craze-saved-workspace-$_savedA'),
+        '~/proj',
+        reason: 'the feed\'s home, shortened',
+      );
+      expect(
+        _text(tester, 'craze-saved-workspace-$_savedB'),
+        '/srv/other',
+        reason: 'not under the home: whole',
+      );
+      expect(_text(tester, 'craze-saved-updated-$_savedA'), '5 min ago');
+      expect(_text(tester, 'craze-saved-more'), 'Showing the 50 most recent.');
+      expect(_resumeLabel(tester, _savedA), 'Resume');
+      expect(_resumeEnabled(tester, _savedA), isTrue);
+
+      // New and back: read once, not again.
+      await _chooseMode(tester, 'new');
+      expect(_key('craze-create-submit'), findsOneWidget);
+      await _chooseMode(tester, 'resume');
+      expect(feed.savedReads, 1, reason: 'not again until the sheet reopens');
+    });
+
+    testWidgets('a failed list read says why; its Retry reads again', (
+      tester,
+    ) async {
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.addAll([
+          const BridgeLaneError.unavailable(msg: 'the hub is busy'),
+          _savedList(),
+        ]);
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      expect(
+        _text(tester, 'craze-saved-list-error'),
+        'craze could not list saved sessions: the hub is busy',
+      );
+      await tester.tap(_key('craze-saved-list-retry'));
+      await _settle(tester);
+      expect(feed.savedReads, 2);
+      expect(_key('craze-saved-title-$_savedA'), findsOneWidget);
+    });
+
+    testWidgets('CONTROL: a Resume runs one reopen — "Resuming… (this can '
+        'take a few minutes)", every other button and the mode disabled — '
+        'and opens the transcript at once', (tester) async {
+      final pending = Completer<Object>();
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.add(pending);
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+
+      expect(feed.reopens, [_savedA]);
+      expect(
+        _resumeLabel(tester, _savedA),
+        'Resuming… (this can take a few minutes)',
+      );
+      expect(_resumeEnabled(tester, _savedA), isFalse);
+      expect(
+        _resumeEnabled(tester, _savedB),
+        isFalse,
+        reason: 'one at a time: the other row waits',
+      );
+      expect(_modeEnabled(tester, 'new'), isFalse, reason: 'the mode waits');
+      expect(_key('craze-resume-leaving'), findsOneWidget);
+      // Pressed anyway, the other row's button sends nothing.
+      await tester.tap(_key('craze-saved-resume-$_savedB'));
+      await _settle(tester);
+      expect(feed.reopens, [_savedA]);
+
+      pending.complete(_reopened());
+      await _settle(tester);
+      expect(find.byType(LaneScreen), findsOneWidget);
+      expect(_lanes.last, ('mini3', 'craze', _reopenedHost));
+      expect(find.byType(CreateRcScreen), findsNothing, reason: 'replaced');
+    });
+
+    testWidgets('CONTROL: gone drops the row and says why where it was; '
+        'start_failed keeps it with craze\'s cause; every button works '
+        'again', (tester) async {
+      const words = 'the session\'s directory /home/me/proj is gone';
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.addAll([
+          const BridgeLaneReopenError.gone(msg: words),
+          const BridgeLaneReopenError.startFailed(
+            msg: 'could not start: grok exited\nsee its log',
+          ),
+        ]);
+      final container = await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+      expect(_key('craze-saved-$_savedA'), findsNothing, reason: 'dropped');
+      expect(
+        _text(tester, 'craze-saved-gone'),
+        '“fix the parser” cannot run here any more, so it was removed: '
+        '$words',
+      );
+      expect(_resumeEnabled(tester, _savedB), isTrue);
+      expect(_modeEnabled(tester, 'new'), isTrue);
+
+      await _resume(tester, _savedB);
+      expect(_key('craze-saved-$_savedB'), findsOneWidget, reason: 'kept');
+      expect(
+        _text(tester, 'craze-saved-error-$_savedB'),
+        'could not start: grok exited\nsee its log',
+        reason: 'the cause, verbatim',
+      );
+      expect(
+        tester.widget(_key('craze-saved-error-$_savedB')),
+        isA<SelectableText>(),
+        reason: 'monospace and selectable, as the create\'s cause',
+      );
+      expect(_resumeLabel(tester, _savedB), 'Resume');
+      expect(_resumeEnabled(tester, _savedB), isTrue);
+      expect(find.byType(LaneScreen), findsNothing);
+      expect(
+        container.read(crazeResumeProvider('mini3')).gone,
+        isNull,
+        reason: 'the next reopen cleared the gone note',
+      );
+    });
+
+    testWidgets('CONTROL: unavailable — a lost answer — offers Retry, the row '
+        'kept, and Retry reopens it', (tester) async {
+      const lost =
+          'the reopen\'s answer was lost; the session may already be running '
+          '— Retry is safe';
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.addAll([
+          const BridgeLaneReopenError.unavailable(msg: lost),
+          _reopened(joined: true),
+        ]);
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+      expect(_resumeLabel(tester, _savedA), 'Retry');
+      expect(_text(tester, 'craze-saved-error-$_savedA'), '$lost — Retry');
+      expect(_key('craze-saved-$_savedA'), findsOneWidget);
+
+      await _resume(tester, _savedA);
+      expect(feed.reopens, [_savedA, _savedA]);
+      expect(find.byType(LaneScreen), findsOneWidget);
+    });
+
+    testWidgets('a superseded answer opens nothing and is said on its row', (
+      tester,
+    ) async {
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.add(_reopened())
+        ..reopenSuperseded = true;
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+      expect(find.byType(LaneScreen), findsNothing);
+      expect(_text(tester, 'craze-saved-error-$_savedA'), supersededNote);
+      expect(_resumeLabel(tester, _savedA), 'Resume');
+      expect(_resumeEnabled(tester, _savedA), isTrue);
+    });
+
+    testWidgets('a reopened session that ended again before it was listed '
+        'opens nothing: said, and the screen closes', (tester) async {
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.add(_reopened())
+        ..listReopened = false;
+      await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+      expect(find.byType(LaneScreen), findsNothing);
+      expect(find.byType(CreateRcScreen), findsNothing);
+      expect(find.text(resumedEnded), findsOneWidget);
+    });
+
+    testWidgets('leaving while a reopen runs keeps it running and its feed '
+        'held; a re-open finds it Resuming…; landing with no sheet on screen '
+        'opens nothing', (tester) async {
+      final pending = Completer<Object>();
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.addAll([_savedList(), _savedList()])
+        ..reopenAnswers.add(pending);
+      final container = await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+
+      await tester.pageBack();
+      await _settle(tester);
+      expect(find.byType(CreateRcScreen), findsNothing);
+      expect(feed.disposals, 0, reason: 'the reopen in flight holds its feed');
+
+      // Re-open: straight onto the craze choice, Resume, still running.
+      await _open(tester);
+      expect(_key('craze-create-sheet'), findsOneWidget);
+      expect(_modeSelected(tester, 'resume'), isTrue);
+      expect(
+        _resumeLabel(tester, _savedA),
+        'Resuming… (this can take a few minutes)',
+      );
+      expect(feed.savedReads, 1, reason: 'the list as it was left');
+
+      // Leave again; the answer lands with no sheet on screen.
+      await tester.pageBack();
+      await _settle(tester);
+      pending.complete(_reopened());
+      await _settle(tester);
+      expect(find.byType(LaneScreen), findsNothing);
+      expect(feed.reopens, [_savedA], reason: 'one reopen, never two');
+      expect(feed.disposals, 1, reason: 'the feed let go once it settled');
+      final r = container.read(crazeResumeProvider('mini3'));
+      expect(resumingId(r), isNull);
+      expect(r.landed?.hostId, _reopenedHost);
+
+      // A later open starts on New, nothing running, and opens nothing.
+      await _open(tester);
+      await _chooseCraze(tester);
+      expect(_modeSelected(tester, 'new'), isTrue);
+      expect(find.byType(LaneScreen), findsNothing);
+      await _chooseMode(tester, 'resume');
+      expect(feed.savedReads, 2, reason: 'read afresh');
+    });
+
+    testWidgets('CONTROL: a reopen landing while the sheet is LEAVING — Back '
+        'pressed, its screen still animating away — navigates nowhere: the '
+        'screen beneath stays, and the landing is kept', (tester) async {
+      final pending = Completer<Object>();
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.addAll([_savedList(), _savedList()])
+        ..reopenAnswers.add(pending);
+      final container = await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+
+      await _leaveMidway(tester);
+      pending.complete(_reopened());
+      await tester.pump();
+      expect(
+        find.byType(CrazeCreateSheet, skipOffstage: false),
+        findsOneWidget,
+        reason: 'it landed while the sheet was still mounted',
+      );
+      expect(
+        container.read(crazeResumeProvider('mini3')).landed?.landing,
+        ReopenLanding.open,
+      );
+
+      await _settle(tester);
+      expect(find.byType(LaneScreen), findsNothing, reason: 'nothing pushed');
+      expect(
+        find.byType(CreateRcScreen),
+        findsNothing,
+        reason: 'Back finished',
+      );
+      expect(_key('open-create'), findsOneWidget, reason: 'the screen beneath');
+      expect(feed.reopens, [_savedA], reason: 'one reopen, never two');
+      final r = container.read(crazeResumeProvider('mini3'));
+      expect(resumingId(r), isNull, reason: 'the state landed all the same');
+      expect(r.landed?.hostId, _reopenedHost);
+
+      // A later open starts on New, nothing running, and opens nothing.
+      await _open(tester);
+      await _chooseCraze(tester);
+      expect(_modeSelected(tester, 'new'), isTrue);
+      expect(find.byType(LaneScreen), findsNothing);
+    });
+
+    testWidgets('CONTROL: an ENDED reopen landing while the sheet is leaving '
+        'pops nothing — the screen beneath stays', (tester) async {
+      final pending = Completer<Object>();
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.add(pending)
+        ..listReopened = false;
+      final container = await _pump(tester, feed);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+
+      await _leaveMidway(tester);
+      pending.complete(_reopened());
+      await tester.pump();
+      expect(
+        find.byType(CrazeCreateSheet, skipOffstage: false),
+        findsOneWidget,
+        reason: 'it landed while the sheet was still mounted',
+      );
+      expect(
+        container.read(crazeResumeProvider('mini3')).landed?.landing,
+        ReopenLanding.ended,
+      );
+
+      await _settle(tester);
+      expect(
+        find.byType(CreateRcScreen),
+        findsNothing,
+        reason: 'Back finished',
+      );
+      expect(
+        _key('open-create'),
+        findsOneWidget,
+        reason: 'the screen beneath is not popped',
+      );
+      expect(find.text(resumedEnded), findsNothing, reason: 'nothing said');
+    });
+
+    testWidgets('CONTROL: a feed rebuilt while a reopen runs is a new '
+        'incarnation: the sheet starts afresh on New, and the old reopen\'s '
+        'late answer is dropped whole', (tester) async {
+      final pending = Completer<Object>();
+      final feed = _FakeFeed()
+        ..options = _recipeReopen
+        ..savedAnswers.add(_savedList())
+        ..reopenAnswers.add(pending);
+      final next = _FakeFeed()
+        ..incarnation = 2
+        ..options = _recipeReopen;
+      final container = await _pump(tester, feed, then: [next]);
+      await _chooseCraze(tester);
+      await _chooseMode(tester, 'resume');
+      await _resume(tester, _savedA);
+      expect(_modeEnabled(tester, 'new'), isFalse);
+
+      // The machine removed and added again under the same name.
+      container.invalidate(machineFeedControllerProvider('mini3'));
+      await _settle(tester);
+      expect(next.builds, 1);
+      final fresh = container.read(crazeResumeProvider('mini3'));
+      expect(fresh.gen, 2);
+      expect(fresh.mode, CrazeSheetMode.newSession);
+      expect(resumingId(fresh), isNull, reason: 'nothing running here');
+      expect(_modeSelected(tester, 'new'), isTrue);
+      expect(_modeEnabled(tester, 'resume'), isTrue, reason: 'not locked');
+
+      // The old incarnation's answer, late: no state change, no navigation.
+      pending.complete(_reopened());
+      await _settle(tester);
+      expect(find.byType(LaneScreen), findsNothing);
+      expect(container.read(crazeResumeProvider('mini3')).landed, isNull);
+      expect(container.read(crazeResumeProvider('mini3')).gen, 2);
+    });
+
+    testWidgets('the drive log names the mode, the rows and each row\'s state; '
+        'MRESULT says each read and reopen', (tester) async {
+      final lines = <String>[];
+      final saved = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) lines.add(message);
+      };
+      try {
+        final pending = Completer<Object>();
+        final feed = _FakeFeed()
+          ..options = _recipeReopen
+          ..savedAnswers.add(_savedList(more: true))
+          ..reopenAnswers.add(pending);
+        await _pump(tester, feed);
+        await _chooseCraze(tester);
+        String state() => lines.lastWhere(
+          (l) => l.startsWith('MSTATE screen=craze-create machine='),
+        );
+        expect(state(), contains(' mode=new modes=on saved=unloaded rows=- '));
+        await _chooseMode(tester, 'resume');
+        expect(lines, contains('MRESULT craze-saved ok'));
+        expect(
+          state(),
+          contains(
+            ' mode=resume modes=on saved=ready '
+            'rows=$_savedA:idle,$_savedB:idle more=true gone=-',
+          ),
+        );
+        await _resume(tester, _savedA);
+        expect(
+          state(),
+          contains(' modes=locked saved=ready rows=$_savedA:resuming,'),
+        );
+        pending.complete(const BridgeLaneReopenError.startFailed(msg: 'x'));
+        await _settle(tester);
+        expect(lines, isNot(contains('MRESULT craze-resume ok')));
+        expect(lines, contains(startsWith('MRESULT craze-resume error=')));
+        expect(state(), contains('rows=$_savedA:refused,$_savedB:idle'));
+      } finally {
+        debugPrint = saved;
+      }
+    });
+  });
 }
+
+/// The recipe's create options from a 0.2.0 hub: it can reopen.
+const _recipeReopen = BridgeLaneCreateOptions(
+  providers: [
+    BridgeLaneProvider(
+      id: 'grok',
+      label: 'grok',
+      state: BridgeLaneProviderState.ready(),
+    ),
+  ],
+  defaultProvider: 'grok',
+  recentDirs: ['/home/u/proj'],
+  reopen: true,
+);
+
+/// The saved sessions' ids: one titled, under the home; one untitled, not.
+const _savedA = '0192f0aa-a';
+const _savedB = 'grok:legacy';
+
+/// The hostId a reopen answers with.
+const _reopenedHost = 'dddddddddddd';
+
+/// craze's saved list: [_savedA] last active five minutes ago, [_savedB]
+/// yesterday.
+BridgeLaneSavedSessions _savedList({bool more = false}) {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  return BridgeLaneSavedSessions(
+    sessions: [
+      BridgeLaneSavedSession(
+        id: _savedA,
+        provider: 'grok',
+        workspace: '/home/me/proj',
+        title: 'fix the parser',
+        updatedUnixMs: now - 5 * 60 * 1000 - 1000,
+      ),
+      BridgeLaneSavedSession(
+        id: _savedB,
+        provider: 'grok',
+        workspace: '/srv/other',
+        updatedUnixMs: now - 30 * 3600 * 1000,
+      ),
+    ],
+    more: more,
+  );
+}
+
+BridgeLaneReopened _reopened({bool joined = false}) => BridgeLaneReopened(
+  session: _session(_reopenedHost, cwd: '/home/me/proj'),
+  joined: joined,
+);
+
+Future<void> _chooseMode(WidgetTester tester, String mode) async {
+  await tester.tap(_key('craze-mode-$mode'));
+  await _settle(tester);
+}
+
+/// Press the saved row [id]'s Resume (or Retry).
+Future<void> _resume(WidgetTester tester, String id) async {
+  final button = _key('craze-saved-resume-$id');
+  await tester.ensureVisible(button);
+  await tester.pump();
+  await tester.tap(button);
+  await _settle(tester);
+}
+
+bool _modeSelected(WidgetTester tester, String mode) =>
+    _semanticsAt(tester, 'craze-mode-$mode').properties.selected!;
+
+bool _modeEnabled(WidgetTester tester, String mode) =>
+    _semanticsAt(tester, 'craze-mode-$mode').properties.enabled!;
+
+bool _resumeEnabled(WidgetTester tester, String id) =>
+    tester.widget<FilledButton>(_key('craze-saved-resume-$id')).onPressed !=
+    null;
+
+String _resumeLabel(WidgetTester tester, String id) =>
+    _buttonLabel(tester, 'craze-saved-resume-$id');

@@ -671,6 +671,10 @@ typedef CrazeSourceOpen =
       required int port,
     });
 
+/// What [MachineFeed.crazeReopenSession] answers: craze's answer, and whether
+/// it came through a craze source the feed has since let go of (see there).
+typedef CrazeReopenAnswer = ({BridgeLaneReopened reopened, bool superseded});
+
 /// A craze source's nudge stream — `crazeSourceNudges`' own signature. A seam
 /// so a harness can DELAY the nudges and prove that what must not wait for one
 /// (a created session's row, [MachineFeed.crazeCreateSession]) does not.
@@ -750,6 +754,22 @@ class MachineFeed {
   final MachineRecord machine;
   final List<SSHKeyPair> identities;
   final HostKeyStore hostKeys;
+
+  static int _incarnations = 0;
+
+  /// **Which incarnation of this machine's feed this is** — a number no
+  /// other feed of this app run carries, and larger for a later one (plan
+  /// 032 §3.4, the desktop's `source_gen`).
+  ///
+  /// A machine's address alone does not name it: a machine removed and added
+  /// again under the same name is a new one, and so is a feed rebuilt for any
+  /// other reason — each a new object, with craze sources of its own. What
+  /// the app keeps per machine ABOVE the feed (the create sheet's Resume
+  /// state) is bound to the incarnation an answer came through, so nothing an
+  /// older one left running lands on a newer one. A [stop]/[start] cycle
+  /// (backgrounding) is the SAME incarnation: the feed, and what it is
+  /// for, is unchanged.
+  final int incarnation = ++_incarnations;
 
   /// **What this app run bootstrapped** — shared with every other feed, because
   /// the claim belongs to the app rather than to this object.
@@ -1194,15 +1214,20 @@ class MachineFeed {
     return crazeLaneOpen(src: source, hostId: hostId);
   }
 
-  /// What a craze create can start on this machine — its own connection,
-  /// owned by this feed: a [dispose] cuts it short.
-  Future<BridgeLaneCreateOptions> crazeOptions() async {
+  /// The machine's craze source — or a [StateError], before anything is
+  /// sent, while it has none.
+  BridgeCrazeSource _connectedCraze() {
     final source = _crazeSource;
     if (source == null) {
       throw StateError('craze is not connected on ${machine.name}');
     }
-    return crazeCreateOptions(src: source);
+    return source;
   }
+
+  /// What a craze create can start on this machine — its own connection,
+  /// owned by this feed: a [dispose] cuts it short.
+  Future<BridgeLaneCreateOptions> crazeOptions() async =>
+      crazeCreateOptions(src: _connectedCraze());
 
   /// The login user's home directory on this machine — what a `~` typed into
   /// the craze create sheet stands for, since craze's hub takes only absolute
@@ -1310,10 +1335,7 @@ class MachineFeed {
     BridgeLaneCreateRequest request, {
     bool held = false,
   }) async {
-    final source = _crazeSource;
-    if (source == null) {
-      throw StateError('craze is not connected on ${machine.name}');
-    }
+    final source = _connectedCraze();
     final created = held
         ? await crazeCreateHeld(src: source, request: request)
         : await crazeCreate(src: source, request: request);
@@ -1321,6 +1343,44 @@ class MachineFeed {
     // its own pull, and reading a retired handle would emit its last view.
     if (identical(source, _crazeSource)) _pullCraze(_generation);
     return created;
+  }
+
+  /// The saved sessions a resume can run again here — craze's
+  /// `sessions.saved`, newest first, on a connection of its own owned by this
+  /// feed (a [dispose] cuts it short), as [crazeOptions] reads the create
+  /// options (plan 032 §3.4).
+  ///
+  /// Throws a [StateError] — before anything is sent — while the machine has
+  /// no craze source.
+  Future<BridgeLaneSavedSessions> crazeSavedSessions() async =>
+      crazeSaved(src: _connectedCraze());
+
+  /// **Ensure the saved session [id] is running** — craze's `session.reopen`,
+  /// on a connection of its own owned by this feed (plan 032 §3.4). It can
+  /// take minutes; a lost answer is sent again once, in Rust.
+  ///
+  /// **The session's row is in [state] when this returns**, exactly as a
+  /// created one's is ([crazeCreateSession]): the source keeps the answer's
+  /// row (a fresh created row), and this reads the source's snapshot right
+  /// after the reopen, so the transcript opened next finds its row at once —
+  /// and a row this read does NOT list is a session that ended again before
+  /// it was listed.
+  ///
+  /// `superseded`: the answer came through a craze source this feed no longer
+  /// has (it was stopped or restarted while the reopen ran) — the session
+  /// runs, but its row is the retired source's, so nothing is folded and a
+  /// caller opens nothing on it; a Resume again joins it through the source
+  /// there is now.
+  ///
+  /// Throws the bridge's [BridgeLaneReopenError] for a refusal, and a
+  /// [StateError] — before anything is sent — while the machine has no craze
+  /// source.
+  Future<CrazeReopenAnswer> crazeReopenSession(String id) async {
+    final source = _connectedCraze();
+    final reopened = await crazeReopen(src: source, id: id);
+    final current = identical(source, _crazeSource);
+    if (current) _pullCraze(_generation);
+    return (reopened: reopened, superseded: !current);
   }
 
   /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an
