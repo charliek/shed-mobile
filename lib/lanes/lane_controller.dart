@@ -606,6 +606,7 @@ class LaneController {
           slashMenu: sameSlashMenu(_state.slashMenu, snap.slashMenu)
               ? _state.slashMenu
               : snap.slashMenu,
+          effortOption: snap.effortOption,
         ),
         settingsSeen: _framesBefore + _framesNow,
       ),
@@ -691,6 +692,20 @@ class LaneController {
         (handle) => source.set(handle, change),
         unknown: laneCommandOutcomeUnknown,
       );
+
+  /// **Set the effort from the composer** (plan 032 §3.2) — `/effort <level>`:
+  /// craze's `session.set` with [change], the shared rules' `SetEffort` (a
+  /// `Config` of the effort option, bound to the model the menu was resolved
+  /// on — so a session that has moved off it refuses `stale_model`).
+  ///
+  /// The composer's verb, exactly as [setMode] is: its refusal on
+  /// [LaneState.composerError], a lost answer as [laneCommandOutcomeUnknown],
+  /// never a sheet row's mark. And it ALWAYS sends, the current level
+  /// included — craze's rule for the inline level (a dropped no-op could lose
+  /// a concurrent change) — where the sheet's press on its current value
+  /// sends nothing ([pressSends]). Never throws.
+  Future<LaneVerbOutcome> setEffort(BridgeLaneSettingChange change) =>
+      setMode(change);
 
   /// Stop the turn in flight. `not_accepting` here means the turn ended between
   /// the render and the tap — an inline error next to the button, not a toast.

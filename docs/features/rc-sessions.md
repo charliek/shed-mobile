@@ -130,6 +130,30 @@ leaves if the session stops offering them.
 | A refusal | Shown on its own row; an option refused because the model changed under it says "the model changed; try again". Trying again is a new change. |
 | A lost answer | The connection dropped before craze answered: the change may have run, and it is never resent. The row says "not confirmed" until the session next says what its settings are (when the lane resumes), which replaces the mark with the real value. |
 | Closing | The marks belong to the transcript, not the sheet: closing the sheet while a change is in flight loses nothing. |
+| Where a model's effort lands | On a native session (craze 0.2.0's per-model effort facts), every model in the list but the current one carries a dim `effort → <level>` under its name: the level a switch to that model lands on — the session's last choice on it, else craze's memory of that model, else its default. A native model switch moves the effort with the model, so this says where to before the press. The current model shows none (its effort row does), and an ACP session (cursor, grok) states no facts, so its models show none. |
+
+**Which option is the effort** is not the phone's call: the shared core reads
+it (craze's own `EffortOption` rule) and the lane's snapshot names it, and the
+chip shows that option's value — the same reading the `/effort` command is
+judged by. A model whose options name none has no effort in its chip.
+
+### A craze session's `/` menu
+
+On a session whose capabilities say `slash`, a `/` draft opens a menu above the
+composer listing the commands the session can run (an empty draft offers a `/`
+button that starts one). What it lists, what a typed command does, and when a
+command is refused are the shared core's rules (`shed_app::slash_menu`, reached
+over the bridge — the phone decides none of it): a rename, a mode, Stop (behind
+its confirm), `/model` (the settings sheet), and the agent's own commands sent
+as prompts. A command that waits for the turn is dimmed while one runs, and
+refused "runs after this turn".
+
+| `/effort` | Behaviour |
+|---|---|
+| Shown | craze 0.2.0's builtin `/effort`, only while the session's current model has an effort option. A model switch is a settings change alone, the session's commands unchanged, and the row follows it: gone on a model with no effort (typed, it is refused "the current model has no effort setting"), back on one that has. |
+| Bare | `/effort` (Enter, or a tap on the row) opens the settings sheet, as `/model` does; the draft clears and nothing is sent. |
+| `/effort <level>` | Sets the effort from the composer: one `session.set` of the effort option, bound to the model the menu was resolved on, so a session that has moved to another model refuses it (shown in the composer, as a mode's refusal is). The level matches craze's way: its id exactly, else its id in any case, else its name; `default` is the model's default level, which only a native session's effort facts state. An inline level is **always sent**, even the current one — craze's rule, since a dropped no-op could lose a change made elsewhere at the same moment — where a press on the sheet's current value sends nothing. |
+| A level naming nothing | Refused in craze's own words (`no effort bogus: one of low, medium, high, xhigh`), the draft kept. It is judged before the turn: mid-turn, a level naming nothing is refused for that, a valid one "runs after this turn". |
 
 ## Kinds
 

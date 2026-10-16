@@ -330,6 +330,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneError dco_decode_box_autoadd_bridge_lane_error(dynamic raw);
+
+  @protected
+  BridgeLaneModelEffort dco_decode_box_autoadd_bridge_lane_model_effort(
+    dynamic raw,
+  );
+
+  @protected
   BridgeLaneSession dco_decode_box_autoadd_bridge_lane_session(dynamic raw);
 
   @protected
@@ -544,6 +552,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneError dco_decode_bridge_lane_error(dynamic raw);
 
   @protected
+  BridgeLaneModelEffort dco_decode_bridge_lane_model_effort(dynamic raw);
+
+  @protected
   BridgeLanePromptOutcome dco_decode_bridge_lane_prompt_outcome(dynamic raw);
 
   @protected
@@ -554,6 +565,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneQuestion dco_decode_bridge_lane_question(dynamic raw);
+
+  @protected
+  BridgeLaneReopenError dco_decode_bridge_lane_reopen_error(dynamic raw);
+
+  @protected
+  BridgeLaneReopened dco_decode_bridge_lane_reopened(dynamic raw);
+
+  @protected
+  BridgeLaneSavedSession dco_decode_bridge_lane_saved_session(dynamic raw);
+
+  @protected
+  BridgeLaneSavedSessions dco_decode_bridge_lane_saved_sessions(dynamic raw);
 
   @protected
   BridgeLaneSession dco_decode_bridge_lane_session(dynamic raw);
@@ -745,6 +768,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<BridgeLaneQuestion> dco_decode_list_bridge_lane_question(dynamic raw);
 
   @protected
+  List<BridgeLaneSavedSession> dco_decode_list_bridge_lane_saved_session(
+    dynamic raw,
+  );
+
+  @protected
   List<BridgeLaneSession> dco_decode_list_bridge_lane_session(dynamic raw);
 
   @protected
@@ -846,6 +874,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneCapabilities? dco_decode_opt_box_autoadd_bridge_lane_capabilities(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeLaneModelEffort? dco_decode_opt_box_autoadd_bridge_lane_model_effort(
     dynamic raw,
   );
 
@@ -1212,6 +1245,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeLaneError sse_decode_box_autoadd_bridge_lane_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneModelEffort sse_decode_box_autoadd_bridge_lane_model_effort(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLaneSession sse_decode_box_autoadd_bridge_lane_session(
     SseDeserializer deserializer,
   );
@@ -1514,6 +1557,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneError sse_decode_bridge_lane_error(SseDeserializer deserializer);
 
   @protected
+  BridgeLaneModelEffort sse_decode_bridge_lane_model_effort(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeLanePromptOutcome sse_decode_bridge_lane_prompt_outcome(
     SseDeserializer deserializer,
   );
@@ -1530,6 +1578,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneQuestion sse_decode_bridge_lane_question(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneReopenError sse_decode_bridge_lane_reopen_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneReopened sse_decode_bridge_lane_reopened(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSavedSession sse_decode_bridge_lane_saved_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneSavedSessions sse_decode_bridge_lane_saved_sessions(
     SseDeserializer deserializer,
   );
 
@@ -1795,6 +1863,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<BridgeLaneSavedSession> sse_decode_list_bridge_lane_saved_session(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<BridgeLaneSession> sse_decode_list_bridge_lane_session(
     SseDeserializer deserializer,
   );
@@ -1926,6 +1999,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneCapabilities? sse_decode_opt_box_autoadd_bridge_lane_capabilities(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeLaneModelEffort? sse_decode_opt_box_autoadd_bridge_lane_model_effort(
     SseDeserializer deserializer,
   );
 
@@ -2362,6 +2440,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_lane_error(
+    BridgeLaneError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_lane_model_effort(
+    BridgeLaneModelEffort self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_lane_session(
     BridgeLaneSession self,
     SseSerializer serializer,
@@ -2746,6 +2836,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_lane_model_effort(
+    BridgeLaneModelEffort self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_lane_prompt_outcome(
     BridgeLanePromptOutcome self,
     SseSerializer serializer,
@@ -2766,6 +2862,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_lane_question(
     BridgeLaneQuestion self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_reopen_error(
+    BridgeLaneReopenError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_reopened(
+    BridgeLaneReopened self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_saved_session(
+    BridgeLaneSavedSession self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_lane_saved_sessions(
+    BridgeLaneSavedSessions self,
     SseSerializer serializer,
   );
 
@@ -3109,6 +3229,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_bridge_lane_saved_session(
+    List<BridgeLaneSavedSession> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_bridge_lane_session(
     List<BridgeLaneSession> self,
     SseSerializer serializer,
@@ -3267,6 +3393,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bridge_lane_capabilities(
     BridgeLaneCapabilities? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_lane_model_effort(
+    BridgeLaneModelEffort? self,
     SseSerializer serializer,
   );
 

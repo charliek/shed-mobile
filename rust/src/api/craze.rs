@@ -970,8 +970,9 @@ mod tests {
     use serde_json::{json, Value};
     use shed_core::rc::RcActivity;
     use shed_craze::testing::{
-        attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0, roster_row,
-        session_caps, session_info, snapshot_at, HubEnd, ScriptedDial,
+        attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0,
+        reopen_hub_capabilities, roster_row, session_caps, session_info, snapshot_at, HubEnd,
+        ScriptedDial,
     };
 
     use crate::api::bridge_rt::live_counters;
@@ -1075,6 +1076,7 @@ mod tests {
             create: true,
             create_options: true,
             create_title: false,
+            reopen: false,
         }
     }
 
@@ -1404,6 +1406,8 @@ mod tests {
                 create_options: true,
                 // The fake hub's `hello` advertises `createTitle` (craze 0.1.1).
                 create_title: true,
+                // ...and, a 0.1.1 hello, no `reopen` (plan 032 §3.4).
+                reopen: false,
             })
         );
         assert!(
@@ -2205,6 +2209,59 @@ mod tests {
         assert_eq!(params["title"], json!("Held name"));
 
         craze_source_close(&src);
+        assert_eq!(live_counters().pending_craze_calls, 0);
+    }
+
+    /// **`reopen` rides the hub's `hello` across the bridge** (plan 032
+    /// §3.4, PC11): a 0.2.0 hub's says it, so the snapshot's source
+    /// capabilities and the create options — read from the SAME `hello` —
+    /// both carry `reopen`, which is what the create sheet gates its resume
+    /// mode on (M3); a 0.1.1 hub's says nothing, and both are false.
+    #[tokio::test]
+    async fn reopen_rides_the_hello_into_the_snapshot_and_the_create_options() {
+        let _g = test_guard();
+        for (caps, want) in [
+            (reopen_hub_capabilities(), true),
+            (full_hub_capabilities(), false),
+        ] {
+            let (dial, mut conns) = ScriptedDial::new();
+            let src = open_on("mini3".to_string(), dial);
+            let mut roster = next_conn(&mut conns).await;
+            roster.hello("epoch-1", caps.clone()).await;
+            roster.subscribed("sub-1", "epoch-1", json!([])).await;
+            assert!(
+                until(Duration::from_secs(10), || craze_source_snapshot(&src).live).await,
+                "{caps}: the seed never reached the snapshot"
+            );
+            assert_eq!(
+                craze_source_snapshot(&src).caps.map(|c| c.reopen),
+                Some(want),
+                "{caps}"
+            );
+
+            let script = async {
+                let mut hub = next_conn(&mut conns).await;
+                hub.hello("epoch-1", caps.clone()).await;
+                let req = hub.expect("sessions.createOptions").await;
+                hub.reply(
+                    &req,
+                    json!({"providers": [{"id": "grok", "label": "grok", "state": "ready"}]}),
+                )
+                .await;
+                hub
+            };
+            let (options, _hub) = tokio::time::timeout(Duration::from_secs(10), async {
+                tokio::join!(craze_create_options(&src), script)
+            })
+            .await
+            .expect("the create options answered in time");
+            let options = options.expect("the hub answered its options");
+            assert_eq!(options.reopen, want, "{caps}");
+            assert_eq!(options.providers[0].id, "grok");
+
+            craze_source_close(&src);
+        }
+        assert_eq!(live_counters().active_craze_sources, 0);
         assert_eq!(live_counters().pending_craze_calls, 0);
     }
 

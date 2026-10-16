@@ -39,6 +39,7 @@ const _recipe = BridgeLaneCreateOptions(
   ],
   defaultProvider: 'grok',
   recentDirs: ['/w/a', '/w/b'],
+  reopen: false,
 );
 
 BridgeLaneCreateOptions _with({
@@ -51,6 +52,7 @@ BridgeLaneCreateOptions _with({
   ],
   defaultProvider: defaultProvider,
   recentDirs: _recipe.recentDirs,
+  reopen: false,
 );
 
 /// A deterministic mint: `shed-id-1`, `shed-id-2`, …
@@ -75,6 +77,7 @@ BridgeCrazeSnapshot _snap({
     create: create,
     createOptions: createOptions,
     createTitle: false,
+    reopen: false,
   ),
   truncated: false,
 );

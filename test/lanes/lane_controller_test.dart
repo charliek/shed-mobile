@@ -946,6 +946,17 @@ void main() {
     test('sameSlashMenu compares by value, not by list identity', () {
       expect(sameSlashMenu(_menu(), _menu()), isTrue);
       expect(sameSlashMenu(_menu(), _menu(name: 'title')), isFalse);
+      // An effort picker's levels are a list too (plan 032): two fresh
+      // conversions of one picker are the same menu, another level is not.
+      expect(sameSlashMenu(_effortMenu(), _effortMenu()), isTrue);
+      expect(
+        sameSlashMenu(_effortMenu(), _effortMenu(levels: ['low', 'max'])),
+        isFalse,
+      );
+      expect(
+        sameSlashMenu(_effortMenu(), _effortMenu(forModel: 'glm-5.2')),
+        isFalse,
+      );
       expect(sameSlashMenu(null, null), isTrue);
       expect(sameSlashMenu(_menu(), null), isFalse);
       // The generated `==` alone says two equal menus differ.
@@ -1006,6 +1017,60 @@ void main() {
       rig.bridge.setTitleFailure = null;
       await rig.controller.setTitle('z');
       expect(rig.controller.state.composerError, isNull);
+    });
+
+    test('setEffort is the composer\'s verb (plan 032 §3.2): the current '
+        'level re-sends, and its refusal is the composer\'s — never a row '
+        'mark', () async {
+      final rig = await slashRig();
+      const low = BridgeLaneSettingChange.config(
+        id: 'effort',
+        value: 'low',
+        forModel: 'grok-4.6',
+      );
+      expect(await rig.controller.setEffort(low), _done());
+      expect(await rig.controller.setEffort(low), _done());
+      expect(rig.bridge.sets, [
+        low,
+        low,
+      ], reason: 'an inline level always sends');
+      expect(rig.controller.state.composerError, isNull);
+
+      // `stale_model` reaches a client as `not_accepting`: the composer's
+      // refusal, as a mode's is — the sheet's marks untouched.
+      rig.bridge.setFailure = const BridgeLaneError.notAccepting();
+      await rig.controller.setEffort(low);
+      expect(rig.controller.state.composerError?.code, 'LANE_NOT_ACCEPTING');
+      expect(rig.controller.state.settingMarks, isEmpty);
+
+      rig.bridge.setFailure = const BridgeLaneError.outcomeUnknown(msg: 'lost');
+      expect(
+        await rig.controller.setEffort(low),
+        _outcome<LaneVerbUnknown>(laneCommandOutcomeUnknown),
+      );
+      expect(rig.bridge.sets, hasLength(4), reason: 'never resent');
+    });
+
+    test('the effort option rides every snapshot verbatim — a null replaces '
+        'it (plan 032 PC14h)', () async {
+      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(),
+        effortOption: 'effort',
+      );
+      await rig.controller.open();
+      expect(rig.controller.state.effortOption, 'effort');
+
+      // A model with no effort option: the core names none, and the lane
+      // says none — never "keep what you had".
+      rig.bridge.onSnapshot = (_) => _snap(
+        capabilities: _settingsCaps,
+        settings: _settings(model: 'composer-2.5'),
+      );
+      rig.bridge.handles.single.nudges.deliver();
+      rig.pumpFrame();
+      expect(rig.controller.state.effortOption, isNull);
     });
 
     test('setMode sends on a session WITHOUT settings, re-selecting the same '
@@ -2153,6 +2218,7 @@ BridgeLaneSnapshot _snap({
   int settingsFrames = 0,
   List<BridgeLaneApproval> approvals = const [],
   BridgeSlashMenu? slashMenu,
+  String? effortOption,
 }) => BridgeLaneSnapshot(
   messages: messages,
   full: full,
@@ -2166,6 +2232,7 @@ BridgeLaneSnapshot _snap({
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
   slashMenu: slashMenu,
+  effortOption: effortOption,
 );
 
 /// A one-row `/` menu (plan 029): a builtin rename, freshly built — a new
@@ -2182,6 +2249,29 @@ BridgeSlashMenu _menu({String name = 'rename'}) => BridgeSlashMenu(
     ),
   ],
   hidden: const [BridgeSlashHidden(name: 'help', reason: 'not available')],
+);
+
+/// A one-row `/` menu holding craze 0.2.0's `/effort` (plan 032), freshly
+/// built — its levels a new list every call, as every FRB conversion's are.
+BridgeSlashMenu _effortMenu({
+  List<String> levels = const ['low', 'high'],
+  String forModel = 'grok-4.6',
+}) => BridgeSlashMenu(
+  rows: [
+    BridgeSlashMenuRow(
+      name: 'effort',
+      source: const BridgeSlashSource.builtin(),
+      arg: const BridgeSlashArg.optional(),
+      whileWorking: false,
+      action: BridgeSlashAction.effortPicker(
+        option: 'effort',
+        forModel: forModel,
+        levels: [for (final l in levels) BridgeLaneChoice(id: l, name: l)],
+        defaultLevel: 'high',
+      ),
+    ),
+  ],
+  hidden: const [],
 );
 
 /// A craze session that offers settings.

@@ -1288,19 +1288,24 @@ mod tests {
         assert_eq!(live_counters().active_lanes, 0);
     }
 
+    /// Plain choices named by their ids.
+    fn choices(ids: &[&str]) -> Vec<LaneChoice> {
+        ids.iter()
+            .map(|id| LaneChoice {
+                id: id.to_string(),
+                name: id.to_string(),
+                rank: None,
+                description: None,
+                effort: None,
+            })
+            .collect()
+    }
+
     /// A session's settings on `model`.
     fn on_model(model: &str) -> LaneSettings {
         LaneSettings {
             model: Some(model.to_string()),
-            models: ["grok", "fast"]
-                .into_iter()
-                .map(|id| LaneChoice {
-                    id: id.to_string(),
-                    name: id.to_string(),
-                    rank: None,
-                    description: None,
-                })
-                .collect(),
+            models: choices(&["grok", "fast"]),
             ..LaneSettings::default()
         }
     }
@@ -1412,6 +1417,117 @@ mod tests {
             reseeded.settings.and_then(|s| s.model).as_deref(),
             Some("grok")
         );
+
+        lane_close(&lane);
+        assert_eq!(live_counters().active_lanes, 0);
+    }
+
+    /// **`/effort` follows the settings, through the bridge** (plan 032 §3.2,
+    /// PC7, PC14h): the lane's snapshot names the shared rule's effort option
+    /// and lists the `/effort` row while the current model has one; a model
+    /// switch — a `Settings` alone, the catalog unchanged — takes both away,
+    /// the row refused with the shared reason, and the switch back returns
+    /// them. Nothing here reads an option's name: the phone's chip and menu
+    /// are this snapshot's answer.
+    #[test]
+    fn the_snapshot_names_the_effort_option_and_a_model_switch_moves_effort() {
+        use shed_core::lane::{
+            LaneSetting, LaneSlashArg, LaneSlashCatalog, LaneSlashKind, LaneSlashPicker,
+            LaneSlashRequires, LaneSlashRow, LaneSlashRun, LaneSlashSource,
+        };
+
+        use crate::api::dto_lane::BridgeSlashAction;
+
+        let _g = test_guard();
+        let lane = bare_lane();
+        let caps = LaneCapabilities {
+            kind: "craze".to_string(),
+            interject: true,
+            cancel: true,
+            approvals: true,
+            history_cursor: true,
+            settings: true,
+            stop: true,
+            slash: true,
+            set_title: true,
+        };
+        let catalog = LaneSlashCatalog {
+            rows: vec![LaneSlashRow {
+                name: "effort".to_string(),
+                description: Some("Set the effort".to_string()),
+                source: LaneSlashSource::Builtin,
+                plugin: None,
+                qualified: None,
+                requires: Some(LaneSlashRequires::Effort),
+                while_working: false,
+                run: LaneSlashRun {
+                    kind: LaneSlashKind::Picker,
+                    arg: LaneSlashArg::Optional,
+                    arg_hint: Some("<level>".to_string()),
+                    method: None,
+                    param: None,
+                    mode: None,
+                    picker: Some(LaneSlashPicker::Effort),
+                    reason: None,
+                    local: None,
+                },
+            }],
+        };
+        // grok: an `effort` select (craze's rank 0); fast: no effort at all.
+        let grok = LaneSettings {
+            options: vec![LaneSetting {
+                id: "effort".to_string(),
+                name: "Effort".to_string(),
+                category: "thought_level".to_string(),
+                current: "high".to_string(),
+                values: choices(&["low", "high"]),
+            }],
+            ..on_model("grok")
+        };
+        lane.inner.apply(&LaneEvent::Reset {
+            reason: "connect".to_string(),
+            generation: 1,
+        });
+        lane.inner
+            .apply(&LaneEvent::Capabilities { capabilities: caps });
+        lane.inner.apply(&LaneEvent::Slash { catalog });
+        lane.inner.apply(&LaneEvent::Settings {
+            settings: grok.clone(),
+        });
+        lane.inner.apply(&LaneEvent::Ready { generation: 1 });
+
+        let names = |snap: &BridgeLaneSnapshot| -> Vec<String> {
+            snap.slash_menu
+                .as_ref()
+                .map(|m| m.rows.iter().map(|r| r.name.clone()).collect())
+                .unwrap_or_default()
+        };
+        let on_grok = lane_snapshot(&lane, None);
+        assert_eq!(on_grok.effort_option.as_deref(), Some("effort"));
+        assert_eq!(names(&on_grok), ["effort"]);
+        assert!(matches!(
+            &on_grok.slash_menu.as_ref().unwrap().rows[0].action,
+            BridgeSlashAction::EffortPicker { option, for_model, .. }
+                if option == "effort" && for_model == "grok"
+        ));
+
+        lane.inner.apply(&LaneEvent::Settings {
+            settings: on_model("fast"),
+        });
+        let on_fast = lane_snapshot(&lane, None);
+        assert_eq!(on_fast.effort_option, None, "no effort option on fast");
+        assert!(names(&on_fast).is_empty(), "the row left with the model");
+        assert_eq!(
+            slash_dispatch(on_fast.slash_menu.unwrap(), "/effort".to_string(), false),
+            BridgeSlashDispatch::Refuse {
+                reason: "/effort: the current model has no effort setting".to_string()
+            }
+        );
+
+        lane.inner.apply(&LaneEvent::Settings { settings: grok });
+        let back = lane_snapshot(&lane, None);
+        assert_eq!(back.effort_option.as_deref(), Some("effort"));
+        assert_eq!(names(&back), ["effort"], "the row returns");
 
         lane_close(&lane);
         assert_eq!(live_counters().active_lanes, 0);

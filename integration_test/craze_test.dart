@@ -141,8 +141,33 @@
 // * **`/exit`** — on its own session: Keep sends nothing and keeps the draft;
 //   a confirm sends one `session.stop` and the session ends.
 // * **while a turn runs** — a held turn (`sigint-hold`): the waiting rows
-//   dimmed, a dimmed one refused, and a prompt row QUEUED, not read until the
-//   turn ends, then read back by the agent.
+//   dimmed, a dimmed one refused, `/effort <level>` judged by its level
+//   first (one naming nothing refused in craze's words, a valid one for the
+//   turn), and a prompt row QUEUED, not read until the turn ends, then read
+//   back by the agent.
+//
+// ## The cells (plan 032 M1: `/effort` and the effort facts, §3.2, §3.3)
+//
+// craze 0.2.0's builtin `/effort` on the permodel cursor — the desktop's
+// (2e) cells, every change read back off the rig's bridge log (`sets`) and
+// the agent's own record:
+//
+// * **the row follows the model** — listed on grok-4.6 (the lane naming its
+//   `effort` option); a settings-only switch to composer-2.5 takes the row
+//   out (every other row where it was), the effort out of the chip, and a
+//   typed `/effort` is refused "the current model has no effort setting";
+//   back on grok-4.6 the row returns.
+// * **bare `/effort`** opens the settings sheet (Enter, and a pick on
+//   `/eff`), nothing sent; an ACP session's model list draws no `effort →`
+//   line.
+// * **`/effort low`** sends `session.set {kind: config, id: effort, value:
+//   low, forModel: grok-4.6}`, the agent asked for it, the chip following;
+//   `/effort LOW` (now the current level) is sent again. The session's
+//   starting effort is restored (E7).
+// * **a level naming nothing** — `/effort bogus`, and `/effort default`
+//   with no effort facts — refused in craze's words, the draft kept.
+// * **glm-5.2's `reasoning`** counts as its effort: named by the lane, a
+//   level sent as a `reasoning` change bound to glm-5.2, the chip following.
 import 'dart:async';
 import 'dart:io';
 
@@ -2581,10 +2606,7 @@ void main() {
       await _until(
         tester,
         () =>
-            (t.controller().state.slashMenu?.rows ?? const [])
-                .map((r) => r.name)
-                .skip(6)
-                .join(',') ==
+            _catalog(t.controller).skip(_menuBuiltins.length).join(',') ==
             'alpha-cmd,beta-cmd',
         what: 'the agent\'s new catalog on the lane',
       );
@@ -2611,16 +2633,19 @@ void main() {
       await t.controller().send('SET-COMMANDS ${names.join(',')}');
       await _until(
         tester,
-        () => t.controller().state.slashMenu?.rows.length == 606,
+        () =>
+            t.controller().state.slashMenu?.rows.length ==
+            _menuBuiltins.length + names.length,
         what: 'the 600-command catalog on the lane',
       );
-      final menu = t.controller().state.slashMenu!;
-      expect(menu.rows.map((r) => r.name).skip(6), names);
+      expect(_catalog(t.controller).skip(_menuBuiltins.length), names);
       await _typeDraft(tester, '/');
       await _until(
         tester,
-        () => _menuRowsShown().take(6).join(',') == _menuRows.take(6).join(','),
-        what: 'the 606-row menu open',
+        () =>
+            _menuRowsShown().take(_menuBuiltins.length).join(',') ==
+            _menuBuiltins.join(','),
+        what: 'the whole menu open, its builtins first',
       );
       expect(_menuRowsShown(), isNot(contains('cmd-599')), reason: 'lazy');
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -3113,11 +3138,11 @@ void main() {
       await _typeDraft(tester, '/');
       await _until(
         tester,
-        () => _menuDimmed().length == 4,
+        () => _menuDimmed().length == _waitingRows.length,
         what: 'the waiting rows dimmed',
       );
       expect(_menuRowsShown(), _menuRows);
-      expect(_menuDimmed(), {'model', 'plan', 'ask', 'agent'});
+      expect(_menuDimmed(), _waitingRows);
 
       // A dimmed row chosen is refused inline, nothing sent.
       final sets = rig.sets.length;
@@ -3130,6 +3155,29 @@ void main() {
       expect(_fieldText(tester, 'lane-input'), '/', reason: 'the draft kept');
       await _wait(tester, const Duration(milliseconds: 500));
       expect(rig.sets.length, sets, reason: 'nothing sent');
+
+      // `/effort <level>` mid-turn (plan 032 §3.2): the level is judged
+      // FIRST — one naming nothing is refused for that, in craze's words; a
+      // valid one is refused for the turn. The draft kept, nothing sent.
+      final levels = _effortLevels(lane);
+      expect(levels, isNotEmpty, reason: 'the held model has an effort row');
+      await _typeDraft(tester, '/effort bogus');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => _refusalText() == 'no effort bogus: one of ${levels.join(', ')}',
+        what: 'a level naming nothing refused for that, mid-turn',
+      );
+      await _typeDraft(tester, '/effort ${levels.first}');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => _refusalText() == '/effort: runs after this turn',
+        what: 'a valid level refused for the turn',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/effort ${levels.first}');
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.sets.length, sets, reason: 'no effort was sent');
 
       // A PROMPT row queues: its canonical spelling, held behind the turn.
       final before = rig.verbsOf('session.prompt').length;
@@ -3183,6 +3231,308 @@ void main() {
         () => lane().state.activity != BridgeRcActivity.working,
         what: 'the session idle again',
       );
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  // -------------------------------------------------------------------------
+  // `/effort` and the effort facts (plan 032 M1, §3.2, §3.3)
+  // -------------------------------------------------------------------------
+  //
+  // On the permodel session (craze's per-model cursor): grok-4.6 and
+  // claude-opus-5 offer an `effort` select, composer-2.5 none, glm-5.2 a
+  // `reasoning` one. Whether `/effort` shows is the shared core's reading of
+  // the session's SETTINGS (a current model with an effort option), so a
+  // model switch — a settings change alone, the catalog as it was — moves
+  // the row. Every change goes out through the rig's bridge log (`sets`) and
+  // reaches the agent's own record (`CrazeRig.agentSets`). An ACP session
+  // states no per-model effort facts (they are a native session's), so its
+  // model list carries no `effort → <level>` line; the line itself is the
+  // unit and widget cells' (there is no fake host that states the facts,
+  // plan 032 §4.1). The desktop's (2e) section, cell for cell.
+
+  testWidgets(
+    'effort_follows_the_model_with_no_new_catalog',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      final state = t.controller().state;
+      final onGrok = _catalog(t.controller);
+      expect(onGrok, contains('effort'));
+      expect(state.effortOption, 'effort');
+      expect(_effortLevels(t.controller), ['low', 'medium', 'high', 'xhigh']);
+      await _typeDraft(tester, '/');
+      await _until(
+        tester,
+        () => _menuRowsShown().contains('effort'),
+        what: '/effort listed on grok-4.6',
+      );
+      await _typeDraft(tester, '');
+
+      final before = rig.sets.length;
+      await _onModel(tester, t.controller, 'composer-2.5');
+      await _until(
+        tester,
+        () => listEquals(_catalog(t.controller), [
+          for (final n in onGrok)
+            if (n != 'effort') n,
+        ]),
+        what: 'only the effort row gone, with no new catalog',
+      );
+      final hidden = {
+        for (final h in t.controller().state.slashMenu!.hidden)
+          h.name: h.reason,
+      };
+      expect(hidden['effort'], 'the current model has no effort setting');
+      expect(t.controller().state.effortOption, isNull);
+      expect(_chip(), isIn(['Composer 2.5', 'Composer 2.5 · fast']));
+      await _typeDraft(tester, '/');
+      await _wait(tester, const Duration(milliseconds: 300));
+      expect(_menuRowsShown(), isNot(contains('effort')));
+      await _typeDraft(tester, '/effort');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () =>
+            _refusalText() ==
+            '/effort: the current model has no effort setting',
+        what: 'a typed /effort refused on composer-2.5',
+      );
+      expect(_fieldText(tester, 'lane-input'), '/effort', reason: 'kept');
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(_effortSets(rig, before), isEmpty, reason: 'nothing sent');
+      expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+
+      await _typeDraft(tester, '');
+      await _onModel(tester, t.controller, 'grok-4.6');
+      await _until(
+        tester,
+        () => listEquals(_catalog(t.controller), onGrok),
+        what: 'the row back where it was',
+      );
+      expect(t.controller().state.effortOption, 'effort');
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'bare_effort_opens_the_sheet_and_no_acp_model_names_an_effort',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      final before = rig.sets.length;
+
+      await _typeDraft(tester, '/effort');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _until(
+        tester,
+        () => find.byKey(const ValueKey('lane-settings')).evaluate().isNotEmpty,
+        what: 'the settings sheet, opened by /effort',
+      );
+      expect(_fieldText(tester, 'lane-input'), '', reason: 'draft cleared');
+      expect(_sheetRows(), [
+        'model:model',
+        'config:effort',
+        'config:fast',
+        'mode:mode',
+      ]);
+      expect(
+        _shown(tester, 'config:effort'),
+        _optionCurrent(t.controller, 'effort'),
+      );
+      expect(_chip(), startsWith('Grok 4.6 · High'));
+      final models = t.controller().state.settings!.models;
+      expect(
+        [for (final m in models) m.effort],
+        everyElement(isNull),
+        reason: 'an ACP session states no effort facts',
+      );
+      expect(_values('model:model'), _permodelModels);
+      for (final m in _permodelModels) {
+        expect(
+          find.byKey(ValueKey('lane-setting-secondary-model:model-$m')),
+          findsNothing,
+          reason: 'no model of an ACP session says where its effort lands',
+        );
+      }
+
+      await _closeSettings(tester);
+      await _typeDraft(tester, '/eff');
+      await _until(
+        tester,
+        () => _menuRowsShown().contains('effort'),
+        what: '/effort listed for /eff',
+      );
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-effort')));
+      await _until(
+        tester,
+        () => find.byKey(const ValueKey('lane-settings')).evaluate().isNotEmpty,
+        what: 'the settings sheet, opened by a pick of /effort',
+      );
+      expect(_fieldText(tester, 'lane-input'), '');
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.sets.length, before, reason: 'opening the picker sent none');
+      await _closeSettings(tester);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_effort_level_is_sent_bound_to_its_model_even_the_current_one',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+
+      Future<void> toLevel(String level) =>
+          _effortTo(tester, t.controller, 'effort', level);
+
+      // Start from a known level other than `low`, and leave the effort
+      // where it was found (plan 032 E7).
+      final start = _optionCurrent(t.controller, 'effort');
+      if (start == 'low') await toLevel('high');
+      try {
+        final before = rig.sets.length;
+        final asked = CrazeRig.agentSets(
+          t.calls,
+        ).where((c) => c == 'effort=low').length;
+
+        await toLevel('low');
+        const want = {
+          'kind': 'config',
+          'id': 'effort',
+          'value': 'low',
+          'forModel': 'grok-4.6',
+        };
+        expect(_effortSets(rig, before), [want]);
+        await _until(
+          tester,
+          () =>
+              CrazeRig.agentSets(
+                t.calls,
+              ).where((c) => c == 'effort=low').length ==
+              asked + 1,
+          what: 'the agent asked for effort=low',
+        );
+        await _until(
+          tester,
+          () => _chip().startsWith('Grok 4.6 · Low'),
+          what: 'the chip at Low',
+        );
+        expect(_refusalText(), isNull);
+        expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+
+        // `/effort LOW` — the level by id in any case — and `low` the
+        // CURRENT level now: sent all the same (craze's rule: a dropped
+        // no-op could lose a concurrent change).
+        await _typeDraft(tester, '/effort LOW');
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await _until(
+          tester,
+          () =>
+              _effortSets(rig, before).length == 2 &&
+              _fieldText(tester, 'lane-input').isEmpty &&
+              _composerIdle(tester),
+          what: 'the current level sent again',
+        );
+        expect(_effortSets(rig, before), [want, want]);
+        expect(_refusalText(), isNull);
+        expect(find.byKey(const ValueKey('lane-composer-error')), findsNothing);
+        expect(_optionCurrent(t.controller, 'effort'), 'low');
+      } finally {
+        if (start != null && _optionCurrent(t.controller, 'effort') != start) {
+          await toLevel(start);
+        }
+      }
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'an_effort_level_naming_nothing_is_refused_in_crazes_words',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      expect(_effortLevels(t.controller), ['low', 'medium', 'high', 'xhigh']);
+      final before = rig.sets.length;
+      // `default` is reserved for the model's default level, which only
+      // effort facts state: an ACP session has none, so it is refused too.
+      for (final typed in ['bogus', 'default']) {
+        await _typeDraft(tester, '/effort $typed');
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await _until(
+          tester,
+          () =>
+              _refusalText() ==
+              'no effort $typed: one of low, medium, high, xhigh',
+          what: '/effort $typed refused in craze\'s words',
+        );
+        expect(_fieldText(tester, 'lane-input'), '/effort $typed');
+      }
+      await _wait(tester, const Duration(milliseconds: 500));
+      expect(rig.sets.length, before, reason: 'nothing was sent');
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'glm_reasoning_is_its_effort',
+    (tester) async {
+      _tall(tester);
+      final rig = await _rig(bins!);
+      final t = await _permodel(tester, rig);
+      await _menuReady(tester, t.controller);
+      const names = {'high': 'High', 'max': 'Max'};
+      await _onModel(tester, t.controller, 'glm-5.2');
+      // Leave the session as it was found (plan 032 E7): its reasoning
+      // level, and grok-4.6.
+      final start = _optionCurrent(t.controller, 'reasoning');
+      try {
+        await _until(
+          tester,
+          () => t.controller().state.effortOption == 'reasoning',
+          what: 'glm-5.2\'s reasoning named the effort',
+        );
+        expect(_catalog(t.controller), contains('effort'));
+        expect(_effortLevels(t.controller), ['high', 'max']);
+        expect(_chip(), 'GLM 5.2 · ${names[start]}');
+        final target = start == 'max' ? 'high' : 'max';
+        final before = rig.sets.length;
+        await _effortTo(tester, t.controller, 'reasoning', target);
+        expect(_effortSets(rig, before), [
+          {
+            'kind': 'config',
+            'id': 'reasoning',
+            'value': target,
+            'forModel': 'glm-5.2',
+          },
+        ]);
+        expect(CrazeRig.agentSets(t.calls), contains('reasoning=$target'));
+        await _until(
+          tester,
+          () => _chip() == 'GLM 5.2 · ${names[target]}',
+          what: 'the chip following',
+        );
+      } finally {
+        if (start != null &&
+            _optionCurrent(t.controller, 'reasoning') != start) {
+          await _effortTo(tester, t.controller, 'reasoning', start);
+        }
+        await _typeDraft(tester, '');
+        await _onModel(tester, t.controller, 'grok-4.6');
+      }
     },
     skip: skip,
     timeout: _cell,
@@ -4016,9 +4366,13 @@ Future<void> _pressSetting(
 // ---------------------------------------------------------------------------
 
 /// The rows a hub-created session's menu SHOWS on this client — craze
-/// 0.1.1's builtins it can run, then the agent's `research` — in catalog
+/// 0.2.0's builtins it can run, then the agent's `research` — in catalog
 /// order (the desktop harness's `MENU_ROWS`); `help`, `clear`, `tasks`,
-/// `theme` (local) and `btw` (aside) are hidden in phase 1.
+/// `theme` (local) and `btw` (aside) are hidden in phase 1. `effort` (plan
+/// 032 §3.2) shows because each of these sessions' current model has an
+/// effort option — the grok fake's `reasoning_effort` on grok-4.6, the
+/// cursor fakes' `effort` — and would hide (and claim no name) on a model
+/// without one.
 const _menuRows = [
   'model',
   'rename',
@@ -4026,8 +4380,17 @@ const _menuRows = [
   'ask',
   'agent',
   'exit',
+  'effort',
   'research',
 ];
+
+/// [_menuRows]' builtins: every shown row but the agent's `research`.
+final _menuBuiltins = _menuRows.sublist(0, _menuRows.length - 1);
+
+/// The rows of [_menuRows] that wait for a running turn (no `whileWorking`,
+/// not a prompt): dimmed and refused while one runs (the desktop harness's
+/// `WAITING_ROWS`).
+const _waitingRows = {'model', 'plan', 'ask', 'agent', 'effort'};
 
 /// A hub-created grok session's transcript on screen, seeded, its `/` menu
 /// in.
@@ -4105,4 +4468,99 @@ Set<String> _menuDimmed() => {
 String? _refusalText() {
   final f = find.byKey(const ValueKey('lane-slash-refusal')).evaluate();
   return f.isEmpty ? null : (f.single.widget as Text).data;
+}
+
+// ---------------------------------------------------------------------------
+// `/effort` (plan 032 M1)
+// ---------------------------------------------------------------------------
+
+/// The lane's resolved menu, by row name, in catalog order.
+List<String> _catalog(LaneController Function() lane) => [
+  for (final r in lane().state.slashMenu?.rows ?? const <BridgeSlashMenuRow>[])
+    r.name,
+];
+
+/// The level ids of the lane's `/effort` row — its effort picker (plan 032
+/// §3.2) — what a `/effort <level>` is matched against; empty when the menu
+/// has no such row.
+List<String> _effortLevels(LaneController Function() lane) => [
+  for (final r in lane().state.slashMenu?.rows ?? const <BridgeSlashMenuRow>[])
+    if (r.action case BridgeSlashAction_EffortPicker(:final levels))
+      for (final l in levels) l.id,
+];
+
+/// The current value of the session's option [id], or null.
+String? _optionCurrent(LaneController Function() lane, String id) {
+  final options = lane().state.settings?.options ?? const <BridgeLaneSetting>[];
+  return options.where((o) => o.id == id).firstOrNull?.current;
+}
+
+/// The config `session.set`s the rig's bridges carried since [before].
+List<Map<String, Object?>> _effortSets(CrazeRig rig, int before) => [
+  for (final e in rig.sets.sublist(before))
+    if (e.setting['kind'] == 'config') e.setting,
+];
+
+/// **Move the session to [model]** through the production door — the
+/// settings sheet's model press, the lane's `setSetting` — a settings change
+/// with no new catalog, and wait until the lane has folded it and the chip
+/// names the model: the screen's own read, so the menu the composer filters
+/// is the new model's too.
+Future<void> _onModel(
+  WidgetTester tester,
+  LaneController Function() lane,
+  String model,
+) async {
+  final settings = lane().state.settings!;
+  if (settings.model != model) {
+    await lane().setSetting(
+      sheetRows(settings).firstWhere((r) => r.kind == SettingKind.model),
+      model,
+      displayedModel: settings.model,
+    );
+  }
+  final name = lane().state.settings!.models
+      .firstWhere((m) => m.id == model)
+      .name;
+  await _until(
+    tester,
+    () =>
+        lane().state.settings?.model == model &&
+        _chip().split(' · ').first == name &&
+        _composerIdle(tester),
+    what: 'the session on $model',
+  );
+}
+
+/// **Set the session's effort [option] to [level] from the composer** —
+/// `/effort <level>` and Enter — and wait until the session says it is at
+/// [level], the draft cleared and the composer idle.
+Future<void> _effortTo(
+  WidgetTester tester,
+  LaneController Function() lane,
+  String option,
+  String level,
+) async {
+  await _typeDraft(tester, '/effort $level');
+  await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+  await _until(
+    tester,
+    () =>
+        _optionCurrent(lane, option) == level &&
+        _fieldText(tester, 'lane-input').isEmpty &&
+        _composerIdle(tester),
+    what: 'the session\'s $option at $level, the composer idle',
+  );
+}
+
+/// Take the open settings sheet away, as a back gesture would.
+Future<void> _closeSettings(WidgetTester tester) async {
+  Navigator.of(
+    tester.element(find.byKey(const ValueKey('lane-settings'))),
+  ).pop();
+  await _until(
+    tester,
+    () => find.byKey(const ValueKey('lane-settings')).evaluate().isEmpty,
+    what: 'the settings sheet closed',
+  );
 }

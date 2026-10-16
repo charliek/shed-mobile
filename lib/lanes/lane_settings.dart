@@ -15,6 +15,12 @@
 /// catalog's) and the options' (the current model's own, `thought_level`
 /// first, then `model_config`, each in the provider's order) ONCE; this module
 /// never re-sorts what it is given. It only decides how each row is drawn.
+///
+/// **Nor does it decide which option is the effort** (plan 032 PC14h): that
+/// is craze's `EffortOption` rule, run once by the shared core and handed
+/// over with the snapshot (`BridgeLaneSnapshot.effortOption`, the option's
+/// id) — the same answer the `/effort` row is judged by, so the phone ports
+/// none of it.
 library;
 
 import 'package:flutter/foundation.dart' show immutable;
@@ -152,40 +158,40 @@ BridgeLaneSettingChange changeFor(
   ),
 };
 
+// ---- the model list's effort line (plan 032 §3.3) -----------------------------
+
+/// **The level a switch to [model] lands on** — its effort facts'
+/// `switchEffort` (the session's last choice on it, else craze's model
+/// memory, else its default), else its `defaultEffort` — for every model but
+/// the CURRENT one ([current]: its effort row shows its effort). Null for the
+/// current model, for a model whose facts name neither level, and for one with
+/// no facts at all — every model of an ACP session, of an older host, and one
+/// without an effort control. The level is its id, as the facts carry it: a
+/// model not current has no option to name it.
+String? modelSwitchEffort(BridgeLaneChoice model, String? current) {
+  if (model.id == current) return null;
+  final effort = model.effort;
+  return _nonEmpty(effort?.switchEffort) ?? _nonEmpty(effort?.defaultEffort);
+}
+
+String? _nonEmpty(String? s) => (s == null || s.isEmpty) ? null : s;
+
+/// **The dim line under a model in the list** (plan 032 §3.3):
+/// `effort → <level>`, the level a switch to [model] lands on
+/// ([modelSwitchEffort]). A native switch moves the effort with the model, and
+/// this says where to before the press. The desktop's `modelEffortLine`.
+String? modelEffortLine(BridgeLaneChoice model, String? current) =>
+    switch (modelSwitchEffort(model, current)) {
+      null => null,
+      final level => 'effort → $level',
+    };
+
+/// The dim secondary line a sheet row draws under [value]: the model list's
+/// effort line ([modelEffortLine]), and nothing on any other row.
+String? secondaryLine(SettingsRow row, BridgeLaneChoice value) =>
+    row.kind == SettingKind.model ? modelEffortLine(value, row.current) : null;
+
 // ---- the chip ------------------------------------------------------------------
-
-/// Words that make an option an effort select (craze's own reading,
-/// `agent.isEffortSelect`): the id or the name says effort or reasoning.
-bool _isEffort(BridgeLaneSetting o) {
-  final id = o.id.toLowerCase();
-  final name = o.name.toLowerCase();
-  return o.values.isNotEmpty &&
-      (id.contains('effort') ||
-          id.contains('reasoning') ||
-          name.contains('effort') ||
-          name.contains('reasoning'));
-}
-
-/// craze's rank among effort selects (`agent.effortRank`): the exact id
-/// `effort` first — cursor files `thinking` under `thought_level` beside it,
-/// so a category is no evidence — then `model_option`, then `thought_level`.
-int _effortRank(BridgeLaneSetting o) {
-  if (o.id.toLowerCase() == 'effort') return 0;
-  if (o.category == 'model_option') return 1;
-  if (o.category == 'thought_level') return 2;
-  return 3;
-}
-
-/// The session's effort select, or null when it offers none.
-BridgeLaneSetting? effortOption(List<BridgeLaneSetting> options) {
-  BridgeLaneSetting? best;
-  for (final o in options) {
-    if (_isEffort(o) && (best == null || _effortRank(o) < _effortRank(best))) {
-      best = o;
-    }
-  }
-  return best;
-}
 
 /// Whether the session's fast toggle exists AND is on (craze's `FastOn`): a
 /// `model_config` option named fast, whose current value is its ON one — the
@@ -224,11 +230,16 @@ String? choiceName(List<BridgeLaneChoice> values, String? id) {
 /// only when the session has it — and "fast" only when the toggle is ON (off
 /// is the quiet default and says nothing, craze's own status-row rule). A
 /// session whose current values say none of the three reads "Settings".
-String settingsChip(BridgeLaneSettings s) {
+///
+/// The effort is the option [effortOption] names — the snapshot's
+/// `effortOption`, the shared core's reading (plan 032 PC14h) — and no other:
+/// with none named, the chip names no effort, whatever the options are
+/// called.
+String settingsChip(BridgeLaneSettings s, String? effortOption) {
   final parts = <String>[];
   final model = choiceName(s.models, s.model);
   if (model != null) parts.add(model);
-  final effort = effortOption(s.options);
+  final effort = s.options.where((o) => o.id == effortOption).firstOrNull;
   final effortName = effort == null
       ? null
       : choiceName(effort.values, effort.current);

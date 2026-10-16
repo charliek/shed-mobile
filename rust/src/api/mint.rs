@@ -1329,6 +1329,23 @@ mod tests {
             "BridgeLaneProviderState_Other",
             "BridgeLaneProviderState_Ready",
             "BridgeLaneProviderState_Unavailable",
+            // Plan 032 — a model's effort facts (level names), and the saved
+            // sessions a craze hub can reopen: a craze session id or a
+            // `<provider>:<id>`, a provider name, a workspace path, a title
+            // and two times; a reopen's answer (a session row and `joined`)
+            // and its refusal (craze's sentence, or a lane error). Session
+            // material only — **no credential of any kind crosses**: a saved
+            // session that needs a login reopens as a start failure whose
+            // text names it, never the key.
+            "BridgeLaneModelEffort",
+            "BridgeLaneReopenError",
+            "BridgeLaneReopenError_Gone",
+            "BridgeLaneReopenError_Lane",
+            "BridgeLaneReopenError_StartFailed",
+            "BridgeLaneReopenError_Unavailable",
+            "BridgeLaneReopened",
+            "BridgeLaneSavedSession",
+            "BridgeLaneSavedSessions",
             // Plan 029 — the `/` menu and a rename. Command names, descriptions,
             // argument hints, a mode id, a draft and a caret, plus one warning
             // sentence: session text only, **no key material at any depth**.
@@ -1338,8 +1355,13 @@ mod tests {
             "BridgeSlashAccept_Complete",
             "BridgeSlashAccept_Dispatch",
             "BridgeSlashAction",
+            // Plan 032 — `/effort`: an option id, a model id, the option's
+            // levels (choices), a default level, and the config change a
+            // level sets. Session settings only.
+            "BridgeSlashAction_EffortPicker",
             "BridgeSlashAction_ModelPicker",
             "BridgeSlashAction_Prompt",
+            "BridgeSlashAction_SetEffort",
             "BridgeSlashAction_SetMode",
             "BridgeSlashAction_SetTitle",
             "BridgeSlashAction_Stop",
@@ -1379,6 +1401,7 @@ mod tests {
             "BridgeSourceCapabilities",
             "BridgeSourceOffline",
             "BridgeSourceOffline_Failed",
+            "BridgeSourceOffline_NoHub",
             "BridgeSourceOffline_NotInstalled",
             "BridgeSourceOffline_Other",
             "BridgeSourceOffline_TooOld",

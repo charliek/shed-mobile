@@ -87,9 +87,10 @@ use shed_app::slash_menu::{
 use shed_core::lane::{
     LaneAnswer, LaneApproval, LaneApprovalKind, LaneApprovalOption, LaneApprovalStatus,
     LaneCapabilities, LaneChoice, LaneCreateOptions, LaneCreateRequest, LaneCreated, LaneDecision,
-    LaneError, LanePromptOutcome, LaneProvider, LaneProviderState, LaneQuestion, LaneSession,
-    LaneSetting, LaneSettingChange, LaneSettings, LaneSlashArg, LaneSlashSource, LaneUsage,
-    SendMode, SourceCapabilities, SourceOffline,
+    LaneError, LaneModelEffort, LanePromptOutcome, LaneProvider, LaneProviderState, LaneQuestion,
+    LaneReopenError, LaneReopened, LaneSavedSession, LaneSavedSessions, LaneSession, LaneSetting,
+    LaneSettingChange, LaneSettings, LaneSlashArg, LaneSlashSource, LaneUsage, SendMode,
+    SourceCapabilities, SourceOffline,
 };
 use shed_core::roost::AgentLaneStamp;
 
@@ -833,6 +834,13 @@ pub struct BridgeLaneSnapshot {
     /// (plan 029); `None` when the session has no catalog or does not say
     /// `slash`. Every rule over it lives in the `slash_*` functions.
     pub slash_menu: Option<BridgeSlashMenu>,
+    /// The id of [`Self::settings`]' EFFORT option — craze's `EffortOption`
+    /// rule, run once by the shared core (`LaneSettings::effort_option`, plan
+    /// 032 §3.2, PC14h) — or `None` when there are no settings or they name
+    /// none. What the chip shows as the effort: the phone reads it from here
+    /// and ports no rule of its own, so its chip and the `/effort` row are the
+    /// one reading.
+    pub effort_option: Option<String>,
 }
 
 impl BridgeLaneSnapshot {
@@ -853,6 +861,7 @@ impl BridgeLaneSnapshot {
             settings_frames,
             approvals: snap.approvals.into_iter().map(Into::into).collect(),
             slash_menu: snap.slash_menu.map(Into::into),
+            effort_option: snap.effort_option,
         }
     }
 }
@@ -934,16 +943,43 @@ impl From<BridgeSlashArg> for LaneSlashArg {
 }
 
 /// What running a menu row does (mirrors `slash_menu::SlashAction`).
-/// **Strict**: Rust resolved it, so it is always one of these five.
+/// **Strict**: Rust resolved it, so it is always one of these seven.
 /// `SetMode` carries the mode id (`LaneSettingChange::Mode`, always).
+///
+/// `/effort` (plan 032 §3.2) is the last two. [`Self::EffortPicker`] is the
+/// row: bare, a client opens its settings sheet (whose effort row is
+/// `option`); its `levels` and `default_level` are what the shared
+/// [`super::lane::slash_dispatch`] matches a `/effort <level>` against — the
+/// phone never reads them. [`Self::SetEffort`] is never a row's, only a
+/// dispatch's answer to such a level: a `lane_set` of its `change` (a
+/// `Config` of the effort option bound to `for_model`), sent even when it is
+/// the current level (craze's rule: a dropped no-op could lose a concurrent
+/// change). Both mirror the shared type field for field, so the menu
+/// round-trips into the `slash_*` calls losslessly.
 #[frb(unignore)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeSlashAction {
     Prompt,
     SetTitle,
-    SetMode { id: String },
+    SetMode {
+        id: String,
+    },
     Stop,
     ModelPicker,
+    /// The effort picker: the current model's effort option (`option`, what
+    /// a `Config` change names), that model (`for_model`), the option's
+    /// values in the agent's order (`levels`), and the model's default level
+    /// where its effort facts state one the option offers (`default_level`).
+    EffortPicker {
+        option: String,
+        for_model: String,
+        levels: Vec<BridgeLaneChoice>,
+        default_level: Option<String>,
+    },
+    /// Set the effort: `lane_set(change)`.
+    SetEffort {
+        change: BridgeLaneSettingChange,
+    },
 }
 
 impl From<SlashAction> for BridgeSlashAction {
@@ -960,6 +996,20 @@ impl From<SlashAction> for BridgeSlashAction {
             },
             SlashAction::Stop => BridgeSlashAction::Stop,
             SlashAction::ModelPicker => BridgeSlashAction::ModelPicker,
+            SlashAction::EffortPicker {
+                option,
+                for_model,
+                levels,
+                default_level,
+            } => BridgeSlashAction::EffortPicker {
+                option,
+                for_model,
+                levels: levels.into_iter().map(Into::into).collect(),
+                default_level,
+            },
+            SlashAction::SetEffort { change } => BridgeSlashAction::SetEffort {
+                change: change.into(),
+            },
         }
     }
 }
@@ -974,6 +1024,20 @@ impl From<BridgeSlashAction> for SlashAction {
             },
             BridgeSlashAction::Stop => SlashAction::Stop,
             BridgeSlashAction::ModelPicker => SlashAction::ModelPicker,
+            BridgeSlashAction::EffortPicker {
+                option,
+                for_model,
+                levels,
+                default_level,
+            } => SlashAction::EffortPicker {
+                option,
+                for_model,
+                levels: levels.into_iter().map(Into::into).collect(),
+                default_level,
+            },
+            BridgeSlashAction::SetEffort { change } => SlashAction::SetEffort {
+                change: change.into(),
+            },
         }
     }
 }
@@ -1318,6 +1382,10 @@ pub struct BridgeLaneChoice {
     /// The agent's own ordering hint, when it gives one (lower first).
     pub rank: Option<u32>,
     pub description: Option<String>,
+    /// A MODEL's effort facts (plan 032 §3.3) — `None` on a mode, on an
+    /// option's value, and on a model whose agent states none (every ACP
+    /// session's, an older host's, a model with no effort control).
+    pub effort: Option<BridgeLaneModelEffort>,
 }
 
 impl From<LaneChoice> for BridgeLaneChoice {
@@ -1327,6 +1395,63 @@ impl From<LaneChoice> for BridgeLaneChoice {
             name: c.name,
             rank: c.rank,
             description: c.description,
+            effort: c.effort.map(Into::into),
+        }
+    }
+}
+
+/// The way back, field for field — for the one value that carries choices
+/// INTO the shared rules: an effort picker's levels
+/// ([`BridgeSlashAction::EffortPicker`]), handed back to the `slash_*` calls
+/// with the menu they came in.
+impl From<BridgeLaneChoice> for LaneChoice {
+    fn from(c: BridgeLaneChoice) -> Self {
+        LaneChoice {
+            id: c.id,
+            name: c.name,
+            rank: c.rank,
+            description: c.description,
+            effort: c.effort.map(Into::into),
+        }
+    }
+}
+
+/// What a model says about its effort before it is chosen (mirrors
+/// `lane::LaneModelEffort`) — craze 0.2.0's per-model **effort facts**, a
+/// native session's alone (plan 032 §3.3).
+///
+/// The CURRENT model's effort is never read from here: it is its effort
+/// option's `current` ([`BridgeLaneSnapshot::effort_option`]). What this adds
+/// is the level a switch to a model the session is NOT on would land on —
+/// the settings sheet's dim `effort → <level>` under that model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneModelEffort {
+    /// The levels the model offers, in its order (craze caps them at 8).
+    pub efforts: Vec<String>,
+    /// The model's default level.
+    pub default_effort: Option<String>,
+    /// The level a switch to this model lands on: the session's own last
+    /// choice on it, else the one craze's model memory keeps, else its
+    /// default.
+    pub switch_effort: Option<String>,
+}
+
+impl From<LaneModelEffort> for BridgeLaneModelEffort {
+    fn from(e: LaneModelEffort) -> Self {
+        BridgeLaneModelEffort {
+            efforts: e.efforts,
+            default_effort: e.default_effort,
+            switch_effort: e.switch_effort,
+        }
+    }
+}
+
+impl From<BridgeLaneModelEffort> for LaneModelEffort {
+    fn from(e: BridgeLaneModelEffort) -> Self {
+        LaneModelEffort {
+            efforts: e.efforts,
+            default_effort: e.default_effort,
+            switch_effort: e.switch_effort,
         }
     }
 }
@@ -1453,6 +1578,9 @@ pub struct BridgeSourceCapabilities {
     pub create_options: bool,
     /// A create may carry a title (plan 029); a source that says no refuses one.
     pub create_title: bool,
+    /// The source can list its saved sessions and reopen one (plan 032 §3.4):
+    /// a client offers its resume entry only where this is true.
+    pub reopen: bool,
 }
 
 impl From<SourceCapabilities> for BridgeSourceCapabilities {
@@ -1462,6 +1590,7 @@ impl From<SourceCapabilities> for BridgeSourceCapabilities {
             create: c.create,
             create_options: c.create_options,
             create_title: c.create_title,
+            reopen: c.reopen,
         }
     }
 }
@@ -1471,7 +1600,11 @@ impl From<SourceCapabilities> for BridgeSourceCapabilities {
 /// **Tolerant**: `Other { raw }` preserves an unrecognized cause verbatim. What
 /// each cause MEANS is the UI's to decide (`shed_core::lane`'s module doc,
 /// "Sources"): `NotInstalled` is quiet — the machine simply has no such agent —
-/// while `TooOld` asks the person to update it there.
+/// while `TooOld` asks the person to update it there. `NoHub` (plan 032
+/// §3.5) is a dial that attaches only to a running hub and found none — the
+/// desktop's `--no-start` dial; the phone's tunnel runs `bridge --hub`, which
+/// starts one, so it does not draw it today, and says "no hub running" if it
+/// ever does.
 #[frb(unignore)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BridgeSourceOffline {
@@ -1479,6 +1612,7 @@ pub enum BridgeSourceOffline {
     TooOld,
     Unreachable,
     Failed,
+    NoHub,
     Other { raw: String },
 }
 
@@ -1489,6 +1623,7 @@ impl From<SourceOffline> for BridgeSourceOffline {
             SourceOffline::TooOld => BridgeSourceOffline::TooOld,
             SourceOffline::Unreachable => BridgeSourceOffline::Unreachable,
             SourceOffline::Failed => BridgeSourceOffline::Failed,
+            SourceOffline::NoHub => BridgeSourceOffline::NoHub,
             SourceOffline::Other(raw) => BridgeSourceOffline::Other { raw },
         }
     }
@@ -1501,6 +1636,7 @@ impl From<BridgeSourceOffline> for SourceOffline {
             BridgeSourceOffline::TooOld => SourceOffline::TooOld,
             BridgeSourceOffline::Unreachable => SourceOffline::Unreachable,
             BridgeSourceOffline::Failed => SourceOffline::Failed,
+            BridgeSourceOffline::NoHub => SourceOffline::NoHub,
             BridgeSourceOffline::Other { raw } => SourceOffline::Other(raw),
         }
     }
@@ -1519,6 +1655,11 @@ pub struct BridgeLaneCreateOptions {
     pub default_provider: Option<String>,
     /// Newest first.
     pub recent_dirs: Vec<String>,
+    /// The source can list saved sessions and reopen one (plan 032 §3.4,
+    /// PC11) — read from the SAME answer these options came from (craze: the
+    /// same hub `hello`), so a create sheet knows whether to offer its resume
+    /// mode even on a source with no live roster.
+    pub reopen: bool,
 }
 
 impl From<LaneCreateOptions> for BridgeLaneCreateOptions {
@@ -1527,6 +1668,7 @@ impl From<LaneCreateOptions> for BridgeLaneCreateOptions {
             providers: o.providers.into_iter().map(Into::into).collect(),
             default_provider: o.default_provider,
             recent_dirs: o.recent_dirs,
+            reopen: o.reopen,
         }
     }
 }
@@ -1695,6 +1837,121 @@ impl From<BridgeLanePromptOutcome> for LanePromptOutcome {
             BridgeLanePromptOutcome::Unknown => LanePromptOutcome::Unknown,
             BridgeLanePromptOutcome::Refused => LanePromptOutcome::Refused,
             BridgeLanePromptOutcome::Other { raw } => LanePromptOutcome::Other(raw),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// saved sessions, reopened (the source's half, plan 032 §3.4)
+// ---------------------------------------------------------------------------
+//
+// Mirrored in M1, with the re-pin, before any bridge function hands one over:
+// M3's `craze_saved`/`craze_reopen` put them on the wire. `#[frb(unignore)]`
+// for the module doc's reason — the codegen prunes a type no function names.
+
+/// One saved session (mirrors `lane::LaneSavedSession`): a session the
+/// machine remembers that nothing runs now, which a reopen can run again.
+/// Inbound.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneSavedSession {
+    /// What a reopen takes — OPAQUE to a client, never the row id a reopen
+    /// answers with.
+    pub id: String,
+    /// The provider it ran under (`cursor`, `grok`, `native`, …).
+    pub provider: String,
+    /// The directory it ran in, absolute, as the machine recorded it — not
+    /// checked to exist still.
+    pub workspace: String,
+    pub title: Option<String>,
+    /// When it was last active, Unix epoch milliseconds.
+    pub updated_unix_ms: i64,
+    /// When it was created; `None` when the machine recorded no time.
+    pub created_unix_ms: Option<i64>,
+}
+
+impl From<LaneSavedSession> for BridgeLaneSavedSession {
+    fn from(s: LaneSavedSession) -> Self {
+        BridgeLaneSavedSession {
+            id: s.id,
+            provider: s.provider,
+            workspace: s.workspace,
+            title: s.title,
+            updated_unix_ms: s.updated_unix_ms,
+            created_unix_ms: s.created_unix_ms,
+        }
+    }
+}
+
+/// The saved sessions, newest first, and whether the source left some out —
+/// a client then says it shows only the most recent (mirrors
+/// `lane::LaneSavedSessions`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneSavedSessions {
+    pub sessions: Vec<BridgeLaneSavedSession>,
+    pub more: bool,
+}
+
+impl From<LaneSavedSessions> for BridgeLaneSavedSessions {
+    fn from(s: LaneSavedSessions) -> Self {
+        BridgeLaneSavedSessions {
+            sessions: s.sessions.into_iter().map(Into::into).collect(),
+            more: s.more,
+        }
+    }
+}
+
+/// A reopen's answer (mirrors `lane::LaneReopened`): the running session's
+/// row — openable at once by its id, as a create's is — and whether the
+/// source joined a session already running (`true`) or started one (`false`).
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeLaneReopened {
+    pub session: BridgeLaneSession,
+    pub joined: bool,
+}
+
+impl From<LaneReopened> for BridgeLaneReopened {
+    fn from(r: LaneReopened) -> Self {
+        BridgeLaneReopened {
+            session: r.session.into(),
+            joined: r.joined,
+        }
+    }
+}
+
+/// What a reopen can go wrong with (mirrors `lane::LaneReopenError`), split
+/// by what a client DOES next so it never string-matches (plan 032 PC10):
+///
+/// - [`Self::Gone`]: the saved session cannot run here any more. Drop the
+///   row.
+/// - [`Self::StartFailed`]: it was found and its start failed; the text says
+///   why. Show it, keep the row.
+/// - [`Self::Unavailable`]: transient — and a LOST answer, a reopen being
+///   idempotent (PC14d). Offer Retry.
+/// - [`Self::Lane`]: anything else, as the lane contract's own error
+///   ([`BridgeLaneError`], through its one `From`). Keep the row.
+///
+/// **Strict**, as every error is: no escape arm.
+#[frb(unignore)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeLaneReopenError {
+    Gone { msg: String },
+    StartFailed { msg: String },
+    Unavailable { msg: String },
+    Lane { error: BridgeLaneError },
+}
+
+impl From<LaneReopenError> for BridgeLaneReopenError {
+    fn from(e: LaneReopenError) -> Self {
+        match e {
+            LaneReopenError::Gone(msg) => BridgeLaneReopenError::Gone { msg },
+            LaneReopenError::StartFailed(msg) => BridgeLaneReopenError::StartFailed { msg },
+            LaneReopenError::Unavailable(msg) => BridgeLaneReopenError::Unavailable { msg },
+            LaneReopenError::Lane(error) => BridgeLaneReopenError::Lane {
+                error: error.into(),
+            },
         }
     }
 }
@@ -2249,13 +2506,27 @@ mod tests {
             name: format!("name of {id}"),
             rank: Some(id.len() as u32),
             description: Some(format!("about {id}")),
+            effort: None,
+        }
+    }
+
+    /// A model stating its effort facts (plan 032 §3.3) — each member a value
+    /// no other shares, so a mapping that swapped two cannot pass.
+    fn model_with_effort(id: &str) -> LaneChoice {
+        LaneChoice {
+            effort: Some(LaneModelEffort {
+                efforts: vec!["low".to_string(), "high".to_string(), "max".to_string()],
+                default_effort: Some("high".to_string()),
+                switch_effort: Some("max".to_string()),
+            }),
+            ..choice(id)
         }
     }
 
     fn settings() -> LaneSettings {
         LaneSettings {
             model: Some("m-fast".to_string()),
-            models: vec![choice("m-fast"), choice("m-deep")],
+            models: vec![choice("m-fast"), model_with_effort("m-deep")],
             mode: Some("plan".to_string()),
             modes: vec![choice("plan"), choice("agent")],
             options: vec![LaneSetting {
@@ -2310,9 +2581,15 @@ mod tests {
             settings: Some(settings()),
             approvals: vec![approval(vec![option("allow-once", None)])],
             slash_menu: Some(sample_menu()),
+            effort_option: Some("effort".to_string()),
         };
         let snap = BridgeLaneSnapshot::from_view(view, 4);
         assert_eq!(snap.slash_menu, Some(sample_menu().into()));
+        assert_eq!(
+            snap.effort_option.as_deref(),
+            Some("effort"),
+            "the shared rule's effort option crosses as the fold named it"
+        );
         assert_eq!(
             snap.settings_frames, 4,
             "the pump's count of Settings frames rides beside the view"
@@ -2352,6 +2629,7 @@ mod tests {
             settings: None,
             approvals: Vec::new(),
             slash_menu: None,
+            effort_option: None,
         };
         let ended = BridgeLaneSnapshot::from_view(unseeded, 0);
         assert!(ended.ended);
@@ -2360,6 +2638,7 @@ mod tests {
         assert_eq!(ended.capabilities, None);
         assert_eq!(ended.settings, None);
         assert_eq!(ended.slash_menu, None);
+        assert_eq!(ended.effort_option, None);
     }
 
     /// The settings tree maps whole: the current model and mode, every choice
@@ -2386,6 +2665,22 @@ mod tests {
         );
         assert_eq!(bridged.mode.as_deref(), Some("plan"));
         assert_eq!(bridged.modes[1].id, "agent");
+        // A model's effort facts cross whole (plan 032 §3.3), and a model
+        // stating none crosses as none — not an empty record a sheet would
+        // read as "lands on nothing".
+        assert_eq!(bridged.models[0].effort, None);
+        assert_eq!(
+            bridged.models[1].effort,
+            Some(BridgeLaneModelEffort {
+                efforts: vec!["low".to_string(), "high".to_string(), "max".to_string()],
+                default_effort: Some("high".to_string()),
+                switch_effort: Some("max".to_string()),
+            })
+        );
+        // And back, lossless: an effort picker's levels return into the
+        // shared rules as they came.
+        let back: LaneChoice = bridged.models[1].clone().into();
+        assert_eq!(back, model_with_effort("m-deep"));
         let effort = &bridged.options[0];
         assert_eq!(effort.id, "effort");
         assert_eq!(effort.name, "Effort");
@@ -2418,6 +2713,7 @@ mod tests {
             SourceOffline::TooOld,
             SourceOffline::Unreachable,
             SourceOffline::Failed,
+            SourceOffline::NoHub,
             SourceOffline::Other("rate_limited".to_string()),
         ] {
             let bridged: BridgeSourceOffline = original.clone().into();
@@ -2436,6 +2732,11 @@ mod tests {
         assert_eq!(
             BridgeSourceOffline::from(SourceOffline::from_wire("not_installed")),
             BridgeSourceOffline::NotInstalled
+        );
+        // Plan 032's `no_hub` is a KNOWN cause, never the escape arm.
+        assert_eq!(
+            BridgeSourceOffline::from(SourceOffline::from_wire("no_hub")),
+            BridgeSourceOffline::NoHub
         );
 
         for original in [
@@ -2544,6 +2845,7 @@ mod tests {
             create: true,
             create_options: false,
             create_title: true,
+            reopen: true,
         }
         .into();
         assert_eq!(
@@ -2553,6 +2855,7 @@ mod tests {
                 create: true,
                 create_options: false,
                 create_title: true,
+                reopen: true,
             }
         );
 
@@ -2575,6 +2878,7 @@ mod tests {
             ],
             default_provider: Some("cursor".to_string()),
             recent_dirs: vec!["/home/shed/b".to_string(), "/home/shed/a".to_string()],
+            reopen: true,
         }
         .into();
         assert_eq!(
@@ -2593,6 +2897,10 @@ mod tests {
         assert_eq!(cursor.fix.as_deref(), Some("run cursor-agent login"));
         assert_eq!(options.default_provider.as_deref(), Some("cursor"));
         assert_eq!(options.recent_dirs, ["/home/shed/b", "/home/shed/a"]);
+        assert!(
+            options.reopen,
+            "the hello's reopen rides the options (PC11)"
+        );
 
         let created: BridgeLaneCreated = LaneCreated {
             session: full_session(),
@@ -2609,8 +2917,8 @@ mod tests {
 
     use shed_app::slash_menu::{self, SlashFilter};
     use shed_core::lane::{
-        LaneSlashCatalog, LaneSlashKind, LaneSlashMethod, LaneSlashPicker, LaneSlashRow,
-        LaneSlashRun,
+        LaneSlashCatalog, LaneSlashKind, LaneSlashMethod, LaneSlashPicker, LaneSlashRequires,
+        LaneSlashRow, LaneSlashRun,
     };
 
     fn all_caps() -> LaneCapabilities {
@@ -2654,6 +2962,50 @@ mod tests {
         }
     }
 
+    /// craze 0.2.0's builtin `/effort` row (plan 032 §3.2): `requires:
+    /// effort`, the effort picker, an optional `<level>`.
+    fn effort_row() -> LaneSlashRow {
+        let mut picker = run(LaneSlashKind::Picker);
+        picker.picker = Some(LaneSlashPicker::Effort);
+        picker.arg = LaneSlashArg::Optional;
+        picker.arg_hint = Some("<level>".to_string());
+        LaneSlashRow {
+            requires: Some(LaneSlashRequires::Effort),
+            ..row("effort", LaneSlashSource::Builtin, picker)
+        }
+    }
+
+    /// [`settings`] on m-deep, the model whose effort facts state a default
+    /// level its effort option offers (`high`): what the sample menu's
+    /// `/effort` row is resolved on.
+    fn effort_settings() -> LaneSettings {
+        LaneSettings {
+            model: Some("m-deep".to_string()),
+            ..settings()
+        }
+    }
+
+    /// The effort picker the sample menu's `/effort` row resolves to.
+    fn effort_picker() -> SlashAction {
+        SlashAction::EffortPicker {
+            option: "effort".to_string(),
+            for_model: "m-deep".to_string(),
+            levels: vec![choice("low"), choice("high")],
+            default_level: Some("high".to_string()),
+        }
+    }
+
+    /// The effort change a `/effort <level>` on the sample menu dispatches.
+    fn set_effort(value: &str) -> SlashAction {
+        SlashAction::SetEffort {
+            change: LaneSettingChange::Config {
+                id: "effort".to_string(),
+                value: value.to_string(),
+                for_model: Some("m-deep".to_string()),
+            },
+        }
+    }
+
     /// One row of every action, plus a hidden builtin: the menu the round-trip
     /// and smoke tests share.
     fn sample_menu() -> SlashMenu {
@@ -2685,18 +3037,23 @@ mod tests {
                 row("model", LaneSlashSource::Builtin, model),
                 review,
                 row("help", LaneSlashSource::Builtin, local),
+                effort_row(),
             ],
         };
-        slash_menu::resolve(&catalog, &all_caps())
+        slash_menu::resolve(&catalog, &all_caps(), Some(&effort_settings()))
     }
 
     #[test]
     fn the_sample_menu_has_every_action_and_a_hidden_builtin() {
         let menu = sample_menu();
         let actions: Vec<_> = menu.rows.iter().map(|r| r.action.clone()).collect();
-        assert_eq!(actions.len(), 5);
+        assert_eq!(actions.len(), 6);
         assert!(actions.contains(&SlashAction::SetTitle));
         assert!(actions.contains(&SlashAction::Prompt));
+        assert!(
+            actions.contains(&effort_picker()),
+            "the settings' effort option, its model and its default: {actions:?}"
+        );
         assert_eq!(menu.hidden.len(), 1, "the local help builtin is refused");
     }
 
@@ -2727,6 +3084,14 @@ mod tests {
             },
             SlashAction::Stop,
             SlashAction::ModelPicker,
+            effort_picker(),
+            SlashAction::EffortPicker {
+                option: "reasoning".to_string(),
+                for_model: "glm-5.2".to_string(),
+                levels: vec![model_with_effort("x"), choice("max")],
+                default_level: None,
+            },
+            set_effort("low"),
         ] {
             let b: BridgeSlashAction = action.clone().into();
             assert_eq!(SlashAction::from(b), action);
@@ -2742,6 +3107,10 @@ mod tests {
             },
             SlashDispatch::Run {
                 action: SlashAction::Stop,
+                arg: None,
+            },
+            SlashDispatch::Run {
+                action: set_effort("high"),
                 arg: None,
             },
             SlashDispatch::Refuse {
@@ -2776,7 +3145,8 @@ mod tests {
         assert_eq!(SlashFilter::from(bf.clone()), f);
         assert!(bf.open && bf.rows.iter().any(|r| r.dimmed));
         // Mid-turn the four method/picker rows wait; `review` (a prompt) is
-        // the first live row, and `start` crosses the bridge as 4.
+        // the first live row, and `start` crosses the bridge as 4 (`/effort`,
+        // last, waits too).
         assert_eq!(bf.start, 4);
         assert!(bf.rows[..4].iter().all(|r| r.dimmed) && !bf.rows[4].dimmed);
         // The tolerant mirrors keep an unknown word.
@@ -2816,9 +3186,11 @@ mod tests {
             create: true,
             create_options: true,
             create_title: true,
+            reopen: false,
         }
         .into();
         assert!(src.create_title);
+        assert!(!src.reopen);
 
         let req = BridgeLaneCreateRequest {
             cwd: "/w".to_string(),
@@ -2847,7 +3219,7 @@ mod tests {
                 })
                 .collect(),
         };
-        let menu = slash_menu::resolve(&catalog, &all_caps());
+        let menu = slash_menu::resolve(&catalog, &all_caps(), None);
         assert_eq!(menu.rows.len(), 600);
         let bridged: BridgeSlashMenu = menu.into();
         assert_eq!(bridged.rows.len(), 600);
@@ -2915,6 +3287,157 @@ mod tests {
         assert!(slash_is_working(BridgeRcActivity::Working));
         assert!(slash_is_working(BridgeRcActivity::NeedsApproval));
         assert!(!slash_is_working(BridgeRcActivity::Unknown));
+    }
+
+    /// **`/effort` through the bridge** (plan 032 §3.2): every answer the
+    /// effort row can draw — the picker bare, a level by id, in any case and
+    /// by name, the reserved `default`, craze's refusal of a level the option
+    /// does not offer, a valid level mid-turn, and a pick that runs the
+    /// completed draft — crosses the bridge as `shed_app::slash_menu` gives
+    /// it, the picker handed back from Dart as the menu carried it.
+    #[test]
+    fn the_effort_row_dispatches_through_the_bridge_as_shed_app_does() {
+        use super::super::lane::{slash_accept, slash_dispatch};
+        let menu = sample_menu();
+        let b: BridgeSlashMenu = menu.clone().into();
+        let run = |action: SlashAction| {
+            BridgeSlashDispatch::from(SlashDispatch::Run { action, arg: None })
+        };
+        let refuse = |reason: &str| BridgeSlashDispatch::Refuse {
+            reason: reason.to_string(),
+        };
+        for (draft, working, want) in [
+            ("/effort", false, run(effort_picker())),
+            ("/effort low", false, run(set_effort("low"))),
+            ("/effort  LOW ", false, run(set_effort("low"))),
+            ("/effort name of high", false, run(set_effort("high"))),
+            ("/effort Default", false, run(set_effort("high"))),
+            (
+                "/effort bogus",
+                false,
+                refuse("no effort bogus: one of default, low, high"),
+            ),
+            ("/effort low", true, refuse("/effort: runs after this turn")),
+            (
+                "/effort bogus",
+                true,
+                refuse("no effort bogus: one of default, low, high"),
+            ),
+        ] {
+            let got = slash_dispatch(b.clone(), draft.to_string(), working);
+            assert_eq!(got, want, "{draft:?} working={working}");
+            assert_eq!(
+                SlashDispatch::from(got),
+                slash_menu::dispatch(&menu, draft, working),
+                "{draft:?} working={working}"
+            );
+        }
+        // The picker takes no argument here (PC8): a pick of the row on
+        // `/eff` runs the completed draft — the picker — and Tab completes.
+        assert_eq!(
+            slash_accept(
+                b.clone(),
+                "/eff".to_string(),
+                "effort".to_string(),
+                BridgeSlashAcceptKey::Pick,
+                false
+            ),
+            Some(BridgeSlashAccept::Dispatch {
+                dispatch: run(effort_picker())
+            })
+        );
+        assert_eq!(
+            slash_accept(
+                b,
+                "/eff".to_string(),
+                "effort".to_string(),
+                BridgeSlashAcceptKey::Tab,
+                false
+            ),
+            Some(BridgeSlashAccept::Complete {
+                draft: "/effort ".to_string(),
+                caret: 8
+            })
+        );
+    }
+
+    /// **The saved-session DTOs** (plan 032 §3.4, mirrored for M3): a saved
+    /// list maps whole, a reopen's answer carries its row and `joined`, and
+    /// each `LaneReopenError` lands on its own variant — `Lane` through the
+    /// one `From<LaneError>`, so an outcome-unknown inside it would still be
+    /// recognised by shed-craze's predicate.
+    #[test]
+    fn the_saved_session_dtos_map_field_for_field() {
+        let saved: BridgeLaneSavedSessions = LaneSavedSessions {
+            sessions: vec![
+                LaneSavedSession {
+                    id: "c-1".to_string(),
+                    provider: "grok".to_string(),
+                    workspace: "/home/shed/proj".to_string(),
+                    title: Some("load test".to_string()),
+                    updated_unix_ms: 1_760_000_000_000,
+                    created_unix_ms: Some(1_750_000_000_000),
+                },
+                LaneSavedSession {
+                    id: "grok:prov-9".to_string(),
+                    provider: "grok".to_string(),
+                    workspace: "/w".to_string(),
+                    title: None,
+                    updated_unix_ms: 7,
+                    created_unix_ms: None,
+                },
+            ],
+            more: true,
+        }
+        .into();
+        assert!(saved.more);
+        assert_eq!(
+            saved.sessions[0],
+            BridgeLaneSavedSession {
+                id: "c-1".to_string(),
+                provider: "grok".to_string(),
+                workspace: "/home/shed/proj".to_string(),
+                title: Some("load test".to_string()),
+                updated_unix_ms: 1_760_000_000_000,
+                created_unix_ms: Some(1_750_000_000_000),
+            }
+        );
+        assert_eq!(saved.sessions[1].title, None);
+        assert_eq!(saved.sessions[1].created_unix_ms, None);
+
+        let reopened: BridgeLaneReopened = LaneReopened {
+            session: full_session(),
+            joined: true,
+        }
+        .into();
+        assert_eq!(reopened.session, full_session().into());
+        assert!(reopened.joined);
+
+        let mapped: Vec<BridgeLaneReopenError> = vec![
+            LaneReopenError::Gone("no such session".to_string()).into(),
+            LaneReopenError::StartFailed("could not start: no key".to_string()).into(),
+            LaneReopenError::Unavailable("Retry is safe".to_string()).into(),
+            LaneReopenError::Lane(LaneError::BadRequest("id".to_string())).into(),
+        ];
+        assert_eq!(
+            mapped,
+            [
+                BridgeLaneReopenError::Gone {
+                    msg: "no such session".to_string()
+                },
+                BridgeLaneReopenError::StartFailed {
+                    msg: "could not start: no key".to_string()
+                },
+                BridgeLaneReopenError::Unavailable {
+                    msg: "Retry is safe".to_string()
+                },
+                BridgeLaneReopenError::Lane {
+                    error: BridgeLaneError::BadRequest {
+                        msg: "id".to_string()
+                    }
+                },
+            ]
+        );
     }
 
     /// The rename's mapping: craze's "renamed but unrecorded" is success with a

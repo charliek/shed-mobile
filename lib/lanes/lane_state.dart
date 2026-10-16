@@ -6,8 +6,8 @@ import '../src/rust/api/dto_rc.dart';
 import 'lane_settings.dart';
 
 /// The facts a lane's snapshot carries about the SESSION rather than its
-/// transcript — its live row, its capabilities, its settings and its resolved
-/// `/` menu — as one value.
+/// transcript — its live row, its capabilities, its settings, its resolved
+/// `/` menu and which of its options is the effort — as one value.
 ///
 /// One value because they are replaced TOGETHER, verbatim, from one snapshot
 /// and never merged field by field: the live view is the newer truth,
@@ -19,6 +19,7 @@ typedef LaneLive = ({
   BridgeLaneCapabilities? capabilities,
   BridgeLaneSettings? settings,
   BridgeSlashMenu? slashMenu,
+  String? effortOption,
 });
 
 /// Nothing known about the session yet — what a fresh lane, or a lane re-opened
@@ -28,6 +29,7 @@ const LaneLive laneLiveUnknown = (
   capabilities: null,
   settings: null,
   slashMenu: null,
+  effortOption: null,
 );
 
 /// **One agent lane, as a screen renders it** (plan 018 §3.11).
@@ -58,6 +60,7 @@ class LaneState {
     this.capabilities,
     this.settings,
     this.slashMenu,
+    this.effortOption,
     this.error,
     this.approvalErrors = const {},
     this.composerError,
@@ -128,6 +131,13 @@ class LaneState {
   /// same is what lets the composer re-filter only when something it reads
   /// moved (the desktop's "replace the menu only when its value changes").
   final BridgeSlashMenu? slashMenu;
+
+  /// The id of [settings]' EFFORT option, as the shared core reads it
+  /// (craze's `EffortOption` rule, `BridgeLaneSnapshot.effortOption`, plan
+  /// 032 PC14h) — null when there are no settings or they name none. What
+  /// the chip shows as the effort ([settingsChip]); the phone ports no rule
+  /// of its own, so the chip and the `/effort` row are one reading.
+  final String? effortOption;
 
   /// A lane-level failure: the open was refused. Distinct from the two inline
   /// errors below, which belong to one control.
@@ -207,6 +217,7 @@ class LaneState {
     capabilities: live == null ? capabilities : live.capabilities,
     settings: live == null ? settings : live.settings,
     slashMenu: live == null ? slashMenu : live.slashMenu,
+    effortOption: live == null ? effortOption : live.effortOption,
     error: clearError ? null : (error ?? this.error),
     approvalErrors: approvalErrors ?? this.approvalErrors,
     composerError: clearComposerError

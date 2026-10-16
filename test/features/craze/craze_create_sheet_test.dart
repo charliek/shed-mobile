@@ -55,6 +55,7 @@ const _recipe = BridgeLaneCreateOptions(
   ],
   defaultProvider: 'grok',
   recentDirs: ['/home/u/proj', '/home/u/other'],
+  reopen: false,
 );
 
 /// The recipe read again later: grok needs setup now, and native has its key.
@@ -82,6 +83,7 @@ const _grokNotReady = BridgeLaneCreateOptions(
   ],
   defaultProvider: 'grok',
   recentDirs: ['/home/u/proj', '/home/u/other'],
+  reopen: false,
 );
 
 const _liveTitled = BridgeCrazeSnapshot(
@@ -92,6 +94,7 @@ const _liveTitled = BridgeCrazeSnapshot(
     create: true,
     createOptions: true,
     createTitle: true,
+    reopen: false,
   ),
   truncated: false,
 );
@@ -104,6 +107,7 @@ const _live = BridgeCrazeSnapshot(
     create: true,
     createOptions: true,
     createTitle: false,
+    reopen: false,
   ),
   truncated: false,
 );
@@ -432,6 +436,7 @@ void main() {
             create: true,
             createOptions: false,
             createTitle: false,
+            reopen: false,
           ),
           truncated: false,
         ),
@@ -531,6 +536,7 @@ void main() {
         ],
         defaultProvider: 'native',
         recentDirs: [],
+        reopen: false,
       );
     await _pump(tester, feed);
     await _chooseCraze(tester);
@@ -546,6 +552,7 @@ void main() {
         providers: [_recipe.providers[0], _recipe.providers[2]],
         defaultProvider: 'grok',
         recentDirs: const [],
+        reopen: false,
       );
     await _pump(tester, feed);
     await _chooseCraze(tester);
@@ -836,6 +843,7 @@ void main() {
       providers: [_recipe.providers[0]],
       defaultProvider: 'grok',
       recentDirs: const [],
+      reopen: false,
     );
     await tester.pageBack();
     await _settle(tester);

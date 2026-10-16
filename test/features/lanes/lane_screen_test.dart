@@ -1361,6 +1361,80 @@ void main() {
       expect(_markText('mode:mode'), 'nope');
     });
 
+    testWidgets('the chip names the effort the SNAPSHOT names — none named, '
+        'none shown (plan 032 PC14h)', (tester) async {
+      tall(tester);
+      // The same settings, an `effort` select among them — but the shared
+      // core named no effort option: the chip guesses none.
+      final rig = _Rig(
+        snapshot: _snap(
+          capabilities: _settingsCaps,
+          settings: _grok46,
+          effortOption: null,
+        ),
+      );
+      await _pump(tester, rig);
+      expect(_chipText(tester), 'Grok 4.6 · fast');
+
+      rig.bump(_snap(capabilities: _settingsCaps, settings: _grok46));
+      await _settle(tester);
+      expect(_chipText(tester), 'Grok 4.6 · High · fast');
+    });
+
+    testWidgets('a model other than the current one says where its effort '
+        'lands; the current one and a model with no facts say nothing (plan '
+        '032 §3.3)', (tester) async {
+      tall(tester);
+      await _withLog((lines) async {
+        final rig = _Rig(
+          snapshot: _snap(capabilities: _settingsCaps, settings: _native),
+        );
+        await _pump(tester, rig);
+        await openSheet(tester);
+        expect(_secondary('grok-4.6'), isNull, reason: 'the current model');
+        expect(_secondary('claude-opus-5'), 'effort → low');
+        expect(_secondary('glm-5.2'), 'effort → high', reason: 'its default');
+        expect(_secondary('composer-2.5'), isNull, reason: 'no facts');
+        String state() => lines.lastWhere((l) => l.startsWith('MSTATE'));
+        expect(state(), contains(' effort=effort '));
+        expect(state(), endsWith(' lands=claude-opus-5→low,glm-5.2→high'));
+
+        // A switch moves the line with the current model: grok-4.6 now says
+        // where a switch back lands, claude-opus-5 says nothing.
+        rig.bump(
+          _snap(
+            capabilities: _settingsCaps,
+            settings: BridgeLaneSettings(
+              model: 'claude-opus-5',
+              models: _native.models,
+              mode: _native.mode,
+              modes: _native.modes,
+              options: _native.options,
+            ),
+            settingsFrames: 1,
+          ),
+        );
+        await _settle(tester);
+        expect(_secondary('grok-4.6'), 'effort → high');
+        expect(_secondary('claude-opus-5'), isNull);
+        expect(state(), endsWith(' lands=grok-4.6→high,glm-5.2→high'));
+
+        // An ACP session's models state no facts: no line anywhere.
+        rig.bump(
+          _snap(
+            capabilities: _settingsCaps,
+            settings: _grok46,
+            settingsFrames: 2,
+          ),
+        );
+        await _settle(tester);
+        for (final m in _models) {
+          expect(_secondary(m.id), isNull, reason: m.id);
+        }
+        expect(state(), endsWith(' lands=-'));
+      });
+    });
+
     testWidgets('a context meter only when the usage has tokens AND a window', (
       tester,
     ) async {
@@ -2092,6 +2166,105 @@ void main() {
       expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
       expect(_draft(tester), '', reason: 'the picker clears the draft');
       expect(rig.source.sets, isEmpty, reason: 'opening it changes nothing');
+    });
+
+    testWidgets('a bare /effort opens the settings sheet and clears the '
+        'draft, as /model does — by Enter, and by a pick on /eff (plan 032 '
+        '§3.2)', (tester) async {
+      final rig = await _slashRig(tester, _slashSnap(menu: effortMenu));
+      await _type(tester, '/effort');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+      expect(_draft(tester), '', reason: 'the picker clears the draft');
+
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('lane-settings'))),
+      ).pop();
+      await _settle(tester);
+      await _type(tester, '/eff');
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-effort')));
+      await _settle(tester);
+      expect(rig.rules.accepts.last.key, BridgeSlashAcceptKey.pick);
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+      expect(_draft(tester), '');
+      expect(rig.source.sets, isEmpty, reason: 'opening it changes nothing');
+    });
+
+    testWidgets('/effort <level> sends the effort bound to its model — the '
+        'current level too — and a refusal is the composer\'s (plan 032 '
+        '§3.2)', (tester) async {
+      await _withLog((lines) async {
+        final rig = await _slashRig(tester, _slashSnap(menu: effortMenu));
+        const low = BridgeLaneSettingChange.config(
+          id: 'effort',
+          value: 'low',
+          forModel: 'grok-4.6',
+        );
+        await _type(tester, '/effort low');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(rig.source.sets, [low]);
+        expect(_draft(tester), '', reason: 'it took: the draft clears');
+        expect(find.byKey(const ValueKey('lane-settings')), findsNothing);
+        expect(lines, contains('MRESULT lane-effort ok'));
+
+        // The same level again — by id in any case — still sends: an inline
+        // level always does (craze's rule), unlike the sheet's press.
+        await _type(tester, '/effort LOW');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(rig.source.sets, [low, low]);
+
+        // craze's own refusal of a level the option does not offer: inline,
+        // the draft kept, nothing sent.
+        await _type(tester, '/effort bogus');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(
+          _slashRefusal(tester),
+          'no effort bogus: one of low, medium, high, xhigh',
+        );
+        expect(_draft(tester), '/effort bogus');
+        expect(rig.source.sets, hasLength(2));
+
+        // A refusal from the session (`stale_model`: the model moved since
+        // the menu) is the composer's, as a mode's is: the draft kept.
+        rig.source.setFailure = const BridgeLaneError.notAccepting();
+        await _type(tester, '/effort high');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(
+          rig.source.sets.last,
+          const BridgeLaneSettingChange.config(
+            id: 'effort',
+            value: 'high',
+            forModel: 'grok-4.6',
+          ),
+        );
+        expect(
+          _composerError(tester),
+          'the session is not accepting that right now',
+        );
+        expect(_draft(tester), '/effort high');
+        expect(
+          lines.where((l) => l.startsWith('MRESULT lane-effort')).last,
+          startsWith('MRESULT lane-effort error='),
+        );
+      });
+    });
+
+    testWidgets('mid-turn a valid /effort level is refused for the turn, and '
+        'one naming nothing for that first', (tester) async {
+      final rig = await _slashRig(
+        tester,
+        _slashSnap(menu: effortMenu, activity: BridgeRcActivity.working),
+      );
+      await _type(tester, '/effort low');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(_slashRefusal(tester), '/effort: runs after this turn');
+      await _type(tester, '/effort bogus');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(
+        _slashRefusal(tester),
+        'no effort bogus: one of low, medium, high, xhigh',
+      );
+      expect(rig.source.sets, isEmpty);
     });
 
     testWidgets('a 600-row menu renders in a panel capped at 40% of the '
@@ -3039,14 +3212,7 @@ void main() {
 
     testWidgets('MSTATE says slash=<shown>/<open>; the composer verbs log '
         'lane-rename and lane-mode', (tester) async {
-      final lines = <String>[];
-      final saved = debugPrint;
-      debugPrint = (String? message, {int? wrapWidth}) {
-        if (message != null) lines.add(message);
-      };
-      // Restored INSIDE the body: the binding checks its debug variables
-      // before any tear-down runs.
-      try {
+      await _withLog((lines) async {
         await _slashRig(tester);
         String state() => lines.lastWhere((l) => l.startsWith('MSTATE'));
         expect(state(), endsWith(' slash=7/0'));
@@ -3065,9 +3231,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         await _slashRig(tester, _snap());
         expect(state(), endsWith(' slash=-/-'), reason: 'no menu at all');
-      } finally {
-        debugPrint = saved;
-      }
+      });
     });
   });
 }
@@ -3184,6 +3348,52 @@ BridgeLaneSettings _with(
   ],
   usage: usage,
 );
+
+/// A NATIVE session on grok-4.6 (plan 032 §3.3): its models state craze
+/// 0.2.0's effort facts — claude-opus-5 a switch level, glm-5.2 a default
+/// only, composer-2.5 none — over grok-4.6's options.
+final _native = BridgeLaneSettings(
+  model: 'grok-4.6',
+  models: const [
+    BridgeLaneChoice(
+      id: 'grok-4.6',
+      name: 'Grok 4.6',
+      effort: BridgeLaneModelEffort(
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+        defaultEffort: 'high',
+      ),
+    ),
+    BridgeLaneChoice(id: 'composer-2.5', name: 'Composer 2.5'),
+    BridgeLaneChoice(
+      id: 'claude-opus-5',
+      name: 'Claude Opus 5',
+      effort: BridgeLaneModelEffort(
+        efforts: ['low', 'max'],
+        defaultEffort: 'max',
+        switchEffort: 'low',
+      ),
+    ),
+    BridgeLaneChoice(
+      id: 'glm-5.2',
+      name: 'GLM 5.2',
+      effort: BridgeLaneModelEffort(
+        efforts: ['high', 'max'],
+        defaultEffort: 'high',
+      ),
+    ),
+  ],
+  mode: 'agent',
+  modes: _modes,
+  options: _grok46.options,
+);
+
+/// The dim line the sheet's model list draws under [model], or null.
+String? _secondary(String model) {
+  final f = find
+      .byKey(ValueKey('lane-setting-secondary-model:model-$model'))
+      .evaluate();
+  return f.isEmpty ? null : (f.single.widget as Text).data;
+}
 
 /// The chip's words.
 String _chipText(WidgetTester tester) => tester
@@ -3309,6 +3519,23 @@ const _fixtureCaps = BridgeLaneCapabilities(
   setTitle: false,
 );
 
+/// Run [body] with every `debugPrint` line — the drive log's MSTATE and
+/// MRESULT lines — collected into the list it is handed. Restored INSIDE the
+/// test body: the binding checks its debug variables before any tear-down
+/// runs.
+Future<void> _withLog(Future<void> Function(List<String> lines) body) async {
+  final lines = <String>[];
+  final saved = debugPrint;
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message != null) lines.add(message);
+  };
+  try {
+    await body(lines);
+  } finally {
+    debugPrint = saved;
+  }
+}
+
 BridgeLaneSnapshot _snap({
   List<BridgeRcFeedMessage> rows = const [],
   BridgeRcActivity activity = BridgeRcActivity.idle,
@@ -3321,6 +3548,10 @@ BridgeLaneSnapshot _snap({
   int settingsFrames = 0,
   int generation = 1,
   BridgeSlashMenu? slashMenu,
+  // What the shared core names on every settings fixture here — each has an
+  // `effort` select; an explicit null says it named none. No settings, no
+  // effort option, as the core reads it.
+  String? effortOption = 'effort',
 }) => BridgeLaneSnapshot(
   messages: rows,
   full: true,
@@ -3334,6 +3565,7 @@ BridgeLaneSnapshot _snap({
   settingsFrames: BigInt.from(settingsFrames),
   approvals: approvals,
   slashMenu: slashMenu,
+  effortOption: settings == null ? null : effortOption,
 );
 
 BridgeLaneSession _session({required String title, String? permissionMode}) =>

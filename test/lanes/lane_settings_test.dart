@@ -170,11 +170,12 @@ void main() {
   );
 
   test('the chip: model name · effort value · fast, from the current '
-      'values', () {
-    expect(settingsChip(_grok46), 'Grok 4.6 · High · fast');
-    // fast OFF says nothing; `effort` outranks `thinking`, both thought_level.
-    expect(settingsChip(_opus), 'Claude Opus 5 · Max');
-    // grok's own effort is a model_option named reasoning_effort.
+      'values — the effort the option the SNAPSHOT names', () {
+    expect(settingsChip(_grok46, 'effort'), 'Grok 4.6 · High · fast');
+    // fast OFF says nothing.
+    expect(settingsChip(_opus, 'effort'), 'Claude Opus 5 · Max');
+    // The option the shared core named, whatever it is called — grok's own
+    // `reasoning_effort`, a model_option.
     expect(
       settingsChip(
         const BridgeLaneSettings(
@@ -194,6 +195,7 @@ void main() {
             ),
           ],
         ),
+        'reasoning_effort',
       ),
       'Grok 4.6 · High',
     );
@@ -207,6 +209,7 @@ void main() {
           modes: [],
           options: [],
         ),
+        null,
       ),
       'm-1',
     );
@@ -217,18 +220,27 @@ void main() {
           modes: [BridgeLaneChoice(id: 'a', name: 'A')],
           options: [],
         ),
+        null,
       ),
       'Settings',
     );
   });
 
-  test('the effort select and the fast toggle are craze\'s own readings', () {
-    expect(effortOption(_opus.options)?.id, 'effort');
-    expect(
-      effortOption([_opus.options.first]),
-      isNull,
-      reason: 'thinking is no effort',
-    );
+  test('CONTROL: the chip guesses no effort — none named, none shown, '
+      'whatever the options are called (plan 032 PC14h)', () {
+    // An option called `effort` the snapshot did not name is no effort here:
+    // which option is the effort is the shared core's reading, not the
+    // phone's, and the Dart port of it is gone.
+    expect(settingsChip(_grok46, null), 'Grok 4.6 · fast');
+    expect(settingsChip(_opus, null), 'Claude Opus 5');
+    // The option named, whatever it is: the chip shows ITS value.
+    expect(settingsChip(_opus, 'thinking'), 'Claude Opus 5 · On');
+    // An id with no option behind it (a view a step behind its settings)
+    // names nothing.
+    expect(settingsChip(_grok46, 'gone'), 'Grok 4.6 · fast');
+  });
+
+  test('the fast toggle is craze\'s own reading', () {
     expect(fastOn(_grok46.options), isTrue);
     expect(fastOn(_opus.options), isFalse);
     // On is the value that is not off — by name or spelling, never by
@@ -253,6 +265,91 @@ void main() {
     expect(choiceName(_grok46.models, 'unlisted'), 'unlisted');
   });
 
+  test('the model list\'s effort line: where a switch lands, for every model '
+      'but the current one (plan 032 §3.3)', () {
+    const facts = BridgeLaneSettings(
+      model: 'grok-4.6',
+      models: [
+        // The CURRENT model: its effort row shows its effort, so no line —
+        // facts or not.
+        BridgeLaneChoice(
+          id: 'grok-4.6',
+          name: 'Grok 4.6',
+          effort: BridgeLaneModelEffort(
+            efforts: ['low', 'high'],
+            defaultEffort: 'high',
+            switchEffort: 'low',
+          ),
+        ),
+        // `switchEffort` wins over the default: the session's last choice.
+        BridgeLaneChoice(
+          id: 'claude-opus-5',
+          name: 'Claude Opus 5',
+          effort: BridgeLaneModelEffort(
+            efforts: ['low', 'max'],
+            defaultEffort: 'max',
+            switchEffort: 'low',
+          ),
+        ),
+        // No switch level: the default.
+        BridgeLaneChoice(
+          id: 'glm-5.2',
+          name: 'GLM 5.2',
+          effort: BridgeLaneModelEffort(
+            efforts: ['high', 'max'],
+            defaultEffort: 'high',
+          ),
+        ),
+        // An empty switch level is none, as the desktop's `||` reads it.
+        BridgeLaneChoice(
+          id: 'm-empty',
+          name: 'Empty',
+          effort: BridgeLaneModelEffort(
+            efforts: ['a'],
+            defaultEffort: 'a',
+            switchEffort: '',
+          ),
+        ),
+        // Facts naming neither level, and no facts at all (an ACP session's
+        // every model): nothing.
+        BridgeLaneChoice(
+          id: 'm-bare',
+          name: 'Bare',
+          effort: BridgeLaneModelEffort(efforts: ['a']),
+        ),
+        BridgeLaneChoice(id: 'composer-2.5', name: 'Composer 2.5'),
+      ],
+      modes: [BridgeLaneChoice(id: 'agent', name: 'Agent')],
+      options: [],
+    );
+    final model = _row(facts, 'model');
+    expect(
+      [for (final v in model.values) secondaryLine(model, v)],
+      [null, 'effort → low', 'effort → high', 'effort → a', null, null],
+    );
+    expect(modelSwitchEffort(facts.models[1], facts.model), 'low');
+    expect(modelSwitchEffort(facts.models[0], facts.model), isNull);
+    expect(
+      modelSwitchEffort(facts.models[0], 'claude-opus-5'),
+      'low',
+      reason: 'the line follows the CURRENT model: a switch moves it',
+    );
+    // Only the model list draws one: a mode or an option value never does.
+    final mode = _row(facts, 'mode');
+    expect(secondaryLine(mode, mode.values.single), isNull);
+    final effort = _row(_grok46, 'effort');
+    expect(
+      [for (final v in effort.values) secondaryLine(effort, v)],
+      [for (final _ in effort.values) null],
+    );
+    // The permodel fixtures are an ACP session's: no model says a thing.
+    final acp = _row(_opus, 'model');
+    expect(
+      [for (final v in acp.values) modelEffortLine(v, acp.current)],
+      [for (final _ in acp.values) null],
+    );
+  });
+
   test('CONTROL: offered only when the capabilities say settings — the '
       'capability alone decides', () {
     expect(settingsOffered(_caps(settings: true)), isTrue);
@@ -260,7 +357,7 @@ void main() {
     expect(settingsOffered(null), isFalse, reason: 'no seed yet says nothing');
     // Offered before the first Settings: an empty sheet, a "Settings" chip.
     expect(sheetRows(noSettings), isEmpty);
-    expect(settingsChip(noSettings), 'Settings');
+    expect(settingsChip(noSettings, null), 'Settings');
   });
 
   test('a change\'s life: pending, then cleared, refused inline, or not '

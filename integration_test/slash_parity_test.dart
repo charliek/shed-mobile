@@ -208,6 +208,37 @@ final _plugin = BridgeSlashMenu(
   hidden: crazeMenu.hidden,
 );
 
+/// craze 0.2.0's `/effort` (plan 032 §3.2): the hub's menu with the builtin
+/// row, no default level (an ACP session's — the effort cells' menu).
+final _effort = effortMenu;
+
+/// The same with a default level the option offers, and a level spelled
+/// `default` — which a typed `default` never reaches (it is reserved).
+final _effortDefault = effortMenuWithDefault;
+
+/// Levels only the looser rules tell apart, a `default` level with no
+/// default to resolve to, and a name: `/effort` resolution's edges.
+final _effortOdd = BridgeSlashMenu(
+  rows: [
+    slashRow(
+      'effort',
+      const BridgeSlashAction.effortPicker(
+        option: 'reasoning',
+        forModel: 'glm-5.2',
+        levels: [
+          BridgeLaneChoice(id: 'low', name: 'Gentle'),
+          BridgeLaneChoice(id: 'LOW', name: 'Shouty'),
+          BridgeLaneChoice(id: 'max', name: '  Maximum  '),
+          BridgeLaneChoice(id: 'default', name: 'Default'),
+        ],
+      ),
+      arg: const BridgeSlashArg.optional(),
+      argHint: '<level>',
+    ),
+  ],
+  hidden: const [],
+);
+
 // ---------------------------------------------------------------------------
 // the table
 // ---------------------------------------------------------------------------
@@ -288,6 +319,13 @@ final _filters = <_Filter>[
   _f('/ops', menu: _plugin, label: 'plugin'),
   _f('/ops:', menu: _plugin, label: 'plugin'),
   _f('/:dep', menu: _plugin, label: 'plugin'),
+  // `/effort` (plan 032): listed with the hub's rows, dimmed mid-turn (no
+  // `whileWorking`), and the `/eff` token's own panel.
+  _f('/', menu: _effort, label: 'effort'),
+  _f('/', menu: _effort, working: true, label: 'effort'),
+  _f('/eff', menu: _effort, label: 'effort'),
+  _f('/e', menu: _effort, label: 'effort'),
+  _f('/effort low', caret: 4, menu: _effort, label: 'effort'),
 ];
 
 typedef _Dispatch = ({
@@ -362,6 +400,33 @@ final _dispatches = <_Dispatch>[
   _d('/ops:deploy now', menu: _plugin, label: 'plugin'),
   _d('/deploy', menu: _plugin, label: 'plugin'),
   _d('/OPS:DEPLOY', menu: _plugin, label: 'plugin'),
+  // `/effort` (plan 032 §3.2): bare, the picker; a level by id, in any case
+  // and by name, set bound to the model; `default` reserved (refused without
+  // a default level); craze's refusal text; the turn judged after the level.
+  _d('/effort', menu: _effort, label: 'effort'),
+  _d('/effort ', menu: _effort, label: 'effort'),
+  _d('/Effort', menu: _effort, label: 'effort'),
+  _d('/effort low', menu: _effort, label: 'effort'),
+  _d('/effort LOW', menu: _effort, label: 'effort'),
+  _d('/effort   xhigh  ', menu: _effort, label: 'effort'),
+  _d('/effort extra high', menu: _effort, label: 'effort'),
+  _d('/effort bogus', menu: _effort, label: 'effort'),
+  _d('/effort default', menu: _effort, label: 'effort'),
+  _d('/effort DEFAULT', menu: _effort, label: 'effort'),
+  _d('/effort', menu: _effort, working: true, label: 'effort'),
+  _d('/effort low', menu: _effort, working: true, label: 'effort'),
+  _d('/effort bogus', menu: _effort, working: true, label: 'effort'),
+  _d('/effort default', menu: _effortDefault, label: 'effort-default'),
+  _d('/effort Default', menu: _effortDefault, label: 'effort-default'),
+  _d('/effort bogus', menu: _effortDefault, label: 'effort-default'),
+  _d('/effort high', menu: _effortDefault, label: 'effort-default'),
+  _d('/effort low', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort LOW', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort Low', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort maximum', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort shouty', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort default', menu: _effortOdd, label: 'effort-odd'),
+  _d('/effort nope', menu: _effortOdd, label: 'effort-odd'),
 ];
 
 typedef _Accept = ({
@@ -439,4 +504,33 @@ final _accepts = <_Accept>[
   _a('/ops:', 'deploy', _tab, menu: _plugin, label: 'plugin'),
   _a('/dep', 'deploy', _tab, menu: _plugin, label: 'plugin'),
   _a('/ops:deploy', 'deploy', _enter, menu: _plugin, label: 'plugin'),
+  // `/effort` (plan 032 §3.2, PC8): it takes no argument here, so a pick and
+  // Enter run the completed draft — the picker bare, its level with one —
+  // and Tab completes; mid-turn a pick is refused for the turn, but a level
+  // is judged FIRST.
+  _a('/eff', 'effort', _pick, menu: _effort, label: 'effort'),
+  _a('/eff', 'effort', _enter, menu: _effort, label: 'effort'),
+  _a('/eff', 'effort', _tab, menu: _effort, label: 'effort'),
+  _a('/effort', 'effort', _enter, menu: _effort, label: 'effort'),
+  _a('/eff low', 'effort', _pick, menu: _effort, label: 'effort'),
+  _a('/eff bogus', 'effort', _enter, menu: _effort, label: 'effort'),
+  _a('/effort low', 'effort', _enter, menu: _effort, label: 'effort'),
+  _a('/eff', 'effort', _pick, working: true, menu: _effort, label: 'effort'),
+  _a(
+    '/eff low',
+    'effort',
+    _pick,
+    working: true,
+    menu: _effort,
+    label: 'effort',
+  ),
+  _a(
+    '/eff bogus',
+    'effort',
+    _pick,
+    working: true,
+    menu: _effort,
+    label: 'effort',
+  ),
+  _a('/eff low', 'effort', _tab, working: true, menu: _effort, label: 'effort'),
 ];

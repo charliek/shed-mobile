@@ -41,6 +41,13 @@ import '../../theme/shed_theme.dart';
 /// * **An option is bound to the model the sheet SHOWS** (Amendment A13): a
 ///   press sends the model this sheet drew it under, never one the adapter may
 ///   have folded since.
+/// * **A model says where its effort lands** (plan 032 §3.3): every model in
+///   the list but the current one whose effort facts name a level — a native
+///   session's — carries a dim `effort → <level>` under its name
+///   ([secondaryLine]): a native switch moves the effort with the model, to
+///   that level. An ACP session's models carry none. The chip's effort is the
+///   option the snapshot names ([LaneState.effortOption]), never a guess made
+///   here.
 class LaneSettingsSheet extends ConsumerWidget {
   const LaneSettingsSheet({required this.lane, super.key});
 
@@ -61,7 +68,10 @@ class LaneSettingsSheet extends ConsumerWidget {
     final c = context.shed;
     logDriveState(
       'screen=lane-settings machine=${lane.machine} slug=${lane.slug} '
-      'chip=${settingsChip(settings)} rows=${rows.map((r) => r.id).join(',')}',
+      'chip=${settingsChip(settings, state.effortOption)} '
+      'rows=${rows.map((r) => r.id).join(',')} '
+      'effort=${state.effortOption ?? '-'} '
+      'lands=${_lands(settings)}',
     );
     return SafeArea(
       key: const ValueKey('lane-settings'),
@@ -139,6 +149,18 @@ class LaneSettingsSheet extends ConsumerWidget {
     // Never threw: the outcome is the row's mark, read off the same lane.
     final mark = controller.state.settingMarks[row.key];
     logDriveResult('lane-set', ok: mark == null, error: markText(mark));
+  }
+
+  /// The models whose line says where a switch lands their effort
+  /// ([modelSwitchEffort]), as `<model>→<level>` — the drive's read of the
+  /// secondary lines, `-` when no model has one (every ACP session).
+  static String _lands(BridgeLaneSettings settings) {
+    final lands = [
+      for (final m in settings.models)
+        if (modelSwitchEffort(m, settings.model) case final level?)
+          '${m.id}→$level',
+    ];
+    return lands.isEmpty ? '-' : lands.join(',');
   }
 
   /// The sheet's session no longer offers settings (or its lane is gone):
@@ -315,6 +337,10 @@ class _ChoiceList extends StatelessWidget {
                 enabled: enabled,
                 filled: false,
                 onTap: () => onPress(row.values[i].id),
+                secondary: secondaryLine(row, row.values[i]),
+                secondaryKey: ValueKey(
+                  'lane-setting-secondary-${row.key}-${row.values[i].id}',
+                ),
               ),
             ],
           ],
@@ -326,7 +352,9 @@ class _ChoiceList extends StatelessWidget {
 
 /// One value: a segment ([filled], the current one accent-filled) or a list
 /// line (the current one checked). Its own button and selected semantics, so
-/// a reader — and a test — can ask which value a row shows.
+/// a reader — and a test — can ask which value a row shows. A list line may
+/// carry a dim [secondary] line under its name — a model's
+/// `effort → <level>`, plan 032 §3.3 — keyed [secondaryKey].
 class _Choice extends StatelessWidget {
   const _Choice({
     required this.choice,
@@ -334,6 +362,8 @@ class _Choice extends StatelessWidget {
     required this.enabled,
     required this.filled,
     required this.onTap,
+    this.secondary,
+    this.secondaryKey,
     super.key,
   });
 
@@ -342,6 +372,8 @@ class _Choice extends StatelessWidget {
   final bool enabled;
   final bool filled;
   final VoidCallback onTap;
+  final String? secondary;
+  final Key? secondaryKey;
 
   @override
   Widget build(BuildContext context) {
@@ -360,6 +392,7 @@ class _Choice extends StatelessWidget {
             : (selected ? c.accent : c.fg),
       ),
     );
+    final line = secondary;
     final body = filled
         ? Container(
             alignment: Alignment.center,
@@ -377,7 +410,24 @@ class _Choice extends StatelessWidget {
                       ? Icon(Icons.check, size: 16, color: c.accent)
                       : null,
                 ),
-                Expanded(child: text),
+                Expanded(
+                  child: line == null
+                      ? text
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            text,
+                            Text(
+                              line,
+                              key: secondaryKey,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: monoStyle(fontSize: 11, color: c.fg3),
+                            ),
+                          ],
+                        ),
+                ),
               ],
             ),
           );

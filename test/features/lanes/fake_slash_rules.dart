@@ -8,7 +8,8 @@ import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 ///
 /// It follows the module's documented rules for the menus these tests build
 /// (the four filter buckets and the caret rule, the row a highlight starts
-/// on, the grammar and its guard, the three accept keys — `slash_menu.rs`'s
+/// on, the grammar and its guard, the three accept keys, and `/effort`'s own
+/// argument arm — plan 032 §3.2, for plain ASCII levels — `slash_menu.rs`'s
 /// module doc), and RECORDS every call, so a cell asserts what the SCREEN
 /// asked (the draft as typed, the UTF-16 caret, the key, the working flag) as
 /// well as what it did with the answer.
@@ -119,7 +120,15 @@ class FakeSlashRules implements SlashRules {
         dispatch: _dispatch(menu, draft, working),
       );
     }
-    if (key != BridgeSlashAcceptKey.tab && working && _waits(row)) {
+    // `/effort` with a level is judged before the turn (plan 032 §3.2): it
+    // falls through to the completed draft's dispatch.
+    final levelFirst =
+        row.action is BridgeSlashAction_EffortPicker &&
+        command.rest.trim().isNotEmpty;
+    if (key != BridgeSlashAcceptKey.tab &&
+        working &&
+        _waits(row) &&
+        !levelFirst) {
       return BridgeSlashAccept.dispatch(
         dispatch: _refuse(row.name, 'runs after this turn'),
       );
@@ -186,6 +195,11 @@ class FakeSlashRules implements SlashRules {
         'takes no argument — pick a model from the list',
       );
     }
+    // `/effort <level>`: its own arm, ahead of the no-argument guard and of
+    // the turn check (plan 032 §3.2, PC8).
+    if (action is BridgeSlashAction_EffortPicker && arg.isNotEmpty) {
+      return _effortDispatch(row, action, arg, working);
+    }
     if (!_takesArgument(action) && arg.isNotEmpty) {
       return _refuse(row.name, 'takes no argument');
     }
@@ -201,11 +215,70 @@ class FakeSlashRules implements SlashRules {
   static BridgeSlashDispatch _refuse(String name, String why) =>
       BridgeSlashDispatch.refuse(reason: '/$name: $why');
 
+  /// craze's `/effort <level>` for a plain ASCII [typed]: `default` (any
+  /// case) is the picker's default level where the option offers it, else
+  /// refused; anything else is the level whose id is [typed] exactly, else in
+  /// any case, else the one whose trimmed name is it in any case — the first
+  /// rule matching anything decides, and must match exactly one. A miss is
+  /// craze's own refusal text; a match on a [row] that waits is refused for
+  /// the turn, and otherwise sets that level bound to the picker's model.
+  static BridgeSlashDispatch _effortDispatch(
+    BridgeSlashMenuRow row,
+    BridgeSlashAction_EffortPicker picker,
+    String typed,
+    bool working,
+  ) {
+    final levels = picker.levels;
+    final defaultLevel = levels.any((l) => l.id == picker.defaultLevel)
+        ? picker.defaultLevel
+        : null;
+    final reserved = _fold(typed) == 'default';
+    String? value;
+    if (reserved) {
+      value = defaultLevel;
+    } else {
+      for (final rule in <bool Function(BridgeLaneChoice)>[
+        (l) => l.id == typed,
+        (l) => _fold(l.id) == _fold(typed),
+        (l) => _fold(l.name.trim()) == _fold(typed),
+      ]) {
+        final found = levels.where(rule).toList();
+        if (found.isEmpty) continue;
+        if (found.length == 1) value = found.single.id;
+        break;
+      }
+    }
+    if (value == null) {
+      final one = [
+        if (defaultLevel != null) 'default',
+        for (final l in levels)
+          if (!(reserved && _fold(l.id) == 'default')) l.id,
+      ];
+      return BridgeSlashDispatch.refuse(
+        reason: 'no effort $typed: one of ${one.join(', ')}',
+      );
+    }
+    if (working && _waits(row)) {
+      return _refuse(row.name, 'runs after this turn');
+    }
+    return BridgeSlashDispatch.run(
+      action: BridgeSlashAction.setEffort(
+        change: BridgeLaneSettingChange.config(
+          id: picker.option,
+          value: value,
+          forModel: picker.forModel,
+        ),
+      ),
+    );
+  }
+
   static String _fold(String s) => s.toLowerCase();
 
   static bool _waits(BridgeSlashMenuRow row) =>
       !row.whileWorking && row.action is! BridgeSlashAction_Prompt;
 
+  /// `EffortPicker` takes none here (PC8): its optional level is read by
+  /// dispatch's own arm, so a pick and Enter run it and Tab completes it.
   static bool _takesArgument(BridgeSlashAction action) =>
       action is BridgeSlashAction_Prompt ||
       action is BridgeSlashAction_SetTitle;
@@ -297,6 +370,58 @@ final crazeMenu = BridgeSlashMenu(
     BridgeSlashHidden(name: 'clear', reason: 'not available here yet'),
     BridgeSlashHidden(name: 'btw', reason: 'not available here yet'),
   ],
+);
+
+/// craze 0.2.0's builtin `/effort` row (plan 032 §3.2) as the shared core
+/// resolves it on grok-4.6 of craze's permodel cursor: its `effort` select's
+/// [levels] — by default its four — and no default level unless one is given
+/// (an ACP session states no effort facts).
+BridgeSlashMenuRow _effortRow({
+  List<BridgeLaneChoice> levels = const [
+    BridgeLaneChoice(id: 'low', name: 'Low'),
+    BridgeLaneChoice(id: 'medium', name: 'Medium'),
+    BridgeLaneChoice(id: 'high', name: 'High'),
+    BridgeLaneChoice(id: 'xhigh', name: 'Extra High'),
+  ],
+  String? defaultLevel,
+}) => slashRow(
+  'effort',
+  BridgeSlashAction.effortPicker(
+    option: 'effort',
+    forModel: 'grok-4.6',
+    levels: levels,
+    defaultLevel: defaultLevel,
+  ),
+  arg: const BridgeSlashArg.optional(),
+  argHint: '<level>',
+  description: 'Set the reasoning effort',
+);
+
+/// [crazeMenu] with [effort] — the builtin `/effort` — where craze lists it
+/// (after `exit`, before the agent's rows; the desktop harness's
+/// `MENU_ROWS`).
+BridgeSlashMenu _withEffort(BridgeSlashMenuRow effort) => BridgeSlashMenu(
+  rows: [
+    for (final r in crazeMenu.rows) ...[if (r.name == 'research') effort, r],
+  ],
+  hidden: crazeMenu.hidden,
+);
+
+/// **A craze 0.2.0 session's menu whose model has an effort setting** —
+/// [crazeMenu] with its `/effort` row.
+final effortMenu = _withEffort(_effortRow());
+
+/// [effortMenu]'s `/effort` with a default level the option offers (`high`)
+/// — what a native session's effort facts give the picker.
+final effortMenuWithDefault = _withEffort(
+  _effortRow(
+    levels: const [
+      BridgeLaneChoice(id: 'low', name: 'Low'),
+      BridgeLaneChoice(id: 'high', name: 'High'),
+      BridgeLaneChoice(id: 'default', name: 'Default'),
+    ],
+    defaultLevel: 'high',
+  ),
 );
 
 /// The names [crazeMenu] lists, in order.
