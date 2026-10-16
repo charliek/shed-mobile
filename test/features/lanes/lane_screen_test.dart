@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shed_mobile/core/app_error.dart';
 import 'package:shed_mobile/features/lanes/lane_screen.dart';
 import 'package:shed_mobile/features/lanes/slash_keys.dart';
 import 'package:shed_mobile/features/lanes/slash_menu_panel.dart';
@@ -14,6 +15,7 @@ import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/machines/machine_feed.dart';
 import 'package:shed_mobile/machines/machine_record.dart';
 import 'package:shed_mobile/providers.dart';
+import 'package:shed_mobile/src/rust/api/craze.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/lane.dart';
@@ -818,9 +820,8 @@ void main() {
       expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
     });
 
-    testWidgets('a stale lane names the reason, and a dead one says so', (
-      tester,
-    ) async {
+    testWidgets('a stale lane names the reason, and a dead one says so — '
+        'in its ended banner ALONE (plan 032 §3.1.2)', (tester) async {
       // `unknown_session` is the one reason that ends the retries: the agent
       // does not know this session, so re-opening would ask the same question
       // forever. The screen renders that terminal state rather than a live
@@ -853,8 +854,15 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await _settle(tester);
 
-      expect(find.byKey(const ValueKey('lane-note')), findsOneWidget);
-      expect(find.textContaining('given up on'), findsOneWidget);
+      // Given up on — nothing re-opens a session the agent does not know —
+      // but the banner's reason is the whole story: a final end says nothing
+      // more ("given up on" is for a lane that ended WITHOUT one).
+      expect(
+        tester.widget<Text>(_bannerText('lane-stale')).data,
+        'unknown_session',
+      );
+      expect(find.byKey(const ValueKey('lane-note')), findsNothing);
+      expect(find.textContaining('given up on'), findsNothing);
       // …and nothing pretends the lane can still be steered.
       expect(
         tester
@@ -862,6 +870,159 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+  });
+
+  group('the lane note and a craze row that leaves (plan 032 §3.1.2)', () {
+    const host = 'cccccccccccc';
+    const givenUp =
+        'This lane has been given up on — its row or session is gone.';
+    final crazeCaps = _caps(kind: 'craze', stop: true);
+    final before = _row(1, 'assistant', 'before the stop');
+
+    /// A craze session's transcript, open, its row listed by a live roster.
+    Future<_Rig> crazeLane(WidgetTester tester) async {
+      final rig = _Rig(
+        crazeHost: host,
+        snapshot: _snap(rows: [before], capabilities: crazeCaps),
+      );
+      await _pump(tester, rig);
+      expect(rig.source.crazeOpens, [host]);
+      return rig;
+    }
+
+    /// The roster's next round no longer lists the session.
+    Future<void> rowLeaves(WidgetTester tester, _Rig rig) async {
+      rig.feed.crazeRowGone = true;
+      rig.feed.publish();
+      await _settle(tester);
+    }
+
+    test('laneNoteText: a final end says nothing; an end that is not final, '
+        'a vanished row and an error each still say "given up on"', () {
+      for (final reason in [
+        'session_closed',
+        'unknown_session',
+        'start_failed: KEYCHAIN LOCKED',
+      ]) {
+        expect(
+          laneNoteText(LaneState(stale: reason, ended: true, abandoned: true)),
+          isNull,
+          reason: '$reason: the ended banner alone',
+        );
+      }
+      expect(
+        laneNoteText(
+          LaneState(stale: 'unreachable', ended: true, abandoned: true),
+        ),
+        givenUp,
+        reason: 'an end, but not a final one',
+      );
+      expect(laneNoteText(LaneState(abandoned: true)), givenUp);
+      expect(
+        laneNoteText(
+          LaneState(
+            abandoned: true,
+            error: AppError('LANE_UNSUPPORTED_KIND', 'no adapter for codex'),
+          ),
+        ),
+        'This lane has been given up on: no adapter for codex',
+      );
+      expect(laneNoteText(LaneState(retrying: true)), 'Reconnecting…');
+      expect(laneNoteText(LaneState()), isNull);
+      expect(
+        laneNoteText(LaneState(stale: 'session_closed', ended: true)),
+        isNull,
+        reason: 'ended but not yet acted on: nothing to note',
+      );
+    });
+
+    testWidgets('a craze lane stays live through its grace, and a final Down '
+        'in it shows the ended banner ALONE — no "given up on"', (
+      tester,
+    ) async {
+      await _withLog((lines) async {
+        final rig = await crazeLane(tester);
+        String state() =>
+            lines.lastWhere((l) => l.startsWith('MSTATE screen=lane '));
+        expect(state(), contains(' departing=f '));
+
+        await rowLeaves(tester, rig);
+        expect(state(), contains(' departing=t '), reason: 'the drive log');
+        expect(
+          find.byKey(const ValueKey('lane-note')),
+          findsNothing,
+          reason: 'nothing is over yet',
+        );
+        expect(_sendEnabled(tester), isTrue);
+
+        // The session's last words, after its row left.
+        final after = _row(2, 'assistant', 'after the row left');
+        rig.bump(_snap(rows: [before, after], capabilities: crazeCaps));
+        await _settle(tester);
+        expect(find.text('after the row left'), findsOneWidget);
+
+        // The Stop's end.
+        rig.bump(
+          _snap(
+            rows: [before, after],
+            stale: 'session_closed',
+            ended: true,
+            capabilities: crazeCaps,
+          ),
+        );
+        await _settle(tester);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await _settle(tester);
+        expect(
+          tester.widget<Text>(_bannerText('lane-stale')).data,
+          'session_closed',
+        );
+        expect(find.byKey(const ValueKey('lane-note')), findsNothing);
+        expect(find.textContaining('given up on'), findsNothing);
+        expect(find.text('after the row left'), findsOneWidget);
+        expect(_sendEnabled(tester), isFalse, reason: 'over for good');
+        expect(state(), contains(' departing=f '));
+
+        // The grace went with the end: past where it would have run out,
+        // nothing changes.
+        await tester.pump(crazeDepartGrace);
+        await _settle(tester);
+        expect(find.byKey(const ValueKey('lane-note')), findsNothing);
+      });
+    });
+
+    testWidgets('a craze lane whose grace runs out with no final Down reads '
+        'once more, then is given up on WITH the note', (tester) async {
+      final rig = await crazeLane(tester);
+      await rowLeaves(tester, rig);
+      // A row that arrived in the grace's last moment, no nudge for it yet:
+      // only the grace's own read can show it.
+      rig.source.current = _snap(
+        rows: [before, _row(2, 'assistant', 'one last row')],
+        capabilities: crazeCaps,
+      );
+
+      await tester.pump(crazeDepartGrace);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(find.text('one last row'), findsOneWidget);
+      expect(tester.widget<Text>(_bannerText('lane-note')).data, givenUp);
+      expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+      expect(_sendEnabled(tester), isFalse);
+    });
+
+    testWidgets('a NON-craze lane whose row leaves is given up on at once, '
+        'with the note', (tester) async {
+      final rig = _Rig(snapshot: _snap(rows: [before]));
+      await _pump(tester, rig);
+      rig.feed.laneGone = true;
+      rig.feed.publish();
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(tester.widget<Text>(_bannerText('lane-note')).data, givenUp);
+      expect(find.text('before the stop'), findsOneWidget);
     });
   });
 
@@ -1655,7 +1816,11 @@ void main() {
       await _settle(tester);
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await _settle(tester);
-      expect(find.textContaining('given up on'), findsOneWidget);
+      expect(
+        _sendEnabled(tester),
+        isFalse,
+        reason: 'given up on (its banner alone says so, plan 032 §3.1.2)',
+      );
       expect(button, findsNothing, reason: 'nothing can run here');
     });
 
@@ -3467,6 +3632,7 @@ Future<void> _settle(WidgetTester tester) async {
 /// Riverpod does not export the `Override` type a `List<Override>` getter would
 /// have to name (the target-picker test's precedent).
 Future<void> _pump(WidgetTester tester, _Rig rig) async {
+  final craze = rig.feed.crazeHost;
   await tester.pumpWidget(
     ProviderScope(
       retry: (_, _) => null,
@@ -3484,12 +3650,19 @@ Future<void> _pump(WidgetTester tester, _Rig rig) async {
       ],
       child: MaterialApp(
         theme: shedLightTheme,
-        home: const LaneScreen(
-          machine: 'mini3',
-          kind: 'opencode',
-          slug: '7',
-          title: 'row7',
-        ),
+        home: craze == null
+            ? const LaneScreen(
+                machine: 'mini3',
+                kind: 'opencode',
+                slug: '7',
+                title: 'row7',
+              )
+            : LaneScreen(
+                machine: 'mini3',
+                kind: crazeLaneKind,
+                slug: craze,
+                title: 'craze $craze',
+              ),
       ),
     ),
   );
@@ -3623,9 +3796,12 @@ Finder _bannerText(String key) =>
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
-  _Rig({BridgeLaneSnapshot? snapshot, String kind = 'opencode'})
-    : source = _FakeSource(current: snapshot ?? _snap()),
-      feed = _FakeFeed(kind: kind);
+  _Rig({
+    BridgeLaneSnapshot? snapshot,
+    String kind = 'opencode',
+    String? crazeHost,
+  }) : source = _FakeSource(current: snapshot ?? _snap()),
+       feed = _FakeFeed(kind: kind, crazeHost: crazeHost);
 
   final _FakeSource source;
   final _FakeFeed feed;
@@ -3784,9 +3960,18 @@ class _FakeHandle implements LaneHandle {}
 /// the FRB-sync `roostCapabilities()` in its constructor, so it cannot exist in
 /// a widget test at all.
 class _FakeFeed implements MachineFeed {
-  _FakeFeed({required this.kind});
+  _FakeFeed({required this.kind, this.crazeHost});
 
   final String kind;
+
+  /// When set, the machine's one row is a CRAZE session with this hostId,
+  /// listed by a live craze roster (and the screen opens its lane) — instead
+  /// of the roost tab. [crazeRowGone] takes it off the roster.
+  final String? crazeHost;
+  bool crazeRowGone = false;
+
+  /// The roster's next round, as the feed would publish it.
+  void publish() => _updates.add(state);
 
   /// The row's lane stamp is gone — what a machine-feed rebuild without it
   /// leaves: the next build of `laneControllerProvider` refuses.
@@ -3805,14 +3990,46 @@ class _FakeFeed implements MachineFeed {
   void restamp({String? session, String? url}) {
     sessionId = session ?? sessionId;
     serverUrl = url ?? serverUrl;
-    _updates.add(state);
+    publish();
   }
 
   @override
   MachineRecord get machine => _mini3;
 
   @override
-  MachineFeedState get state => MachineFeedState(
+  MachineFeedState get state => crazeHost == null ? _roostState : _crazeState;
+
+  MachineFeedState get _crazeState {
+    final rows = [
+      if (!crazeRowGone)
+        BridgeLaneSession(
+          id: crazeHost!,
+          title: 'craze row',
+          cwd: '/home/shed/proj',
+          activity: BridgeRcActivity.idle,
+          pendingApprovals: 0,
+          approximate: false,
+        ),
+    ];
+    return MachineFeedState(
+      machine: _mini3,
+      connectedOnce: true,
+      reachable: true,
+      craze: BridgeCrazeSnapshot(rows: rows, live: true, truncated: false),
+      foldedRows: [
+        for (final row in rows) CrazeMachineRow(session: row, stale: false),
+      ],
+    );
+  }
+
+  /// The machine's craze source — one, live, never replaced.
+  @override
+  int? get crazeLiveEpoch => 1;
+
+  @override
+  Stream<int?> get crazeSources => const Stream.empty();
+
+  MachineFeedState get _roostState => MachineFeedState(
     machine: _mini3,
     connectedOnce: true,
     reachable: true,
@@ -3975,6 +4192,13 @@ Future<void> _confirmHeaderStop(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('lane-stop-session')));
   await _settle(tester);
 }
+
+/// Whether Send can be pressed — off once the lane is over.
+bool _sendEnabled(WidgetTester tester) =>
+    tester
+        .widget<IconButton>(find.byKey(const ValueKey('lane-send')))
+        .onPressed !=
+    null;
 
 /// What the composer's error slot says, or null.
 String? _composerError(WidgetTester tester) {

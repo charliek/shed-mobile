@@ -1017,7 +1017,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
           // to say ([_stopLost]), on the session it was said for.
           if (state.stopError?.message ?? _said(_stopLost) case final message?)
             _banner(context, 'lane-stop-error', ShedStatusTone.err, message),
-          if (_laneNote(state) case final note?) _noteBanner(context, note),
+          if (laneNoteText(state) case final note?) _noteBanner(context, note),
           // Only the `/` menu and the composer read the draft: a keystroke
           // or a caret move rebuilds them, never the transcript.
           Expanded(
@@ -1166,6 +1166,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     });
   }
 
+  /// `departing=t`: a craze lane whose row left, waiting out its grace on its
+  /// own connection ([LaneState.departing]) — nothing on screen says so.
   /// `slash=<shown>/<open>`: how many rows the session's menu shows (`-` — no
   /// menu at all), and how many the panel lists right now (0 — closed).
   void _log(LaneState state, BridgeSlashMenu? menu, int open) {
@@ -1177,6 +1179,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       'screen=lane machine=${widget.machine} session=$session '
       'generation=${state.generation} stale=${state.stale ?? '-'} '
       'approvals=${state.approvals.length} activity=${state.activity.wire} '
+      'departing=${state.departing ? 't' : 'f'} '
       'slash=${menu == null ? '-/-' : '${menu.rows.length}/$open'}',
     );
   }
@@ -1253,22 +1256,6 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     ShedStatusTone.warn,
     laneStaleBannerText(state.stale!, ended: state.ended),
   );
-
-  /// A lane-level note that is not staleness: an open that was refused, a
-  /// credential refresh that failed, a re-open waiting out its backoff, or a
-  /// lane that has been given up on. Null when there is nothing to say.
-  String? _laneNote(LaneState state) {
-    final error = state.error;
-    if (state.abandoned) {
-      return error == null
-          ? 'This lane has been given up on — its row or session is gone.'
-          : 'This lane has been given up on: ${error.message}';
-    }
-    if (error != null) {
-      return state.retrying ? 'Reconnecting: ${error.message}' : error.message;
-    }
-    return state.retrying ? 'Reconnecting…' : null;
-  }
 
   Widget _noteBanner(BuildContext context, String text) =>
       _banner(context, 'lane-note', ShedStatusTone.warn, text);
@@ -1664,6 +1651,34 @@ String laneStaleBannerText(String stale, {required bool ended}) {
   // ("reconnecting… · reconnecting") would be noise.
   if (reason.isEmpty || reason == 'reconnecting') return 'reconnecting…';
   return 'reconnecting… · $reason';
+}
+
+/// **The lane-level note** — what is not staleness: an open that was
+/// refused, a credential refresh that failed, a re-open waiting out its
+/// backoff, or a lane that has been given up on. Null when there is nothing
+/// to say.
+///
+/// **A lane that ENDED for good says so in its ended banner, and only
+/// there** (plan 032 §3.1.2): a session stopped (`session_closed`), gone
+/// (`unknown_session`) or never started (`start_failed: …`) is given up on
+/// too — nothing re-opens it — but the banner's reason is the whole story,
+/// and "given up on" under a normal Stop would say something went wrong. The
+/// note stays for a lane given up on WITHOUT a final `Down` (its row left and
+/// no end came — a craze lane's departure grace ran out), and for one given
+/// up on an error.
+@visibleForTesting
+String? laneNoteText(LaneState state) {
+  final error = state.error;
+  if (state.abandoned) {
+    if (state.ended && laneDownIsFinal(state.stale ?? '')) return null;
+    return error == null
+        ? 'This lane has been given up on — its row or session is gone.'
+        : 'This lane has been given up on: ${error.message}';
+  }
+  if (error != null) {
+    return state.retrying ? 'Reconnecting: ${error.message}' : error.message;
+  }
+  return state.retrying ? 'Reconnecting…' : null;
 }
 
 /// **Whether Stop can be pressed** — the header's button, and the confirm's

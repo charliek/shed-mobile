@@ -69,6 +69,7 @@ class LaneState {
     this.settingsSeen = 0,
     this.retrying = false,
     this.abandoned = false,
+    this.departing = false,
     // `BigInt.zero` is not a compile-time constant, which is the only reason
     // this class is not `const`.
   }) : generation = generation ?? BigInt.zero;
@@ -96,7 +97,9 @@ class LaneState {
 
   /// The lifecycle: the lane's subscription ENDED (a `Down`), and the
   /// controller is re-opening it (see [retrying]) or has given up (see
-  /// [abandoned]). The one fact a re-open is keyed on (plan 025 §3.2.4).
+  /// [abandoned]) — or, on a departing craze lane whose end is not final,
+  /// lets its grace decide ([departing]). The one fact a re-open is keyed on
+  /// (plan 025 §3.2.4).
   final bool ended;
 
   /// The asks still waiting on the human, oldest first. Pending only — Rust
@@ -186,6 +189,13 @@ class LaneState {
   /// **Terminal** — the only way back is a new stamp on the row.
   final bool abandoned;
 
+  /// A CRAZE lane whose row left its source and which is waiting out the
+  /// departure grace (`crazeDepartGrace`, plan 032 §3.1.2) on its own
+  /// connection — for the session's last rows and its final `Down`. Nothing
+  /// on screen says so (the lane is still live, its transcript still
+  /// growing); the drive log does (`departing=t`).
+  final bool departing;
+
   LaneState copyWith({
     List<BridgeRcFeedMessage>? rows,
     BridgeRcActivity? activity,
@@ -202,6 +212,7 @@ class LaneState {
     int? settingsSeen,
     bool? retrying,
     bool? abandoned,
+    bool? departing,
     bool clearStale = false,
     bool clearError = false,
     bool clearComposerError = false,
@@ -228,6 +239,7 @@ class LaneState {
     settingsSeen: settingsSeen ?? this.settingsSeen,
     retrying: retrying ?? this.retrying,
     abandoned: abandoned ?? this.abandoned,
+    departing: departing ?? this.departing,
   );
 }
 

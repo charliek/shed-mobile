@@ -225,6 +225,31 @@ re-pins onto that and follows in three items: M1 (the re-pin, the DTO mirror,
       `effort=`/`lands=`). The widget tests' `/` double and the parity table
       gain the effort rows; `craze_test.dart` gains the desktop's (2e) cells on
       the permodel session, and its menu cells list 0.2.0's `/effort`.
+- [x] **M2** — W1 on the phone: a craze lane outlives its row by a grace (the
+      Stop freeze, plan 032 §3.1.2). `LaneController.reconcile(null)` on an
+      open, live CRAZE lane arms one `crazeDepartGrace` (10 s) timer instead of
+      giving up — idempotent, fenced by its handle generation and its own
+      identity, injected as a `LaneTimer` — and the lane keeps its own
+      connection: a final `Down` in the grace ends it through `_onEnded`; the
+      same stamp listed again cancels it (before the same-stamp return, then
+      hands back whatever the departure held: a non-final end to the re-open
+      ladder, a retired source to the live one); a changed stamp takes today's
+      path; `_onEnded`, `close` and `_dropHandle` (every handle replacement)
+      cancel it. While departing, a non-final end and a source retirement
+      re-open nothing (PC14c). At expiry the lane reads ONE snapshot at once (not
+      on the next frame) — a final `Down` in it ends the lane with that reason,
+      otherwise it is given up on as before. Other kinds keep today's rule.
+      `LaneState.departing` rides the drive log (`departing=t|f` before
+      `slash=` in the lane's MSTATE). The note (`laneNoteText`, now pure): a
+      lane that ENDED for good shows its ended banner alone, "given up on —
+      its row or session is gone" stays for one abandoned with no final `Down`,
+      "given up on: <error>" for errors. Tests: 14 controller cells (every §7
+      "W1, phone" bullet; eight mutations of the controller each fail at least
+      one) plus the re-based opencode vanished-row cell; four widget cells and
+      two re-based note cells; and `craze_test.dart`'s
+      `a_lane_outlives_its_stopping_row_and_ends_visibly` (`hang_next`, a
+      send, `mark_stopping`, a late `text` and `end`, `quit` → ended
+      `unknown_session`, no note), which fails without the fix.
 
 ---
 

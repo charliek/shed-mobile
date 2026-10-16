@@ -85,6 +85,12 @@
 // * **the ghost row** (Amendment A16) — with the roster's own bridge FROZEN, so
 //   no roster frame can list or remove it, a session created and stopped at
 //   once leaves the rows: the source's `on_created_gone`, through the feed.
+// * **a stopping row** (plan 032 §3.1) — a fake host marked stopping mid-turn
+//   (`mark_stopping`) leaves the roster ahead of its last events, as a craze
+//   0.2.0 Stop does: the lane outlives its row on its own connection (its
+//   departure grace), the late text and the turn's end still land, and once
+//   the host quits the lane ENDS with a final reason — never given up on
+//   with the row, never frozen on its last frame.
 //
 // ## The cells (CM6: settings, §3.10)
 //
@@ -2138,6 +2144,92 @@ void main() {
         rosterConnections,
         reason: 'the same roster connection, resumed — never a replacement',
       );
+      expect((await liveCounters()).activeLanes, BigInt.zero);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'a_lane_outlives_its_stopping_row_and_ends_visibly',
+    (tester) async {
+      // Plan 032 §3.1 (the Stop freeze), the desktop's
+      // `test_a_lane_outlives_its_stopping_row_and_ends_visibly`: a craze
+      // 0.2.0 host's row leaves the roster the moment it begins to stop —
+      // AHEAD of the session's last events. A lane given up on with its row
+      // never read them, and froze on its last frame. The fake host's `quit`
+      // sends no `session_closed` (PC14a), so the final reason is the lane's
+      // redial finding no such session: `unknown_session`. (`session_closed`
+      // itself is the Stop cell's, through a hub-created session.)
+      final rig = await _rig(bins!);
+      await rig.fakeHost(_fake, _fakeSession);
+      final t = await _transcript(tester, rig, host: _fake);
+      final controller = t.controller();
+
+      rig.op({'name': 'hang_next'});
+      await tester.enterText(
+        find.byKey(const ValueKey('lane-input')),
+        'the last turn',
+      );
+      await _pumps(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _until(
+        tester,
+        () => controller.state.activity == BridgeRcActivity.working,
+        what: 'the last turn to be running',
+      );
+
+      rig.op({'name': 'mark_stopping'});
+      await _until(
+        tester,
+        () => _row(t.feed.state, _fake) == null,
+        what: 'the stopping host\'s row to leave the roster',
+      );
+      expect(controller.state.departing, isTrue);
+      expect(
+        controller.state.abandoned,
+        isFalse,
+        reason: 'a departing lane is not over yet',
+      );
+      expect(controller.isOpen, isTrue);
+
+      const late = 'late words after the row left';
+      rig.op({'name': 'text', 'text': late});
+      rig.op({'name': 'end'});
+      await _until(
+        tester,
+        () => _shows(controller.state, late),
+        what: 'the late text to land on the departing lane',
+      );
+      expect(controller.state.abandoned, isFalse);
+      rig.op({'name': 'quit'});
+
+      await _until(
+        tester,
+        () => controller.state.abandoned,
+        what: 'the lane to end',
+      );
+      final state = controller.state;
+      expect(
+        state.ended,
+        isTrue,
+        reason: 'ended by a final Down — not a grace that ran out',
+      );
+      expect(state.stale, laneUnknownSession);
+      expect(state.departing, isFalse);
+      expect(_shows(state, late), isTrue, reason: 'the transcript stays');
+      expect(
+        _textAt('lane-stale'),
+        laneUnknownSession,
+        reason: 'the ended banner says why',
+      );
+      expect(
+        find.byKey(const ValueKey('lane-note')),
+        findsNothing,
+        reason: 'and only it: nothing says "given up on"',
+      );
+      expect(t.source.crazeOpens, [_fake], reason: 'never re-opened');
+      await _wait(tester, const Duration(seconds: 1));
       expect((await liveCounters()).activeLanes, BigInt.zero);
     },
     skip: skip,
