@@ -613,6 +613,401 @@ void main() {
     });
   });
 
+  // A composer call disables the field while it runs, which drops its focus
+  // (and on a phone, the keyboard). Every cell here HOLDS its verb across a
+  // settle and proves the disabled frame happened first (`held`): a verb that
+  // answers before the next frame never draws the field disabled at all, so a
+  // focused composer after it would prove nothing.
+  group('the composer keeps its focus (plan 033 §3.6)', () {
+    /// The verb is out and a frame has drawn it: the field disabled and,
+    /// with that, unfocused.
+    void held(WidgetTester tester) {
+      expect(
+        _composerOn(tester),
+        isFalse,
+        reason: 'disabled while the verb runs',
+      );
+      expect(
+        _composerFocused(tester),
+        isFalse,
+        reason: 'and the disabled field dropped the focus',
+      );
+    }
+
+    testWidgets('INPUT: a verb that takes from a hardware Enter (/rename x) '
+        'ends focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['x'], reason: 'the rename is in flight');
+      held(tester);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'it took');
+      expect(_composerFocused(tester), isTrue, reason: 'the caret came back');
+    });
+
+    testWidgets('INPUT: a verb that takes from the IME\'s Send action (/plan) '
+        'ends focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSet = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/plan');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+      expect(rig.source.sets, [const BridgeLaneSettingChange.mode(id: 'plan')]);
+      held(tester);
+
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'it took');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('INPUT: a verb that takes from a touch tap on a menu row '
+        '(/pl → plan) ends focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSet = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/pl');
+      await tester.tap(find.byKey(const ValueKey('lane-slash-row-plan')));
+      await _settle(tester);
+      expect(rig.rules.accepts.last.key, BridgeSlashAcceptKey.pick);
+      expect(rig.source.sets, [const BridgeLaneSettingChange.mode(id: 'plan')]);
+      held(tester);
+
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'it took');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('INPUT: a plain send that takes ends focused', (tester) async {
+      final rig = _Rig()..source.holdSend = Completer<void>();
+      await _pump(tester, rig);
+      await _type(tester, 'describe this project');
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(rig.source.sends.single.text, 'describe this project');
+      held(tester);
+
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'it took');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('INPUT: a plain send that is refused ends focused', (
+      tester,
+    ) async {
+      final rig = _Rig()
+        ..source.holdSend = Completer<void>()
+        ..source.sendFailure = const BridgeLaneError.notAccepting();
+      await _pump(tester, rig);
+      await _type(tester, 'go');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.single.text, 'go');
+      held(tester);
+
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_composerError(tester), contains('not accepting'));
+      expect(_draft(tester), 'go', reason: 'kept, to fix or resend');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('OUTCOME: done — a prompt row and an /effort level each end '
+        'focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap(menu: effortMenu));
+      await _pumpSlash(tester, rig);
+
+      rig.source.holdSend = Completer<void>();
+      await _type(tester, '/research deep dive');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sends.single.text, '/research deep dive');
+      held(tester);
+      rig.source.holdSend!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'the prompt row took');
+      expect(_composerFocused(tester), isTrue, reason: 'the prompt row');
+
+      rig.source.holdSet = Completer<void>();
+      await _type(tester, '/effort low');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.sets, [
+        const BridgeLaneSettingChange.config(
+          id: 'effort',
+          value: 'low',
+          forModel: 'grok-4.6',
+        ),
+      ]);
+      held(tester);
+      rig.source.holdSet!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'the effort took');
+      expect(_composerFocused(tester), isTrue, reason: '/effort low');
+    });
+
+    testWidgets('OUTCOME: the verb\'s own refusal (craze refuses the rename) '
+        'ends focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>()
+        ..source.setTitleFailure = const BridgeLaneError.badRequest(
+          msg: 'params.title is blank once normalized: send none instead',
+        );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['x']);
+      held(tester);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(
+        _composerError(tester),
+        contains('params.title is blank once normalized'),
+      );
+      expect(_draft(tester), '/rename x');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('OUTCOME: unknown ("may have applied") ends focused', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>()
+        ..source.setTitleFailure = const BridgeLaneError.outcomeUnknown(
+          msg: 'outcome unknown: the connection dropped',
+        );
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename lost');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_composerError(tester), laneCommandOutcomeUnknown);
+      expect(_draft(tester), '/rename lost');
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('OUTCOME: superseded — the lane REBUILT before the verb '
+        'answered — ends focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename held');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+      await _rebuildLane(tester);
+      held(tester);
+
+      // An Ok, but the lane that would have said how it went let it go.
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_composerError(tester), laneCommandOutcomeUnknown);
+      expect(_draft(tester), '/rename held', reason: 'kept: not a success');
+      expect(_composerFocused(tester), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('HELD: while the verb is out the field is disabled and '
+        'unfocused; once it answers, focused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      expect(_composerFocused(tester), isTrue, reason: 'typed into');
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(rig.source.titles, ['x']);
+      expect(
+        find.byKey(const ValueKey('lane-send')),
+        findsNothing,
+        reason: 'the spinner in Send\'s place: the verb is out',
+      );
+      expect(_composerOn(tester), isFalse);
+      expect(_composerFocused(tester), isFalse);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_composerOn(tester), isTrue);
+      expect(_composerFocused(tester), isTrue);
+    });
+
+    testWidgets('GUARD: a settings sheet opened while the verb is out keeps '
+        'the focus — the verb answering steals nothing', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+      await tester.tap(find.byKey(const ValueKey('lane-settings-chip')));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'the verb took');
+      expect(_composerOn(tester), isTrue, reason: 'it could take the focus');
+      expect(_composerFocused(tester), isFalse, reason: 'the sheet keeps it');
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+    });
+
+    testWidgets('GUARD: a page pushed over the lane while the verb is out '
+        'keeps the focus — the verb answering steals nothing', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+      unawaited(
+        Navigator.of(tester.element(find.byType(LaneScreen))).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                const Scaffold(body: TextField(key: ValueKey('elsewhere'))),
+          ),
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.byKey(const ValueKey('elsewhere')));
+      await _settle(tester);
+      final elsewhere = tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('elsewhere')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode;
+      expect(elsewhere.hasFocus, isTrue, reason: 'the page took the focus');
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(rig.source.titles, ['x']);
+      expect(_composerOn(tester), isTrue, reason: 'it could take the focus');
+      expect(_composerFocused(tester), isFalse);
+      expect(elsewhere.hasFocus, isTrue, reason: 'the page keeps it');
+    });
+
+    testWidgets('GUARD: a screen that goes away while the verb is out throws '
+        'nothing and requests nothing', (tester) async {
+      // `runAsync`, as in "a send that lands after the screen is gone": the
+      // controller's teardown awaits a cancel FakeAsync never resumes.
+      await tester.runAsync(() async {
+        final rig = _Rig(snapshot: _slashSnap())
+          ..source.holdSetTitle = Completer<void>();
+        await _pumpSlash(tester, rig);
+        await _type(tester, '/rename x');
+        await _press(tester, LogicalKeyboardKey.enter);
+        expect(rig.source.titles, ['x'], reason: 'the rename is in flight');
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        rig.source.holdSetTitle!.complete();
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(milliseconds: 50));
+      });
+      expect(tester.takeException(), isNull);
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        isNot('lane-input'),
+        reason: 'nothing focused the gone composer',
+      );
+    });
+
+    testWidgets('GUARD: a lane given up on while the verb is out leaves the '
+        'composer unfocused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+
+      // A final Down: the lane is given up on (see "FU9: an ABANDONED lane").
+      rig.bump(_slashSnap(stale: 'session_closed', ended: true));
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_sendEnabled(tester), isFalse, reason: 'given up on');
+      expect(_composerFocused(tester), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('GUARD: a lane that is GONE while the verb is out leaves the '
+        'composer unfocused', (tester) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      await _press(tester, LogicalKeyboardKey.enter);
+      held(tester);
+
+      // A machine-feed rebuild with no lane stamp for this row (see "A
+      // MISSING LANE"): the screen stays up, its composer enabled.
+      rig.feed.laneGone = true;
+      ProviderScope.containerOf(
+        tester.element(find.byType(LaneScreen)),
+      ).invalidate(laneControllerProvider(_ref));
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      expect(find.byKey(const ValueKey('lane-unavailable')), findsOneWidget);
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(
+        _composerOn(tester),
+        isTrue,
+        reason: 'the field could take the focus',
+      );
+      expect(_composerFocused(tester), isFalse, reason: 'no lane, no focus');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('GUARD: a verb begun without the focus grabs none', (
+      tester,
+    ) async {
+      final rig = _Rig(snapshot: _slashSnap())
+        ..source.holdSetTitle = Completer<void>();
+      await _pumpSlash(tester, rig);
+      await _type(tester, '/rename x');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await _settle(tester);
+      expect(_composerFocused(tester), isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('lane-send')));
+      await _settle(tester);
+      expect(rig.source.titles, ['x']);
+      expect(_composerOn(tester), isFalse, reason: 'the verb is out');
+
+      rig.source.holdSetTitle!.complete();
+      await _settle(tester);
+      expect(_draft(tester), '', reason: 'it took');
+      expect(_composerFocused(tester), isFalse);
+    });
+
+    testWidgets('GUARD: a bare /effort (the picker) grabs none — the sheet '
+        'it opens keeps the focus', (tester) async {
+      final rig = await _slashRig(tester, _slashSnap(menu: effortMenu));
+      await _type(tester, '/effort');
+      expect(_composerFocused(tester), isTrue);
+      await _press(tester, LogicalKeyboardKey.enter);
+      expect(find.byKey(const ValueKey('lane-settings')), findsOneWidget);
+      expect(_draft(tester), '');
+      expect(rig.source.sets, isEmpty);
+      expect(_composerFocused(tester), isFalse);
+    });
+  });
+
   group('interject', () {
     testWidgets('is absent for an adapter that cannot do it', (tester) async {
       // opencode answers `interject: false`. Absent, not disabled: a greyed
@@ -4150,6 +4545,28 @@ TextEditingController _inputController(WidgetTester tester) => tester
     .controller!;
 
 String _draft(WidgetTester tester) => _inputController(tester).text;
+
+/// The composer, offstage too: a page pushed over the lane keeps it built,
+/// out of the finders' default view.
+Finder get _laneInputAnywhere =>
+    find.byKey(const ValueKey('lane-input'), skipOffstage: false);
+
+/// Whether the composer has the focus (its [EditableText]'s node, as the IME
+/// cell reads it).
+bool _composerFocused(WidgetTester tester) => tester
+    .widget<EditableText>(
+      find.descendant(
+        of: _laneInputAnywhere,
+        matching: find.byType(EditableText, skipOffstage: false),
+        skipOffstage: false,
+      ),
+    )
+    .focusNode
+    .hasFocus;
+
+/// Whether the composer's field is enabled — off while a verb is out.
+bool _composerOn(WidgetTester tester) =>
+    tester.widget<TextField>(_laneInputAnywhere).enabled ?? true;
 
 TextSelection _selection(WidgetTester tester) =>
     _inputController(tester).selection;

@@ -46,6 +46,14 @@ retries craze alone. The phone is **not** attach-only: viewing a machine with
 craze starts a hub there if none runs, which idles out about a minute after the
 phone lets go.
 
+**Resume, `/effort` and the effort facts need craze 0.2.0 on the machine.** A hub
+started before an upgrade keeps the old craze until it exits, and a session
+keeps the craze it started with. To move a machine onto the new craze, end the
+old hub on it with `pkill -f 'craze hub$'` (`pgrep -f 'craze hub$'` shows its
+pid first): that ends no session, and the next view starts a hub from the
+installed craze. See the craze section of
+[shed's v0.9.0 to v0.9.1 upgrade guide](https://charliek.github.io/shed/upgrades/v0.9.0-to-v0.9.1/#craze).
+
 **One row per session.** A craze session's status is craze's (plan 025 D4): with
 the craze feed live, a roost tab running a craze TUI is folded into the hub
 row it names (the rule is shed's own `shed_app::craze_rows::fold_plan`, called
@@ -70,6 +78,11 @@ classifies them on the Dart side (`lib/ssh/craze_reach.dart`): the ladder's
 too old for shed; update it". A live hub that cannot create (its `hello` lacks
 `createOptions` or `sessionCreate`) still lists, and the machine says "update
 craze on this machine to create sessions here".
+
+The same version gate applies to a craze older than 0.2.0 that is otherwise
+fine: it lists and shows transcripts, but Resume, `/effort` and the effort
+facts are absent until the machine's craze and its running hub are upgraded
+(above).
 
 ### Creating a craze session
 
