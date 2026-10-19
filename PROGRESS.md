@@ -283,6 +283,20 @@ re-pins onto that and follows in three items: M1 (the re-pin, the DTO mirror,
       rig's new `stop()` (craze off its PATH, every process ended), never
       restoring the agent under it.
 
+## Plan 033 — release readiness  (this repo's PR)
+No shed re-pin: shed's plan 033 PR changes no code the phone links.
+- [x] **M1** — 032-F8: the composer keeps its focus after a composer call that
+      ran (a plain send or a command) when it had focus. The restore moved into
+      `_composerCall`, so every call through it is covered, not only an error
+      from `_commandVerb`; the post-frame callback reads fresh state (the
+      `_refocus` guard: mounted, lane live, composer enabled, route current, not
+      already focused). It also fixed the old error-only restore grabbing focus
+      for a lane that had gone away. 17 widget tests.
+- [x] **M2** — docs: `docs/features/rc-sessions.md` says Resume, `/effort` and
+      the effort facts need craze 0.2.0 on the machine, that a hub started
+      before an upgrade keeps the old craze until it exits (`kill <pid>` ends no
+      session), and links shed's v0.9.0 to v0.9.1 upgrade guide.
+
 ---
 
 ## Log
