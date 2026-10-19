@@ -164,8 +164,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
 
-  /// The composer's own focus: what a completion, a `/` button tap and a kept
-  /// draft hand the caret back to.
+  /// The composer's own focus: what a completion, a `/` button tap and a
+  /// composer call that began with it ([_composerCall]) hand the caret back
+  /// to.
   final _inputFocus = FocusNode(debugLabel: 'lane-input');
 
   /// The Interject intent, as a toggle. **Not the send mode** — that is
@@ -347,7 +348,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// on a session with no menu. Exactly today's send: cleared once the agent
   /// took it ([_clearIfCurrent]), kept on a refusal and on a LOST answer
   /// ([laneSendOutcomeUnknown]) — and on one the lane moved on from before
-  /// it answered ([_composerCall]).
+  /// it answered ([_composerCall]); the caret handed back either way, as
+  /// [_composerCall] says.
   Future<void> _sendText(_Draft draft) async {
     final text = draft.text.trim();
     if (text.isEmpty) return;
@@ -373,6 +375,13 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// too, and is said HERE ([_lost]) — the request may have reached craze.
   /// [_guarded] around it all. Answers the outcome — null when nothing ran
   /// (busy, or no lane to run it on).
+  ///
+  /// **The caret comes back** (plan 033 §3.6): a call that ran — whatever
+  /// its outcome, done, refused, lost or superseded — hands the focus back
+  /// to the composer iff it had it when the call began. A call on `_sending`
+  /// disables the field while it runs, which drops its focus, and without
+  /// this every send and every command closed the keyboard. Whether it still
+  /// may, a frame on, is [_refocus]'s to say.
   Future<LaneVerbOutcome?> _composerCall(
     _Draft draft, {
     required bool busy,
@@ -380,19 +389,44 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     required String logKey,
     required Future<LaneVerbOutcome> Function(LaneController controller) verb,
     void Function(LaneVerbDone done, String session)? onDone,
-  }) => _outcomeCall(
-    busy: busy,
-    setBusy: setBusy,
-    logKey: logKey,
-    // A new composer verb, as the lane clears its own composer error.
-    lost: (lost) => _lost = lost,
-    verb: verb,
-    // Reached only when the outcome has no error: a [LaneVerbDone].
-    onSuccess: (outcome, session) {
-      _clearIfCurrent(draft);
-      if (outcome case final LaneVerbDone done) onDone?.call(done, session);
-    },
-  );
+  }) async {
+    // Read before anything is marked busy: the disabled field drops it.
+    final hadFocus = _inputFocus.hasFocus;
+    final outcome = await _outcomeCall(
+      busy: busy,
+      setBusy: setBusy,
+      logKey: logKey,
+      // A new composer verb, as the lane clears its own composer error.
+      lost: (lost) => _lost = lost,
+      verb: verb,
+      // Reached only when the outcome has no error: a [LaneVerbDone].
+      onSuccess: (outcome, session) {
+        _clearIfCurrent(draft);
+        if (outcome case final LaneVerbDone done) onDone?.call(done, session);
+      },
+    );
+    if (outcome != null && hadFocus && mounted) {
+      // After the frame that re-enables the field: a disabled one takes no
+      // focus.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refocus());
+    }
+    return outcome;
+  }
+
+  /// The caret back to the composer, for a call that began with it
+  /// ([_composerCall]) — everything read fresh, a frame after the call
+  /// answered: only while this screen is still up, its lane still there and
+  /// the composer enabled on it (not given up on, nothing sending), its route
+  /// the current one (a sheet or a page opened while the call was out keeps
+  /// the focus it took), and the field not focused already.
+  void _refocus() {
+    if (!mounted) return;
+    final state = _live();
+    if (state == null || !_composerEnabled(state)) return;
+    if (!(ModalRoute.isCurrentOf(context) ?? true)) return;
+    if (_inputFocus.hasFocus) return;
+    _inputFocus.requestFocus();
+  }
 
   /// **A verb whose own outcome is the screen's to settle** — [_guarded]
   /// around [verb], answering the outcome (null when nothing ran). A
@@ -902,8 +936,9 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// composer (a lost answer, or one the lane moved on from, in the command
   /// wording, [laneCommandOutcomeUnknown]), and on success [draft] cleared
   /// ([_clearIfCurrent]), then [onDone]. The field is disabled while the verb
-  /// runs, which drops its focus, so a draft kept (to fix, or to check)
-  /// hands the caret back.
+  /// runs, which drops its focus; [_composerCall] hands the caret back,
+  /// whatever the outcome — to type on after one that took, to fix or check
+  /// a draft kept.
   Future<void> _commandVerb(
     _Draft draft, {
     required String logKey,
@@ -911,8 +946,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
     void Function(LaneVerbDone done, String session)? onDone,
   }) async {
     setState(() => _note = null);
-    final hadFocus = _inputFocus.hasFocus;
-    final outcome = await _composerCall(
+    await _composerCall(
       draft,
       busy: _sending,
       setBusy: (v) => _sending = v,
@@ -920,13 +954,6 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
       verb: verb,
       onDone: onDone,
     );
-    if (outcome?.error != null && hadFocus && mounted) {
-      // After the frame that re-enables the field: a disabled one takes no
-      // focus.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _inputFocus.requestFocus();
-      });
-    }
   }
 
   /// `/rename <title>` (the header shows the new title once craze's delta
@@ -1552,7 +1579,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
                       // The caret STAYS on a submit, the composition
                       // committed: a completion (`/re` → `/rename `) is typed
                       // on, and a refusal is fixed in place. (A verb that
-                      // runs disables the field, which drops it anyway.)
+                      // runs disables the field, which drops it; the call
+                      // hands it back once the verb answers, `_composerCall`.)
                       onEditingComplete: _completeComposition,
                       decoration: InputDecoration(
                         isDense: true,

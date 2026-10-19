@@ -3289,6 +3289,17 @@ void main() {
         () => _fieldText(tester, 'lane-input').isEmpty && _composerIdle(tester),
         what: 'the draft cleared and the composer idle',
       );
+      // The composer had the focus when Enter ran the verb, so the verb hands
+      // it back (plan 033 §3.6) — a frame after the field re-enables, so
+      // waited for. Before the next `_typeDraft`, which would request it.
+      await _until(
+        tester,
+        () => tester
+            .widget<TextField>(find.byKey(const ValueKey('lane-input')))
+            .focusNode!
+            .hasFocus,
+        what: 'the composer kept its focus after /ask',
+      );
 
       // A tap on a row that takes no argument runs it at once.
       await _typeDraft(tester, '/pl');
@@ -4864,18 +4875,20 @@ Future<void> _menuReady(
 /// Set the composer's draft as typed (focusing it), the caret at its end —
 /// and prove it landed.
 ///
-/// **The focus is handed back first, and waited for.** A composer verb
-/// disables the field while it runs, which drops its focus, and one that
-/// took hands the caret back to no one (a person taps the field again) —
-/// here only when a pump lands while the verb is out, so a loaded machine
-/// loses the focus and a fast one never does. `WidgetTester.enterText`
-/// requests the keyboard only for an editable the binding has not focused
-/// before, and under integration_test the binding never hears the old
-/// connection close: on the same field it focuses nothing, and the text goes
-/// to no client and is dropped in silence — no menu, and the Enter after it
-/// reaches nothing (lane_test's `typeInComposer` met the same trap).
-/// `requestKeyboard` is what a tap on the field runs, without the tap's caret
-/// move or double-tap selection.
+/// **The focus is asked for first, and waited for.** A composer verb
+/// disables the field while it runs, which drops its focus (here only when a
+/// pump lands while the verb is out), and a call that began with the focus
+/// now hands the caret back once it answers (plan 033 §3.6). The request
+/// stays as the safeguard: a call begun without the focus, or a lane that
+/// ended, still leaves the field unfocused, and under load the order of the
+/// frames — the re-enabling one, the hand-back after it — is not ours to
+/// assume. `WidgetTester.enterText` requests the keyboard only for an
+/// editable the binding has not focused before, and under integration_test
+/// the binding never hears the old connection close: on the same field it
+/// focuses nothing, and the text goes to no client and is dropped in silence
+/// — no menu, and the Enter after it reaches nothing (lane_test's
+/// `typeInComposer` met the same trap). `requestKeyboard` is what a tap on
+/// the field runs, without the tap's caret move or double-tap selection.
 Future<void> _typeDraft(WidgetTester tester, String text) async {
   final input = find.byKey(const ValueKey('lane-input'));
   tester
