@@ -1,0 +1,17 @@
+version: 1
+targets:
+  android:
+    kind: mobile
+    # release-android.yml (workflow_dispatch, no tags) builds the signed AAB
+    # from the repo root and uploads it to Play; the Rust core in rust/ is
+    # compiled into the app through flutter_rust_bridge.
+    ships: [pubspec.lock, rust/Cargo.lock]
+lockfiles:
+  # fastlane, run by release-android.yml to upload the bundle to Play.
+  android/Gemfile.lock: { role: build-tool }
+  # flutter_rust_bridge's vendored cargokit build tool: it drives cargo
+  # during the Gradle build and is not part of the app.
+  rust_builder/cargokit/build_tool/pubspec.lock: { role: build-tool }
+  # pyproject.toml has only the docs group (mkdocs, mkdocs-material): it
+  # builds the documentation site, which the app doesn't contain.
+  uv.lock: { role: build-tool }
