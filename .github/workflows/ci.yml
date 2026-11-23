@@ -34,7 +34,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-      # Guard: the committed Cargo.lock must resolve shed-core/shed-app to the
+      # Guard: the committed Cargo.lock must resolve shed-core/shed-lane/shed-roost/shed-craze to the
       # exact git rev pinned in rust/Cargo.toml — the gitignored local [patch]
       # (rust/.cargo/config.toml) must never leak a local path into the lock.
       - name: Lock-rev equality
@@ -65,10 +65,10 @@ jobs:
       # and the ssh-agent the private dep needs. A separate job would pay all
       # three again.
       #
-      # It drives the real FRB bridge against shed's OWN opencode fake
-      # (`desktop/tools/shedtest/fake_lane_server.py`), so it needs a shed
-      # checkout — at the EXACT rev rust/Cargo.toml pins, because the fake and
-      # the adapter it was recorded from are one tree.
+      # It drives the real FRB bridge against craze's fakes and shed's
+      # roost-vectors goldens (`crates/fixtures/roost-vectors`), so it needs a shed
+      # checkout — at the EXACT rev rust/Cargo.toml pins, because the fakes and
+      # the goldens it was recorded from are one tree.
       - name: Resolve the pinned shed rev
         id: rev
         # VALIDATED HERE, at the producer, so every consumer below is handed a
@@ -117,7 +117,7 @@ jobs:
             echo "shed-sibling is at $got, not the pinned $WANT_SHED_REV" >&2
             exit 1
           fi
-          test -f shed-sibling/desktop/tools/shedtest/fake_lane_server.py
+          test -f shed-sibling/crates/fixtures/roost-vectors/agent-table.json
       # The craze binaries the craze cells drive (plan 025 §3.5, CM3): shed's
       # OWN composite action, run from the pinned sibling, building `craze`,
       # `craze-fake-host` and `craze-fake-agent` at the sibling's

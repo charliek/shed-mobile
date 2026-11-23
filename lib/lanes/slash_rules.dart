@@ -6,7 +6,7 @@ import '../src/rust/api/lane.dart';
 ///
 /// Every rule about a session's `/` menu — which rows it lists for a draft and
 /// caret, what a typed command does, what choosing a row does, whether a turn
-/// is running — is `shed_app::slash_menu`'s, in shared Rust, and reached here
+/// is running — is `shed_lane::slash_menu`'s, in shared Rust, and reached here
 /// through four FRB `#[frb(sync)]` calls. The phone RENDERS what they answer
 /// and handles keys; it filters, parses and decides nothing itself. That is
 /// the whole point of the module (the dispatch guard is exactly where two

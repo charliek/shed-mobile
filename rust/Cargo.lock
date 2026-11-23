@@ -84,12 +84,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "autocfg"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
-
-[[package]]
 name = "backtrace"
 version = "0.3.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -186,15 +180,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
  "rand_core",
-]
-
-[[package]]
-name = "chrono"
-version = "0.4.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -833,15 +818,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
-name = "num-traits"
-version = "0.2.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "num_cpus"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1179,14 +1155,13 @@ dependencies = [
  "base64",
  "flutter_rust_bridge",
  "rcgen",
- "reqwest",
  "roost-ipc",
  "serde",
  "serde_json",
- "shed-app",
  "shed-core",
  "shed-craze",
- "shed-opencode",
+ "shed-lane",
+ "shed-roost",
  "tokio",
 ]
 
@@ -1358,27 +1333,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "shed-app"
-version = "0.9.0"
-source = "git+https://github.com/charliek/shed?rev=ebba655160af0543966163735705b27573bb9358#ebba655160af0543966163735705b27573bb9358"
-dependencies = [
- "async-trait",
- "chrono",
- "futures",
- "libc",
- "roost-ipc",
- "serde",
- "serde_json",
- "shed-core",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "shed-core"
-version = "0.9.0"
-source = "git+https://github.com/charliek/shed?rev=ebba655160af0543966163735705b27573bb9358#ebba655160af0543966163735705b27573bb9358"
+version = "0.10.1"
+source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
 dependencies = [
  "async-trait",
  "base64",
@@ -1387,11 +1344,11 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest",
- "roost-ipc",
  "rustls",
  "serde",
  "serde_json",
  "sha2",
+ "shed-lane",
  "thiserror 1.0.69",
  "tokio",
  "uuid",
@@ -1399,34 +1356,51 @@ dependencies = [
 
 [[package]]
 name = "shed-craze"
-version = "0.9.0"
-source = "git+https://github.com/charliek/shed?rev=ebba655160af0543966163735705b27573bb9358#ebba655160af0543966163735705b27573bb9358"
+version = "0.10.1"
+source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
 dependencies = [
  "async-trait",
  "futures-util",
  "serde",
  "serde_json",
- "shed-core",
+ "shed-lane",
  "thiserror 1.0.69",
  "tokio",
  "uuid",
 ]
 
 [[package]]
-name = "shed-opencode"
-version = "0.9.0"
-source = "git+https://github.com/charliek/shed?rev=ebba655160af0543966163735705b27573bb9358#ebba655160af0543966163735705b27573bb9358"
+name = "shed-lane"
+version = "0.10.1"
+source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
+dependencies = [
+ "async-trait",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "shed-roost"
+version = "0.10.1"
+source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
 dependencies = [
  "async-trait",
  "base64",
- "chrono",
  "futures-util",
+ "libc",
  "reqwest",
+ "roost-ipc",
  "serde",
  "serde_json",
+ "sha2",
  "shed-core",
+ "shed-lane",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

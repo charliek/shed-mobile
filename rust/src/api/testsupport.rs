@@ -257,6 +257,15 @@ impl TestCa {
         params
             .distinguished_name
             .push(rcgen::DnType::CommonName, "test-client");
+        // The user the certificate was issued to, as one userId attribute
+        // (0.9.2342.19200300.100.1.1) — a 0.10 server's CA always names one,
+        // and shed-core refuses to adopt a certificate that names no user
+        // (`certuser::CertUser::Unbound`). Mirrors shed-core's own
+        // `testtls::TestUser::push`.
+        params.distinguished_name.push(
+            rcgen::DnType::CustomDnType(vec![0, 9, 2342, 19_200_300, 100, 1, 1]),
+            rcgen::DnValue::PrintableString("test-user".try_into().unwrap()),
+        );
         params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
         params.serial_number = Some(rcgen::SerialNumber::from(42u64));
         params.not_before = (SystemTime::now() - Duration::from_secs(60)).into();

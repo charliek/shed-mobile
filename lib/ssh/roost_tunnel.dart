@@ -18,8 +18,8 @@ import 'duplex_pump.dart';
 /// differential, not here.
 ///
 /// **This is the exec's OWN shape, not the pump's.** The bytes are moved by the
-/// generic [DuplexPump] (`duplex_pump.dart`), which a lane's forwarded port
-/// shares; `_ExecChannel` below is the whole of the difference between the two.
+/// generic [DuplexPump] (`duplex_pump.dart`); `_ExecChannel` below is the
+/// whole of what is an exec's here.
 /// The names here are a remote *process*'s — `stdin`/`stdout`/`stderr` — and
 /// they stay that way because that is what an exec has.
 abstract class RoostExecSession {
@@ -65,8 +65,7 @@ typedef RoostExec = Future<RoostExecSession> Function(String command);
 /// protocol to re-acquire one — which is what lets the reconnect logic be
 /// written once, in Rust, for every client.
 ///
-/// The port, the accept loop and the byte pump are [PortListener]'s (a lane's
-/// port forward is the same machinery over a different channel); what lives
+/// The port, the accept loop and the byte pump are [PortListener]'s; what lives
 /// here is the exec seam and the opaque command it runs.
 ///
 /// **[remoteCommand] is opaque.** It is `roost_ipc::ssh::remote_command()`,

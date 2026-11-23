@@ -86,7 +86,7 @@ Future<void> roostTabClose({
 /// `tab.open` — start `kind`'s agent in a fresh tab at `workdir`, and get back
 /// the row for it.
 ///
-/// The argv is [`shed_app::roost::launch_argv`]'s and nothing else (plan 013
+/// The argv is [`shed_roost::launch_argv`]'s and nothing else (plan 013
 /// §4: prompts and permission modes are a later slice). An unrecognized kind —
 /// or a kind roost has no launch recipe for, `shell` and `craze` included, and
 /// since plan 025 the four retired direct-agent kinds (codex, cursor, gx,
@@ -175,7 +175,7 @@ abstract class BridgeRoostPeek implements RustOpaqueInterface {}
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeRoostWatcher>>
 abstract class BridgeRoostWatcher implements RustOpaqueInterface {}
 
-/// Why a session is not readable (mirrors `shed_app::roost::ReachKind`). Plain
+/// Why a session is not readable (mirrors `shed_roost::ReachKind`). Plain
 /// enum.
 ///
 /// [`Other`](Self::Other) is the honest default and the common one — a stream

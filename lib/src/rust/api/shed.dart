@@ -14,9 +14,3 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 ///     no network I/O happens; we only care that the client builds.
 Future<String> shedCoreProbe({required String echo}) =>
     RustLib.instance.api.crateApiShedShedCoreProbe(echo: echo);
-
-/// Proves `shed-app` (default features) also links — constructs an in-memory
-/// `AuditStore` (a display-free app-logic type) and reports its empty tail.
-/// This is the "shed-app is reachable, no `rc` feature needed" check.
-Future<String> shedAppProbe() =>
-    RustLib.instance.api.crateApiShedShedAppProbe();

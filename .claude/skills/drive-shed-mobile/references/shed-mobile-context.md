@@ -350,7 +350,7 @@ immediately) or claim one on the far side with
 
 Reached from `machine-lane-<machine>-<slug>` (a roost row's agent lane) or a
 craze row's `craze-lane-<scope>-<hostId>` Transcript pill. The agent's OWN
-transcript (`gx`/`opencode` over the machine's SSH forward; a craze session
+transcript (a craze session
 through the machine's craze source), the approvals it is blocked on, and a
 composer. Rows are the shared `RcMessageTile` — the same tile the session-watch
 feed uses, because a lane's rows *are* `RcFeedMessage`s. Every affordance below
@@ -395,7 +395,7 @@ disabled — not on the kind.
 `slash` and whose view carries a resolved catalog (craze 0.1.1+; never
 opencode, never an older craze: no button, no panel, `/foo` goes out as
 text). Every rule — which rows show, what a token matches, what Enter / Tab /
-a tap does, what is refused — is shared Rust (`shed_app::slash_menu`); the
+a tap does, what is refused — is shared Rust (`shed_lane::slash_menu`); the
 screen renders and handles keys.
 
 | Key | What |

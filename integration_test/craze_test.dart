@@ -194,6 +194,7 @@
 // * **one that cannot run is dropped** — a session whose directory went is
 //   listed, and its Resume is craze's `not_resumable`: the row leaves the
 //   list, the sheet says why where it was, and nothing starts.
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
@@ -447,7 +448,7 @@ void main() {
 
   testWidgets('the_fold_cases_against_the_frb_call', (_) async {
     // The C9 cases, duplicated against the bridge: the rule is shed's
-    // (`shed_app::craze_rows::fold_plan`), and this proves the call the feed
+    // (`shed_lane::craze_rows::fold_plan`), and this proves the call the feed
     // makes carries it whole.
     BridgeLaneSession hub(String id, String psid, int? since) =>
         BridgeLaneSession(
@@ -1148,9 +1149,12 @@ void main() {
       expect(_providerRows(), [
         'craze-provider-cursor',
         'craze-provider-grok',
+        'craze-provider-claude',
         'craze-provider-native',
       ]);
       expect(_textAt('craze-provider-state-cursor'), 'unavailable');
+      // craze 0.4.x lists claude; no claude CLI on the rig's PATH.
+      expect(_textAt('craze-provider-state-claude'), 'unavailable');
       expect(
         _textAt('craze-provider-reason-cursor'),
         'cursor-agent not found on PATH',
@@ -2166,6 +2170,180 @@ void main() {
       );
       expect(lane().state.approvals, isEmpty);
       expect(lane().state.approvalErrors, isEmpty);
+    },
+    skip: skip,
+    timeout: _cell,
+  );
+
+  testWidgets(
+    'custom_text_round_trips_through_frb',
+    (tester) async {
+      // **FRB 2.13 is a beta, and `Vec<Option<String>>` -> `List<String?>` is
+      // the shape most likely to regress.** The question answer's
+      // `customText` is observed where it actually travels: through the real
+      // `lane_answer`, into craze's adapter, and onto the wire the fake host's
+      // hub carries (`asks.answer`, read back from the rig's verbs log).
+      //
+      // The pair is the control, one answer apart: (a) a hole (`[null]`) must
+      // decode as a hole and the answer reach the host; (b) a value (`['x']`)
+      // must decode as `'x'` — which craze, whose questions take no free text,
+      // REFUSES with a named cause, and sends nothing. A decoder that dropped
+      // nulls, or mis-decoded the list, flips exactly one of the two.
+      final rig = await _rig(bins!);
+      await rig.fakeHost(_fake, _fakeSession);
+      final t = await _transcript(tester, rig, host: _fake);
+      LaneController lane() => t.controller();
+
+      Map<String, Object?> question(String id) => {
+        'name': 'question',
+        'id': id,
+        'title': 'Pick',
+        'questions': [
+          {
+            'id': 'lang',
+            'prompt': 'Which language?',
+            'options': [
+              {'id': 'rs', 'label': 'Rust'},
+              {'id': 'go', 'label': 'Go'},
+            ],
+          },
+        ],
+      };
+
+      // (a) `[null]` — a hole: the answer is accepted and reaches the host.
+      rig.op(question('q-hole'));
+      await _until(
+        tester,
+        () => lane().state.approvals.any((a) => a.id == 'q-hole'),
+        what: 'the first question',
+      );
+      await lane().answer(
+        'q-hole',
+        const BridgeLaneAnswer.question(
+          answers: [
+            ['rs'],
+          ],
+          customText: [null],
+        ),
+      );
+      await _until(
+        tester,
+        () => rig.verbsOf('asks.answer').isNotEmpty,
+        what: 'the answer with a hole on the wire',
+      );
+      expect(lane().state.approvalErrors['q-hole'], isNull);
+      final sent = rig.verbsOf('asks.answer').single;
+      expect(
+        jsonEncode(sent),
+        allOf(contains('"lang"'), contains('"rs"')),
+        reason: 'the hole appended nothing; the chosen option id is sent',
+      );
+      expect(
+        jsonEncode(sent),
+        isNot(contains('null')),
+        reason: 'a null custom text never reaches the host',
+      );
+      await _until(
+        tester,
+        () => !lane().state.approvals.any((a) => a.id == 'q-hole'),
+        what: 'the first question resolved',
+      );
+
+      // (b) `['x']` — a value in the same list shape lands as `'x'` and is
+      // refused by name, with nothing sent and the ask still open.
+      rig.op(question('q-text'));
+      await _until(
+        tester,
+        () => lane().state.approvals.any((a) => a.id == 'q-text'),
+        what: 'the second question',
+      );
+      await lane().answer(
+        'q-text',
+        const BridgeLaneAnswer.question(
+          answers: [
+            ['rs'],
+          ],
+          customText: ['x'],
+        ),
+      );
+      await _until(
+        tester,
+        () => lane().state.approvalErrors['q-text'] != null,
+        what: 'the refusal of free text',
+      );
+      expect(
+        '${lane().state.approvalErrors['q-text']}',
+        contains('question 0 does not accept free text'),
+        reason: 'the value reached craze\'s adapter as text, not as a hole',
+      );
+      expect(
+        rig.verbsOf('asks.answer'),
+        hasLength(1),
+        reason: 'a refused answer is never sent',
+      );
+      expect(
+        lane().state.approvals.any((a) => a.id == 'q-text'),
+        isTrue,
+        reason: 'the refused ask stays open',
+      );
+
+      // (c) `[null, 'x']` on a two-question ask — the hole must keep its
+      // POSITION: craze refuses the text at question 1. A decoder that
+      // filtered nulls would shift `'x'` to index 0 and name question 0
+      // (which (a) alone cannot tell from a dropped hole).
+      rig.op({
+        'name': 'question',
+        'id': 'q-pos',
+        'title': 'Pick two',
+        'questions': [
+          {
+            'id': 'lang',
+            'prompt': 'Which language?',
+            'options': [
+              {'id': 'rs', 'label': 'Rust'},
+              {'id': 'go', 'label': 'Go'},
+            ],
+          },
+          {
+            'id': 'os',
+            'prompt': 'Which OS?',
+            'options': [
+              {'id': 'linux', 'label': 'Linux'},
+              {'id': 'mac', 'label': 'macOS'},
+            ],
+          },
+        ],
+      });
+      await _until(
+        tester,
+        () => lane().state.approvals.any((a) => a.id == 'q-pos'),
+        what: 'the two-question ask',
+      );
+      await lane().answer(
+        'q-pos',
+        const BridgeLaneAnswer.question(
+          answers: [
+            ['rs'],
+            ['linux'],
+          ],
+          customText: [null, 'x'],
+        ),
+      );
+      await _until(
+        tester,
+        () => lane().state.approvalErrors['q-pos'] != null,
+        what: 'the refusal at the second question',
+      );
+      expect(
+        '${lane().state.approvalErrors['q-pos']}',
+        contains('question 1 does not accept free text'),
+        reason: 'the hole kept its index across the bridge',
+      );
+      expect(
+        rig.verbsOf('asks.answer'),
+        hasLength(1),
+        reason: 'a refused answer is never sent',
+      );
     },
     skip: skip,
     timeout: _cell,
@@ -4368,9 +4546,6 @@ class _RecordingSource implements LaneSource {
   final reads = <({bool full, BigInt generation, String? stale, bool ended})>[];
 
   @override
-  Future<LaneHandle> open(BridgeLaneSpec spec) => _bridge.open(spec);
-
-  @override
   Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) {
     crazeOpens.add(hostId);
     return _bridge.openCraze(open, hostId);
@@ -4886,9 +5061,10 @@ Future<void> _menuReady(
 /// editable the binding has not focused before, and under integration_test
 /// the binding never hears the old connection close: on the same field it
 /// focuses nothing, and the text goes to no client and is dropped in silence
-/// — no menu, and the Enter after it reaches nothing (lane_test's
-/// `typeInComposer` met the same trap). `requestKeyboard` is what a tap on
-/// the field runs, without the tap's caret move or double-tap selection.
+/// — no menu, and the Enter after it reaches nothing (the retired opencode
+/// lane harness's `typeInComposer` met the same trap). `requestKeyboard` is
+/// what a tap on the field runs, without the tap's caret move or double-tap
+/// selection.
 Future<void> _typeDraft(WidgetTester tester, String text) async {
   final input = find.byKey(const ValueKey('lane-input'));
   tester

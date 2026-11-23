@@ -27,7 +27,7 @@ import 'package:shed_mobile/widgets/open_pill.dart';
 /// answer it, which would produce an error the user has no way to act on.
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3.example');
 
-/// One kind's entry in [_roostCaps], mirroring `shed_app::roost::
+/// One kind's entry in [_roostCaps], mirroring `shed_roost::
 /// roost_capabilities()` field for field.
 ///
 /// A hand-written copy, on purpose: `roostCapabilities()` is a bridge call and
@@ -108,14 +108,13 @@ BridgeRcSession _session(
   // The slug IS roost's tab id; the typed id travels beside it so nothing
   // has to parse one back out to close a tab.
   tabId: int.tryParse(slug),
-  // The agent-lane stamp (plan 018). Absent for every roost row that is only a
-  // terminal tab; present once shed promotes the row on the agent's own
-  // metadata — and THAT, never the kind, is what the Transcript pill is gated
-  // on.
+  // The agent-lane stamp an opencode tab carried before plan 038 retired the
+  // opencode lane — null on every row now, and never read: a roost row has
+  // no Transcript, stamped or not.
   agentLane: lane == null
       ? null
       : BridgeAgentLaneStamp(
-          kind: 'gx',
+          kind: 'opencode',
           sessionId: lane,
           serverUrl: 'http://127.0.0.1:2421',
         ),
@@ -388,35 +387,52 @@ void main() {
     expect(find.byKey(const ValueKey('machine-kill-mini3-1')), findsOneWidget);
   });
 
-  testWidgets('an agent-lane stamp — and only that — offers the Transcript', (
-    tester,
-  ) async {
-    // Plan 018: roost still serves no transcript, so the affordance is not
-    // roost's to advertise. What brings one back is the AGENT: a row whose
-    // agent answers its own protocol carries an `agentLane` stamp, and
-    // `laneControllerProvider` THROWS for a row with none — so gating the pill
-    // on the stamp is not a nicety, it is the provider's precondition.
+  testWidgets('a PASSIVE opencode tab: its label and activity, the peek and '
+      'End — and no Transcript, stamped or not (plan 038)', (tester) async {
+    // The opencode lane is gone, so a roost opencode row is passive: it says
+    // what it is and what it is doing, and offers the terminal and End. Row 1
+    // carries the stamp a pre-038 core sent (with its server url); row 2 none.
+    // Neither offers a Transcript — `laneControllerProvider` refuses every
+    // roost row, so an affordance here could only fail.
     await tester.pumpWidget(
       _app(
         _live([
           _session('1', const BridgeRcKind.opencode(), lane: 'sess-1'),
-          // The negative control: the SAME kind, the same capabilities, no
-          // stamp. If the gate were the kind (or roost's caps) both rows would
-          // offer it.
           _session('2', const BridgeRcKind.opencode()),
-        ], caps: _roostCaps),
+        ], caps: _roostCaps).copyWith(
+          overlay: const {
+            '1': MachinePatch(
+              activity: BridgeRcActivity.working,
+              state: BridgeRcState.ready,
+            ),
+          },
+        ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.byKey(const ValueKey('machine-lane-mini3-1')), findsOneWidget);
+    // The label and the activity.
+    expect(find.text('row1'), findsOneWidget);
+    expect(find.text('opencode'), findsNWidgets(2), reason: 'the kind chips');
+    expect(find.text('working'), findsOneWidget, reason: 'row 1\'s activity');
+    // No Transcript on either row.
+    expect(find.byKey(const ValueKey('machine-lane-mini3-1')), findsNothing);
     expect(find.byKey(const ValueKey('machine-lane-mini3-2')), findsNothing);
-    expect(find.text('Transcript'), findsOneWidget);
-    // The peek STAYS beside it: roost owns the terminal, and reading the pane
-    // is a different question from reading the conversation.
-    expect(find.byKey(const ValueKey('machine-open-mini3-1')), findsOneWidget);
-    // …and row 2 did render, so the absence above is about the stamp.
-    expect(find.byKey(const ValueKey('machine-kill-mini3-2')), findsOneWidget);
+    expect(find.text('Transcript'), findsNothing);
+    // The peek and End stay: roost owns the terminal.
+    for (final slug in ['1', '2']) {
+      expect(
+        find.byKey(ValueKey('machine-open-mini3-$slug')),
+        findsOneWidget,
+        reason: slug,
+      );
+      expect(
+        find.byKey(ValueKey('machine-kill-mini3-$slug')),
+        findsOneWidget,
+        reason: slug,
+      );
+    }
   });
 
   testWidgets('a machine row is STAMPED with where it came from', (

@@ -188,7 +188,7 @@ class RoostBootstrapFlow {
 
   RoostHostTarget _host() {
     final port = localPort();
-    // The same refusal `MachineFeed.acquireForward` gives, and for the same
+    // The same refusal `MachineFeed.create` gives, and for the same
     // reason: every `Step::Call` and `Step::Hooks` dials this port, so a
     // bootstrap against a machine with no tunnel could only fail later and
     // less clearly.

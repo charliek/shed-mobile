@@ -2,7 +2,7 @@
 //! commit C-M2).
 //!
 //! The choreography is not here and must never be re-implemented here. It is
-//! [`shed_core::roost::bootstrap`]'s two sans-IO machines — [`ProbeMachine`] and
+//! [`shed_roost::bootstrap`]'s two sans-IO machines — [`ProbeMachine`] and
 //! [`InstallMachine`] — which perform no I/O at all: they yield a
 //! [`Step`] and consume an [`Outcome`], and the caller owns every socket,
 //! subprocess and timer. The desktop drives the whole loop in Rust over an `ssh`
@@ -96,13 +96,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use flutter_rust_bridge::frb;
 use serde_json::Value;
 
-use shed_core::roost::bootstrap::{
+use shed_roost::bootstrap::{
     self, reach_code, wire_agent_hooks, BootstrapFailure, CallError, HooksError, HooksResult,
     HooksSkip, Identity, InstallMachine, InstallRequest, Installed, Outcome, Plan, Probe,
     ProbeMachine, ProbeOutcome, SessionIdentity, SessionState, Source, SourceEnv, SourceHandle,
     SourcePreview, Stage, Stdin, Step,
 };
-use shed_core::roost::{Conn, RoostError};
+use shed_roost::{Conn, RoostError};
 
 use super::bridge_rt::{joined_on_bridge_rt, ACTIVE_ROOST_BOOTSTRAPS};
 use super::roost::BridgeReachKind;
@@ -123,7 +123,7 @@ pub(super) const CLIENT_LABEL: &str = "shed-mobile";
 
 /// How many steps one handle is allowed before the drive calls it a loop.
 ///
-/// `shed_app::roost::BootstrapRunner`'s number, for its reason: an install is
+/// `shed_roost::BootstrapRunner`'s number, for its reason: an install is
 /// about twenty steps and a probe about five, so anything past this is a machine
 /// cycling rather than a slow host. Counted across the whole handle and not per
 /// call, because the phone's loop is spread over many FRB round trips and a
@@ -769,7 +769,7 @@ pub enum BridgeBootstrapStep {
         /// **Carried rather than left to the runner to invent.** shed-core's
         /// `Step::Exec` does not name a stderr cap — it is the client's choice,
         /// and the desktop makes its own ([`STDERR_TAIL_CAP`], 4 KiB, private to
-        /// `shed-app`). A Dart runner with no value here would pick a second
+        /// `shed-roost`). A Dart runner with no value here would pick a second
         /// number, and the two clients would then truncate the same failure
         /// differently for no reason anybody could find later. So the number
         /// crosses with the other two caps, from [`STDERR_TAIL_CAP`] below.
@@ -810,10 +810,10 @@ enum DriveStep {
 
 /// How much of stderr a runner keeps, from the tail — 4 KiB.
 ///
-/// Mirrors `shed-app`'s own `STDERR_TAIL_CAP` (`crates/shed-app/src/roost.rs:1953`),
+/// Mirrors `shed-roost`'s own `STDERR_TAIL_CAP` (`crates/shed-roost/src/reach.rs`),
 /// which is private, so this is a deliberate copy rather than a reuse. It rides
 /// out on every [`BridgeBootstrapStep::Exec`] so the Dart runner never invents a
-/// second number; if shed-app's ever moves, the two are meant to move together.
+/// second number; if shed-roost's ever moves, the two are meant to move together.
 const STDERR_TAIL_CAP: u32 = 4 * 1024;
 
 fn normalize<T>(
@@ -1370,7 +1370,7 @@ async fn perform_hooks(port: u16, client_label: &str) -> HooksResult {
 /// probe's one `session.identify` could only ever come back as "the probe could
 /// not be completed", and the phone could never offer an install or a start.
 ///
-/// The mapping is `shed_app::roost`'s, one for one: [`BridgeReachKind::NotInstalled`]
+/// The mapping is `shed_roost::reach`'s, one for one: [`BridgeReachKind::NotInstalled`]
 /// and [`BridgeReachKind::NoSession`] become roost's own kebab codes, and the
 /// other two become `transport` — which the machine reads as "the probe could
 /// not be completed" rather than as a state of the far side. A runner that
@@ -1546,7 +1546,7 @@ mod tests {
     use std::task::Context;
     use std::time::Duration;
 
-    use shed_core::roost::testing::FakeRoost;
+    use shed_roost::testing::FakeRoost;
 
     use crate::api::bridge_rt::live_counters;
     use crate::api::testsupport::{noop_waker, test_guard, unique, wait_until};
@@ -2008,8 +2008,8 @@ mod tests {
         assert_eq!(
             bare.source,
             BridgeBootstrapSource::Asset {
-                base: "https://github.com/charliek/roost/releases/download/v0.0.21".into(),
-                version: "0.0.21".into(),
+                base: "https://github.com/charliek/roost/releases/download/v0.0.26".into(),
+                version: "0.0.26".into(),
             }
         );
         assert!(
@@ -2017,7 +2017,7 @@ mod tests {
             "the release pin makes the asset rung a button"
         );
         assert!(
-            bare.describe.contains("0.0.21") && bare.describe.contains("checksum-verified"),
+            bare.describe.contains("0.0.26") && bare.describe.contains("checksum-verified"),
             "the sentence names the pinned release: {}",
             bare.describe
         );
@@ -2408,7 +2408,7 @@ mod tests {
         );
         assert_eq!(*budget_ms, 30_000, "PROBE_BUDGET, in milliseconds");
         assert_eq!(*stdout_cap, 64 * 1024, "PROBE_STDOUT_CAP");
-        // The cap the runner does NOT get to invent. If shed-app's own
+        // The cap the runner does NOT get to invent. If shed-roost's own
         // STDERR_TAIL_CAP moves, this is the line that says the two drifted.
         assert_eq!(*stderr_cap, 4 * 1024, "STDERR_TAIL_CAP");
         assert!(capture_stdout);
@@ -2605,7 +2605,7 @@ mod tests {
         // so this cell moves with shed's list rather than pinning a stale copy.
         assert_eq!(
             calls[0]["agents"],
-            serde_json::json!(shed_core::roost::bootstrap::ROOST_WIRED_AGENTS)
+            serde_json::json!(shed_roost::bootstrap::ROOST_WIRED_AGENTS)
         );
         for retired in ["mode", "skip", "lease"] {
             assert!(

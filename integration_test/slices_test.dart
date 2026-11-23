@@ -11,8 +11,8 @@
 // **Slices (b) and (c) went with the RC hub** (plan 022 S6, shed#328): (b) drove
 // the FRB `RcEventsWatcher` and (c) the `shed-ext-rc` argv/decode runner, and
 // both of those bridge modules are deleted. The roost watcher that replaced (b)
-// has its own hermetic coverage in `lane_test.dart` and the Rust `api::roost`
-// tests; there is no successor to (c), because the phone composes no agent argv
+// has its own coverage in the Rust `api::roost` tests; there is no successor
+// to (c), because the phone composes no agent argv
 // of its own any more — `roost_tab_open` sends roost's.
 import 'dart:async';
 

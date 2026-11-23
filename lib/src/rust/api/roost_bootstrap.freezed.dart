@@ -2105,7 +2105,7 @@ class BridgeBootstrapStep_Exec extends BridgeBootstrapStep {
 /// **Carried rather than left to the runner to invent.** shed-core's
 /// `Step::Exec` does not name a stderr cap — it is the client's choice,
 /// and the desktop makes its own ([`STDERR_TAIL_CAP`], 4 KiB, private to
-/// `shed-app`). A Dart runner with no value here would pick a second
+/// `shed-roost`). A Dart runner with no value here would pick a second
 /// number, and the two clients would then truncate the same failure
 /// differently for no reason anybody could find later. So the number
 /// crosses with the other two caps, from [`STDERR_TAIL_CAP`] below.

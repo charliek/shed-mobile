@@ -38,7 +38,7 @@
 //!   backgrounds would come back to a queue instead of a view.
 //! * **Dart folds nothing** — not even the row merge. A machine's rows are its
 //!   roost tabs beside its craze sessions, and which roost tab IS a craze session
-//!   (plan 025 D4) is `shed_app::craze_rows::fold_plan`, the one rule the desktop
+//!   (plan 025 D4) is `shed_lane::craze_rows::fold_plan`, the one rule the desktop
 //!   runs too; [`craze_fold_plan`] hands it to Dart over the bridge rather than
 //!   letting a second reading of it grow there.
 //!
@@ -82,9 +82,9 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use flutter_rust_bridge::frb;
-use shed_app::craze_rows::{fold_plan, RoostTabRef};
-use shed_core::lane::{AgentSource, LaneSession, SourceCapabilities, SourceEvent, SourceOffline};
 use shed_craze::{CrazeDial, CrazeSource, TcpDial};
+use shed_lane::craze_rows::{fold_plan, RoostTabRef};
+use shed_lane::lane::{AgentSource, LaneSession, SourceCapabilities, SourceEvent, SourceOffline};
 use tokio::sync::{watch, Notify};
 
 use crate::frb_generated::StreamSink;
@@ -114,7 +114,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// The command the craze tunnel execs on the far side, verbatim — craze's
 /// published ladder ending in `craze bridge --hub`, plus the exec-only PATH
-/// (`shed_core::craze::bridge_hub_command`, plan 025 §3.4).
+/// (`shed_lane::craze::bridge_hub_command`, plan 025 §3.4).
 ///
 /// **Dart composes no part of it**, for [`super::roost::roost_remote_command`]'s
 /// reason: which rung wins and how the script is quoted is pinned by shed's
@@ -122,10 +122,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// composition here could only drift from it.
 #[frb(sync)]
 pub fn craze_remote_command() -> String {
-    shed_core::craze::bridge_hub_command()
+    shed_lane::craze::bridge_hub_command()
 }
 
-/// **Test mode only**: the JAILED bridge argv (`shed_core::craze::
+/// **Test mode only**: the JAILED bridge argv (`shed_lane::craze::
 /// bridge_hub_argv_jailed` — `["sh", "-c", <rungs 1–2 only, no exec PATH>]`).
 ///
 /// The hermetic harness (`integration_test/craze_test.dart`) runs its craze
@@ -136,7 +136,7 @@ pub fn craze_remote_command() -> String {
 /// [`craze_remote_command`].
 #[frb(sync)]
 pub fn craze_jailed_bridge_argv() -> Vec<String> {
-    shed_core::craze::bridge_hub_argv_jailed()
+    shed_lane::craze::bridge_hub_argv_jailed()
 }
 
 /// A fresh create request id in craze's form (`shed_craze::new_request_id`):
@@ -152,7 +152,7 @@ pub fn craze_new_request_id() -> String {
 // ---------------------------------------------------------------------------
 
 /// One roost tab on the machine being folded, as the merge needs it (mirrors
-/// `shed_app::craze_rows::RoostTabRef`).
+/// `shed_lane::craze_rows::RoostTabRef`).
 ///
 /// `craze_owner` is `Some(X)` **only** for a tab roost reports as craze's
 /// (`kind == Craze`), `X` being its ownership session id — the provider session
@@ -177,7 +177,7 @@ pub struct BridgeFoldedTab {
 }
 
 /// What the merge decided for one machine (mirrors
-/// `shed_app::craze_rows::FoldPlan`): every roost tab it folds away, in tab id
+/// `shed_lane::craze_rows::FoldPlan`): every roost tab it folds away, in tab id
 /// order — at most one per hub row absorbed (the newest), the rest hidden. A tab
 /// in this list is NOT shown as a roost row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,7 +186,7 @@ pub struct BridgeFoldPlan {
 }
 
 /// **The row merge for ONE machine** (plan 025 §3.6.3, D4) —
-/// `shed_app::craze_rows::fold_plan`, the rule the desktop runs, called rather
+/// `shed_lane::craze_rows::fold_plan`, the rule the desktop runs, called rather
 /// than re-derived.
 ///
 /// `hub` is the machine's craze rows **only while its craze feed is live**, and
@@ -849,7 +849,7 @@ pub async fn craze_create(
 /// [`craze_create`] **REPLAYING a held request** — the sheet re-sending the
 /// request id (and the exact directory and title, plan 029 P11) it kept from
 /// an unknown outcome. Through shed-craze's
-/// [`create_held`](shed_core::lane::AgentSource::create_held) (plan 026
+/// [`create_held`](shed_lane::lane::AgentSource::create_held) (plan 026
 /// §3.1), so every attempt — the first included — is a retry, and only
 /// craze's own answer about the request ends the id.
 ///
@@ -1030,8 +1030,8 @@ pub async fn craze_reopen(
 // ---------------------------------------------------------------------------
 
 /// **Open one craze session's transcript** — the source's lane on `host_id`
-/// (the row's id, P11), as the SAME [`BridgeLane`] an opencode lane is, so every
-/// `lane_*` verb serves it.
+/// (the row's id, P11), as a [`BridgeLane`], so every `lane_*` verb serves
+/// it.
 ///
 /// No forward and no stamp: the lane reaches its session through the hub's
 /// splice over this source's own dial, one connection of its own (D10). It binds
@@ -1078,18 +1078,18 @@ mod tests {
     use std::time::Duration;
 
     use serde_json::{json, Value};
-    use shed_core::lane::LaneError;
-    use shed_core::rc::RcActivity;
     use shed_craze::testing::{
         attach_result, full_hub_capabilities, host_session_row, hub_capabilities_0_1_0,
         reopen_hub_capabilities, roster_row, session_caps, session_info, snapshot_at, HubEnd,
         ScriptedDial,
     };
+    use shed_lane::lane::LaneError;
+    use shed_lane::rc::RcActivity;
 
     use crate::api::bridge_rt::live_counters;
     use crate::api::dto_lane::{BridgeLaneSavedSession, BridgeLaneSettingChange, BridgeSendMode};
     use crate::api::lane::{
-        lane_close, lane_send, lane_set, lane_snapshot, lane_stop, pump_finished,
+        claim_nudges, lane_close, lane_send, lane_set, lane_snapshot, lane_stop, pump_finished,
     };
     use crate::api::testsupport::test_guard;
 
@@ -1808,6 +1808,144 @@ mod tests {
         assert_eq!(live_counters().active_craze_sources, 0);
     }
 
+    /// **The pump folds a live subscription's transcript into the view**
+    /// (ported from the opencode cell plan 038 retired; the property is the
+    /// bridge pump's): a seed whose snapshot carries messages reaches
+    /// `lane_snapshot` through the adapter and the pump, with no frame from
+    /// Dart, as a full read of a live generation.
+    #[tokio::test]
+    async fn the_pump_folds_a_live_transcript_into_the_view() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let _roster = listed_roster(&mut conns, &src).await;
+        let lane = craze_lane_open(&src, CREATED.to_string())
+            .await
+            .expect("the listed session's lane opens");
+        let mut hub = next_conn(&mut conns).await;
+        hub.splice(CREATED).await;
+        hub.listed(host_session_row(&created_info(), json!({})))
+            .await;
+        let main = json!({"entries": [
+            {"id": "2.0", "kind": "user", "text": "do the thing", "at": "2026-01-01T00:00:00Z"},
+            {"id": "3.0", "kind": "assistant", "text": "doing the thing", "at": "2026-01-01T00:00:00Z"}]});
+        hub.attached(attach_result(
+            "s-1",
+            &created_info(),
+            ("INC-1", 1),
+            Some(snapshot_at("INC-1", 1, main)),
+            None,
+        ))
+        .await;
+        hub.synchronized("s-1", 1).await;
+
+        let texts = |lane: &BridgeLane| -> Vec<String> {
+            lane_snapshot(lane, None)
+                .messages
+                .into_iter()
+                .filter_map(|m| m.text)
+                .collect()
+        };
+        assert!(
+            until(Duration::from_secs(10), || {
+                let t = texts(&lane);
+                t.iter().any(|x| x == "do the thing") && t.iter().any(|x| x == "doing the thing")
+            })
+            .await,
+            "the pump never folded the seed's transcript into the view: {:?}",
+            texts(&lane)
+        );
+        let snap = lane_snapshot(&lane, None);
+        assert!(snap.full, "a cursorless read is a full read");
+        assert_eq!(snap.stale, None, "a live generation is not stale");
+        assert!(
+            snap.generation >= 1,
+            "a completed seed moves the generation"
+        );
+
+        lane_close(&lane);
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_lanes, 0);
+        assert_eq!(live_counters().active_craze_sources, 0);
+    }
+
+    /// **The terminal `Down` ends the pump and the view, and leaves the nudge
+    /// stream OPEN** — which is the whole of how Dart tells "ended, re-open me"
+    /// from "closed by me". (Ported from the opencode cell plan 038 retired;
+    /// the property is the bridge's, not the adapter's.)
+    ///
+    /// The live lane first: the seed folded into the view without Dart having
+    /// seen a frame. Then the session's end: the view is marked stale with the
+    /// adapter's own reason AND ended, the last `Down` raises a nudge, and the
+    /// lane and its forwarder stay counted until Dart closes it. A closed lane
+    /// still projects its last view, capabilities included.
+    #[tokio::test]
+    async fn a_final_down_ends_the_view_but_leaves_the_nudge_stream_open() {
+        let _g = test_guard();
+        let (dial, mut conns) = ScriptedDial::new();
+        let src = open_on("mini3".to_string(), dial);
+        let (lane, mut hub, _roster) = listed_lane(&mut conns, &src).await;
+        let sink = CountingSink::new(false);
+        assert!(claim_nudges(&lane, sink.push_fn()));
+
+        let live = lane_snapshot(&lane, None);
+        assert!(live.full, "a cursorless read is a full read");
+        assert_eq!(live.stale, None, "a live generation is not stale");
+        assert!(!live.ended);
+        assert!(
+            live.generation >= 1,
+            "a completed seed moves the generation"
+        );
+        let pushes_before = sink.pushes();
+
+        hub.reset("s-1", "session_closed").await;
+        assert!(
+            until(Duration::from_secs(10), || lane_snapshot(&lane, None).ended).await,
+            "the session's end never ended the view"
+        );
+        assert_eq!(
+            lane_snapshot(&lane, None).stale.as_deref(),
+            Some("session_closed"),
+            "the terminal reason is the adapter's own, not a paraphrase"
+        );
+        assert!(
+            until(Duration::from_secs(5), || sink.pushes() > pushes_before).await,
+            "the last Down raised no nudge"
+        );
+        assert!(
+            until(Duration::from_secs(5), || pump_finished(&lane)).await,
+            "the pump outlived a final Down"
+        );
+        // Still counted: the pump is finished, the lane and its stream are not.
+        assert_eq!(live_counters().active_lanes, 1);
+        assert_eq!(live_counters().active_lane_forwarders, 1);
+
+        lane_close(&lane);
+        assert!(
+            until(Duration::from_secs(5), || live_counters().active_lanes == 0
+                && live_counters().active_lane_forwarders == 0)
+            .await,
+            "close left the counters at {:?}",
+            (
+                live_counters().active_lanes,
+                live_counters().active_lane_forwarders
+            )
+        );
+        // Idempotent: a second close must not decrement again (the counters
+        // are `u64`; a double decrement would wrap).
+        lane_close(&lane);
+        assert_eq!(live_counters().active_lanes, 0);
+        let closed = lane_snapshot(&lane, None);
+        assert_eq!(
+            closed.capabilities.map(|c| c.kind).as_deref(),
+            Some("craze"),
+            "a closed lane still projects its last capabilities"
+        );
+
+        craze_source_close(&src);
+        assert_eq!(live_counters().active_craze_sources, 0);
+    }
+
     /// **A session that never started ends its lane for good**: an attach
     /// refused `not_accepting` + `start_failed` is `Down{"start_failed:
     /// <cause>"}`, craze's cause in it, and the pump stops — asking the host
@@ -2463,7 +2601,7 @@ mod tests {
         })
         .await
         .expect("the saved list answered in time");
-        let ms = |t: &str| shed_core::time::rfc3339_unix_ms(t).unwrap();
+        let ms = |t: &str| shed_lane::time::rfc3339_unix_ms(t).unwrap();
         assert_eq!(
             saved.expect("the hub listed its saved sessions"),
             BridgeLaneSavedSessions {
@@ -2954,10 +3092,10 @@ mod tests {
     fn the_commands_are_shed_cores_own() {
         assert_eq!(
             craze_remote_command(),
-            shed_core::craze::bridge_hub_command()
+            shed_lane::craze::bridge_hub_command()
         );
         let jailed = craze_jailed_bridge_argv();
-        assert_eq!(jailed, shed_core::craze::bridge_hub_argv_jailed());
+        assert_eq!(jailed, shed_lane::craze::bridge_hub_argv_jailed());
         assert_eq!(jailed[..2], ["sh", "-c"]);
         assert!(jailed[2].ends_with("exit 127") || jailed[2].contains("command not found"));
         assert!(

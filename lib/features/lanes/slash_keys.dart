@@ -6,7 +6,7 @@ import '../../src/rust/api/dto_lane.dart';
 ///
 /// Every rule about the MENU itself — which rows show, what a typed token
 /// matches, what accepting a row does, when a command is refused — is
-/// `shed_app::slash_menu`'s, reached through `SlashRules` (P5); nothing here
+/// `shed_lane::slash_menu`'s, reached through `SlashRules` (P5); nothing here
 /// filters, parses or decides a command. What is left for the phone is what
 /// only a keyboard and a screen have: which key does what to the menu on
 /// screen, where the highlight goes, and when an Esc dismissal ends. The

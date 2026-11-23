@@ -8,8 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// A local client of a listening loopback port — the Rust side's stand-in.
 ///
 /// A [Socket] may only be listened to once, so every read in a test goes
-/// through this buffer. Shared by `duplex_pump_test.dart` and
-/// `lane_forward_test.dart`; `roost_tunnel_test.dart` predates it and keeps its
+/// through this buffer. Used by `duplex_pump_test.dart`;
+/// `roost_tunnel_test.dart` predates it and keeps its
 /// own frozen copy on purpose (it is the pump extraction's control, so not one
 /// byte of it moves).
 class LoopbackClient {

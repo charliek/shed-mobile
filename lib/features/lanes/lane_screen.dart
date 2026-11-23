@@ -25,12 +25,12 @@ import 'slash_menu_panel.dart';
 
 /// **One agent lane, on a phone** (plan 018 §3.12).
 ///
-/// The transcript of an agent session running on a machine (an `opencode` lane
-/// today; plan 025 adds craze's), the asks it is blocked on, and the two things
-/// a person does about them: answer, or say something. Reached from a machine
-/// session row that carries an `agentLane` stamp — and ONLY from such a row,
-/// because [laneControllerProvider] refuses a row with no stamp rather than
-/// opening a lane that can never connect.
+/// The transcript of a craze session running on a machine (plan 025; the
+/// opencode lane was retired in plan 038), the asks it is blocked on, and the
+/// two things a person does about them: answer, or say something. Reached from
+/// a machine's CRAZE row — and ONLY from such a row, because
+/// [laneControllerProvider] refuses any other rather than opening a lane that
+/// can never connect. A roost tab (opencode, Claude) has no transcript.
 ///
 /// The layout follows [SessionWatchScreen] deliberately: a lane's rows ARE
 /// `RcFeedMessage`s, so the same [RcMessageTile] renders them and a transcript
@@ -69,7 +69,7 @@ import 'slash_menu_panel.dart';
 /// Every affordance below is gated on the capabilities the lane's stream last
 /// stated ([LaneState.capabilities]), never on the kind and never on a copy
 /// taken at open: **Stop** exists only when they say `stop` (a TUI-hosted craze
-/// session, every opencode one, has none) and is never one tap — it ends the
+/// session has none) and is never one tap — it ends the
 /// SESSION, so it asks first; **Cancel** exists only when they say `cancel`,
 /// and only while a turn is running; **Interject** only when they say
 /// `interject`. And the banner tells a lane that is RECONNECTING on its own
@@ -113,8 +113,8 @@ import 'slash_menu_panel.dart';
 /// before it was sent is dropped, and an outcome clears (or completes) the
 /// box only while that revision still holds, so a newer draft is never erased
 /// (its note still shows). One command at a time, guarded before its first
-/// await. No menu on the view → the composer is as it always was (every
-/// opencode session, D11).
+/// await. No menu on the view → the composer is as it always was (an older
+/// craze, D11).
 class LaneScreen extends ConsumerStatefulWidget {
   const LaneScreen({
     required this.machine,
@@ -127,13 +127,12 @@ class LaneScreen extends ConsumerStatefulWidget {
   /// The machine whose feed owns the SSH connection this lane rides.
   final String machine;
 
-  /// The lane's kind — the row's stamp kind (`opencode`), or `craze` for a
-  /// craze row. Part of the lane's address ([LaneRef]): it is what keeps a
-  /// craze hostId and a roost tab id spelled alike from sharing a lane.
+  /// The lane's kind — [crazeLaneKind], the only one. Part of the lane's
+  /// address ([LaneRef]): it is what keeps a craze hostId and a roost tab id
+  /// spelled alike apart.
   final String kind;
 
-  /// The ROW's slug (roost's tab id) — the lane's identity, and deliberately
-  /// not the agent session id, which is part of the stamp being reconciled.
+  /// The ROW's key (craze's hostId) — the lane's identity.
   final String slug;
 
   /// The row's display name, from the machine feed — the header's title until
@@ -598,8 +597,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
 
   /// The session's `/` menu, when it offers one (D11): its capabilities say
   /// `slash` AND its view carries a resolved menu. Null — no menu, no `/`
-  /// button, no note — otherwise: every opencode session, a craze session
-  /// whose catalog has not arrived (or was truncated away), an older craze.
+  /// button, no note — otherwise: a craze session whose catalog has not
+  /// arrived (or was truncated away), an older craze.
   static BridgeSlashMenu? _menuOf(LaneState? state) =>
       (state?.capabilities?.slash ?? false) ? state!.slashMenu : null;
 
@@ -1224,7 +1223,7 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
   /// The session's permission posture rides here too, from the LIVE row
   /// (plan 025 §3.6.5): a session the craze create sheet started runs
   /// `bypass`, and this is where that consequence is visible. A row that
-  /// states no posture (every opencode row) renders nothing for it.
+  /// states no posture renders nothing for it.
   Widget _statusStrip(BuildContext context, LaneState state) {
     final c = context.shed;
     final display = rcActivityDisplay(state.activity);
@@ -1505,8 +1504,8 @@ class _LaneScreenState extends ConsumerState<LaneScreen> {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   children: [
-                    // Rendered only when the ADAPTER advertises it (opencode
-                    // answers false and never gets one), and enabled only
+                    // Rendered only when the ADAPTER advertises it (a session
+                    // that answers false never gets one), and enabled only
                     // while a turn is actually running — an interject with
                     // nothing to interject is a refusal.
                     if (canInterject)

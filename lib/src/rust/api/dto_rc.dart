@@ -156,7 +156,7 @@ sealed class BridgeRcKind with _$BridgeRcKind {
   /// Claude and opencode (plan 025). Not creatable through roost (craze's
   /// own create sheet is that path), and it carries no permission-mode
   /// posture of the roost kind (craze's settings are the mode surface) —
-  /// both are `shed_core::rc::RcKind::Craze`'s own answers, mirrored in
+  /// both are `shed_lane::rc::RcKind::Craze`'s own answers, mirrored in
   /// Dart's `BridgeRcKindUi`.
   const factory BridgeRcKind.craze() = BridgeRcKind_Craze;
   const factory BridgeRcKind.shell() = BridgeRcKind_Shell;
@@ -292,17 +292,13 @@ class BridgeRcSession {
   /// [`attention`](Self::attention) and [`tab_id`](Self::tab_id) are, for the
   /// same reason: the shared `RcSessionDto` gains no field for roost.
   ///
-  /// `Some` requires all three of the stamp's conditions to hold — a kind an
-  /// adapter exists for, a loopback control-surface URL the agent announced,
-  /// and the agent's OWN session id — so a `Some` here is a lane
-  /// [`super::lane::lane_open`] can actually be called with, not merely a
-  /// row that looks agentic. `None` is "there is no transcript to show", and a
-  /// client renders no lane affordance for it at all.
-  ///
-  /// It is the FULL stamp rather than a bare flag because §3.11 reconciles a
-  /// live lane against the whole of it: a tab that restarted as a different
-  /// agent, or the same agent on a new ephemeral port, is a DIFFERENT lane,
-  /// and row-presence alone cannot say so.
+  /// **Always `None` since plan 038**: the opencode adapter is retired and
+  /// `shed_roost` stamps no roost tab with a lane, an opencode tab announcing
+  /// a `server_url` included. `None` is "there is no transcript to show", and
+  /// a client renders no lane affordance for it at all — the row is a
+  /// passive status row with its tool label and activity. A craze session's
+  /// lane comes from the machine's craze source (plan 025 D4), never from
+  /// this field.
   final BridgeAgentLaneStamp? agentLane;
 
   const BridgeRcSession({

@@ -18,11 +18,8 @@ import 'package:shed_mobile/providers.dart';
 import 'package:shed_mobile/src/rust/api/craze.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
-import 'package:shed_mobile/src/rust/api/lane.dart';
-import 'package:shed_mobile/ssh/lane_forward.dart';
 import 'package:shed_mobile/theme/shed_theme.dart';
 
-import '../../lanes/fake_lane_lease.dart';
 import 'fake_slash_rules.dart';
 
 /// **The lane screen** (plan 018 §3.12) — every affordance driven through the
@@ -44,9 +41,10 @@ import 'fake_slash_rules.dart';
 /// 2. **A placeholder permission renders no allow button.** gx announces every
 ///    approval twice, the first time with no options; the control is that a
 ///    real five-option card DOES render buttons under the same predicate.
-/// 3. **Interject is absent vs present-but-disabled.** Absent means the adapter
-///    cannot do it (opencode); disabled means it can but there is no turn to
-///    interject. Collapsing the two hides a capability or offers a refusal.
+/// 3. **Interject is absent vs present-but-disabled.** Absent means the session
+///    cannot do it (its capabilities say no); disabled means it can but there
+///    is no turn to interject. Collapsing the two hides a capability or offers
+///    a refusal.
 /// 4. **The send MODE is recomputed at send time.** A turn that ended between
 ///    the render and the tap must send `Queue`, whatever the toggle still says.
 /// 5. **Capabilities and the header come from the SNAPSHOT** (plan 025): the
@@ -953,7 +951,7 @@ void main() {
 
       // A machine-feed rebuild with no lane stamp for this row (see "A
       // MISSING LANE"): the screen stays up, its composer enabled.
-      rig.feed.laneGone = true;
+      rig.feed.crazeRowGone = true;
       ProviderScope.containerOf(
         tester.element(find.byType(LaneScreen)),
       ).invalidate(laneControllerProvider(_ref));
@@ -1010,19 +1008,19 @@ void main() {
 
   group('interject', () {
     testWidgets('is absent for an adapter that cannot do it', (tester) async {
-      // opencode answers `interject: false`. Absent, not disabled: a greyed
-      // toggle promises a capability that will never light up.
+      // A session whose capabilities say `interject: false`. Absent, not
+      // disabled: a greyed toggle promises a capability that will never light
+      // up.
       final rig = _Rig(
-        kind: 'opencode',
         snapshot: _snap(
           activity: BridgeRcActivity.working,
-          capabilities: _caps(kind: 'opencode', interject: false),
+          capabilities: _caps(interject: false),
         ),
       );
       await _pump(tester, rig);
 
       expect(find.byKey(const ValueKey('lane-interject')), findsNothing);
-      // The control: a WORKING opencode lane renders the rest of that row, so
+      // The control: a WORKING lane renders the rest of that row, so
       // the absence is about the capability and not about an empty composer.
       expect(find.byKey(const ValueKey('lane-cancel')), findsOneWidget);
     });
@@ -1108,7 +1106,7 @@ void main() {
       expect(find.text('idle'), findsOneWidget);
       // No live session row yet, so the row's own name is the title.
       expect(find.text('row7'), findsOneWidget);
-      expect(find.text('7'), findsOneWidget);
+      expect(find.text(_host), findsOneWidget);
     });
 
     testWidgets('the header reads the LIVE session row — its title and its '
@@ -1272,7 +1270,7 @@ void main() {
     const host = 'cccccccccccc';
     const givenUp =
         'This lane has been given up on — its row or session is gone.';
-    final crazeCaps = _caps(kind: 'craze', stop: true);
+    final crazeCaps = _caps(stop: true);
     final before = _row(1, 'assistant', 'before the stop');
 
     /// A craze session's transcript, open, its row listed by a live roster.
@@ -1407,23 +1405,44 @@ void main() {
       expect(_sendEnabled(tester), isFalse);
     });
 
-    testWidgets('a NON-craze lane whose row leaves is given up on at once, '
-        'with the note', (tester) async {
-      final rig = _Rig(snapshot: _snap(rows: [before]));
-      await _pump(tester, rig);
-      rig.feed.laneGone = true;
-      rig.feed.publish();
+    testWidgets('a lane with no connection to wait on — out on its re-open '
+        'ladder — whose row leaves is given up on at once, with the '
+        'note', (tester) async {
+      final rig = await crazeLane(tester);
+      // An end that is not final: the handle goes, the ladder waits.
+      rig.bump(
+        _snap(
+          rows: [before],
+          capabilities: crazeCaps,
+          stale: 'unreachable',
+          ended: true,
+        ),
+      );
       await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      // Still on its ladder: the row's leaving is what gives it up.
+      expect(
+        tester.widget<Text>(_bannerText('lane-note')).data,
+        'Reconnecting…',
+      );
+
+      await rowLeaves(tester, rig);
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await _settle(tester);
       expect(tester.widget<Text>(_bannerText('lane-note')).data, givenUp);
       expect(find.text('before the stop'), findsOneWidget);
+
+      // The ladder's wait runs out on a lane given up on: nothing re-opens.
+      await tester.pump(laneRetryBase * 2);
+      await _settle(tester);
+      expect(rig.source.crazeOpens, [host]);
     });
   });
 
   group('Stop (plan 025 §3.7.3)', () {
     testWidgets('is absent where the capabilities say no stop', (tester) async {
-      // Every opencode session, and a TUI-hosted craze one: `stop: false`.
+      // A TUI-hosted craze session: `stop: false`.
       final rig = _Rig(snapshot: _snap());
       await _pump(tester, rig);
       expect(find.byKey(const ValueKey('lane-stop')), findsNothing);
@@ -1600,8 +1619,8 @@ void main() {
     testWidgets('CONTROL: offered only where the capabilities say settings — '
         'no chip, and no sheet to reach, otherwise', (tester) async {
       tall(tester);
-      // Every opencode session: `settings: false`, even with a settings tree
-      // a producer sent against the contract.
+      // A session whose capabilities say `settings: false`, even with a
+      // settings tree a producer sent against the contract.
       final rig = _Rig(snapshot: _snap(settings: _grok46));
       await _pump(tester, rig);
       expect(find.byKey(chip), findsNothing);
@@ -1624,7 +1643,7 @@ void main() {
       await openSheet(tester);
 
       // A new incarnation whose capabilities say `settings: false`.
-      rig.bump(_snap(capabilities: _caps(kind: 'craze')));
+      rig.bump(_snap(capabilities: _caps()));
       await _settle(tester);
       expect(find.byKey(sheet), findsNothing);
       expect(find.byKey(chip), findsNothing);
@@ -2257,7 +2276,7 @@ void main() {
         'no button, no panel, and /help goes out as TEXT', (tester) async {
       for (final snapshot in [
         // A catalog the capabilities do not vouch for is not offered.
-        _slashSnap(caps: _caps(kind: 'craze', stop: true)),
+        _slashSnap(caps: _caps(stop: true)),
         // `slash`, but no catalog (yet, or truncated away): none either.
         _snap(capabilities: _slashCaps),
       ]) {
@@ -2578,7 +2597,7 @@ void main() {
         're-selecting the current mode still sends', (tester) async {
       final rig = _Rig(
         snapshot: _slashSnap(
-          caps: _caps(kind: 'craze', slash: true, setTitle: true),
+          caps: _caps(slash: true, setTitle: true),
           menu: BridgeSlashMenu(
             rows: crazeMenu.rows
                 .where((r) => r.action is! BridgeSlashAction_ModelPicker)
@@ -3325,9 +3344,8 @@ void main() {
     });
 
     testWidgets('SUPERSEDED: what a lost Cancel or header Stop said belongs '
-        'to the SESSION it was said for — a reconnect to that session keeps '
-        'both; a new stamp naming another session shows neither (plan 030 '
-        'FU11)', (tester) async {
+        'to the SESSION it was said for — a provider rebuild and a reconnect '
+        'to that session keep both (plan 030 FU11)', (tester) async {
       const working = BridgeRcActivity.working;
       final rig = _Rig(snapshot: _slashSnap(activity: working))
         ..source.holdCancel = Completer<void>()
@@ -3343,7 +3361,7 @@ void main() {
         expect(banner(), laneCommandOutcomeUnknown, reason: why);
       }
 
-      // Session A (`sess-7`): a Cancel, then a header Stop, each lost to a
+      // Session A: a Cancel, then a header Stop, each lost to a
       // provider rebuild — itself a reconnect to A, so the Cancel's note
       // outlives the second one.
       await tester.tap(find.byKey(const ValueKey('lane-cancel')));
@@ -3358,6 +3376,7 @@ void main() {
       bothSaid('session A, across a rebuild');
 
       // CONTROL: a non-final Down re-opened on the same stamp — A again.
+      final opensBefore = rig.source.crazeOpens.length;
       rig.bump(
         _slashSnap(
           activity: working,
@@ -3372,67 +3391,50 @@ void main() {
       await tester.pump(laneRetryBase * 2);
       await _settle(tester);
       expect(find.byKey(const ValueKey('lane-stale')), findsNothing);
+      expect(rig.source.crazeOpens.skip(opensBefore), [
+        _host,
+      ], reason: 're-opened once, on A');
       bothSaid('a reconnect to A');
-
-      // CONTROL: a restarted tab — a new stamp, but A's session on a new
-      // port. Still A.
-      rig.feed.restamp(url: 'http://127.0.0.1:2500');
-      await _settle(tester);
-      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      await _settle(tester);
-      expect(rig.source.specs.last.reportedUrl, 'http://127.0.0.1:2500');
-      bothSaid('the same session on a new port');
-
-      // A new stamp naming session B: neither of A's notes is B's.
-      rig.feed.restamp(session: 'sess-8');
-      await _settle(tester);
-      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      await _settle(tester);
-      expect(rig.source.specs.last.sessionId, 'sess-8', reason: 'B is open');
-      expect(banner(), isNull, reason: 'A\'s Stop is not B\'s');
-      expect(_composerError(tester), isNull, reason: 'nor A\'s Cancel');
+      // A craze lane's row is its session (the lane is keyed by the hostId),
+      // so no new stamp can name another session behind the same screen;
+      // that half of the rule is the controller's (`lane_controller_test`'s
+      // FU11 cell).
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('NOTES: a rename\'s "could not record" warning belongs to the '
-        'session it was said for — a reconnect to it keeps the note; a new '
-        'stamp naming another session, menu and all, does not show it (plan '
-        '030)', (tester) async {
+        'session it was said for — a provider rebuild and a reconnect to it '
+        'keep the note (plan 030)', (tester) async {
       const warning =
           'renamed, but craze could not record it: write index: disk full';
       final rig = _Rig(snapshot: _slashSnap())
         ..source.setTitleWarning = warning;
       await _pumpSlash(tester, rig);
       final note = find.byKey(const ValueKey('lane-slash-warning'));
-      Future<void> restamp({String? session, String? url}) async {
-        rig.feed.restamp(session: session, url: url);
-        await _settle(tester);
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-        await _settle(tester);
-      }
 
       await _type(tester, '/rename on A');
       await _press(tester, LogicalKeyboardKey.enter);
       expect(rig.source.titles, ['on A']);
       expect(note, findsOneWidget);
 
-      // CONTROLS: reconnects to A — the lane's provider rebuilt, then A on a
-      // new port (a restarted tab).
+      // CONTROLS: reconnects to A — the lane's provider rebuilt, then a
+      // non-final Down re-opened on the same stamp.
       await _rebuildLane(tester);
       expect(note, findsOneWidget, reason: 'a rebuild: still A');
-      await restamp(url: 'http://127.0.0.1:2500');
-      expect(rig.source.specs.last.reportedUrl, 'http://127.0.0.1:2500');
-      expect(note, findsOneWidget, reason: 'the same session on a new port');
-
-      // Session B, which offers the menu too: A's caveat is not B's.
-      await restamp(session: 'sess-8');
-      expect(rig.source.specs.last.sessionId, 'sess-8', reason: 'B is open');
-      expect(
-        find.byKey(const ValueKey('lane-slash-button')),
-        findsOneWidget,
-        reason: 'B offers the menu: the note goes with A, not with a catalog',
-      );
-      expect(note, findsNothing);
+      final opensBefore = rig.source.crazeOpens.length;
+      rig.bump(_slashSnap(stale: 'hub connection lost', ended: true));
+      await _settle(tester);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await _settle(tester);
+      rig.source.current = _slashSnap();
+      await tester.pump(laneRetryBase * 2);
+      await _settle(tester);
+      expect(rig.source.crazeOpens.skip(opensBefore), [
+        _host,
+      ], reason: 're-opened once, on A');
+      expect(note, findsOneWidget, reason: 'a reconnect to the same session');
+      // A craze lane's row is its session, so no new stamp can name another
+      // session behind the same screen (see the FU11 cell above).
       expect(tester.takeException(), isNull);
     });
 
@@ -3702,7 +3704,7 @@ void main() {
       await _type(tester, '/rename noted');
       await _press(tester, LogicalKeyboardKey.enter);
       expect(find.byKey(const ValueKey('lane-slash-warning')), findsOneWidget);
-      rig.bump(_slashSnap(caps: _caps(kind: 'craze', stop: true)));
+      rig.bump(_slashSnap(caps: _caps(stop: true)));
       await _settle(tester);
       expect(find.byKey(const ValueKey('lane-slash-warning')), findsNothing);
       expect(find.byKey(const ValueKey('lane-slash-refusal')), findsNothing);
@@ -3721,7 +3723,7 @@ void main() {
       // A machine-feed rebuild with no lane stamp for this row: from now on
       // every read of the lane's provider refuses — Riverpod rethrowing the
       // provider's StateError wrapped in a ProviderException.
-      rig.feed.laneGone = true;
+      rig.feed.crazeRowGone = true;
       ProviderScope.containerOf(
         tester.element(find.byType(LaneScreen)),
       ).invalidate(laneControllerProvider(_ref));
@@ -3734,7 +3736,7 @@ void main() {
       );
       expect(
         tester.widget<Text>(_bannerText('lane-unavailable')).data,
-        'This lane is gone: no agent lane on mini3/7 (opencode)',
+        'This lane is gone: no agent lane on mini3/$_host (craze)',
         reason: 'the cause, not Riverpod\'s wrapper and its stack trace',
       );
 
@@ -3801,7 +3803,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 /// A craze session that offers settings.
-final _settingsCaps = _caps(kind: 'craze', settings: true);
+final _settingsCaps = _caps(settings: true);
 
 List<BridgeLaneChoice> _offOn(String on) => [
   const BridgeLaneChoice(id: 'false', name: 'Off'),
@@ -4004,7 +4006,11 @@ String? _markText(String row) {
 // ---------------------------------------------------------------------------
 
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3.example');
-const _ref = (machine: 'mini3', kind: 'opencode', slug: '7');
+
+/// The machine's craze session — a hostId, as every lane's row key is (plan
+/// 038: a lane is a craze session's, never a roost tab's).
+const _host = 'aaaaaaaaaaa7';
+const _ref = (machine: 'mini3', kind: crazeLaneKind, slug: _host);
 
 /// Every option button on screen, whatever its id — the finder the
 /// placeholder-permission control needs. Asserting a SPECIFIC absent key would
@@ -4027,7 +4033,6 @@ Future<void> _settle(WidgetTester tester) async {
 /// Riverpod does not export the `Override` type a `List<Override>` getter would
 /// have to name (the target-picker test's precedent).
 Future<void> _pump(WidgetTester tester, _Rig rig) async {
-  final craze = rig.feed.crazeHost;
   await tester.pumpWidget(
     ProviderScope(
       retry: (_, _) => null,
@@ -4045,19 +4050,12 @@ Future<void> _pump(WidgetTester tester, _Rig rig) async {
       ],
       child: MaterialApp(
         theme: shedLightTheme,
-        home: craze == null
-            ? const LaneScreen(
-                machine: 'mini3',
-                kind: 'opencode',
-                slug: '7',
-                title: 'row7',
-              )
-            : LaneScreen(
-                machine: 'mini3',
-                kind: crazeLaneKind,
-                slug: craze,
-                title: 'craze $craze',
-              ),
+        home: LaneScreen(
+          machine: 'mini3',
+          kind: crazeLaneKind,
+          slug: rig.feed.crazeHost,
+          title: 'row7',
+        ),
       ),
     ),
   );
@@ -4076,7 +4074,7 @@ BridgeRcFeedMessage _row(int seq, String role, String text) =>
 /// cells have something to gate on. They ride the snapshot, as a real seed's
 /// do — an explicit `capabilities: null` is "no seed yet".
 const _fixtureCaps = BridgeLaneCapabilities(
-  kind: 'opencode',
+  kind: 'craze',
   interject: true,
   cancel: true,
   approvals: true,
@@ -4166,7 +4164,7 @@ BridgeLaneApproval _approval({
 );
 
 BridgeLaneCapabilities _caps({
-  String kind = 'opencode',
+  String kind = 'craze',
   bool interject = true,
   bool cancel = true,
   bool stop = false,
@@ -4191,12 +4189,9 @@ Finder _bannerText(String key) =>
 
 /// The screen, the real providers, and a stubbed bridge + machine feed.
 class _Rig {
-  _Rig({
-    BridgeLaneSnapshot? snapshot,
-    String kind = 'opencode',
-    String? crazeHost,
-  }) : source = _FakeSource(current: snapshot ?? _snap()),
-       feed = _FakeFeed(kind: kind, crazeHost: crazeHost);
+  _Rig({BridgeLaneSnapshot? snapshot, String crazeHost = _host})
+    : source = _FakeSource(current: snapshot ?? _snap()),
+      feed = _FakeFeed(crazeHost: crazeHost);
 
   final _FakeSource source;
   final _FakeFeed feed;
@@ -4218,7 +4213,6 @@ class _FakeSource implements LaneSource {
   BridgeLaneSnapshot current;
   final _nudges = StreamController<bool>.broadcast();
 
-  final specs = <BridgeLaneSpec>[];
   final sends = <({String text, BridgeSendMode mode})>[];
   final answers = <({String approvalId, BridgeLaneAnswer answer})>[];
   int cancels = 0;
@@ -4239,14 +4233,8 @@ class _FakeSource implements LaneSource {
     _nudges.add(true);
   }
 
-  @override
-  Future<LaneHandle> open(BridgeLaneSpec spec) async {
-    specs.add(spec);
-    return _FakeHandle();
-  }
-
-  /// A craze row's open — no spec, its hostId. Recorded, so a cell can say
-  /// which way a lane was opened.
+  /// Every open — a craze row's, by its hostId. Recorded, so a cell can say
+  /// how often (and on what) a lane was opened.
   final crazeOpens = <String>[];
 
   @override
@@ -4355,50 +4343,30 @@ class _FakeHandle implements LaneHandle {}
 /// the FRB-sync `roostCapabilities()` in its constructor, so it cannot exist in
 /// a widget test at all.
 class _FakeFeed implements MachineFeed {
-  _FakeFeed({required this.kind, this.crazeHost});
+  _FakeFeed({required this.crazeHost});
 
-  final String kind;
-
-  /// When set, the machine's one row is a CRAZE session with this hostId,
-  /// listed by a live craze roster (and the screen opens its lane) — instead
-  /// of the roost tab. [crazeRowGone] takes it off the roster.
-  final String? crazeHost;
+  /// The machine's one row: a CRAZE session with this hostId, listed by a
+  /// live craze roster (and the screen opens its lane). [crazeRowGone] takes
+  /// it off the roster — what a machine-feed rebuild without it leaves: the
+  /// next build of `laneControllerProvider` refuses, and the next [publish]
+  /// is the row leaving.
+  final String crazeHost;
   bool crazeRowGone = false;
 
   /// The roster's next round, as the feed would publish it.
   void publish() => _updates.add(state);
 
-  /// The row's lane stamp is gone — what a machine-feed rebuild without it
-  /// leaves: the next build of `laneControllerProvider` refuses.
-  bool laneGone = false;
-
-  /// The row's lane stamp — the agent session behind the tab, and where its
-  /// server answers. Moved by [restamp].
-  String sessionId = 'sess-7';
-  String serverUrl = 'http://127.0.0.1:2421';
-
   final _updates = StreamController<MachineFeedState>.broadcast();
-
-  /// A new lane stamp on the row, as the machine feed's next poll says it:
-  /// another agent session behind the same tab ([session]), or the same one
-  /// on a new port (a restarted tab, [url]). The lane reconciles against it.
-  void restamp({String? session, String? url}) {
-    sessionId = session ?? sessionId;
-    serverUrl = url ?? serverUrl;
-    publish();
-  }
 
   @override
   MachineRecord get machine => _mini3;
 
   @override
-  MachineFeedState get state => crazeHost == null ? _roostState : _crazeState;
-
-  MachineFeedState get _crazeState {
+  MachineFeedState get state {
     final rows = [
       if (!crazeRowGone)
         BridgeLaneSession(
-          id: crazeHost!,
+          id: crazeHost,
           title: 'craze row',
           cwd: '/home/shed/proj',
           activity: BridgeRcActivity.idle,
@@ -4424,37 +4392,8 @@ class _FakeFeed implements MachineFeed {
   @override
   Stream<int?> get crazeSources => const Stream.empty();
 
-  MachineFeedState get _roostState => MachineFeedState(
-    machine: _mini3,
-    connectedOnce: true,
-    reachable: true,
-    sessions: [
-      if (!laneGone)
-        BridgeRcSession(
-          host: '',
-          shed: '',
-          slug: _ref.slug,
-          displayName: 'row7',
-          kind: const BridgeRcKind.opencode(),
-          state: BridgeRcState.ready,
-          managed: true,
-          attention: false,
-          tabId: 7,
-          agentLane: BridgeAgentLaneStamp(
-            kind: kind,
-            sessionId: sessionId,
-            serverUrl: serverUrl,
-          ),
-        ),
-    ],
-  );
-
   @override
   Stream<MachineFeedState> get updates => _updates.stream;
-
-  @override
-  Future<LaneLease> acquireForward(int remotePort) async =>
-      FakeLaneLease(41000);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

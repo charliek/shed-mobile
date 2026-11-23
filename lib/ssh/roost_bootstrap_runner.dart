@@ -56,8 +56,8 @@ import 'roost_reach.dart';
 const int kSourceChunkBytes = 64 * 1024;
 
 /// Performing one `Step::Exec` on the far side. `MachineFeed.bootstrapExec` is
-/// the production one — it rides the feed's ONE `SSHClient`, like
-/// `acquireForward()` does, and never opens a second link.
+/// the production one — it rides the feed's ONE `SSHClient`, like the roost
+/// and craze tunnels do, and never opens a second link.
 typedef BootstrapExec =
     Future<ExecBytesOutcome> Function(
       String command,

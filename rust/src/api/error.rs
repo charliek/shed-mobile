@@ -20,8 +20,8 @@
 //! `Debug`/`Display`.
 
 use shed_core::http::ShedError;
-use shed_core::rc::RcError;
 use shed_core::token::TokenBundleError;
+use shed_lane::rc::RcError;
 
 /// Sentinel prefix the mint path stamps on a `ShedError::Transport` message when
 /// the underlying failure is actually a typed `TokenBundleError` (Codex review
@@ -105,9 +105,6 @@ impl From<ShedError> for BridgeError {
             ShedError::Decode(msg) => BridgeError::Decode { msg },
             ShedError::Create(msg) => BridgeError::Create { msg },
             ShedError::Config(msg) => BridgeError::Config { msg },
-            ShedError::AgentUpgradeRequired { server, detail } => {
-                BridgeError::AgentUpgradeRequired { server, detail }
-            }
         }
     }
 }

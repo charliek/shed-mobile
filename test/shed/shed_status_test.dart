@@ -13,9 +13,11 @@ void main() {
       }
     });
 
-    test('starting pulses; working/reconnecting are steady warn', () {
+    test('starting/stopping pulse; working/reconnecting are steady warn', () {
       expect(shedStatusTone('starting').pulse, isTrue);
       expect(shedStatusTone('starting').tone, ShedStatusTone.warn);
+      expect(shedStatusTone('stopping').pulse, isTrue);
+      expect(shedStatusTone('stopping').tone, ShedStatusTone.warn);
       expect(shedStatusTone('working').pulse, isFalse);
       expect(shedStatusTone('working').tone, ShedStatusTone.warn);
       expect(shedStatusTone('reconnecting').tone, ShedStatusTone.warn);

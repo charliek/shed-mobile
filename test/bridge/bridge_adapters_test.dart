@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shed_mobile/bridge/bridge_adapters.dart';
 import 'package:shed_mobile/core/app_error.dart';
+import 'package:shed_mobile/shed/shed_status.dart';
+import 'package:shed_mobile/src/rust/api/dto.dart';
+import 'package:shed_mobile/theme/shed_colors.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/error.dart';
 
@@ -11,6 +14,36 @@ import 'package:shed_mobile/src/rust/api/error.dart';
 /// crosses no FFI. The HTTP plane (BadStatus → `_fromStatus`) is asserted here too
 /// to lock the 404 → `RC_SESSION_GONE` distinction that must survive the change.
 void main() {
+  group('bridgeShedStatusWire', () {
+    test('every status has its own wire string', () {
+      final wires = {
+        for (final s in BridgeShedStatus.values) s: bridgeShedStatusWire(s),
+      };
+      expect(wires, {
+        BridgeShedStatus.running: 'running',
+        BridgeShedStatus.stopped: 'stopped',
+        BridgeShedStatus.starting: 'starting',
+        BridgeShedStatus.stopping: 'stopping',
+        BridgeShedStatus.error: 'error',
+        BridgeShedStatus.unknown: 'unknown',
+      });
+    });
+
+    test('stopping (a remote shed\'s async stop) renders as a transitional '
+        'state, like starting: a pulsing warn — never as running or '
+        'stopped', () {
+      final stopping = shedStatusTone(
+        bridgeShedStatusWire(BridgeShedStatus.stopping),
+      );
+      final starting = shedStatusTone(
+        bridgeShedStatusWire(BridgeShedStatus.starting),
+      );
+      expect(stopping, starting);
+      expect(stopping.tone, ShedStatusTone.warn);
+      expect(stopping.pulse, isTrue);
+    });
+  });
+
   group('appErrorFromBridge — RC-over-SSH exit domain', () {
     test('slug taken (exit 3) → RC_SLUG_TAKEN/409', () {
       final e = appErrorFromBridge(

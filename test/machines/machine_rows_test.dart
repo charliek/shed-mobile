@@ -8,7 +8,7 @@ import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 /// **A machine's merged rows, applied** (plan 025 §3.7.2).
 ///
 /// The RULE — which roost tab is a craze session — is shed's own
-/// (`shed_app::craze_rows::fold_plan`) and is never re-derived here: the
+/// (`shed_lane::craze_rows::fold_plan`) and is never re-derived here: the
 /// integration harness runs it over the bridge (`integration_test/
 /// craze_test.dart`'s fold cells). What this file pins is the application of a
 /// plan to a machine's rows, with a recording planner standing in for the

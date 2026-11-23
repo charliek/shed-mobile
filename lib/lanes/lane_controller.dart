@@ -7,8 +7,6 @@ import '../bridge/bridge_adapters.dart';
 import '../core/app_error.dart';
 import '../src/rust/api/dto_lane.dart';
 import '../src/rust/api/dto_rc.dart';
-import '../src/rust/api/lane.dart';
-import '../ssh/lane_forward.dart';
 import 'lane_settings.dart';
 import 'lane_source.dart';
 import 'lane_state.dart';
@@ -17,11 +15,11 @@ import 'lane_state.dart';
 /// [laneRetryMax].
 ///
 /// **Deliberately slower than Rust's 200 ms → 5 s resubscribe ladder.** Rust
-/// retries a live adapter's stream — one HTTP request against a server it is
-/// already connected to. Dart retries a WHOLE lane: a forward, a roster GET
-/// and a subscription, each a round trip. A phone that hammers that every
-/// 200 ms behind a sleeping machine spends its battery discovering the machine
-/// is still asleep.
+/// retries a live adapter's stream over a connection it already holds. Dart
+/// retries a WHOLE lane: a dial through the machine's craze source, an attach
+/// and a seed, each a round trip. A phone that hammers that every 200 ms
+/// behind a sleeping machine spends its battery discovering the machine is
+/// still asleep.
 const laneRetryBase = Duration(seconds: 1);
 
 /// The ceiling on the re-open ladder.
@@ -40,9 +38,9 @@ const laneRetryMax = Duration(seconds: 30);
 /// emits no stamps to cancel it, is bounded by it too.
 const crazeDepartGrace = Duration(seconds: 10);
 
-/// The `Down` reason a lane ends with when the agent does not know this
-/// session (opencode: a reseed answered 404; craze: `unknown_session` on
-/// connect or attach). One of the three [laneDownIsFinal] reasons.
+/// The `Down` reason a lane ends with when craze does not know this session
+/// (`unknown_session` on connect or attach). One of the three
+/// [laneDownIsFinal] reasons.
 const laneUnknownSession = 'unknown_session';
 
 /// The `Down` reason a craze lane ends with when its session CLOSED — craze's
@@ -152,36 +150,16 @@ final class LaneVerbSuperseded extends LaneVerbOutcome {
   final AppError error;
 }
 
-/// The stamp kind of a CRAZE session's lane (plan 025 §3.7.2).
+/// The stamp kind of a CRAZE session's lane (plan 025 §3.7.2) — the only kind
+/// of lane there is (plan 038: the opencode lane, and the port forward it rode,
+/// are gone).
 ///
 /// A craze row carries no stamp of roost's — its lane is the machine's craze
 /// source's to open, by the row's hostId — so the controller is handed a
 /// synthesized one (`kind` this, `sessionId` the hostId, no `serverUrl`), and
-/// BRANCHES on this kind before anything else: no forward is ever
-/// acquired for it (the lane reaches its session through the source's own
-/// dial, the hub's splice), and it opens through [LaneSource.openCraze].
+/// opens it through [LaneSource.openCraze]: the lane reaches its session
+/// through the source's own dial (the hub's splice), never a forward.
 const crazeLaneKind = 'craze';
-
-/// How the lane reaches its agent server, and therefore whether it needs a
-/// forward at all.
-///
-/// The desktop's `ReachKind`, minus the SSH config entry (the phone's forward
-/// comes from the machine's own feed, which already holds the connection).
-enum LaneReach {
-  /// The agent server is on THIS device's loopback: its ports are our ports,
-  /// so the dial url is the reported url and there is nothing to forward. The
-  /// hermetic harness (§3.13) runs here.
-  local,
-
-  /// The agent server is on the machine's loopback, reachable only through a
-  /// forward on the feed's SSH connection.
-  machine,
-}
-
-/// Borrow the forward to a far-side port. Production is
-/// `MachineFeed.acquireForward`; the returned [LaneLease] is the lane's whole
-/// obligation.
-typedef ForwardAcquirer = Future<LaneLease> Function(int remotePort);
 
 /// Run `pull` once, on the next animation frame. See [scheduleOnNextFrame].
 typedef LaneFramePull = void Function(void Function() pull);
@@ -215,7 +193,7 @@ void scheduleOnNextFrame(void Function() pull) {
 /// **One agent lane's logic, outside every widget** (plan 018 §3.11).
 ///
 /// ```text
-///   open()  ──acquireForward──▶ laneOpen ──▶ laneNudges
+///   open()  ──openCraze(hostId)──▶ laneNudges
 ///                                                 │
 ///   nudge ──(one per frame)──▶ laneSnapshot(sinceSeq) ──▶ LaneState ──┘
 /// ```
@@ -224,9 +202,9 @@ void scheduleOnNextFrame(void Function() pull) {
 ///
 /// The single rule that decides most of this class: **Rust owns reconnection.**
 /// Its pump carries the whole resubscribe ladder, so Dart has exactly one
-/// lifecycle job, and it exists only because it needs SSH: **a lane that
-/// ENDED** (the snapshot's `ended`, set by a terminal `Down` and by nothing
-/// else). Dart closes the handle, KEEPS the forward lease, and re-opens on the
+/// lifecycle job, and it exists only because it needs the machine's craze
+/// source: **a lane that ENDED** (the snapshot's `ended`, set by a terminal
+/// `Down` and by nothing else). Dart closes the handle and re-opens on the
 /// ladder above.
 ///
 /// Anything else that looks like a reconnect is not one. A dropped SSE stream,
@@ -257,8 +235,8 @@ void scheduleOnNextFrame(void Function() pull) {
 /// ## What this class deliberately does not do
 ///
 /// It does not fold (Rust does), it does not own the SSH connection or the
-/// forward (the machine's feed does), and it has no registry — "one lane per
-/// row" is `laneControllerProvider`'s guarantee, because the bridge has no
+/// craze source (the machine's feed does), and it has no registry — "one lane
+/// per row" is `laneControllerProvider`'s guarantee, because the bridge has no
 /// registry either.
 class LaneController {
   LaneController({
@@ -266,9 +244,7 @@ class LaneController {
     required this.slug,
     required BridgeAgentLaneStamp stamp,
     required this.source,
-    required this.reach,
-    this.acquireForward,
-    this.openCrazeLane,
+    required this.openCrazeLane,
     this.crazeSourceEpoch,
     Stream<int?>? crazeSources,
     Stream<BridgeAgentLaneStamp?>? stamps,
@@ -280,34 +256,23 @@ class LaneController {
        _timer = timer ?? Timer.new {
     _stamp = stamp;
     // A real check, not `assert`: this invariant must hold in release builds
-    // too, or a machine-reach lane with no forward fails later and confusingly
-    // (a bare `!` on a null `acquireForward`) instead of at construction.
-    if (reach == LaneReach.machine && acquireForward == null) {
+    // too. Every lane is a craze session's (plan 038); any other stamp kind
+    // has no adapter on the phone, and a controller built for one would fail
+    // on every retry instead of here.
+    if (stamp.kind != crazeLaneKind) {
       throw ArgumentError.value(
-        acquireForward,
-        'acquireForward',
-        'a lane on a machine needs a forward to reach it',
-      );
-    }
-    // The same check for the craze branch: a craze stamp with no way to open
-    // through the machine's craze source would fail on every retry instead of
-    // here.
-    if (stamp.kind == crazeLaneKind && openCrazeLane == null) {
-      throw ArgumentError.value(
-        openCrazeLane,
-        'openCrazeLane',
-        'a craze lane opens through its machine\'s craze source',
+        stamp.kind,
+        'stamp.kind',
+        'only a craze session has a lane',
       );
     }
     // Full-stamp reconciliation. Subscribed in the constructor rather than in
     // `open()`: a row that disappears while the first open is still in flight
     // must still stop the retries.
     _stampSub = stamps?.listen(reconcile);
-    // The craze source a craze lane rides is the FEED's, and a feed restart
+    // The craze source a lane rides is the FEED's, and a feed restart
     // replaces it — see [_syncCrazeSource].
-    if (stamp.kind == crazeLaneKind) {
-      _crazeSourceSub = crazeSources?.listen((_) => _syncCrazeSource());
-    }
+    _crazeSourceSub = crazeSources?.listen((_) => _syncCrazeSource());
   }
 
   /// The machine this lane's agent runs on — for diagnostics and the provider
@@ -321,14 +286,12 @@ class LaneController {
   final String slug;
 
   final LaneSource source;
-  final LaneReach reach;
-  final ForwardAcquirer? acquireForward;
 
-  /// How a CRAZE stamp's lane is opened — the machine feed's craze source
-  /// (`MachineFeed.openCrazeLane`). Unused for every other kind.
-  final CrazeLaneOpen? openCrazeLane;
+  /// How the lane is opened — the machine feed's craze source
+  /// (`MachineFeed.openCrazeLane`), on the row's hostId.
+  final CrazeLaneOpen openCrazeLane;
 
-  /// The epoch of the craze source a craze lane opens through NOW — the
+  /// The epoch of the craze source the lane opens through NOW — the
   /// feed's live source (`MachineFeed.crazeLiveEpoch`), or null while it has
   /// none (a stopped or restarting feed, or a source not seeded yet). Read at
   /// every open, so this lane knows which source its handle belongs to.
@@ -363,7 +326,6 @@ class LaneController {
 
   LaneHandle? _handle;
   StreamSubscription<bool>? _nudges;
-  LaneLease? _lease;
 
   /// The cursor for the next snapshot: the highest seq Dart holds. Null asks
   /// for the whole generation, which is what a fresh open wants.
@@ -422,14 +384,10 @@ class LaneController {
   @visibleForTesting
   LaneHandle? get handle => _handle;
 
-  /// **Open the lane: forward, `lane_open`, subscribe.** Idempotent and safe to
-  /// call on every frame — a second call with a handle already held, an open
-  /// in flight, or after [close]/an abandon, returns immediately.
-  ///
-  /// The forward comes first because the dial url names its local port.
-  /// Opening the lane before the forward exists would mean dialing a port
-  /// nothing is listening on yet. A CRAZE lane has no forward at all: it opens
-  /// through its machine's craze source ([crazeLaneKind]).
+  /// **Open the lane: through the machine's craze source, then subscribe.**
+  /// Idempotent and safe to call on every frame — a second call with a handle
+  /// already held, an open in flight, or after [close]/an abandon, returns
+  /// immediately.
   Future<void> open() async {
     if (_closed || _abandoned || _handle != null || _opening) return;
     _opening = true;
@@ -466,9 +424,9 @@ class LaneController {
       _state.copyWith(error: error, retrying: !permanent, abandoned: permanent),
     );
     // A transient failure — an asleep machine, a refused dial — is exactly what
-    // the ladder is for. A permanent one (no adapter for this kind, no such
-    // session) would be a hot loop against an answer that cannot change.
-    if (!permanent) unawaited(_reopen(keepLease: true));
+    // the ladder is for. A permanent one (no such session) would be a hot loop
+    // against an answer that cannot change.
+    if (!permanent) unawaited(_reopen());
   }
 
   /// Whether a teardown or a newer open has moved on since [generation] was
@@ -480,28 +438,15 @@ class LaneController {
   Future<void> _openOnce(int generation) async {
     final stamp = _stamp;
 
-    // **A craze lane branches BEFORE any forward** (plan 025 §3.7.2). Its
-    // session sits behind the machine's craze hub, reached through the craze
-    // source's own dial — there is no agent port to forward to and no URL to
-    // re-point, so acquiring a lease here would hold an SSH channel to nothing.
-    final LaneHandle handle;
-    int? epoch;
-    if (stamp.kind == crazeLaneKind) {
-      final open = openCrazeLane;
-      if (open == null) {
-        throw StateError('no craze source to open ${stamp.sessionId} through');
-      }
-      // Read in the same synchronous run as the opener reads the feed's
-      // source, so the two cannot name different sources.
-      epoch = crazeSourceEpoch?.call();
-      _openingEpoch = epoch;
-      handle = await source.openCraze(open, stamp.sessionId);
-    } else {
-      final opened = await _openForwarded(stamp, generation);
-      // Superseded while the forward was being acquired: nothing was opened.
-      if (opened == null) return;
-      handle = opened;
-    }
+    // The session sits behind the machine's craze hub, reached through the
+    // craze source's own dial (plan 025 §3.7.2): there is no agent port to
+    // forward to and no URL to re-point.
+    //
+    // The epoch is read in the same synchronous run as the opener reads the
+    // feed's source, so the two cannot name different sources.
+    final epoch = crazeSourceEpoch?.call();
+    _openingEpoch = epoch;
+    final handle = await source.openCraze(openCrazeLane, stamp.sessionId);
     if (_superseded(generation)) {
       source.close(handle);
       return;
@@ -526,42 +471,6 @@ class LaneController {
     // capabilities: there is no separate call to cache them at open (plan 025
     // §3.2.1) — they come with every snapshot, null until a seed carries them.
     _pull(generation);
-  }
-
-  /// A stamped lane's open: the forward first — the dial url names its local
-  /// port, so opening the lane before the forward exists would dial a port
-  /// nothing listens on yet — then `lane_open`.
-  ///
-  /// Null when a teardown superseded [generation] while the forward was being
-  /// acquired (the lease is given back here). A handle opened after one is
-  /// still returned: the caller's fence closes it.
-  Future<LaneHandle?> _openForwarded(
-    BridgeAgentLaneStamp stamp,
-    int generation,
-  ) async {
-    if (reach == LaneReach.machine && _lease?.isValid != true) {
-      // A lease from a previous generation whose forward died with the feed is
-      // no use to the new one, and holding it would leak a refcount.
-      await _releaseLease();
-      final lease = await acquireForward!(laneRemotePort(stamp.serverUrl));
-      if (_superseded(generation)) {
-        await lease.release();
-        return null;
-      }
-      _lease = lease;
-    }
-
-    final spec = BridgeLaneSpec(
-      kind: stamp.kind,
-      sessionId: stamp.sessionId,
-      // The two are NEVER conflated: the dial goes to this phone's own
-      // forward, never to the reported url.
-      reportedUrl: stamp.serverUrl,
-      dialUrl: reach == LaneReach.local
-          ? stamp.serverUrl
-          : laneDialUrl(stamp.serverUrl, _lease!.port),
-    );
-    return source.open(spec);
   }
 
   // ---- the read side ------------------------------------------------------
@@ -672,7 +581,7 @@ class LaneController {
       unawaited(_abandon());
       return;
     }
-    unawaited(_reopen(keepLease: true));
+    unawaited(_reopen());
   }
 
   // ---- the verbs ----------------------------------------------------------
@@ -990,7 +899,6 @@ class LaneController {
   void _syncCrazeSource() {
     if (_closed || _abandoned || _opening || _leaving) return;
     if (_departure != null) return;
-    if (_stamp.kind != crazeLaneKind) return;
     final live = crazeSourceEpoch?.call();
     if (_handle != null) {
       if (_openedEpoch == live) return;
@@ -1014,13 +922,11 @@ class LaneController {
   /// Whether the craze open that just failed went through a source that is no
   /// longer the live one.
   bool _openedThroughRetiredSource() =>
-      _stamp.kind == crazeLaneKind &&
-      _openingEpoch != null &&
-      _openingEpoch != crazeSourceEpoch?.call();
+      _openingEpoch != null && _openingEpoch != crazeSourceEpoch?.call();
 
   Future<void> _leaveRetiredSource() async {
     _leaving = true;
-    final dropping = _dropHandle(releaseLease: true);
+    final dropping = _dropHandle();
     // `_dropHandle` bumped the generation before its first await: anything
     // that moves it again (a close, a new stamp's re-open) owns the lane now.
     final token = _generation;
@@ -1045,23 +951,18 @@ class LaneController {
 
   /// **Full-stamp reconciliation** against the machine feed's rows.
   ///
-  /// Row-presence is not enough, and the difference is a real bug rather than a
-  /// nicety: a tab that restarted is present with a NEW port, and a lane that
-  /// only checked presence would keep talking to a forward that reaches nothing
-  /// while the screen showed a live-looking transcript. So the whole
-  /// `{kind, sessionId, serverUrl}` stamp is compared:
+  /// The whole `{kind, sessionId, serverUrl}` stamp is compared, not just the
+  /// row's presence:
   ///
-  /// * **gone** → close and stop retrying — except an open craze lane, which
+  /// * **gone** → close and stop retrying — except an open, live lane, which
   ///   DEPARTS first (below);
-  /// * **changed** → close, give the forward back (the port may have moved) and
-  ///   re-open against the new stamp, immediately — a new stamp is news, not a
-  ///   failure, so it does not wait out a backoff.
+  /// * **changed** → close and re-open against the new stamp, immediately — a
+  ///   new stamp is news, not a failure, so it does not wait out a backoff.
   ///
   /// ## A craze lane outlives its row by a grace (plan 032 §3.1.2)
   ///
   /// craze 0.2.0 drops a stopping session's row ahead of the session's last
-  /// events, so for a CRAZE lane — the one kind whose rows leave ahead of its
-  /// stream — "gone" on an open, live lane arms ONE timer
+  /// events, so "gone" on an open, live lane arms ONE timer
   /// ([crazeDepartGrace]) instead of giving up, and the lane keeps its own
   /// connection meanwhile:
   ///
@@ -1077,12 +978,12 @@ class LaneController {
   ///
   /// Repeated `null`s neither stack timers nor extend the grace. A lane with
   /// no handle (opening, waiting for a source, out on its re-open ladder) has
-  /// no connection to wait on, and every other kind keeps the rule above.
+  /// no connection to wait on, and is given up on at once.
   void reconcile(BridgeAgentLaneStamp? stamp) {
     if (_closed) return;
     if (stamp == null) {
       if (_abandoned || _departure != null) return;
-      if (_stamp.kind == crazeLaneKind && _handle != null && !_state.ended) {
+      if (_handle != null && !_state.ended) {
         _depart();
         return;
       }
@@ -1160,10 +1061,10 @@ class LaneController {
   }
 
   /// Re-open against the stamp [reconcile] just took. [otherSession]: it
-  /// names a different agent session, not the same one on a new port (a
-  /// restarted tab) — what decides whether the verbs' own errors go too.
+  /// names a different agent session, not the same one re-stamped — what
+  /// decides whether the verbs' own errors go too.
   Future<void> _reopenNow({required bool otherSession}) async {
-    await _dropHandle(releaseLease: true);
+    await _dropHandle();
     // A change in flight on the old session settles nothing on the new one.
     _presses.clear();
     _emit(
@@ -1180,7 +1081,7 @@ class LaneController {
         clearError: true,
         // What a verb said — a refusal, or a lost answer's "may have run" —
         // is about the SESSION it was sent to: gone with it, kept when the
-        // same session only moved port (it is still that session's news).
+        // same session was only re-stamped (it is still that session's news).
         clearComposerError: otherSession,
         clearStopError: otherSession,
         retrying: false,
@@ -1191,13 +1092,8 @@ class LaneController {
   }
 
   /// Drop the handle, wait out the ladder, open again.
-  ///
-  /// `keepLease` is true for every re-open an ended lane provoked: the local
-  /// port is fixed for the forward's life and the forward re-dials the SSH
-  /// channel underneath it, so giving the lease back would close a forward the
-  /// next open needs and cost an extra SSH channel to rebuild.
-  Future<void> _reopen({required bool keepLease}) async {
-    await _dropHandle(releaseLease: !keepLease);
+  Future<void> _reopen() async {
+    await _dropHandle();
     // Captured AFTER the drop, which bumped the generation: any later teardown
     // (a close, a stamp change, another re-open) bumps it again and this queued
     // retry drops itself instead of racing the newer one.
@@ -1212,16 +1108,15 @@ class LaneController {
 
   Future<void> _abandon() async {
     _abandoned = true;
-    await _dropHandle(releaseLease: true);
+    await _dropHandle();
     _emit(_state.copyWith(abandoned: true, retrying: false));
   }
 
   // ---- teardown -----------------------------------------------------------
 
-  /// **End the lane.** Cancels a departure grace, closes the handle, gives
-  /// the forward back, cancels the nudge subscription and bumps the
-  /// generation. Idempotent — the provider's `onDispose` calls it, and so may
-  /// a screen that is done.
+  /// **End the lane.** Cancels a departure grace, closes the handle, cancels
+  /// the nudge subscription and bumps the generation. Idempotent — the
+  /// provider's `onDispose` calls it, and so may a screen that is done.
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
@@ -1229,11 +1124,11 @@ class LaneController {
     _stampSub = null;
     await _crazeSourceSub?.cancel();
     _crazeSourceSub = null;
-    await _dropHandle(releaseLease: true);
+    await _dropHandle();
     await _controller.close();
   }
 
-  Future<void> _dropHandle({required bool releaseLease}) async {
+  Future<void> _dropHandle() async {
     // A departure is waiting on THIS handle; whatever replaces it — a re-open,
     // an abandon, a close — has decided the lane's future instead.
     _cancelDeparture();
@@ -1265,22 +1160,14 @@ class LaneController {
     // closing stream still delivers is dropped by [_onNudge]'s fence, and
     // `lane_close` is idempotent.
     //
-    // Found by `integration_test/lane_test.dart`'s
-    // `close_ends_the_pump_and_one_row_is_one_controller` — with a stubbed
-    // `LaneSource` the cancel returns Dart's already-completed null future, so
-    // no unit test could have seen it.
+    // Found live, by the hermetic lane suite this app ran before plan 038
+    // retired the opencode lane (its `close_ends_the_pump` cell); the craze
+    // harness (`integration_test/craze_test.dart`) is what drives this path
+    // against the real bridge now — with a stubbed `LaneSource` the cancel
+    // returns Dart's already-completed null future, so no unit test could see
+    // it.
     if (handle != null) source.close(handle);
     await nudges?.cancel();
-    if (releaseLease) await _releaseLease();
-  }
-
-  Future<void> _releaseLease() async {
-    final lease = _lease;
-    _lease = null;
-    // Nulled first, so a second release cannot reach the registry — the
-    // refcount is what closes the forward, and giving one lease back twice
-    // closes a forward somebody else is using.
-    await lease?.release();
   }
 
   void _emit(LaneState next) {
@@ -1301,11 +1188,12 @@ final class _Departure {
 
 /// Whether a failed open can never succeed, so the ladder must not run.
 ///
-/// The three permanent shapes, and each is a property of the ROW rather than of
-/// the moment: this build has no adapter for the kind, the handle carries no
-/// lane at all, or the agent does not know the session. Everything else — a
-/// refused dial, an asleep machine, a forward that failed because the SSH link
-/// was down — is exactly what a retry is for.
+/// The permanent shapes, and each is a property of the ROW rather than of the
+/// moment: this build has no adapter for the kind (no producer left since plan
+/// 038, kept for the binding's variant), the handle carries no lane at all, or
+/// the agent does not know the session. Everything else — a refused dial, an
+/// asleep machine, a craze source that was down — is exactly what a retry is
+/// for.
 @visibleForTesting
 bool laneFailureIsPermanent(Object failure) => switch (failure) {
   BridgeLaneError_UnsupportedLane() => true,
@@ -1313,32 +1201,3 @@ bool laneFailureIsPermanent(Object failure) => switch (failure) {
   BridgeLaneError_UnknownSession() => true,
   _ => false,
 };
-
-/// The far-side port a lane's forward must reach, from the REPORTED url.
-///
-/// Throws a typed [AppError] rather than a `FormatException`: an agent that
-/// announced an unusable url is a row the user can see, and "not usable" with
-/// the url in it is the only actionable thing to say about it.
-@visibleForTesting
-int laneRemotePort(String serverUrl) {
-  final uri = Uri.tryParse(serverUrl);
-  // `Uri.port` answers the scheme's default when none was given, and 0 for a
-  // scheme it has no default for — which is the one answer no forward can use.
-  final port = uri == null ? 0 : uri.port;
-  if (port == 0) {
-    throw AppError(
-      'LANE_BAD_SERVER_URL',
-      'the agent server url $serverUrl names no port to reach',
-    );
-  }
-  return port;
-}
-
-/// The reported url, re-pointed at this phone's own forward.
-///
-/// `replace` rather than string-building: it keeps the scheme and any path the
-/// agent announced, and only the authority — which is exactly what a forward
-/// changes — moves.
-@visibleForTesting
-String laneDialUrl(String serverUrl, int localPort) =>
-    Uri.parse(serverUrl).replace(host: '127.0.0.1', port: localPort).toString();

@@ -347,9 +347,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneSettings dco_decode_box_autoadd_bridge_lane_settings(dynamic raw);
 
   @protected
-  BridgeLaneSpec dco_decode_box_autoadd_bridge_lane_spec(dynamic raw);
-
-  @protected
   BridgeLaneUsage dco_decode_box_autoadd_bridge_lane_usage(dynamic raw);
 
   @protected
@@ -590,9 +587,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeLaneSnapshot dco_decode_bridge_lane_snapshot(dynamic raw);
-
-  @protected
-  BridgeLaneSpec dco_decode_bridge_lane_spec(dynamic raw);
 
   @protected
   BridgeLaneUsage dco_decode_bridge_lane_usage(dynamic raw);
@@ -1268,11 +1262,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BridgeLaneSpec sse_decode_box_autoadd_bridge_lane_spec(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   BridgeLaneUsage sse_decode_box_autoadd_bridge_lane_usage(
     SseDeserializer deserializer,
   );
@@ -1623,9 +1612,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeLaneSnapshot sse_decode_bridge_lane_snapshot(
     SseDeserializer deserializer,
   );
-
-  @protected
-  BridgeLaneSpec sse_decode_bridge_lane_spec(SseDeserializer deserializer);
 
   @protected
   BridgeLaneUsage sse_decode_bridge_lane_usage(SseDeserializer deserializer);
@@ -2468,12 +2454,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_bridge_lane_spec(
-    BridgeLaneSpec self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_bridge_lane_usage(
     BridgeLaneUsage self,
     SseSerializer serializer,
@@ -2914,12 +2894,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_lane_snapshot(
     BridgeLaneSnapshot self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_bridge_lane_spec(
-    BridgeLaneSpec self,
     SseSerializer serializer,
   );
 

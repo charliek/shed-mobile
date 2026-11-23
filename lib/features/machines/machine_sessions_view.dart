@@ -15,7 +15,6 @@ import '../../widgets/kind_chip.dart';
 import '../../widgets/host_groups.dart';
 import '../../widgets/session_actions.dart';
 import '../../widgets/open_pill.dart';
-import '../lanes/lane_screen.dart';
 import '../terminal/roost_peek_screen.dart';
 import '../../widgets/status_badge.dart';
 import '../craze/craze_session_card.dart';
@@ -340,16 +339,15 @@ class _MachineSessionCard extends StatelessWidget {
   }
 }
 
-/// Transcript, the terminal (or peek), and End — what is worth doing from a
-/// LIST.
+/// The terminal (peek) and End — what is worth doing from a LIST, for a roost
+/// tab.
 ///
-/// The hub's Watch route is gone (plan 013 S3m): a roost row reports its status
-/// but serves no transcript, so a watch screen there could only fail. What
-/// brings a transcript back is the AGENT LANE (plan 018): a row whose agent
-/// answers its own protocol carries an `agentLane` stamp, and that — never the
-/// kind, and never roost's own capabilities — is what the Transcript pill is
-/// gated on. The peek stays beside it: roost owns the terminal, and reading the
-/// pane is a different question from reading the conversation.
+/// A roost row reports its status but serves no transcript (plan 013 S3m), and
+/// since plan 038 no roost row has an agent lane either: the opencode lane is
+/// gone, so an opencode tab is PASSIVE — its label and activity, the peek and
+/// End, never a Transcript pill ([BridgeRcSession.agentLane], always null now,
+/// is not read). A craze session's transcript is its craze row's
+/// (`CrazeSessionCard`).
 ///
 /// End stays because it is not direction: it is removal, and it needs no
 /// context to mean what it says.
@@ -392,26 +390,6 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
     ),
   );
 
-  /// Open this row's agent lane. Gated on the row carrying an `agentLane`
-  /// stamp: `laneControllerProvider` THROWS for a row with none (an honest
-  /// error rather than a lane that silently never opens), so the affordance and
-  /// the provider's precondition are the same condition.
-  void _openLane() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => LaneScreen(
-        machine: widget.machineName,
-        // The pill only renders for a row with a stamp.
-        kind: widget.session.agentLane!.kind,
-        // The ROW's slug, which is what the lane is keyed on — not the stamp's
-        // session id, which is the thing being reconciled.
-        slug: widget.session.slug,
-        // The lane's own snapshot projects only `activity`, so the row's name
-        // is where a title comes from.
-        title: widget.session.displayName,
-      ),
-    ),
-  );
-
   Future<void> _end() async {
     if (_busy) return;
     setState(() {
@@ -444,19 +422,6 @@ class _MachineActionsState extends ConsumerState<_MachineActions> {
         // terminal secondary and compact, delete a bare glyph at the far edge.
         Row(
           children: [
-            // The PRIMARY action when there is one, and the accent says so:
-            // reading the conversation is what you came for, and the pane is
-            // the fallback. Gated on the stamp, so a lane-less roost row (a
-            // plain shell tab, a `grok` tab) offers nothing here at all.
-            if (widget.session.agentLane != null) ...[
-              AccentPill(
-                key: ValueKey('machine-lane-$rowKey'),
-                icon: Icons.forum_outlined,
-                label: 'Transcript',
-                onTap: _openLane,
-              ),
-              const SizedBox(width: 8),
-            ],
             // Gated on `attachKind`, not on the kind: a `native-remote` row
             // (every roost row, currently) gets the read-only peek; anything
             // else offers no in-app attach from a machine's session list at

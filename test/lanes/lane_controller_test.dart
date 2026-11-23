@@ -11,9 +11,6 @@ import 'package:shed_mobile/lanes/lane_state.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/lane.dart';
-import 'package:shed_mobile/ssh/lane_forward.dart';
-
-import 'fake_lane_lease.dart';
 
 /// **[LaneController] — the phone's lane logic** (plan 018 §3.11).
 ///
@@ -24,9 +21,12 @@ import 'fake_lane_lease.dart';
 /// The load-bearing claims, each of which fails silently in production if it
 /// regresses:
 ///
-/// 1. **The open ORDER** — forward, then `lane_open`. The forward's local
-///    port IS the dial url, so opening before it exists means dialing a port
-///    nothing is listening on yet.
+/// Every lane is a craze session's (plan 038 retired the opencode lane and
+/// its port forward), so every rig here is a craze lane: opened through the
+/// machine's craze source on the row's hostId.
+///
+/// 1. **The open** — through the craze source, and the first snapshot read at
+///    once rather than on the first nudge.
 /// 2. **The generation fence** — a nudge from a superseded handle is dropped,
 ///    not folded into the live view.
 /// 3. **A final `Down` and a vanished row end the retries.** A session that
@@ -42,22 +42,15 @@ import 'fake_lane_lease.dart';
 ///    read the `session_closed` that ends it.
 void main() {
   group('open', () {
-    test('runs forward, then lane_open — in that order', () async {
+    test('opens through the craze source on the hostId, then reads at '
+        'once', () async {
       final rig = _Rig();
       await rig.controller.open();
 
-      expect(rig.log.take(2).toList(), ['forward:2421', 'open']);
-      final spec = rig.bridge.specs.single;
-      // The reported url is what a gx discovery record used to be matched
-      // against, back when gx was one of the lane kinds; the dial url is
-      // where THIS phone reaches it. Never conflated.
-      expect(spec.reportedUrl, 'http://127.0.0.1:2421');
-      expect(spec.dialUrl, 'http://127.0.0.1:40001');
-      expect(spec.kind, 'opencode');
-      expect(spec.sessionId, 'sess-1');
+      expect(rig.log, ['openCraze:sess-1']);
       // From the first SNAPSHOT — there is no capabilities call to cache at
       // open any more (plan 025 §3.2.1).
-      expect(rig.controller.state.capabilities?.kind, 'opencode');
+      expect(rig.controller.state.capabilities?.kind, 'craze');
       // The roster row was already folded before the pump started, so there is
       // something to read without waiting for a nudge.
       expect(rig.bridge.snapshots, 1);
@@ -80,40 +73,23 @@ void main() {
       );
 
       rig.bridge.onSnapshot = (_) => _snap(
-        capabilities: _caps(kind: 'craze', interject: true, stop: true),
+        capabilities: _caps(interject: true, stop: true),
         session: _session(title: 'the live title', permissionMode: 'bypass'),
       );
       rig.bridge.handles.single.nudges.deliver();
       rig.pumpFrame();
-      expect(rig.controller.state.capabilities?.kind, 'craze');
       expect(rig.controller.state.capabilities?.stop, isTrue);
       expect(rig.controller.state.session?.title, 'the live title');
       expect(rig.controller.state.session?.permissionMode, 'bypass');
 
       // A later snapshot that carries less — no row, different capabilities —
       // replaces what is held rather than merging into it.
-      rig.bridge.onSnapshot = (_) =>
-          _snap(capabilities: _caps(kind: 'craze', interject: false));
+      rig.bridge.onSnapshot = (_) => _snap(capabilities: _caps());
       rig.bridge.handles.single.nudges.deliver();
       rig.pumpFrame();
       expect(rig.controller.state.capabilities?.interject, isFalse);
       expect(rig.controller.state.session, isNull);
     });
-
-    test(
-      'a LOCAL reach opens with no forward and dials the reported url',
-      () async {
-        // The negative control on the forward: reach decides it, and the
-        // hermetic harness (§3.13) runs entirely on this leg.
-        final rig = _Rig(reach: LaneReach.local);
-        await rig.controller.open();
-
-        expect(rig.log.contains('forward:2421'), isFalse);
-        expect(rig.acquired, isEmpty);
-        final spec = rig.bridge.specs.single;
-        expect(spec.dialUrl, spec.reportedUrl);
-      },
-    );
 
     test('is idempotent — a second call opens nothing', () async {
       final rig = _Rig();
@@ -121,38 +97,28 @@ void main() {
       await rig.controller.open();
 
       expect(rig.bridge.opens, 1);
-      expect(rig.acquired, [2421]);
     });
   });
 
   group('a craze lane (plan 025 §3.7.2)', () {
     // A craze row's stamp is synthesized from its hostId — no URL: the lane
     // is the machine's craze source's to open.
-    _Rig crazeRig() => _Rig(kind: crazeLaneKind, serverUrl: '');
+    _Rig crazeRig() => _Rig();
 
-    test('opens through the craze source and acquires NO forward', () async {
+    test('opens through the machine feed\'s own craze opener', () async {
       final rig = crazeRig();
       await rig.controller.open();
 
-      expect(
-        rig.acquired,
-        isEmpty,
-        reason:
-            'a craze session has no agent port: a lease would hold an '
-            'SSH channel to nothing',
-      );
       expect(rig.log, ['openCraze:sess-1']);
-      expect(rig.bridge.specs, isEmpty, reason: 'and no stamped lane_open');
       expect(
         rig.bridge.crazeOpeners.single,
         same(rig.controller.openCrazeLane),
         reason: 'the machine feed\'s opener is the one the bridge is handed',
       );
       expect(rig.controller.isOpen, isTrue);
-      expect(rig.controller.state.capabilities?.kind, 'opencode');
     });
 
-    test('re-opens only on ENDED, and never through a forward', () async {
+    test('re-opens only on ENDED', () async {
       final rig = crazeRig();
       rig.bridge.onSnapshot = (_) => _snap(stale: 'reconnecting');
       await rig.controller.open();
@@ -174,11 +140,6 @@ void main() {
       rig.releaseDelay();
       await pumpEventQueue();
       expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
-      expect(
-        rig.acquired,
-        isEmpty,
-        reason: 'a re-open forwards nothing either',
-      );
     });
 
     test('a retired craze source closes the lane, and its replacement '
@@ -206,7 +167,6 @@ void main() {
       expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1']);
       expect(rig.controller.isOpen, isTrue);
       expect(rig.delays, isEmpty, reason: 'at once — not on the ended ladder');
-      expect(rig.acquired, isEmpty, reason: 'and still no forward');
     });
 
     test('the same source said live again re-opens nothing', () async {
@@ -328,19 +288,22 @@ void main() {
       expect(rig.controller.isOpen, isTrue);
     });
 
-    test('a craze stamp with no craze opener is refused at construction', () {
+    test('a stamp of any other kind is refused at construction — only a '
+        'craze session has a lane (plan 038)', () {
+      // A roost tab's own stamp (`agent_lane`, always null since the opencode
+      // lane went) could still name a kind; a controller built for it would
+      // fail on every retry instead of here.
       expect(
         () => LaneController(
           machine: 'mini3',
-          slug: 'cccccccccccc',
-          stamp: BridgeAgentLaneStamp(
-            kind: crazeLaneKind,
-            sessionId: 'cccccccccccc',
-            serverUrl: '',
+          slug: '7',
+          stamp: const BridgeAgentLaneStamp(
+            kind: 'opencode',
+            sessionId: 'sess-1',
+            serverUrl: 'http://127.0.0.1:2421',
           ),
           source: _FakeLaneBridge([]),
-          reach: LaneReach.machine,
-          acquireForward: (_) async => FakeLaneLease(1),
+          openCrazeLane: (_) => throw StateError('never opened'),
         ),
         throwsArgumentError,
       );
@@ -348,7 +311,7 @@ void main() {
   });
 
   group('ended — the one re-open Dart owns', () {
-    test('re-opens on the 1s → 30s ladder, keeping the lease', () async {
+    test('re-opens on the 1s → 30s ladder', () async {
       final rig = _Rig();
       rig.bridge.onSnapshot = (_) =>
           _snap(stale: 'transport closed', ended: true);
@@ -359,15 +322,10 @@ void main() {
       expect(rig.controller.state.retrying, isTrue);
       expect(rig.controller.state.stale, 'transport closed');
       expect(rig.bridge.handles.single.closed, isTrue);
-      // The lease is KEPT: the local port is fixed for the forward's life and
-      // the forward re-dials the channel underneath it, so giving it back would
-      // close a forward the next open needs.
-      expect(rig.leases.single.releases, 0);
 
       rig.releaseDelay();
       await pumpEventQueue();
       expect(rig.bridge.opens, 2);
-      expect(rig.acquired, [2421], reason: 'and no second forward');
 
       // The ladder DOUBLES across consecutive failures — an agent that accepts
       // a connection and dies inside it must not be retried every second. (The
@@ -380,7 +338,6 @@ void main() {
       rig.releaseDelay();
       await pumpEventQueue();
       expect(rig.delays.last, const Duration(seconds: 4));
-      expect(rig.leases.single.releases, 0, reason: 'still the one forward');
     });
 
     test('a STALE lane that has not ended re-opens nothing — a silent resume '
@@ -431,7 +388,6 @@ void main() {
       expect(rig.delays, isEmpty, reason: 'no ladder at all');
       expect(rig.controller.state.abandoned, isTrue);
       expect(rig.bridge.handles.single.closed, isTrue);
-      expect(rig.leases.single.releases, 1);
 
       // And it stays ended: a later open() is a no-op.
       await rig.controller.open();
@@ -453,7 +409,7 @@ void main() {
         'unreachable',
         're-attach bound',
         'protocol: another host answered',
-        'the opencode event stream ended',
+        'the event stream ended',
         'closed',
         'session_closed_soon',
         'down: unknown_session',
@@ -474,12 +430,12 @@ void main() {
     ]) {
       test('a craze lane ended "$reason" is given up on, the transcript '
           'kept', () async {
-        final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+        final rig = _Rig();
         rig.bridge.onSnapshot = (_) => _snap(
           messages: [_row(1, 'the last thing it said')],
           stale: reason,
           ended: true,
-          capabilities: _caps(kind: 'craze', stop: true),
+          capabilities: _caps(stop: true),
         );
         await rig.controller.open();
         await pumpEventQueue();
@@ -510,7 +466,7 @@ void main() {
 
     test('the control: an end that is not final re-opens', () async {
       // Exact words: a reason that merely CONTAINS a final one is not one.
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       rig.bridge.onSnapshot = (_) =>
           _snap(stale: 'session_closed_soon', ended: true);
       await rig.controller.open();
@@ -652,25 +608,6 @@ void main() {
   });
 
   group('full-stamp reconciliation', () {
-    test('a vanished row closes a NON-craze lane at once and ends the '
-        'retries — no grace (plan 032 §3.1.2 is craze lanes only)', () async {
-      final rig = _Rig();
-      await rig.controller.open();
-
-      rig.stamps.add(null);
-      await pumpEventQueue();
-
-      expect(rig.timers, isEmpty, reason: 'an opencode lane never departs');
-      expect(rig.controller.state.departing, isFalse);
-      expect(rig.controller.state.abandoned, isTrue);
-      expect(rig.bridge.handles.single.closed, isTrue);
-      expect(rig.leases.single.releases, 1);
-      expect(rig.delays, isEmpty);
-
-      await rig.controller.open();
-      expect(rig.bridge.opens, 1, reason: 'gone is gone');
-    });
-
     test('the SAME stamp again changes nothing', () async {
       // The negative control on reconciliation: the feed re-emits its rows on
       // every roost poll, and a lane that re-opened on each of those would
@@ -683,31 +620,28 @@ void main() {
 
       expect(rig.bridge.opens, 1);
       expect(rig.bridge.closes, 0);
-      expect(rig.leases.single.releases, 0);
     });
 
     test('a changed stamp re-opens against the new one, immediately', () async {
       final rig = _Rig();
       await rig.controller.open();
 
-      // A restarted tab: the same session on a new port. Row-presence alone
-      // would have missed this and kept talking to a dead forward.
+      // The lane re-stamped onto another session: row-presence alone would
+      // have kept the old handle.
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'opencode',
-          sessionId: 'sess-1',
-          serverUrl: 'http://127.0.0.1:2500',
+          kind: crazeLaneKind,
+          sessionId: 'sess-2',
+          serverUrl: '',
         ),
       );
       await pumpEventQueue();
 
       expect(rig.bridge.opens, 2);
-      expect(rig.bridge.specs.last.reportedUrl, 'http://127.0.0.1:2500');
-      expect(rig.acquired, [2421, 2500], reason: 'the port moved');
-      expect(rig.leases.first.releases, 1, reason: 'the old forward went back');
-      expect(rig.leases.last.releases, 0);
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-2']);
+      expect(rig.bridge.handles.first.closed, isTrue, reason: 'the old handle');
+      expect(rig.bridge.handles.last.closed, isFalse);
       expect(rig.delays, isEmpty, reason: 'a new stamp is news, not a failure');
-      expect(rig.bridge.specs.last.dialUrl, 'http://127.0.0.1:40002');
     });
 
     test('a new stamp revives a lane that had been given up on', () async {
@@ -721,21 +655,21 @@ void main() {
       rig.bridge.onSnapshot = (_) => _snap();
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'opencode',
+          kind: crazeLaneKind,
           sessionId: 'sess-2',
-          serverUrl: 'http://127.0.0.1:2421',
+          serverUrl: '',
         ),
       );
       await pumpEventQueue();
 
       expect(rig.bridge.opens, 2);
       expect(rig.controller.state.abandoned, isFalse);
-      expect(rig.bridge.specs.last.sessionId, 'sess-2');
+      expect(rig.bridge.crazeOpened.last, 'sess-2');
     });
   });
 
   group('a craze lane outlives its row by a grace (plan 032 §3.1.2)', () {
-    _Rig crazeRig() => _Rig(kind: crazeLaneKind, serverUrl: '');
+    _Rig crazeRig() => _Rig();
 
     /// A craze lane, open, whose row just left a live roster.
     Future<_Rig> departed() async {
@@ -858,7 +792,7 @@ void main() {
           messages: [_row(1, 'closing words')],
           stale: laneSessionClosed,
           ended: true,
-          capabilities: _caps(kind: 'craze', stop: true),
+          capabilities: _caps(stop: true),
         ),
       );
       final state = rig.controller.state;
@@ -1080,9 +1014,11 @@ void main() {
     });
 
     test('an unsupported kind is permanent — no ladder', () async {
-      final rig = _Rig(kind: 'codex');
+      // No producer is left for this refusal since plan 038 (the binding keeps
+      // the variant); a bridge that answered it would still not be retried.
+      final rig = _Rig();
       rig.bridge.openFailure = const BridgeLaneError.unsupportedLane(
-        kind: 'codex',
+        kind: 'craze',
       );
       await rig.controller.open();
       await pumpEventQueue();
@@ -1162,7 +1098,7 @@ void main() {
     test(
       'stop reaches the bridge, and its refusal lands on the STOP',
       () async {
-        final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+        final rig = _Rig();
         await rig.controller.open();
 
         await rig.controller.stop();
@@ -1189,7 +1125,7 @@ void main() {
 
     test('a SEND whose answer was lost says so in the desktop\'s words; a '
         'refusal keeps its own', () async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       await rig.controller.open();
       rig.bridge.sendFailure = const BridgeLaneError.outcomeUnknown(
         msg:
@@ -1242,7 +1178,7 @@ void main() {
     /// A craze lane open on a session with a menu, rename and stop — and no
     /// settings.
     Future<_Rig> slashRig() async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       rig.bridge.onSnapshot = (_) => _snap(
         capabilities: _caps(
           kind: 'craze',
@@ -1272,7 +1208,7 @@ void main() {
         expect(identical(rig.controller.state.slashMenu, first), isTrue);
 
         rig.bridge.onSnapshot = (_) => _snap(
-          capabilities: _caps(kind: 'craze', slash: true, setTitle: true),
+          capabilities: _caps(slash: true, setTitle: true),
           slashMenu: _menu(name: 'title'),
         );
         rig.bridge.handles.single.nudges.deliver();
@@ -1281,8 +1217,7 @@ void main() {
 
         // A snapshot with no menu (truncated, or the capability gone) is no
         // menu — never "keep what you had".
-        rig.bridge.onSnapshot = (_) =>
-            _snap(capabilities: _caps(kind: 'craze'));
+        rig.bridge.onSnapshot = (_) => _snap(capabilities: _caps());
         rig.bridge.handles.single.nudges.deliver();
         rig.pumpFrame();
         expect(rig.controller.state.slashMenu, isNull);
@@ -1399,7 +1334,7 @@ void main() {
 
     test('the effort option rides every snapshot verbatim — a null replaces '
         'it (plan 032 PC14h)', () async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       rig.bridge.onSnapshot = (_) => _snap(
         capabilities: _settingsCaps,
         settings: _settings(),
@@ -1693,7 +1628,7 @@ void main() {
     });
 
     test('a verb\'s own errors belong to the SESSION it was sent to: a '
-        'refused Stop and a lost send survive the same session moving port, '
+        'refused Stop and a lost send survive the same session re-stamped, '
         'and go with a stamp for another session (plan 030 FU11)', () async {
       final rig = _Rig();
       await rig.controller.open();
@@ -1716,35 +1651,36 @@ void main() {
 
       bothKept('session A');
 
-      // A restarted tab: A on a new port — re-opened, still A's news.
+      // A re-stamped A (a stamp that differs, the session the same) —
+      // re-opened, still A's news.
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'opencode',
+          kind: crazeLaneKind,
           sessionId: 'sess-1',
-          serverUrl: 'http://127.0.0.1:2500',
+          serverUrl: 'restamped',
         ),
       );
       await pumpEventQueue();
-      expect(rig.bridge.specs.last.reportedUrl, 'http://127.0.0.1:2500');
-      bothKept('the same session on a new port');
+      expect(rig.bridge.crazeOpened, ['sess-1', 'sess-1'], reason: 're-opened');
+      bothKept('the same session re-stamped');
 
       // Another session: neither is B's.
       rig.stamps.add(
         const BridgeAgentLaneStamp(
-          kind: 'opencode',
+          kind: crazeLaneKind,
           sessionId: 'sess-2',
-          serverUrl: 'http://127.0.0.1:2500',
+          serverUrl: '',
         ),
       );
       await pumpEventQueue();
-      expect(rig.bridge.specs.last.sessionId, 'sess-2', reason: 're-opened');
+      expect(rig.bridge.crazeOpened.last, 'sess-2', reason: 're-opened');
       expect(rig.controller.state.stopError, isNull);
       expect(rig.controller.state.composerError, isNull);
     });
 
     test('with no lane open, rename and mode are refused without touching '
         'the bridge', () async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       expect(
         await rig.controller.setTitle('x'),
         _outcome<LaneVerbRefused>('the lane is not open right now'),
@@ -1761,7 +1697,7 @@ void main() {
     /// A craze lane open on a session that offers settings, at [frames]
     /// `Settings` so far.
     Future<_Rig> settingsRig({int frames = 1}) async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
+      final rig = _Rig();
       rig.bridge.onSnapshot = (_) => _snap(
         capabilities: _settingsCaps,
         settings: _settings(),
@@ -2022,11 +1958,9 @@ void main() {
     );
 
     test('nothing is sent where the capabilities say no settings', () async {
-      final rig = _Rig(kind: crazeLaneKind, serverUrl: '');
-      rig.bridge.onSnapshot = (_) => _snap(
-        capabilities: _caps(kind: 'craze'),
-        settings: _settings(),
-      );
+      final rig = _Rig();
+      rig.bridge.onSnapshot = (_) =>
+          _snap(capabilities: _caps(), settings: _settings());
       await rig.controller.open();
       await rig.controller.setSetting(
         _effortRow(_settings()),
@@ -2103,14 +2037,13 @@ void main() {
   });
 
   group('close', () {
-    test('releases the lease exactly once and is idempotent', () async {
+    test('closes the handle exactly once and is idempotent', () async {
       final rig = _Rig();
       await rig.controller.open();
 
       await rig.controller.close();
       await rig.controller.close();
 
-      expect(rig.leases.single.releases, 1);
       expect(rig.bridge.closes, 1);
       expect(rig.bridge.handles.single.closed, isTrue);
       expect(rig.controller.isOpen, isFalse);
@@ -2125,7 +2058,7 @@ void main() {
       rig.bridge.holdOpen = gate;
       final opening = rig.controller.open();
       await pumpEventQueue();
-      expect(rig.acquired, [2421], reason: 'the forward is already reserved');
+      expect(rig.bridge.crazeOpened, ['sess-1'], reason: 'the open is out');
 
       await rig.controller.close();
       gate.complete();
@@ -2133,39 +2066,9 @@ void main() {
 
       // An abandoned open still runs to completion, so the handle it built is
       // closed HERE — otherwise it would sit there holding a pump, an adapter
-      // and the HTTP connections the adapter opened, with nobody to end them.
+      // and the connection the adapter opened, with nobody to end them.
       expect(rig.bridge.handles.single.closed, isTrue);
       expect(rig.controller.isOpen, isFalse);
-      expect(rig.leases.single.releases, 1);
-    });
-  });
-
-  group('the pure url helpers', () {
-    test('laneRemotePort reads the port a forward must reach', () {
-      expect(laneRemotePort('http://127.0.0.1:2421'), 2421);
-      expect(laneRemotePort('http://127.0.0.1'), 80);
-      expect(laneRemotePort('https://127.0.0.1'), 443);
-      expect(
-        () => laneRemotePort('not a url at all'),
-        throwsA(
-          isA<Object>().having(
-            (e) => '$e',
-            'message',
-            contains('LANE_BAD_SERVER_URL'),
-          ),
-        ),
-      );
-    });
-
-    test('laneDialUrl re-points the authority and keeps everything else', () {
-      expect(
-        laneDialUrl('http://127.0.0.1:2421', 40001),
-        'http://127.0.0.1:40001',
-      );
-      expect(
-        laneDialUrl('http://127.0.0.1:2421/v1', 40001),
-        'http://127.0.0.1:40001/v1',
-      );
     });
   });
 }
@@ -2176,24 +2079,18 @@ void main() {
 
 /// Everything a [LaneController] needs, faked, plus the levers each test pulls.
 class _Rig {
-  _Rig({
-    String kind = 'opencode',
-    this.reach = LaneReach.machine,
-    String serverUrl = 'http://127.0.0.1:2421',
-  }) {
+  _Rig() {
     bridge = _FakeLaneBridge(log);
     stamps = StreamController<BridgeAgentLaneStamp?>();
     controller = LaneController(
       machine: 'mini3',
       slug: '7',
-      stamp: BridgeAgentLaneStamp(
-        kind: kind,
+      stamp: const BridgeAgentLaneStamp(
+        kind: crazeLaneKind,
         sessionId: 'sess-1',
-        serverUrl: serverUrl,
+        serverUrl: '',
       ),
       source: bridge,
-      reach: reach,
-      acquireForward: _acquire,
       openCrazeLane: openCrazeLane,
       crazeSourceEpoch: () => liveEpoch,
       crazeSources: crazeSources.stream,
@@ -2208,8 +2105,6 @@ class _Rig {
       await crazeSources.close();
     });
   }
-
-  final LaneReach reach;
 
   /// The machine feed's craze source as a craze lane sees it: the epoch it
   /// opens through now (null while there is none), and the transitions.
@@ -2231,8 +2126,6 @@ class _Rig {
   late final StreamController<BridgeAgentLaneStamp?> stamps;
   late final LaneController controller;
 
-  final List<int> acquired = [];
-  final List<FakeLaneLease> leases = [];
   final List<Duration> delays = [];
   final List<void Function()> _frames = [];
 
@@ -2276,14 +2169,6 @@ class _Rig {
   /// never calls it (a `BridgeLane` needs the native library).
   Future<BridgeLane> openCrazeLane(String hostId) =>
       throw StateError('the fake bridge never opens a real lane');
-
-  Future<LaneLease> _acquire(int remotePort) async {
-    log.add('forward:$remotePort');
-    acquired.add(remotePort);
-    final lease = FakeLaneLease(40000 + acquired.length);
-    leases.add(lease);
-    return lease;
-  }
 }
 
 /// A [LaneSource] that records everything and invents nothing — the
@@ -2294,7 +2179,6 @@ class _FakeLaneBridge implements LaneSource {
 
   final List<String> log;
 
-  final List<BridgeLaneSpec> specs = [];
   final List<_FakeHandle> handles = [];
   final List<BigInt?> cursors = [];
   final List<String> sent = [];
@@ -2305,7 +2189,7 @@ class _FakeLaneBridge implements LaneSource {
   int closes = 0;
   int snapshots = 0;
 
-  int get opens => specs.length;
+  int get opens => crazeOpened.length;
 
   Object? openFailure;
   Object? sendFailure;
@@ -2314,24 +2198,11 @@ class _FakeLaneBridge implements LaneSource {
   Object? stopFailure;
   int stops = 0;
 
-  /// Parks `lane_open` after the spec has been recorded, so a test can land a
+  /// Parks an open after the hostId has been recorded, so a test can land a
   /// handle into a controller that has already torn down.
   Completer<void>? holdOpen;
 
   BridgeLaneSnapshot Function(BigInt? cursor) onSnapshot = (_) => _snap();
-
-  @override
-  Future<LaneHandle> open(BridgeLaneSpec spec) async {
-    log.add('open');
-    specs.add(spec);
-    final gate = holdOpen;
-    if (gate != null) await gate.future;
-    final failure = openFailure;
-    if (failure != null) throw failure;
-    final handle = _FakeHandle();
-    handles.add(handle);
-    return handle;
-  }
 
   /// Every craze open: the hostId, and the opener it was handed.
   final List<String> crazeOpened = [];
@@ -2537,9 +2408,10 @@ class _DeafSubscription implements StreamSubscription<bool> {
 // DTO builders (plain Dart — no FFI is touched)
 // ---------------------------------------------------------------------------
 
-/// opencode's own capabilities — what every opencode seed carries.
-const _opencodeCaps = BridgeLaneCapabilities(
-  kind: 'opencode',
+/// A minimal craze seed's capabilities — a TUI-hosted session: no interject,
+/// stop, settings, `/` menu or rename, so each test turns on what it is about.
+const _crazeCaps = BridgeLaneCapabilities(
+  kind: 'craze',
   interject: false,
   cancel: true,
   approvals: true,
@@ -2551,7 +2423,7 @@ const _opencodeCaps = BridgeLaneCapabilities(
 );
 
 BridgeLaneCapabilities _caps({
-  String kind = 'opencode',
+  String kind = 'craze',
   bool interject = false,
   bool stop = false,
   bool settings = false,
@@ -2580,7 +2452,7 @@ BridgeLaneSession _session({String title = '', String? permissionMode}) =>
       permissionMode: permissionMode,
     );
 
-/// A seeded snapshot: opencode's capabilities unless a test says otherwise —
+/// A seeded snapshot: [_crazeCaps] unless a test says otherwise —
 /// an explicit `capabilities: null` is "no seed yet" — live and not ended.
 BridgeLaneSnapshot _snap({
   List<BridgeRcFeedMessage> messages = const [],
@@ -2590,7 +2462,7 @@ BridgeLaneSnapshot _snap({
   String? stale,
   bool ended = false,
   BridgeLaneSession? session,
-  BridgeLaneCapabilities? capabilities = _opencodeCaps,
+  BridgeLaneCapabilities? capabilities = _crazeCaps,
   BridgeLaneSettings? settings,
   int settingsFrames = 0,
   List<BridgeLaneApproval> approvals = const [],
@@ -2652,7 +2524,7 @@ BridgeSlashMenu _effortMenu({
 );
 
 /// A craze session that offers settings.
-final _settingsCaps = _caps(kind: 'craze', settings: true, stop: true);
+final _settingsCaps = _caps(settings: true, stop: true);
 
 /// A session on [model] with an effort option at [effort] — the shape craze's
 /// permodel cursor hands over, cut down to what a press needs.

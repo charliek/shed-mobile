@@ -223,7 +223,7 @@ void main() {
   });
 }
 
-/// `shed_app::roost::ReachKind::as_str`'s kebab names, which are what
+/// `shed_roost::ReachKind::as_str`'s kebab names, which are what
 /// `reach_kinds` carries. The Dart enum crosses FRB by INDEX and has no wire
 /// spelling of its own, so this is the one place the two vocabularies meet.
 String _kindWire(BridgeReachKind kind) => switch (kind) {

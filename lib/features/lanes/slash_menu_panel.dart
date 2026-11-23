@@ -19,7 +19,7 @@ const slashMenuMaxHeightFraction = 0.4;
 /// It RENDERS what the shared core answered (`SlashRules.filter`): the rows in
 /// the order given, the highlighted one, and the dimmed ones. It decides
 /// nothing — which rows exist, what a tap on one does and whether it is
-/// refused are `shed_app::slash_menu`'s, and the keys are the composer's
+/// refused are `shed_lane::slash_menu`'s, and the keys are the composer's
 /// (`slash_keys.dart`). The desktop's `SlashMenu.tsx`.
 ///
 /// * **Capped at 40 % of the viewport's height, and it scrolls** (P24): a

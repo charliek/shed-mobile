@@ -16,11 +16,12 @@ import 'rolling_tail.dart';
 /// be constructed without a live `SSHClient` against a real server — dartssh2's
 /// `SSHSession` (a remote exec) and `SSHForwardChannel` (a `direct-tcpip`
 /// channel) are both handed out by the client and nothing else — so without
-/// this interface every test of the pump below would need an sshd. The two
-/// implementations are `_ExecChannel` (in `roost_tunnel.dart`, over the roost
-/// exec seam) and `_SshForward` (in `lane_forward.dart`, over the port
-/// channel); the wire-level proof that the far side is reached correctly lives
-/// in shed's `tests/machine-transport` differential, not here.
+/// this interface every test of the pump below would need an sshd. The
+/// production implementation is `_ExecChannel` (in `roost_tunnel.dart`, over
+/// the roost and craze exec seams; the lane port forward that was the second
+/// one went with the opencode lane, plan 038); the wire-level proof that the
+/// far side is reached correctly lives in shed's `tests/machine-transport`
+/// differential, not here.
 abstract class DuplexChannel {
   /// The write half. Closing it sends EOF **without** closing the channel —
   /// see [DuplexPump] for why that must not happen early.
@@ -60,8 +61,7 @@ abstract class DuplexChannel {
 typedef ChannelDial = Future<DuplexChannel> Function();
 
 /// **A fixed local port whose every accepted socket is pumped over a freshly
-/// opened [DuplexChannel]** — the local half shared by the roost tunnel and a
-/// lane's port forward.
+/// opened [DuplexChannel]** — the local half of the roost and craze tunnels.
 ///
 /// Binds loopback only, on an OS-assigned port — never a fixed one, so two
 /// machines can be served at once and nothing collides with another app.
@@ -76,8 +76,8 @@ typedef ChannelDial = Future<DuplexChannel> Function();
 /// logic be written once, in Rust, for every client.
 ///
 /// Extracted from `RoostTunnel` when a lane's port forward needed the same
-/// port lifecycle (plan 018 §3.10) — two copies of this accept/close dance is
-/// exactly the duplication that drifts.
+/// port lifecycle (plan 018 §3.10; that forward was retired in plan 038) — two
+/// copies of this accept/close dance is exactly the duplication that drifts.
 ///
 /// [ChannelDial] is called per accepted connection, so a dropped link is
 /// re-established on the next use rather than requiring the port to be torn

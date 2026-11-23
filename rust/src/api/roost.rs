@@ -27,7 +27,7 @@
 //! the SSH connection underneath the SAME listening socket; from Rust's side the
 //! port simply keeps working, so a dropped tunnel is an ordinary reconnect
 //! ("the socket refused") rather than a re-acquire protocol.
-//! [`shed_app::roost::LabelledPort`] is that reach — `FixedPort` with the
+//! [`shed_roost::LabelledPort`] is that reach — `FixedPort` with the
 //! machine's name attached, so a failure message reads in the vocabulary the
 //! user typed.
 //!
@@ -35,7 +35,7 @@
 //!
 //! Every async entry point here hands its work to the persistent runtime via
 //! [`on_bridge_rt`], and that is load-bearing rather than tidy: a loopback-TCP
-//! [`Conn`][shed_core::roost::Conn] owns a `copy_bidirectional` pump task, so a
+//! [`Conn`][shed_roost::Conn] owns a `copy_bidirectional` pump task, so a
 //! connection built on FRB's per-call executor would lose its pump the moment
 //! that call returned. A held connection — the watcher's, and the peek's — must
 //! live on a runtime that outlives the call that made it.
@@ -53,13 +53,11 @@ use std::sync::{Arc, Mutex};
 
 use flutter_rust_bridge::frb;
 use roost_ipc::messages::{Project, Tab, TabDumpResult, TabOpenParams};
-use shed_app::machine::FixedPort;
-use shed_app::roost::{
-    HooksRefresh, LabelledPort, ReachKind, RoostPeek, RoostUpdate, RoostWatcher,
-    RoostWatcherOptions,
+use shed_lane::rc::RcKind;
+use shed_roost::{
+    FixedPort, HooksRefresh, LabelledPort, ReachKind, RoostPeek, RoostSession, RoostUpdate,
+    RoostWatcher, RoostWatcherOptions,
 };
-use shed_core::rc::RcKind;
-use shed_core::roost::RoostSession;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::frb_generated::StreamSink;
@@ -121,7 +119,7 @@ pub enum BridgeRoostUpdate {
     },
 }
 
-/// Why a session is not readable (mirrors `shed_app::roost::ReachKind`). Plain
+/// Why a session is not readable (mirrors `shed_roost::ReachKind`). Plain
 /// enum.
 ///
 /// [`Other`](Self::Other) is the honest default and the common one — a stream
@@ -274,7 +272,7 @@ pub fn create_roost_watcher(
 /// a machine somebody else's session is serving.
 ///
 /// **Where this diverges from the desktop's shape, and why it is not a second
-/// design.** `shed-app`'s [`HooksRefresh::armed`] is a shared flag the desktop
+/// design.** `shed-roost`'s [`HooksRefresh::armed`] is a shared flag the desktop
 /// flips *under* a live watcher, because a desktop watcher is spawned once at
 /// app start and must never be replaced. A phone's is spawned constantly —
 /// backgrounding is a STOP and foregrounding is a fresh
@@ -378,14 +376,13 @@ fn bridge_update(update: RoostUpdate) -> BridgeRoostUpdate {
 /// `tab.close` — end a tab. It leaves `tab.list` entirely, so the row
 /// disappears on the next publish rather than turning into a dead card.
 pub async fn roost_tab_close(local_port: u16, tab_id: i64) -> Result<(), String> {
-    on_bridge_rt(async move { shed_app::roost::tab_close(&FixedPort(local_port), tab_id).await })
-        .await
+    on_bridge_rt(async move { shed_roost::tab_close(&FixedPort(local_port), tab_id).await }).await
 }
 
 /// `tab.open` — start `kind`'s agent in a fresh tab at `workdir`, and get back
 /// the row for it.
 ///
-/// The argv is [`shed_app::roost::launch_argv`]'s and nothing else (plan 013
+/// The argv is [`shed_roost::launch_argv`]'s and nothing else (plan 013
 /// §4: prompts and permission modes are a later slice). An unrecognized kind —
 /// or a kind roost has no launch recipe for, `shell` and `craze` included, and
 /// since plan 025 the four retired direct-agent kinds (codex, cursor, gx,
@@ -411,11 +408,10 @@ pub async fn roost_tab_open(
     workdir: String,
 ) -> Result<BridgeRcSession, String> {
     let rc_kind = RcKind::from_wire(&kind);
-    let argv =
-        shed_app::roost::launch_argv(&rc_kind).ok_or_else(|| format!("unknown kind: {kind}"))?;
+    let argv = shed_roost::launch_argv(&rc_kind).ok_or_else(|| format!("unknown kind: {kind}"))?;
     let label = machine.clone();
     let tab = on_bridge_rt(async move {
-        shed_app::roost::tab_open(
+        shed_roost::tab_open(
             &LabelledPort::new(label, local_port),
             TabOpenParams {
                 project_id: 0,
@@ -609,7 +605,7 @@ pub fn roost_remote_command() -> String {
 /// await a round trip that does not exist would gate the controls on nothing.
 #[frb(sync)]
 pub fn roost_capabilities() -> BridgeRcCapabilities {
-    shed_app::roost::roost_capabilities().into()
+    shed_roost::roost_capabilities().into()
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +637,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shed_core::roost::testing::{ownership, FakeRoost};
+    use shed_roost::testing::{ownership, ownership_with, FakeRoost};
     use std::time::Duration;
 
     use crate::api::bridge_rt::live_counters;
@@ -795,10 +791,70 @@ mod tests {
         stop_roost_watcher(&handle);
     }
 
+    /// **An opencode tab is a passive row** (plan 038 D3): the opencode
+    /// adapter is retired, so a tab whose ownership announces a loopback
+    /// `server_url` — exactly the metadata that used to stamp an agent lane —
+    /// still crosses with its tool label and its activity, and with NO lane.
+    /// Over the real watcher and the real socket, so the metadata travels the
+    /// wire the way roost sends it rather than being built in-process.
+    #[tokio::test]
+    async fn an_opencode_tab_with_a_server_url_is_a_passive_row_with_no_lane() {
+        let _g = test_guard();
+        let fake = FakeRoost::start().await;
+
+        let handle = create_roost_watcher("mini3".into(), fake.tcp_port(), false);
+        let mut rx = claim_rx(&handle.state).expect("the receiver is claimable once");
+        match next_update(&mut rx, "the first snapshot").await {
+            BridgeRoostUpdate::Snapshot { sessions, .. } => assert!(sessions.is_empty()),
+            other => panic!("expected a snapshot, got {other:?}"),
+        }
+
+        fake.set_tab_axes(
+            5,
+            "working",
+            Some(ownership_with(
+                "opencode",
+                "ses_abc",
+                "",
+                1788769939,
+                &[(
+                    "server_url".to_string(),
+                    "http://127.0.0.1:4096".to_string(),
+                )],
+            )),
+            false,
+        );
+
+        let sessions = loop {
+            match next_update(&mut rx, "the claimed snapshot").await {
+                BridgeRoostUpdate::Snapshot { sessions, .. } if !sessions.is_empty() => {
+                    break sessions
+                }
+                BridgeRoostUpdate::Snapshot { .. } => continue,
+                other => panic!("expected a snapshot, got {other:?}"),
+            }
+        };
+        assert_eq!(sessions.len(), 1);
+        let row = &sessions[0];
+        assert_eq!(row.kind, BridgeRcKind::Opencode, "the tool label survives");
+        assert_eq!(
+            row.activity,
+            Some(BridgeRcActivity::Working),
+            "the activity survives"
+        );
+        assert_eq!(row.rc_id.as_deref(), Some("ses_abc"));
+        assert_eq!(
+            row.agent_lane, None,
+            "no adapter is left to open a lane on, whatever the tab announces"
+        );
+
+        stop_roost_watcher(&handle);
+    }
+
     // ---- keeping a bootstrapped target's hooks wired -------------------
     //
     // Three cells, and between them they are the phone's half of plan 020
-    // §3.3 (amendment A8). The desktop's half is pinned in `shed-app`; what is
+    // §3.3 (amendment A8). The desktop's half is pinned in `shed-roost`; what is
     // pinned HERE is the only part mobile owns — that the `bootstrapped` bool
     // crossing the bridge becomes a re-send on every cycle, under shed's own
     // label, and nothing at all when it is false.
@@ -861,7 +917,7 @@ mod tests {
         // shed-core constant rather than a literal is what makes this cell a
         // drift pin — if shed's list ever changes, the phone's raise changes
         // with it by construction.
-        let raised = serde_json::json!(shed_core::roost::bootstrap::ROOST_WIRED_AGENTS);
+        let raised = serde_json::json!(shed_roost::bootstrap::ROOST_WIRED_AGENTS);
         assert!(
             calls.iter().all(|call| call["agents"] == raised),
             "the phone must raise shed's five agents: {calls:?}"
@@ -1053,20 +1109,18 @@ mod tests {
     ///
     /// **`feed` is a KIND CEILING, not a row promise** (S6, plan 022 §3.2).
     /// `roost_kind_features(kind, lane_attached)` answers `"messages"` exactly
-    /// when a lane adapter exists for the kind — so `opencode` claims the
-    /// transcript its adapter produces, and `claude-rc` claims the activity
-    /// dimension it does carry. **Never `"none"`**: with the hub gone there is
-    /// no producer of that word left anywhere, and a roost row always carries
-    /// an activity dimension folded out of `agent_lifecycle`.
+    /// when a lane adapter exists for the kind. Since plan 038 retired the
+    /// opencode adapter, none does: BOTH kinds claim the activity dimension
+    /// they carry, `feed: "activity"` with `watch` off. **Never `"none"`**:
+    /// with the hub gone there is no producer of that word left anywhere, and
+    /// a roost row always carries an activity dimension folded out of
+    /// `agent_lifecycle`.
     ///
     /// Two kinds since plan 025 (shed#390): codex, cursor, gx and grok left
     /// the palette, and a roost tab running one of them directly is a plain
-    /// `Other` row that this block names no features for.
-    ///
-    /// The consequence a renderer must not get wrong, and the reason this test
-    /// is explicit about it: a card offers a transcript on
-    /// `BridgeRcSession.agentLane`, **never** on this block — the ceiling says
-    /// what an opencode row COULD have, the stamp says what THIS row has.
+    /// `Other` row that this block names no features for. `opencode` stays in
+    /// it so an opencode tab still renders with its tool label and activity,
+    /// passively: interactive opencode sessions belong to the roost app.
     #[test]
     fn roost_capabilities_advertise_a_native_remote_attach_and_no_steering() {
         let caps = roost_capabilities();
@@ -1082,13 +1136,19 @@ mod tests {
             assert!(!f.interrupt, "{kind}");
             assert_eq!(f.approvals, "none", "{kind}");
             assert!(f.input.is_empty(), "{kind}");
-            assert_ne!(f.feed, "none", "{kind}: the hub's word has no producer left");
+            assert_ne!(
+                f.feed, "none",
+                "{kind}: the hub's word has no producer left"
+            );
         }
-        // The kind an agent-lane adapter exists for claims the feed the adapter
-        // produces; the other claims the activity dimension.
+        // No roost kind has an agent-lane adapter any more (plan 038), so both
+        // claim the activity dimension and neither claims a transcript.
         let f = &caps.kind_features["opencode"];
-        assert_eq!(f.feed, "messages", "opencode: a lane adapter exists");
-        assert!(f.watch, "opencode: watch is feed==messages, in lockstep");
+        assert_eq!(
+            f.feed, "activity",
+            "opencode: no lane adapter since plan 038"
+        );
+        assert!(!f.watch, "opencode: watch is feed==messages, in lockstep");
         let f = &caps.kind_features["claude-rc"];
         assert_eq!(f.feed, "activity", "claude-rc: no lane adapter");
         assert!(!f.watch, "claude-rc: watch is feed==messages, in lockstep");

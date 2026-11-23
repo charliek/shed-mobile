@@ -16,7 +16,6 @@ import '../../widgets/kind_chip.dart';
 import '../../widgets/open_pill.dart';
 import '../../widgets/session_actions.dart';
 import '../../widgets/status_badge.dart';
-import '../lanes/lane_screen.dart';
 import '../terminal/roost_peek_screen.dart';
 import '../terminal/terminal_screen.dart';
 import '../terminal/terminal_target.dart';
@@ -33,13 +32,13 @@ import '../terminal/terminal_target.dart';
 /// lifecycle permits it), an attention dot (roost's sticky notification), kind
 /// chip, a meta line (shed · workdir · age), and the actions below.
 ///
-/// **The Transcript pill is gated on the ROW, never on the kind.** A row whose
-/// tab reported an agent lane carries [BridgeRcSession.agentLane]; the
-/// capability block's `feed: "messages"` is a per-KIND ceiling and is allowed to
-/// disagree with it (`roost_kind_features`' doc says so in as many words). The
-/// attach affordance reads [attachKind]: `native-remote` — every roost row — is
-/// the read-only peek, and `tmux` is the xterm attach, which is what a
-/// capability block from an older, non-roost producer would still ask for.
+/// **A roost tab has no transcript** (plan 038): the opencode lane is gone, so
+/// an opencode tab — like a Claude one — shows its label and activity, and
+/// [BridgeRcSession.agentLane] (always null now) is never read. A craze
+/// session's transcript lives on its craze row, not here. The attach
+/// affordance reads [attachKind]: `native-remote` — every roost row — is the
+/// read-only peek, and `tmux` is the xterm attach, which is what a capability
+/// block from an older, non-roost producer would still ask for.
 class SessionCard extends ConsumerStatefulWidget {
   const SessionCard({
     required this.serverName,
@@ -115,23 +114,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     ),
   );
 
-  /// The row's agent lane. Gated on the row carrying a stamp:
-  /// `laneControllerProvider` THROWS for a row with none, so the affordance and
-  /// the provider's precondition are the same condition.
-  void _openLane() => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => LaneScreen(
-        machine: _origin,
-        // The pill only renders for a row with a stamp.
-        kind: widget.session.agentLane!.kind,
-        // The ROW's slug (roost's tab id), not the stamp's session id — the
-        // session id is the thing being reconciled.
-        slug: widget.session.slug,
-        title: widget.session.displayName,
-      ),
-    ),
-  );
-
   /// End the session — roost's `tab.close`, through the feed that holds the
   /// tunnel. The feed folds the row out optimistically, so the card goes at
   /// once rather than at the next push.
@@ -177,7 +159,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
     // tab by roost's own id — a row without one could not be peeked at all.
     final canPeek = attach == 'native-remote' && s.tabId != null;
     final canOpen = attach == 'tmux';
-    final canTranscribe = s.agentLane != null;
 
     final badge = StatusBadge(
       tone: shedStatusTone(state.wire).tone,
@@ -229,17 +210,6 @@ class _SessionCardState extends ConsumerState<SessionCard> {
           );
 
     final actions = <Widget>[
-      // The PRIMARY action when there is one, and the accent says so: reading
-      // the conversation is what you came for, and the pane is the fallback.
-      if (canTranscribe) ...[
-        AccentPill(
-          key: ValueKey('all-session-lane-$_base'),
-          icon: Icons.forum_outlined,
-          label: 'Transcript',
-          onTap: _openLane,
-        ),
-        const SizedBox(width: 8),
-      ],
       if (canPeek)
         OpenPill(
           key: ValueKey('all-session-peek-$_base'),

@@ -11,43 +11,49 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 # Cross-repo shed client core (FRB de-risking spike, plan §3.1).
 # Canonical source is git+rev; a LOCAL sibling-checkout override lives in
 # .cargo/config.toml (gitignored; see .cargo/config.toml.template).
-# shed-app pulled with DEFAULT features (RcEventsWatcher); NO features = ["rc"].
-shed-core = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
-shed-app  = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
-# The opencode agent-lane adapter (plan 015), reached the same way and pinned
-# to the SAME rev as shed-core/shed-app — one shed tree, one rev. It is
-# named here rather than reached through shed-app because shed-app does not
-# depend on it: an adapter is chosen by the client at the point it opens a
-# lane, so the client is what has to name it.
 #
-# It had not been on a phone before that plan, so `android-build` is the first
-# thing that would notice a dependency it cannot cross-compile; the gate
-# checks it for `aarch64-linux-android` explicitly.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
-# The craze agent-lane adapter (plan 025): a machine's craze hub as an
-# `AgentSource`, and each of its sessions as an `AgentLane`. Named for the
-# same reason shed-opencode is — the client chooses the adapter — and pinned
-# to the SAME rev: the four shed crates are one tree at one rev, and
-# `check-lock-rev.sh` refuses a split. It joins the pinned set at the re-pin
-# (CM2), before anything here calls it (the phone's craze source is CM3), so
-# the lock guard and the Android check cover it from the first commit that
-# names it — and it must cross-compile for `aarch64-linux-android`, which
-# shed-craze's own manifest promises (no reqwest, no chrono).
-shed-craze = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358" }
+# The four shed crates the phone links (plan 038 split the old shed-core /
+# shed-app mix into a zero-cycle DAG; see shed's `crates/CLAUDE.md`). They are
+# one shed tree at ONE rev: `check-lock-rev.sh` refuses a split, and a split
+# would put two copies of `shed-lane`'s types into one graph.
+#
+# - `shed-core`: the shed-server protocol (`http`, `models`, `token`, `csr`),
+#   and with it reqwest/rustls for shed-server HTTP. This crate names no
+#   reqwest of its own; it arrives only through shed-core (and shed-roost,
+#   which depends on it too).
+# - `shed-lane`: the pure agent-lane and RC DTO leaf (`lane`, `rc`, `time`,
+#   the craze command ladder in `craze`, `lane_view`, `slash_menu`,
+#   `craze_rows`). No shed-core, reqwest, roost-ipc or chrono.
+# - `shed-roost`: everything roost (`Conn`, `RoostSession`, `bootstrap`,
+#   `reach` with `tab_open`/`tab_close`/`launch_argv`/`RoostPeek`,
+#   `FixedPort`, `roost_capabilities`). The sole direct `roost-ipc` consumer
+#   in shed's `crates/`.
+# - `shed-craze`: the craze agent-lane adapter (plan 025): a machine's craze
+#   hub as an `AgentSource`, each of its sessions as an `AgentLane`. Craze is
+#   the only agent lane; the opencode adapter crate was removed in plan 038.
+#
+# All four must cross-compile for `aarch64-linux-android`; the Android check
+# in CI covers them.
+shed-core  = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
+shed-lane  = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
+shed-roost = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
 # roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
-# reached through shed-app, for two things shed-app does not re-export: the
-# `TabOpenParams` a `tab.open` takes, and `ssh::remote_command()` — the opaque
-# remote command string `RoostTunnel` execs on the far side.
+# reached through shed-roost, for what shed-roost does not re-export: the
+# `messages` types (`Tab`, `Project`, `TabOpenParams`, `TabDumpResult`) and
+# `ssh::remote_command()` — the opaque remote command string `RoostTunnel`
+# execs on the far side.
 #
-# **The rev is the one `shed-core`'s own manifest pins**, so cargo unifies the
-# two into ONE source and mobile can never end up talking a different wire than
-# the core it links. A bump is therefore a two-file edit in lockstep with shed's
-# `crates/Cargo.toml`; roost publishes no Rust-API stability promise, which is
+# **The rev is the one shed's `crates/Cargo.toml` pins for `shed-roost`**, so
+# cargo unifies the two into ONE source and mobile can never end up talking a
+# different wire than the core it links. A bump is therefore a two-file edit in
+# lockstep with shed's `crates/Cargo.toml`; roost publishes no Rust-API stability promise, which is
 # what the pin absorbs (roost `docs/reference/ipc-compatibility.md`).
 #
 # That lockstep is enforced by CARGO, not by a script: git deps unify on
-# `(url, rev)`, so a rev that differs from shed-core's produces TWO `roost-ipc`
-# crates in one graph and `TabOpenParams`/`remote_command` stop type-checking.
+# `(url, rev)`, so a rev that differs from shed-roost's produces TWO `roost-ipc`
+# crates in one graph and `TabOpenParams`/`remote_command` stop type-checking
+# against shed-roost's.
 # `scripts/check-lock-rev.sh` also asserts the lock matches this line, which is
 # belt-and-braces — the compile failure is the real gate.
 roost-ipc = { git = "https://github.com/charliek/roost", rev = "2bc71fa3848ddbf2d190aab6c4ef61ad2d432aa1" }
@@ -59,18 +65,6 @@ serde_json = "1"
 # The shed-core `TokenMinter` trait is `#[async_trait]`; the bridge minter impl
 # must use the same macro (same version family as shed's lock).
 async-trait = "0.1"
-# **Types only, never a client this crate builds.** `OpencodeClient::new` takes
-# a `reqwest::Url`, so `api/lane.rs` cannot dispatch the opencode arm without
-# naming the crate. No HTTP is issued from here — every request belongs to the
-# adapter.
-#
-# `default-features = false` is load-bearing: reqwest's defaults pull
-# `default-tls` (native-tls, and with it an OpenSSL stack), which would ADD
-# packages to the lock. shed-core already pins it as
-# `default-features = false, features = ["rustls-tls", "stream", "json"]`, and
-# cargo unifies features — so declaring nothing here inherits exactly that set
-# and the lock gains one dependency EDGE and no package.
-reqwest = { version = "0.12", default-features = false }
 
 [dev-dependencies]
 # Test-only: signing a certificate for the CSR a `ControlTokenProvider` generated
@@ -83,24 +77,14 @@ rcgen = { version = "0.13", default-features = false, features = ["ring"] }
 # Standard-alphabet base64 for those test fixtures (decode a `csr=` value, encode
 # a leaf PEM). Already in the tree via shed-core/reqwest.
 base64 = "0.22"
-# shed-core's in-process fake `roost-session` (`roost::testing::FakeRoost`),
+# shed-roost's in-process fake `roost-session` (`shed_roost::testing::FakeRoost`),
 # behind its non-default `test-support` feature, so the roost watcher test drives
 # the REAL watcher against a REAL socket instead of a re-implementation of one.
 # A dev-dependency (resolver v2) so the feature is enabled for `cargo test` and
-# NEVER for a shipped build — the same shape shed-app uses for the same fake.
-# Same git+rev as the [dependencies] entry above; cargo unifies them.
-shed-core = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
-# The opencode agent-lane adapter's in-process double
-# (`shed_opencode::testing::FakeOpencode`), behind the SAME non-default
-# `test-support` feature and the SAME git+rev as the `[dependencies]` entry
-# above — cargo unifies them, and the feature adds no package to the lock
-# (it declares `test-support = []`).
-#
-# It is what lets `api/lane.rs`'s dispatch tests drive the REAL adapter against
-# a real loopback HTTP server instead of a re-implementation of one, which is
-# the whole point: the thing under test is the bridge's dispatch, its roster GET
-# and its pump, and a hand-rolled fake adapter would test none of them.
-shed-opencode = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
+# NEVER for a shipped build. Same git+rev as the [dependencies] entry above;
+# cargo unifies them, and the feature adds no package to the lock (it declares
+# `test-support = []`).
+shed-roost = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb", features = ["test-support"] }
 # The craze adapter's scripted hub (`shed_craze::testing::ScriptedDial`: every
 # connection an in-memory duplex the test plays craze on), behind the same
 # non-default `test-support` feature and the SAME git+rev — `test-support = []`,
@@ -108,7 +92,7 @@ shed-opencode = { git = "https://github.com/charliek/shed", rev = "ebba655160af0
 # REAL `CrazeSource` — its roster pump, its created rows, a lane opened through
 # it and the session's end said back to it (plan 025 Amendment A16) — instead
 # of a re-implementation of one.
-shed-craze = { git = "https://github.com/charliek/shed", rev = "ebba655160af0543966163735705b27573bb9358", features = ["test-support"] }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

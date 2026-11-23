@@ -2,7 +2,7 @@ import 'package:shed_mobile/lanes/slash_rules.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 
-/// **A stand-in for `shed_app::slash_menu` behind [SlashRules]** — a widget
+/// **A stand-in for `shed_lane::slash_menu` behind [SlashRules]** — a widget
 /// test runs with no native library loaded, so this is the only way it can
 /// drive the composer's `/` menu at all.
 ///
