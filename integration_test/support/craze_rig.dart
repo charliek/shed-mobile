@@ -400,6 +400,7 @@ class CrazeRig {
     }
     if (method == 'session.setTitle' ||
         method == 'session.stop' ||
+        method == 'asks.answer' ||
         method == 'session.prompt') {
       verbs.add((
         method: method as String,

@@ -15,7 +15,6 @@ import '../src/rust/api/roost_bootstrap.dart';
 import '../ssh/craze_reach.dart';
 import '../ssh/exec_bytes.dart';
 import '../ssh/host_key_store.dart';
-import '../ssh/lane_forward.dart';
 import '../ssh/roost_bootstrap_runner.dart';
 import '../ssh/roost_entitlement.dart';
 import '../ssh/roost_reach.dart';
@@ -126,7 +125,7 @@ class MachineFeedState {
   /// **This machine's rows, merged — what every view renders** (plan 025
   /// §3.7.2): its roost tabs and its craze sessions, one row per session.
   ///
-  /// The merge is `shed_app::craze_rows::fold_plan` over the bridge
+  /// The merge is `shed_lane::craze_rows::fold_plan` over the bridge
   /// (`crazeFoldPlan`, applied by [machineRows]): with the craze feed LIVE,
   /// every roost tab craze owns is absorbed into the hub row it names (that row
   /// then carries the tab's id) or hidden, and the hub row is the row (D4);
@@ -288,7 +287,7 @@ typedef CrazeFoldPlanner =
       List<BridgeLaneSession>? hub,
     );
 
-/// The production [CrazeFoldPlanner]: `shed_app::craze_rows::fold_plan`.
+/// The production [CrazeFoldPlanner]: `shed_lane::craze_rows::fold_plan`.
 BridgeFoldPlan crazeFoldPlanner(
   List<BridgeRoostTabRef> roost,
   List<BridgeLaneSession>? hub,
@@ -684,7 +683,7 @@ typedef CrazeSourceNudges =
 /// **One machine's feed: the tunnel, the watcher, and the state they produce.**
 ///
 /// Owns the phone-specific half of the lifecycle. Everything above the local
-/// port is shared Rust (see `rust/src/api/roost.rs` and `shed_app::roost`), so
+/// port is shared Rust (see `rust/src/api/roost.rs` and `shed_roost`), so
 /// what lives here is exactly what a phone must decide: when to hold an SSH
 /// connection open, and when to let it go.
 ///
@@ -853,16 +852,6 @@ class MachineFeed {
   /// The dial in flight, so two connections accepted at once do not open two
   /// SSH links and leak one — deduped per [_generation]. See [DialDedupe].
   final _dialDedupe = DialDedupe<SSHClient>();
-
-  /// The agent-lane port forwards riding this machine's one SSH connection,
-  /// refcounted per remote port. See [ForwardRegistry] and [acquireForward].
-  late final ForwardRegistry _forwards = ForwardRegistry(
-    // Forwards ride the SAME connection, through the same `_connect` the roost
-    // tunnel uses — so they inherit its dedupe and its generation fencing, and
-    // a lane costs no second SSH link.
-    openForward: (remotePort) =>
-        LaneForward.open(connect: _connect, remotePort: remotePort),
-  );
 
   /// Bumped by every [_teardown], so a dial that completes after a stop closes
   /// its client instead of installing it behind the feed's back.
@@ -1256,7 +1245,7 @@ class MachineFeed {
       return null;
     }
     // Not `execOn`: a timeout around it would abandon a live channel on the
-    // ONE client this feed shares with the tunnel and every forward. Owning
+    // ONE client this feed shares with the tunnels and every exec. Owning
     // the session lets the deadline end exactly it — as far as dartssh2 lets
     // anyone: `kill` then `close`, the same best effort (and the same stated
     // limit) as `exec_bytes.dart`'s budget expiry.
@@ -1383,27 +1372,6 @@ class MachineFeed {
     return (reopened: reopened, superseded: !current);
   }
 
-  /// **Borrow a forward to `127.0.0.1:<remotePort>` on this machine** — how an
-  /// agent lane reaches a server bound to the machine's own loopback.
-  ///
-  /// Refcounted per remote port and single-flight, so two lanes against one
-  /// agent server share one forward and one SSH channel; the returned lease is
-  /// the caller's whole obligation, and releasing the last one closes the
-  /// forward.
-  ///
-  /// Typed as the [LaneLease] INTERFACE rather than the concrete
-  /// [LaneForwardLease] it always is: a lease is all a lane needs (a local
-  /// port, a validity bit and a give-back), and narrowing it here is what lets
-  /// `LaneController`'s whole lifecycle be tested without an sshd.
-  ///
-  /// Requires a started feed: [dispose] closes every forward and invalidates
-  /// every lease, so acquiring against a torn-down feed would hand out a port
-  /// that reaches nothing. The same [StateError] [create] and [kill] raise.
-  Future<LaneLease> acquireForward(int remotePort) async {
-    if (_tunnel == null) throw StateError('the machine is not connected');
-    return _forwards.acquire(remotePort);
-  }
-
   /// Start a session on this machine — roost's `tab.open`.
   ///
   /// Minimal by design (plan 013 §4): the agent's binary and a working
@@ -1461,8 +1429,8 @@ class MachineFeed {
   /// (`providers.dart`). Kept because the "backgrounding is a STOP" story above
   /// is what a foreground/background hook will use, and because it is the
   /// `_teardown` + "paused" pair every restart path needs. Adding a caller is a
-  /// deliberate decision, not a tidy-up: a lane holding a
-  /// [LaneForwardLease] has its forward closed and its lease invalidated here.
+  /// deliberate decision, not a tidy-up: a craze lane open through this feed's
+  /// craze source loses that source here (and waits for its replacement).
   Future<void> stop() async {
     // A start asked for before this stop does not outlive it.
     _startAgain = false;
@@ -1507,12 +1475,8 @@ class MachineFeed {
     await _tunnel?.close();
     _tunnel = null;
     await _teardownCraze();
-    // Every lane forward on this connection goes with it, and every lease is
-    // invalidated: a lane holding one must re-acquire rather than keep writing
-    // into a local port that no longer reaches the machine.
-    await _forwards.closeAll();
-    // The tunnel and the forwards free their ports and their channels but never
-    // the connection — this is the one place it dies.
+    // The tunnels free their ports and their channels but never the
+    // connection — this is the one place it dies.
     _client?.close();
     _client = null;
     _dialDetail = null;
@@ -1597,10 +1561,9 @@ class MachineFeed {
   /// **Run one bootstrap `Step::Exec` on this machine** — the production
   /// [BootstrapExec] for a [RoostBootstrapRunner] (plan 020 §3.8).
   ///
-  /// Rides the feed's ONE `SSHClient`, the same connection the roost tunnel and
-  /// every lane forward use, exactly as [acquireForward] does: a bootstrap
-  /// costs no second SSH link and inherits the dial's dedupe and generation
-  /// fencing.
+  /// Rides the feed's ONE `SSHClient`, the same connection the roost and craze
+  /// tunnels use: a bootstrap costs no second SSH link and inherits the dial's
+  /// dedupe and generation fencing.
   ///
   /// Every cap comes from the step; nothing here invents one. The command is
   /// roost's own composition and is passed verbatim — see `exec_bytes.dart`.

@@ -44,7 +44,7 @@ const LaneLive laneLiveUnknown = (
 /// would be stale by construction.
 ///
 /// **Nothing here is folded.** The transcript, the approval set and the
-/// activity are Rust's fold (`shed_app::lane_view`), taken whole under one lock
+/// activity are Rust's fold (`shed_lane::lane_view`), taken whole under one lock
 /// by `lane_snapshot`; the only merge this side does is "replace or append",
 /// decided by [BridgeLaneSnapshot.full]. That is the whole reason the phone and
 /// the desktop cannot drift: there is one fold, and it is not in Dart.
@@ -79,9 +79,9 @@ class LaneState {
   final List<BridgeRcFeedMessage> rows;
 
   /// Is the agent running? **Separate from [approvals]**, which answers "is it
-  /// blocked on me" — the pinned opencode mapping never emits `needsApproval`,
-  /// so a blocked badge keyed off activity alone would miss every opencode
-  /// approval.
+  /// blocked on me" — an adapter's activity mapping need not emit
+  /// `needsApproval` for an approval it holds, so a blocked badge keyed off
+  /// activity alone could miss one.
   final BridgeRcActivity activity;
 
   /// Rust's generation counter for [rows]. Moves only when a seed COMPLETES, so

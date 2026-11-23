@@ -71,7 +71,7 @@ class SshExecResult {
 ///
 /// The connection is neither opened nor closed here: this is the half of
 /// [SshRunner] that a long-lived consumer needs, where one client is shared by
-/// a roost tunnel, a lane's forwards and a bootstrap exec, and closing it
+/// the roost and craze tunnels and a bootstrap exec, and closing it
 /// after a command would take the others down with it.
 ///
 /// Both output streams are drained to completion **before** `done` is awaited:

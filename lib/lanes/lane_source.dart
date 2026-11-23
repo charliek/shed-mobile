@@ -23,15 +23,13 @@ abstract interface class LaneHandle {}
 /// exercised without FRB.
 ///
 /// Note what is NOT here: anything that folds. Dart pulls one atomic snapshot
-/// and merges it by the `full` flag; the fold is Rust's (`shed_app::lane_view`).
+/// and merges it by the `full` flag; the fold is Rust's (`shed_lane::lane_view`).
 abstract interface class LaneSource {
-  Future<LaneHandle> open(BridgeLaneSpec spec);
-
-  /// Open a CRAZE session's lane: [open] is the machine feed's
-  /// (`MachineFeed.openCrazeLane` — the lane its craze source opens on the
-  /// row's hostId, plan 025 §3.7.2), and the answer is the same [LaneHandle]
-  /// every other verb here takes. No spec and no forward: a craze lane reaches
-  /// its session through the source's own dial.
+  /// Open a craze session's lane — the only kind of lane (plan 038): [open]
+  /// is the machine feed's (`MachineFeed.openCrazeLane` — the lane its craze
+  /// source opens on the row's hostId, plan 025 §3.7.2), and the answer is the
+  /// same [LaneHandle] every other verb here takes. No forward: a craze lane
+  /// reaches its session through the source's own dial.
   Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId);
 
   /// One `true` per "something changed, take a snapshot". A second call on the
@@ -92,10 +90,6 @@ class BridgeLaneSource implements LaneSource {
   const BridgeLaneSource();
 
   @override
-  Future<LaneHandle> open(BridgeLaneSpec spec) async =>
-      _BridgeLaneHandle(await laneOpen(spec: spec));
-
-  @override
   Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async =>
       _BridgeLaneHandle(await open(hostId));
 
@@ -138,7 +132,8 @@ class BridgeLaneSource implements LaneSource {
   void close(LaneHandle handle) {
     final lane = _lane(handle);
     laneClose(lane: lane);
-    // The sync close is the teardown (it aborts the pump and the forwarder);
+    // The sync close is the teardown (it aborts the pump and the nudge
+    // forwarder);
     // dropping the opaque afterwards releases this side's Arc explicitly rather
     // than waiting on the finalizer — the `shedClientProvider` precedent. Both
     // are idempotent, and `Drop` remains the backstop for either.

@@ -12,8 +12,11 @@ import 'package:shed_mobile/ssh/roost_reach.dart';
 import 'support/fake_channel.dart';
 import 'support/loopback_client.dart';
 
-/// **The generic byte pump and the port it serves** — the machinery under both
-/// `RoostTunnel` (a remote exec) and `LaneForward` (a forwarded TCP channel).
+/// **The generic byte pump and the port it serves** — the machinery under
+/// `RoostTunnel` (a remote exec). It also served `LaneForward` (a forwarded
+/// TCP channel) until plan 038 retired the opencode lane; the pump keeps that
+/// channel shape's contract (a bounded `close()`, no stderr band), and so does
+/// this file.
 ///
 /// It was extracted from the roost tunnel rather than written, so
 /// `roost_tunnel_test.dart` is its regression control over the exec transport

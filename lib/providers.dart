@@ -614,18 +614,12 @@ final roostBootstrapFlowProvider = Provider.autoDispose
 /// One lane's address: the machine, the lane's KIND, and the row's key
 /// within that kind — the desktop's `(machine, kind, session_id)`.
 ///
-/// * `kind` is the lane's adapter: the stamp kind roost gave the row
-///   (`opencode`) for a roost row, [crazeLaneKind] for a craze row. **It is
-///   what keeps the two namespaces apart** (plan 025, the CM3 review): a craze
-///   row's key is its hostId, twelve hex digits that may well be all decimal —
-///   the very spelling of a roost tab id — so without the kind one machine's
-///   tab `123456789012` and its craze session `123456789012` would share a
-///   lane.
-/// * `slug` is the ROW's key: roost's slug (its tab id), or craze's hostId.
-///   **The slug, not the agent session id**, for a roost row: the session id is
-///   part of the stamp being reconciled — a tab that restarts comes back with a
-///   new one — so it cannot also be the key that has to survive a change to
-///   it.
+/// * `kind` is the lane's adapter — [crazeLaneKind], the only one since plan
+///   038 retired the opencode lane. It stays in the key so a craze row's
+///   hostId is only ever looked up among the craze rows: a hostId is twelve
+///   hex digits that may well be all decimal — the very spelling of a roost
+///   tab id — and a roost tab never has a lane.
+/// * `slug` is the ROW's key: craze's hostId.
 ///
 /// A record, so the family key compares structurally (the [ShedRef]
 /// convention).
@@ -634,14 +628,13 @@ typedef LaneRef = ({String machine, String kind, String slug});
 /// One row's agent-lane stamp, or null when the machine's rows no longer carry
 /// this session at all.
 ///
-/// Read from the MERGED rows (plan 025 §3.7.2), in [kind]'s namespace: a
-/// [crazeLaneKind] lane is found among the craze rows by hostId and answers a
-/// stamp of its own ([crazeLaneStamp]) — every craze session HAS a transcript,
-/// its machine's craze source opens it; any other lane is found among the
-/// roost rows by slug and answers the stamp roost gave it. A craze row and a
-/// roost row whose keys happen to be spelled alike are never confused, and a
-/// roost tab the merge absorbed into a craze row is not a row any more, so its
-/// old key finds nothing.
+/// Read from the MERGED rows (plan 025 §3.7.2): a [crazeLaneKind] lane is
+/// found among the craze rows by hostId and answers a stamp of its own
+/// ([crazeLaneStamp]) — every craze session HAS a transcript, its machine's
+/// craze source opens it. **A roost row never has a lane** (plan 038): an
+/// opencode or Claude tab is shown passively — its label and activity — and
+/// any other kind answers null, so a roost row and a craze row whose keys
+/// happen to be spelled alike are never confused.
 @visibleForTesting
 BridgeAgentLaneStamp? laneStampFor(
   MachineFeedState state,
@@ -653,9 +646,6 @@ BridgeAgentLaneStamp? laneStampFor(
       case CrazeMachineRow(:final session)
           when kind == crazeLaneKind && session.id == slug:
         return crazeLaneStamp(session.id);
-      case RoostMachineRow(:final session)
-          when kind != crazeLaneKind && session.slug == slug:
-        return session.agentLane;
       default:
         continue;
     }
@@ -676,53 +666,21 @@ BridgeAgentLaneStamp crazeLaneStamp(String hostId) =>
 /// rows across a `Down`, so once `connectedOnce` is true an absent row is a
 /// real absence — which is exactly when a lane should stop retrying.
 ///
-/// **A craze row's authority is its craze feed's** ([crazeLaneKind]): only a LIVE
-/// roster says a session is gone. An offline source keeps its last rows (stale,
-/// not gone) and a source that has not seeded yet — a restarted tunnel's — has
-/// none at all, and neither is evidence that the session left; reconciling
-/// against either would abandon a transcript the hub still serves. roost's
-/// `connectedOnce` says nothing about craze, and craze's liveness nothing about
-/// roost, so a lane is reconciled only against the feed its row came from.
+/// **A craze row's authority is its craze feed's** ([crazeLaneKind]): only a
+/// LIVE roster says a session is gone. An offline source keeps its last rows
+/// (stale, not gone) and a source that has not seeded yet — a restarted
+/// tunnel's — has none at all, and neither is evidence that the session left;
+/// reconciling against either would abandon a transcript the hub still serves.
+/// roost's `connectedOnce` says nothing about craze, so it is not consulted.
 @visibleForTesting
 Stream<BridgeAgentLaneStamp?> laneStamps(
   Stream<MachineFeedState> updates,
   String kind,
   String slug,
 ) => updates
-    .where(
-      (s) => kind == crazeLaneKind ? (s.craze?.live ?? false) : s.connectedOnce,
-    )
+    .where((s) => s.craze?.live ?? false)
     .map((s) => laneStampFor(s, kind, slug))
     .distinct();
-
-/// How a lane reaches its agent server. **Production is always
-/// [LaneReach.machine]**; [LaneReach.local] exists for one overriding caller,
-/// the hermetic integration harness.
-///
-/// **Never infer this from the machine's host.** An earlier version of this
-/// seam was a `laneReachFor(MachineRecord)` that answered [LaneReach.local] for
-/// `localhost`/`127.0.0.1`/`::1`, reasoning that a machine dialled at a
-/// loopback address is this device, so its `127.0.0.1:<port>` IS our
-/// `127.0.0.1:<port>`. That inference is false whenever SSH on loopback leads
-/// somewhere else, and the canonical case is the one a shed developer hits
-/// first: a **shed VM** is reached at `localhost:2222`, which is the shed
-/// *server's* sshd on this host, and it routes into a Firecracker/VZ microVM
-/// that has a loopback of its own. The agent's `127.0.0.1:2421` inside that VM
-/// is emphatically not this device's `127.0.0.1:2421`. A container, a published
-/// Docker port and a jump port all break the same way.
-///
-/// Proven live, not argued: one shed VM — same agent-lane session, same
-/// everything — registered twice under two host spellings. As `localhost` the
-/// lane took the local branch, made no forward, and sat at `generation=0`
-/// forever with "Reconnecting: the lane at http://127.0.0.1:2421 is closed".
-/// As `192.168.86.42` — the same sshd, the same VM — it forwarded, reached
-/// `generation=1`, and send/approve/interject/cancel all worked. A hostname
-/// cannot tell those two apart, so nothing here tries.
-///
-/// Defaulting to [LaneReach.machine] is wrong nowhere: a forward to a genuinely
-/// local agent still works, at the cost of one extra hop through the machine's
-/// own SSH connection, which the feed is already holding open.
-final laneReachProvider = Provider<LaneReach>((ref) => LaneReach.machine);
 
 /// The lane bridge, as one overridable seam.
 ///
@@ -750,15 +708,15 @@ final slashRulesProvider = Provider<SlashRules>(
 /// listener leaving closes it.
 ///
 /// It watches [machineFeedControllerProvider] so a live lane keeps the machine's
-/// feed, its one SSH client and its forwards alive, and *listens* to
+/// feed, its one SSH client and its craze source alive, and *listens* to
 /// [machineFeedProvider] rather than watching it: the state stream is what
-/// starts the feed (a lane's forward needs the tunnel up), but watching it would
-/// rebuild this provider — and therefore the controller — on every roost poll,
-/// which is precisely the guarantee above, broken.
+/// starts the feed (a lane's craze source needs the tunnel up), but watching
+/// it would rebuild this provider — and therefore the controller — on every
+/// roost poll, which is precisely the guarantee above, broken.
 ///
 /// Throws when the row carries no lane. Unreachable from the UI, which offers
-/// the transcript affordance only for a row whose `agentLane` is non-null, and
-/// an honest error rather than a controller that silently never opens.
+/// the transcript affordance only on a craze row, and an honest error rather
+/// than a controller that silently never opens.
 final laneControllerProvider = Provider.autoDispose
     .family<LaneController, LaneRef>((ref, key) {
       final feed = ref.watch(machineFeedControllerProvider(key.machine));
@@ -769,24 +727,19 @@ final laneControllerProvider = Provider.autoDispose
           'no agent lane on ${key.machine}/${key.slug} (${key.kind})',
         );
       }
-      final craze = stamp.kind == crazeLaneKind;
       final controller = LaneController(
         machine: key.machine,
         slug: key.slug,
         stamp: stamp,
         source: ref.watch(laneSourceProvider),
-        // The feed owns the SSH connection every lane call rides — the forward
-        // goes through it, so a lane costs no second link.
-        reach: ref.watch(laneReachProvider),
-        acquireForward: feed.acquireForward,
-        // A craze row's lane opens through the feed's craze source instead —
-        // no forward (plan 025 §3.7.2) — and the feed this provider watches is
-        // what keeps that source, and its tunnel, alive underneath it.
+        // The lane opens through the feed's craze source (plan 025 §3.7.2),
+        // and the feed this provider watches is what keeps that source, its
+        // tunnel and the one SSH connection under both alive.
         openCrazeLane: feed.openCrazeLane,
         // … and follows that source across a feed restart: the lane leaves a
         // retired source at once and re-opens through its replacement.
-        crazeSourceEpoch: craze ? () => feed.crazeLiveEpoch : null,
-        crazeSources: craze ? feed.crazeSources : null,
+        crazeSourceEpoch: () => feed.crazeLiveEpoch,
+        crazeSources: feed.crazeSources,
         stamps: laneStamps(feed.updates, key.kind, key.slug),
       );
       ref.onDispose(controller.close);

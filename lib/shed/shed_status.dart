@@ -16,9 +16,10 @@ StatusDisplay shedStatusTone(String status) => switch (status) {
   'running' ||
   'ready' ||
   'online' => (tone: ShedStatusTone.ok, dot: '●', pulse: false),
-  // "starting" (and the create-time variants) pulse; "working"/"reconnecting" are
-  // steady-warn.
+  // "starting"/"stopping" (and the create-time variants) pulse — a shed on its
+  // way up or down; "working"/"reconnecting" are steady-warn.
   'starting' ||
+  'stopping' ||
   'creating' ||
   'provisioning' => (tone: ShedStatusTone.warn, dot: '◐', pulse: true),
   'working' ||

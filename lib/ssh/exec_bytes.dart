@@ -28,8 +28,8 @@
 /// Writing the whole of stdin before reading a byte of stdout deadlocks the
 /// moment the far side says anything at all: its pipe buffer fills, it stops
 /// draining ours, and both sides wait. So the writer, the stdout reader and the
-/// stderr tail all run at once — the shape `shed_app::roost::SshRunner::run`
-/// uses for the same reason on the desktop.
+/// stderr tail all run at once — the shape the desktop's SSH runner uses for
+/// the same reason.
 ///
 /// ## Backpressure is load-bearing, not a nicety
 ///
@@ -80,8 +80,8 @@ abstract class BootstrapExecSession implements RoostExecSession {
   /// It exists as its own member because [RoostExecSession.close] is *polite*:
   /// it sends EOF and asks. A remote command that ignores EOF (a `tee` wedged
   /// on a full disk, a `sh` waiting on something) keeps running, and its
-  /// channel stays open on the SHARED `SSHClient` that the roost tunnel and
-  /// every lane forward ride — so a leak here is a leak for the whole app, and
+  /// channel stays open on the SHARED `SSHClient` that the roost and craze
+  /// tunnels ride — so a leak here is a leak for the whole app, and
   /// the step's output arrives during the NEXT step.
   ///
   /// See `_SshBootstrapExec.destroy` for exactly how forcible dartssh2 2.18.0
@@ -156,7 +156,7 @@ class ExecBytesOutcome {
 /// closing it to send EOF.
 ///
 /// The connection is neither opened nor closed here: one `SSHClient` per
-/// machine is shared by the roost tunnel, every lane forward and this, and
+/// machine is shared by the roost and craze tunnels and this, and
 /// closing it after a step would take the others down with it.
 ///
 /// [label] prefixes the sentences this side has to write itself (a budget that

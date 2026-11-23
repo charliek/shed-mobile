@@ -19,9 +19,8 @@ enum StderrBand {
 /// A [DuplexChannel] under the test's control: it records what it received,
 /// optionally transforms it back onto the read half, and can end on demand.
 ///
-/// Shared by `duplex_pump_test.dart` (which tests the pump over it) and
-/// `lane_forward_test.dart` (which tests the forward and the registry above
-/// it). `roost_tunnel_test.dart` has its own frozen equivalent over the exec
+/// Used by `duplex_pump_test.dart` (which tests the pump over it).
+/// `roost_tunnel_test.dart` has its own frozen equivalent over the exec
 /// seam — that file is the pump extraction's control and does not move.
 class FakeChannel implements DuplexChannel {
   FakeChannel({

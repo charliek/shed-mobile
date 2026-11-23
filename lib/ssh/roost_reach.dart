@@ -24,7 +24,7 @@
 /// [classifySshFailure] is a **port** of `roost_ipc::ssh::classify_ssh_failure`,
 /// as the Go provider's `ClassifySSHFailure` is
 /// (`internal/roostprovider/classify.go`), and [reachKindFor] is a port of
-/// `shed_app::roost::ReachError::from_ssh_failure`. Both halves are pinned
+/// `shed_roost::ReachError::from_ssh_failure`. Both halves are pinned
 /// against the shared golden `crates/fixtures/roost-vectors/stderr-classes.json`
 /// — `classes` and `reach_kinds` — from `integration_test/roost_goldens_test.dart`,
 /// beside the Rust and Go legs that read the same file. A third language reading
@@ -143,7 +143,7 @@ String lastNonEmptyLine(String text) {
   return '';
 }
 
-/// Port of `shed_app::roost::ReachError::from_ssh_failure`'s mapping — which
+/// Port of `shed_roost::ReachError::from_ssh_failure`'s mapping — which
 /// kind a class becomes for a CLIENT.
 ///
 /// Deliberately coarser than the classifier: the three "shed could not get onto

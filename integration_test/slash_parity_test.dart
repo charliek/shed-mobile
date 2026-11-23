@@ -7,7 +7,7 @@
 // menu, completion, dispatch and refusal those cells expect is the DOUBLE's
 // answer. This file is where the native library IS loaded: it runs one table —
 // every situation those cells rely on the double for — through BOTH the
-// production `BridgeSlashRules` (real FRB → `shed_app::slash_menu`) and the
+// production `BridgeSlashRules` (real FRB → `shed_lane::slash_menu`) and the
 // double, and asserts identical `filter`, `dispatch`, `accept` and `isWorking`
 // answers. A disagreement is a bug in the double (fix the double) or a widget
 // test expecting something the real rules would not do.
@@ -33,7 +33,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async => await RustLib.init());
 
-  testWidgets('the double answers as shed_app::slash_menu does, case by case', (
+  testWidgets('the double answers as shed_lane::slash_menu does, case by case', (
     _,
   ) async {
     const real = BridgeSlashRules();

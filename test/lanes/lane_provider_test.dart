@@ -11,12 +11,13 @@ import 'package:shed_mobile/src/rust/api/craze.dart';
 import 'package:shed_mobile/src/rust/api/dto_lane.dart';
 import 'package:shed_mobile/src/rust/api/dto_rc.dart';
 import 'package:shed_mobile/src/rust/api/lane.dart';
-import 'package:shed_mobile/ssh/lane_forward.dart';
-
-import 'fake_lane_lease.dart';
 
 /// **The Riverpod half of §3.11** — the "one lane per row" guarantee, and the
 /// feed→stamp derivation the controller reconciles against.
+///
+/// Every lane is a craze row's (plan 038 retired the opencode lane): a roost
+/// tab — an opencode one included — never resolves a lane, and the cells
+/// below that say so are the provider half of the passive-opencode rule.
 ///
 /// The guarantee lives at the PROVIDER level and nowhere else, which is why the
 /// test does too: the bridge has no registry (two `lane_open` calls are two
@@ -51,7 +52,7 @@ void main() {
       // controller for the whole app.
       final other = container.read(laneControllerProvider(_eight));
       expect(other, isNot(same(first.read())));
-      expect(other.slug, '8');
+      expect(other.slug, _hostEight);
     });
 
     test('the last watcher leaving closes the controller', () async {
@@ -84,29 +85,27 @@ void main() {
       await expectLater(controller.updates, emitsDone);
     });
 
-    test('a row with no lane is an honest error, not a silent no-op', () {
+    test('a row with no lane is an honest error, not a silent no-op — a '
+        'roost opencode tab among them', () {
       final feed = _FakeFeed();
       final container = _container(feed);
       addTearDown(container.dispose);
 
-      expect(
-        () => container.read(
-          laneControllerProvider((
-            machine: 'mini3',
-            kind: 'opencode',
-            slug: '9',
-          )),
-        ),
-        // Riverpod wraps a build failure, so the assertion is on the sentence
-        // rather than the type.
-        throwsA(
-          isA<Object>().having(
-            (e) => '$e',
-            'message',
-            contains('no agent lane on mini3/9'),
+      for (final ref in [_opencodeTab, _stampedOpencodeTab]) {
+        expect(
+          () => container.read(laneControllerProvider(ref)),
+          // Riverpod wraps a build failure, so the assertion is on the
+          // sentence rather than the type.
+          throwsA(
+            isA<Object>().having(
+              (e) => '$e',
+              'message',
+              contains('no agent lane on mini3/${ref.slug}'),
+            ),
           ),
-        ),
-      );
+          reason: ref.slug,
+        );
+      }
     });
 
     test('the missing-lane refusal is recognised through Riverpod\'s '
@@ -114,11 +113,10 @@ void main() {
       final feed = _FakeFeed();
       final container = _container(feed);
       addTearDown(container.dispose);
-      const ref = (machine: 'mini3', kind: 'opencode', slug: '9');
 
       Object? thrown;
       try {
-        container.read(laneControllerProvider(ref));
+        container.read(laneControllerProvider(_opencodeTab));
       } catch (e) {
         thrown = e;
       }
@@ -138,7 +136,8 @@ void main() {
   });
 
   group('laneStateProvider', () {
-    test('opens the lane and streams its state', () async {
+    test('opens the lane through the craze source and streams its '
+        'state', () async {
       final feed = _FakeFeed();
       final source = _FakeSource();
       final container = _container(feed, source: source);
@@ -151,26 +150,39 @@ void main() {
       );
       await pumpEventQueue();
 
-      // End to end through the real wiring: the feed's own forward was
-      // reserved, and the spec carried its local port.
-      expect(feed.acquired, [2421]);
-      expect(source.specs.single.dialUrl, 'http://127.0.0.1:41000');
-      expect(sub.read().value?.capabilities?.kind, 'opencode');
+      // End to end through the real wiring: the lane opened on the row's
+      // hostId, through the feed's own craze opener.
+      expect(source.crazeOpened, [_hostSeven]);
+      // A tear-off of the same method on the same feed: equal, not identical.
+      expect(source.openers.single, equals(feed.openCrazeLane));
+      expect(sub.read().value?.capabilities?.kind, 'craze');
       expect(sub.read().value?.rows.single.text, 'hello');
     });
   });
 
   group('laneStampFor', () {
-    test('finds the row\'s stamp, and answers null for a row with none', () {
+    test('finds a craze row\'s stamp by hostId, and answers null for a roost '
+        'tab — stamped or not — and for no such row', () {
       final state = _state();
-      expect(laneStampFor(state, 'opencode', '7')?.sessionId, 'sess-7');
+      expect(laneStampFor(state, crazeLaneKind, _hostSeven), _stampSeven);
+      expect(laneStampFor(state, crazeLaneKind, _hostSeven)?.kind, 'craze');
       expect(
         laneStampFor(state, 'opencode', '9'),
         isNull,
-        reason: 'the row carries none',
+        reason: 'a passive opencode tab has no lane',
       );
       expect(
-        laneStampFor(state, 'opencode', 'nope'),
+        laneStampFor(state, 'opencode', '10'),
+        isNull,
+        reason: 'a roost tab\'s own stamp is never read (plan 038)',
+      );
+      expect(
+        laneStampFor(state, crazeLaneKind, '9'),
+        isNull,
+        reason: 'a tab id is not a craze row\'s key',
+      );
+      expect(
+        laneStampFor(state, crazeLaneKind, 'nope'),
         isNull,
         reason: 'no such row',
       );
@@ -184,20 +196,20 @@ void main() {
       final cold = MachineFeedState(machine: _mini3);
       final stamps = laneStamps(
         Stream<MachineFeedState>.fromIterable([cold, _state()]),
-        'opencode',
-        '7',
+        crazeLaneKind,
+        _hostSeven,
       );
 
       expect(
         await stamps.toList(),
-        [isA<BridgeAgentLaneStamp>()],
+        [_stampSeven],
         reason: 'only the authoritative state produced a stamp',
       );
     });
 
     test('emits null once the row is really gone, and dedupes repeats', () async {
       final present = _state();
-      final gone = _state(sessions: const []);
+      final gone = _state(hub: const []);
       final stamps = laneStamps(
         Stream<MachineFeedState>.fromIterable([
           present,
@@ -206,13 +218,13 @@ void main() {
           gone,
           present,
         ]),
-        'opencode',
-        '7',
+        crazeLaneKind,
+        _hostSeven,
       );
 
       final seen = await stamps.toList();
       // Three transitions, not five events: the feed re-emits its rows on every
-      // roost poll, and a lane that reconciled on each would churn.
+      // poll, and a lane that reconciled on each would churn.
       expect(seen, hasLength(3));
       expect(seen[0], isNotNull);
       expect(seen[1], isNull);
@@ -227,110 +239,74 @@ void main() {
       expect(laneStampFor(state, crazeLaneKind, _host), crazeLaneStamp(_host));
       expect(laneStampFor(state, crazeLaneKind, _host)?.kind, crazeLaneKind);
       expect(
-        laneStampFor(state, 'opencode', '7'),
+        laneStampFor(state, 'craze', '7'),
         isNull,
         reason: 'tab 7 is the craze row now, not a row of its own',
       );
-      expect(laneStampFor(state, 'opencode', '8')?.sessionId, 'sess-8');
+      expect(
+        laneStampFor(state, 'opencode', '8'),
+        isNull,
+        reason: 'the opencode tab beside it is passive',
+      );
     });
 
-    test('the provider opens a craze row through the craze source, and '
-        'reserves NO forward', () async {
-      final feed = _FakeFeed(stateOverride: _crazeState(live: true));
+    test('a craze hostId spelled like a roost tab id opens ITS OWN lane, and '
+        'the tab none', () async {
+      // A hostId is twelve hex digits and may well be all decimal — the very
+      // spelling of a roost tab id. The kind in the lane's key keeps them
+      // apart: the craze row resolves its own stamp and opens its own lane,
+      // and the opencode tab spelled alike — even one carrying a stamp of its
+      // own — resolves none.
+      const id = '123456789012';
+      final tab = _row(id, 'sess-oc', tabId: 123456789012);
+      const hub = BridgeLaneSession(
+        id: id,
+        title: 'craze',
+        cwd: '/w',
+        activity: BridgeRcActivity.idle,
+        pendingApprovals: 0,
+        approximate: false,
+      );
+      final state = MachineFeedState(
+        machine: _mini3,
+        connectedOnce: true,
+        reachable: true,
+        sessions: [tab],
+        craze: const BridgeCrazeSnapshot(
+          rows: [hub],
+          live: true,
+          truncated: false,
+        ),
+        foldedRows: [
+          MachineRow.roost(tab),
+          const MachineRow.craze(session: hub, stale: false),
+        ],
+      );
+      expect(laneStampFor(state, 'opencode', id), isNull);
+      expect(laneStampFor(state, crazeLaneKind, id), crazeLaneStamp(id));
+
+      final feed = _FakeFeed(stateOverride: state);
       final source = _FakeSource();
       final container = _container(feed, source: source);
       addTearDown(container.dispose);
-
-      final sub = container.listen(
-        laneStateProvider((machine: 'mini3', kind: crazeLaneKind, slug: _host)),
-        (_, _) {},
-        fireImmediately: true,
-      );
+      const ocRef = (machine: 'mini3', kind: 'opencode', slug: id);
+      const crazeRef = (machine: 'mini3', kind: crazeLaneKind, slug: id);
+      container.listen(laneStateProvider(crazeRef), (_, _) {});
       await pumpEventQueue();
 
-      expect(source.crazeOpened, [_host]);
-      expect(feed.acquired, isEmpty, reason: 'a craze lane has no forward');
-      expect(source.specs, isEmpty, reason: 'and no stamped lane_open');
-      expect(sub.read().value?.capabilities?.kind, 'opencode');
+      expect(
+        () => container.read(laneControllerProvider(ocRef)),
+        throwsA(
+          isA<Object>().having((e) => laneMissing(e), 'laneMissing', isTrue),
+        ),
+        reason: 'the roost row has no lane',
+      );
+      expect(
+        source.crazeOpened,
+        [id],
+        reason: 'and the craze row its craze lane, through the source',
+      );
     });
-
-    test(
-      'a craze hostId spelled like a roost tab id opens ITS OWN lane',
-      () async {
-        // A hostId is twelve hex digits and may well be all decimal — the very
-        // spelling of a roost tab id. The kind in the lane's key keeps them
-        // apart: each row resolves its own stamp and opens its own lane.
-        const id = '123456789012';
-        final tab = BridgeRcSession(
-          host: '',
-          shed: '',
-          slug: id,
-          displayName: 'oc',
-          kind: const BridgeRcKind.opencode(),
-          state: BridgeRcState.ready,
-          managed: true,
-          attention: false,
-          tabId: 123456789012,
-          agentLane: BridgeAgentLaneStamp(
-            kind: 'opencode',
-            sessionId: 'sess-oc',
-            serverUrl: 'http://127.0.0.1:2421',
-          ),
-        );
-        const hub = BridgeLaneSession(
-          id: id,
-          title: 'craze',
-          cwd: '/w',
-          activity: BridgeRcActivity.idle,
-          pendingApprovals: 0,
-          approximate: false,
-        );
-        final state = MachineFeedState(
-          machine: _mini3,
-          connectedOnce: true,
-          reachable: true,
-          sessions: [tab],
-          craze: const BridgeCrazeSnapshot(
-            rows: [hub],
-            live: true,
-            truncated: false,
-          ),
-          foldedRows: [
-            MachineRow.roost(tab),
-            const MachineRow.craze(session: hub, stale: false),
-          ],
-        );
-        expect(laneStampFor(state, 'opencode', id)?.sessionId, 'sess-oc');
-        expect(laneStampFor(state, crazeLaneKind, id), crazeLaneStamp(id));
-
-        final feed = _FakeFeed(stateOverride: state);
-        final source = _FakeSource();
-        final container = _container(feed, source: source);
-        addTearDown(container.dispose);
-        const ocRef = (machine: 'mini3', kind: 'opencode', slug: id);
-        const crazeRef = (machine: 'mini3', kind: crazeLaneKind, slug: id);
-        container.listen(laneStateProvider(ocRef), (_, _) {});
-        container.listen(laneStateProvider(crazeRef), (_, _) {});
-        await pumpEventQueue();
-
-        expect(
-          container.read(laneControllerProvider(ocRef)),
-          isNot(same(container.read(laneControllerProvider(crazeRef)))),
-          reason: 'two rows, two lanes',
-        );
-        expect(
-          source.specs.single.sessionId,
-          'sess-oc',
-          reason: 'the roost row opened its opencode lane, through a forward',
-        );
-        expect(feed.acquired, [2421]);
-        expect(
-          source.crazeOpened,
-          [id],
-          reason: 'and the craze row its craze lane, through the source',
-        );
-      },
-    );
 
     test('a craze lane reconciles only against a LIVE craze feed', () async {
       // A source that has not seeded yet (a restarted tunnel's) lists nothing,
@@ -350,123 +326,61 @@ void main() {
       expect(await stamps.toList(), [crazeLaneStamp(_host), null]);
     });
   });
-
-  group('laneReachProvider', () {
-    test('production is machine reach, unconditionally', () {
-      final container = _container(_FakeFeed());
-      addTearDown(container.dispose);
-
-      expect(container.read(laneReachProvider), LaneReach.machine);
-    });
-
-    test('a lane on a LOOPBACK host still forwards', () async {
-      // THE LIVE BUG, as a regression guard. This seam used to infer the reach
-      // from the host and answer `local` for `localhost`/`127.0.0.1`, but a
-      // shed VM is dialled at `localhost:2222` — the shed *server's* sshd,
-      // which routes into a microVM whose `127.0.0.1:2421` is not this
-      // device's. Registered as `localhost` the lane made no forward and sat at
-      // `generation=0` forever; registered by LAN address, the same VM worked.
-      // So a loopback host must change nothing here.
-      final feed = _FakeFeed(
-        machine: const MachineRecord(name: 'mini3', host: 'localhost'),
-      );
-      final source = _FakeSource();
-      final container = _container(feed, source: source);
-      addTearDown(container.dispose);
-
-      final sub = container.listen(
-        laneStateProvider(_seven),
-        (_, _) {},
-        fireImmediately: true,
-      );
-      await pumpEventQueue();
-
-      expect(
-        container.read(laneControllerProvider(_seven)).reach,
-        LaneReach.machine,
-      );
-      expect(feed.acquired, [2421], reason: 'a forward, despite the host');
-      expect(
-        source.specs.single.dialUrl,
-        'http://127.0.0.1:41000',
-        reason: 'the dial goes to OUR forward, not to the reported port',
-      );
-      expect(sub.read().value?.capabilities?.kind, 'opencode');
-    });
-
-    test('the override is the seam the hermetic harness relies on', () async {
-      // `integration_test/lane_test.dart` needs a lane with no sshd and no
-      // forward, and this override is the ONLY way it gets one now — which is
-      // why the no-forward path stays covered here rather than only there.
-      final feed = _FakeFeed();
-      final source = _FakeSource();
-      final container = _container(
-        feed,
-        source: source,
-        reach: LaneReach.local,
-      );
-      addTearDown(container.dispose);
-
-      final sub = container.listen(
-        laneStateProvider(_seven),
-        (_, _) {},
-        fireImmediately: true,
-      );
-      await pumpEventQueue();
-
-      expect(
-        container.read(laneControllerProvider(_seven)).reach,
-        LaneReach.local,
-      );
-      expect(feed.acquired, isEmpty, reason: 'nothing to forward');
-      expect(
-        source.specs.single.dialUrl,
-        source.specs.single.reportedUrl,
-        reason: 'the local branch dials the reported url verbatim',
-      );
-      expect(sub.read().value?.capabilities?.kind, 'opencode');
-    });
-  });
 }
 
-const _seven = (machine: 'mini3', kind: 'opencode', slug: '7');
-const _eight = (machine: 'mini3', kind: 'opencode', slug: '8');
+const _hostSeven = 'aaaaaaaaaaa7';
+const _hostEight = 'aaaaaaaaaaa8';
+final _stampSeven = crazeLaneStamp(_hostSeven);
+const _seven = (machine: 'mini3', kind: crazeLaneKind, slug: _hostSeven);
+const _eight = (machine: 'mini3', kind: crazeLaneKind, slug: _hostEight);
+
+/// A roost opencode tab with no stamp — what every roost row is since plan
+/// 038 — and one still carrying one (as a Rust core from before it would have
+/// stamped): neither has a lane.
+const _opencodeTab = (machine: 'mini3', kind: 'opencode', slug: '9');
+const _stampedOpencodeTab = (machine: 'mini3', kind: 'opencode', slug: '10');
 const _mini3 = MachineRecord(name: 'mini3', host: 'mini3');
 
-ProviderContainer _container(
-  _FakeFeed feed, {
-  _FakeSource? source,
-  LaneReach? reach,
-}) => ProviderContainer(
-  overrides: [
-    machinesProvider.overrideWith((ref) async => const [_mini3]),
-    identitiesProvider.overrideWith((ref) async => []),
-    machineFeedControllerProvider('mini3').overrideWith((ref) => feed),
-    machineFeedProvider(
-      'mini3',
-    ).overrideWith((ref) => Stream.value(feed.state)),
-    if (source != null) laneSourceProvider.overrideWithValue(source),
-    // Left alone unless a test is about the reach: the default IS the
-    // production value, so every other cell exercises the shipped path.
-    if (reach != null) laneReachProvider.overrideWithValue(reach),
-  ],
+ProviderContainer _container(_FakeFeed feed, {_FakeSource? source}) =>
+    ProviderContainer(
+      overrides: [
+        machinesProvider.overrideWith((ref) async => const [_mini3]),
+        identitiesProvider.overrideWith((ref) async => []),
+        machineFeedControllerProvider('mini3').overrideWith((ref) => feed),
+        machineFeedProvider(
+          'mini3',
+        ).overrideWith((ref) => Stream.value(feed.state)),
+        if (source != null) laneSourceProvider.overrideWithValue(source),
+      ],
+    );
+
+BridgeLaneSession _hubRow(String id) => BridgeLaneSession(
+  id: id,
+  title: 'craze $id',
+  cwd: '/w',
+  activity: BridgeRcActivity.idle,
+  pendingApprovals: 0,
+  approximate: false,
 );
 
-MachineFeedState _state({List<BridgeRcSession>? sessions}) => MachineFeedState(
-  machine: _mini3,
-  connectedOnce: true,
-  reachable: true,
-  sessions:
-      sessions ??
-      [
-        _row('7', 'sess-7'),
-        _row('8', 'sess-8'),
-        // A row with no agent lane at all — the `laneStampFor` null case, and
-        // the reason the controller provider has to refuse rather than open
-        // something.
-        _row('9', null),
-      ],
-);
+/// A machine with two craze sessions on a live craze feed, beside two roost
+/// opencode tabs — one bare (`9`), one carrying a stamp (`10`) — that the
+/// provider must never open a lane for. [hub] overrides the craze roster.
+MachineFeedState _state({List<BridgeLaneSession>? hub}) {
+  final rows = hub ?? [_hubRow(_hostSeven), _hubRow(_hostEight)];
+  final tabs = [_row('9', null), _row('10', 'sess-10')];
+  return MachineFeedState(
+    machine: _mini3,
+    connectedOnce: true,
+    reachable: true,
+    sessions: tabs,
+    craze: BridgeCrazeSnapshot(rows: rows, live: true, truncated: false),
+    foldedRows: [
+      for (final t in tabs) MachineRow.roost(t),
+      for (final r in rows) MachineRow.craze(session: r, stale: false),
+    ],
+  );
+}
 
 const _host = 'cccccccccccc';
 
@@ -496,7 +410,7 @@ MachineFeedState _crazeState({required bool live, bool rows = true}) {
     tabId: 7,
     rcId: 'ses-x',
   );
-  final tab8 = _row('8', 'sess-8');
+  final tab8 = _row('8', null);
   return MachineFeedState(
     machine: _mini3,
     connectedOnce: true,
@@ -516,41 +430,40 @@ MachineFeedState _crazeState({required bool live, bool rows = true}) {
   );
 }
 
-BridgeRcSession _row(String slug, String? sessionId) => BridgeRcSession(
-  host: '',
-  shed: '',
-  slug: slug,
-  displayName: 'row$slug',
-  kind: const BridgeRcKind.opencode(),
-  state: BridgeRcState.ready,
-  managed: true,
-  attention: false,
-  tabId: int.tryParse(slug),
-  agentLane: sessionId == null
-      ? null
-      : BridgeAgentLaneStamp(
-          kind: 'opencode',
-          sessionId: sessionId,
-          serverUrl: 'http://127.0.0.1:2421',
-        ),
-);
+/// A roost opencode tab; [sessionId] non-null gives it the `agentLane` stamp
+/// an opencode tab carried before plan 038.
+BridgeRcSession _row(String slug, String? sessionId, {int? tabId}) =>
+    BridgeRcSession(
+      host: '',
+      shed: '',
+      slug: slug,
+      displayName: 'row$slug',
+      kind: const BridgeRcKind.opencode(),
+      state: BridgeRcState.ready,
+      managed: true,
+      attention: false,
+      tabId: tabId ?? int.tryParse(slug),
+      agentLane: sessionId == null
+          ? null
+          : BridgeAgentLaneStamp(
+              kind: 'opencode',
+              sessionId: sessionId,
+              serverUrl: 'http://127.0.0.1:2421',
+            ),
+    );
 
 /// A [MachineFeed] the provider can be handed: the real one dials SSH and calls
 /// the FRB-sync `roostCapabilities()` in its constructor, so it cannot exist in
 /// a unit test at all. `noSuchMethod` guards every member this fake does not
 /// know about.
 class _FakeFeed implements MachineFeed {
-  _FakeFeed({this.machine = _mini3, this.stateOverride});
+  _FakeFeed({this.stateOverride});
 
   /// What [state] answers when a test needs more than the default rows.
   final MachineFeedState? stateOverride;
 
-  final List<int> acquired = [];
-
-  /// Carried because [MachineFeed] declares it, and settable so one test can
-  /// give the machine a LOOPBACK host and prove the reach ignores it.
   @override
-  final MachineRecord machine;
+  final MachineRecord machine = _mini3;
 
   @override
   MachineFeedState get state => stateOverride ?? _state();
@@ -559,11 +472,11 @@ class _FakeFeed implements MachineFeed {
   Stream<MachineFeedState> get updates =>
       const Stream<MachineFeedState>.empty();
 
+  /// The feed's craze opener — handed to the bridge, never called by the fake
+  /// source (a `BridgeLane` needs the native library).
   @override
-  Future<LaneLease> acquireForward(int remotePort) async {
-    acquired.add(remotePort);
-    return FakeLaneLease(41000);
-  }
+  Future<BridgeLane> openCrazeLane(String hostId) =>
+      throw StateError('the fake source never opens a real lane');
 
   /// A seeded craze source, steady: what a craze lane follows.
   @override
@@ -577,28 +490,22 @@ class _FakeFeed implements MachineFeed {
 }
 
 class _FakeSource implements LaneSource {
-  final List<BridgeLaneSpec> specs = [];
-
-  /// Every craze open, by hostId.
+  /// Every craze open, by hostId, and the opener it was handed.
   final List<String> crazeOpened = [];
+  final List<CrazeLaneOpen> openers = [];
 
   @override
   Future<LaneHandle> openCraze(CrazeLaneOpen open, String hostId) async {
     crazeOpened.add(hostId);
-    return _FakeHandle();
-  }
-
-  @override
-  Future<LaneHandle> open(BridgeLaneSpec spec) async {
-    specs.add(spec);
+    openers.add(open);
     return _FakeHandle();
   }
 
   @override
   Stream<bool> nudges(LaneHandle handle) => const Stream<bool>.empty();
 
-  /// A seeded opencode lane: its capabilities ride the snapshot, as every
-  /// opencode seed's do (plan 025 §3.2.1).
+  /// A seeded craze lane: its capabilities ride the snapshot (plan 025
+  /// §3.2.1).
   @override
   BridgeLaneSnapshot snapshot(LaneHandle handle, BigInt? sinceSeq) =>
       BridgeLaneSnapshot(
@@ -615,7 +522,7 @@ class _FakeSource implements LaneSource {
         generation: BigInt.one,
         ended: false,
         capabilities: const BridgeLaneCapabilities(
-          kind: 'opencode',
+          kind: 'craze',
           interject: false,
           cancel: true,
           approvals: true,
@@ -630,7 +537,7 @@ class _FakeSource implements LaneSource {
         slashMenu: null,
       );
 
-  /// An opencode session cannot be renamed; nothing here asks it to.
+  /// Nothing here renames a session.
   @override
   Future<String?> setTitle(LaneHandle handle, String title) =>
       throw StateError('the provider cells never rename');

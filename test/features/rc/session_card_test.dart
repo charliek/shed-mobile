@@ -232,9 +232,7 @@ void main() {
     managed: true,
   );
 
-  testWidgets('no transcript pill when the row carries no agent lane', (
-    tester,
-  ) async {
+  testWidgets('no transcript pill on a roost row', (tester) async {
     await _pump(tester, 400, session: codex);
     expect(
       find.byKey(const ValueKey('all-session-lane-h-web-abc123')),
@@ -242,12 +240,12 @@ void main() {
     );
   });
 
-  testWidgets('the transcript pill is gated on the ROW\'s lane stamp, never on '
-      'the kind ceiling', (tester) async {
+  testWidgets('no transcript pill from the kind ceiling either', (
+    tester,
+  ) async {
     // The ceiling says this kind HAS a message feed (`feed: "messages"`,
-    // `watch: true`) — which is exactly what `roost_kind_features` answers for
-    // opencode/gx — and the row still carries no stamp. A card that read the
-    // ceiling would offer a transcript that `laneControllerProvider` refuses.
+    // `watch: true`). A card that read the ceiling would offer a transcript
+    // that `laneControllerProvider` refuses for every roost row.
     await _pump(
       tester,
       400,
@@ -265,9 +263,13 @@ void main() {
     );
   });
 
-  testWidgets('the transcript pill appears for a row that carries a stamp', (
+  testWidgets('a PASSIVE opencode tab: its label and activity, no transcript '
+      '— even one carrying a lane stamp with a server url (plan 038)', (
     tester,
   ) async {
+    // The opencode lane is gone: roost's opencode row still says what it is
+    // and what it is doing, and the card offers nothing that would open a
+    // lane — not even for a row a Rust core from before plan 038 stamped.
     await _pump(
       tester,
       400,
@@ -280,18 +282,32 @@ void main() {
         kind: BridgeRcKind.opencode(),
         state: BridgeRcState.ready,
         managed: true,
+        activity: BridgeRcActivity.working,
         agentLane: BridgeAgentLaneStamp(
           kind: 'opencode',
           sessionId: 'ses_abc',
           serverUrl: 'http://127.0.0.1:4096',
         ),
       ),
-      // The ceiling says nothing useful here on purpose: the stamp is the
-      // whole condition.
       caps: _caps('opencode'),
     );
+    // The label and the activity.
+    expect(find.text('frontend'), findsOneWidget);
+    expect(find.text('opencode'), findsOneWidget, reason: 'the kind chip');
+    expect(
+      find.byKey(const ValueKey('all-session-activity-h-web-abc123')),
+      findsOneWidget,
+    );
+    expect(find.text('working'), findsOneWidget);
+    // No transcript.
     expect(
       find.byKey(const ValueKey('all-session-lane-h-web-abc123')),
+      findsNothing,
+    );
+    expect(find.text('Transcript'), findsNothing);
+    // Negative control: the row's own actions DID render.
+    expect(
+      find.byKey(const ValueKey('all-session-delete-h-web-abc123')),
       findsOneWidget,
     );
   });

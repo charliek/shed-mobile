@@ -21,6 +21,9 @@ String bridgeShedStatusWire(BridgeShedStatus s) => switch (s) {
   BridgeShedStatus.running => 'running',
   BridgeShedStatus.stopped => 'stopped',
   BridgeShedStatus.starting => 'starting',
+  // A stop in progress — only a backend with an asynchronous lifecycle
+  // (remote) reports one. Transitional, so it renders as `starting` does.
+  BridgeShedStatus.stopping => 'stopping',
   BridgeShedStatus.error => 'error',
   BridgeShedStatus.unknown => 'unknown',
 };
