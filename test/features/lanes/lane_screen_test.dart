@@ -1421,6 +1421,11 @@ void main() {
       await _settle(tester);
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await _settle(tester);
+      // Still on its ladder: the row's leaving is what gives it up.
+      expect(
+        tester.widget<Text>(_bannerText('lane-note')).data,
+        'Reconnecting…',
+      );
 
       await rowLeaves(tester, rig);
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
