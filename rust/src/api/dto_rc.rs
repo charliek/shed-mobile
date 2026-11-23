@@ -1,5 +1,5 @@
 //! Bridge-owned rc-domain DTOs: the enriched session model and the capabilities
-//! cluster, each mapped from its `shed_core::rc` source.
+//! cluster, each mapped from its `shed_lane::rc` source.
 //!
 //! Plan 022/S6 deleted the RC hub, and `shed_core::rc_events` with it, so the
 //! rc-event variants and the feed page that this module also used to carry are
@@ -12,11 +12,11 @@
 
 use std::collections::HashMap;
 
-use shed_core::rc::{
+use shed_lane::rc::{
     RcActivity, RcAgentInfo, RcCapabilities, RcFeedMessage, RcKind, RcKindFeatures, RcSession,
     RcSessionDto, RcState,
 };
-use shed_core::roost::RoostSession;
+use shed_roost::RoostSession;
 
 use super::dto_lane::BridgeAgentLaneStamp;
 
@@ -40,7 +40,7 @@ pub enum BridgeRcKind {
     /// Claude and opencode (plan 025). Not creatable through roost (craze's
     /// own create sheet is that path), and it carries no permission-mode
     /// posture of the roost kind (craze's settings are the mode surface) —
-    /// both are `shed_core::rc::RcKind::Craze`'s own answers, mirrored in
+    /// both are `shed_lane::rc::RcKind::Craze`'s own answers, mirrored in
     /// Dart's `BridgeRcKindUi`.
     Craze,
     Shell,
@@ -273,17 +273,13 @@ pub struct BridgeRcSession {
     /// [`attention`](Self::attention) and [`tab_id`](Self::tab_id) are, for the
     /// same reason: the shared `RcSessionDto` gains no field for roost.
     ///
-    /// `Some` requires all three of the stamp's conditions to hold — a kind an
-    /// adapter exists for, a loopback control-surface URL the agent announced,
-    /// and the agent's OWN session id — so a `Some` here is a lane
-    /// [`super::lane::lane_open`] can actually be called with, not merely a
-    /// row that looks agentic. `None` is "there is no transcript to show", and a
-    /// client renders no lane affordance for it at all.
-    ///
-    /// It is the FULL stamp rather than a bare flag because §3.11 reconciles a
-    /// live lane against the whole of it: a tab that restarted as a different
-    /// agent, or the same agent on a new ephemeral port, is a DIFFERENT lane,
-    /// and row-presence alone cannot say so.
+    /// **Always `None` since plan 038**: the opencode adapter is retired and
+    /// `shed_roost` stamps no roost tab with a lane, an opencode tab announcing
+    /// a `server_url` included. `None` is "there is no transcript to show", and
+    /// a client renders no lane affordance for it at all — the row is a
+    /// passive status row with its tool label and activity. A craze session's
+    /// lane comes from the machine's craze source (plan 025 D4), never from
+    /// this field.
     pub agent_lane: Option<BridgeAgentLaneStamp>,
 }
 
@@ -341,24 +337,10 @@ impl BridgeRcSession {
         let mut row = BridgeRcSession::from(RcSession::from_dto(dto, "", ""));
         row.attention = session.attention;
         row.tab_id = Some(session.tab_id);
-        // **This build's kind filter, not roost's.** `RoostSession::agent_lane`
-        // answers whatever shed-core knows how to stamp, but this build only
-        // has an adapter for the kinds in `super::lane::LANE_KINDS`. Under the
-        // previous pin shed-core still stamped `gx` rows, and without this
-        // filter one crossed the bridge with a stamp Dart could tap: it would
-        // acquire a forward and open a `LaneScreen`, and only THEN hear
-        // `lane_open`'s `UnsupportedLane` refusal — a dead Transcript action
-        // and a wasted round trip. At the current pin shed-core stamps
-        // `opencode` alone (plan 025 retired gx there too), so the filter
-        // drops nothing today; it stays as the belt for the next time the two
-        // lists disagree, since dropping here makes the row a plain one,
-        // exactly as if roost had never stamped it. A craze session is not a
-        // stamp at all (its lane comes from the machine's craze source, plan
-        // 025 D4), so craze never needs to join `LANE_KINDS` for its rows.
-        row.agent_lane = session
-            .agent_lane()
-            .map(BridgeAgentLaneStamp::from)
-            .filter(|stamp| super::lane::LANE_KINDS.contains(&stamp.kind.as_str()));
+        // `shed_roost` stamps no lane on any roost tab since plan 038 (see the
+        // field's doc), so this is `None` today; it is passed through rather
+        // than hard-coded so the row says whatever shed-roost says.
+        row.agent_lane = session.agent_lane().map(BridgeAgentLaneStamp::from);
         row
     }
 }
@@ -597,7 +579,7 @@ mod tests {
     /// `origin`, so anything here would be a second identity for the same row.
     #[test]
     fn a_roost_row_carries_attention_and_the_tab_id() {
-        use shed_core::roost::RoostSession;
+        use shed_roost::RoostSession;
 
         let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
             "id": "4",
@@ -650,15 +632,14 @@ mod tests {
         assert_eq!(row.agent_lane, None);
     }
 
-    /// **The lane stamp crosses whole, and only when it is openable.**
-    ///
-    /// Two rows off the same tab shape: one announcing a loopback
-    /// `server_url` (a lane), one announcing a non-loopback one (no lane, and
-    /// that refusal is `RoostSession::agent_lane`'s — the client DIALS this
-    /// value, so it must not depend on roost's own filtering staying correct).
+    /// **An opencode tab is a passive row, whatever URL it announces** (plan
+    /// 038 D3): the opencode adapter is retired, so a tab announcing a
+    /// loopback `server_url` — the metadata that used to stamp an openable
+    /// lane — crosses with its tool label and activity and NO lane, and so
+    /// does one announcing a non-loopback URL.
     #[test]
-    fn a_roost_row_stamps_an_openable_agent_lane() {
-        use shed_core::roost::RoostSession;
+    fn an_opencode_row_carries_no_agent_lane_whatever_url_it_announces() {
+        use shed_roost::RoostSession;
 
         fn row_with(server_url: &str) -> BridgeRcSession {
             let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
@@ -696,37 +677,33 @@ mod tests {
             BridgeRcSession::from_roost(&RoostSession::from_tab("mini3", &project, &tab))
         }
 
-        assert_eq!(
-            row_with("http://127.0.0.1:4096").agent_lane,
-            Some(BridgeAgentLaneStamp {
-                kind: "opencode".into(),
-                session_id: "ses_abc".into(),
-                server_url: "http://127.0.0.1:4096".into(),
-            }),
-            "the whole stamp must cross: a bare flag cannot reconcile a \
-             restarted tab onto a new port"
-        );
-        // Negative control: a URL that is not loopback is not a lane. Without
-        // this the phone would happily dial an agent's control surface on
-        // another host.
-        assert_eq!(row_with("http://10.0.0.4:4096").agent_lane, None);
+        for url in ["http://127.0.0.1:4096", "http://10.0.0.4:4096"] {
+            let row = row_with(url);
+            assert_eq!(row.kind, BridgeRcKind::Opencode, "{url}: the tool label");
+            assert_eq!(
+                row.activity,
+                Some(BridgeRcActivity::Working),
+                "{url}: the activity"
+            );
+            assert_eq!(
+                row.agent_lane, None,
+                "{url}: no adapter is left to open a lane on"
+            );
+        }
     }
 
     /// **A former gx tab is a plain row with no lane** (plan 025 CM1 finding
     /// 3, re-scoped at the CM2 re-pin).
     ///
-    /// Under the previous pin `RoostSession::agent_lane` still stamped a `gx`
-    /// lane off a `grok`-sourced tab with a `gx.remote` metadata key, and the
-    /// phone dropped it with its own `super::lane::LANE_KINDS` filter. At the
-    /// current pin shed-core no longer promotes that tab at all: it is a plain
-    /// `Other("grok")` row and stamps nothing, so the row reaches Dart with
-    /// no Transcript affordance and no forward, whichever side would have
-    /// refused it. The opencode row is the control — same shape, and its
-    /// stamp survives whole, so neither shed-core nor the filter catches a
-    /// kind this build CAN open.
+    /// An older pin's `RoostSession::agent_lane` stamped a `gx` lane off a
+    /// `grok`-sourced tab with a `gx.remote` metadata key. Plan 025 retired
+    /// that promotion: the tab is a plain `Other("grok")` row and stamps
+    /// nothing, so it reaches Dart with no Transcript affordance and no
+    /// forward. The opencode row beside it, same shape, keeps its own kind and
+    /// stamps nothing either (plan 038), so no roost kind is left that does.
     #[test]
-    fn a_roost_row_drops_a_lane_stamp_this_build_cannot_open() {
-        use shed_core::roost::RoostSession;
+    fn a_former_gx_tab_is_a_plain_row_with_no_lane() {
+        use shed_roost::RoostSession;
 
         fn row_with(source: &str, metadata: serde_json::Value) -> BridgeRcSession {
             let tab = serde_json::from_value::<roost_ipc::messages::Tab>(serde_json::json!({
@@ -773,7 +750,7 @@ mod tests {
         );
         assert_eq!(
             gx_row.agent_lane, None,
-            "a gx stamp must not cross — this build has no adapter for it"
+            "a gx stamp must not cross — there is no adapter for it"
         );
         assert_eq!(
             gx_row.kind,
@@ -783,20 +760,13 @@ mod tests {
             "a former gx tab is a plain row under its raw source"
         );
 
-        // The control: an opencode stamp, same shape, survives whole.
+        // An opencode tab, same shape: its own kind, and no stamp either.
         let oc_row = row_with(
             "opencode",
             serde_json::json!({"server_url": "http://127.0.0.1:4096"}),
         );
-        assert_eq!(
-            oc_row.agent_lane,
-            Some(BridgeAgentLaneStamp {
-                kind: "opencode".into(),
-                session_id: "ses_abc".into(),
-                server_url: "http://127.0.0.1:4096".into(),
-            }),
-            "the filter must not also catch a kind this build CAN open"
-        );
+        assert_eq!(oc_row.kind, BridgeRcKind::Opencode);
+        assert_eq!(oc_row.agent_lane, None, "no roost kind stamps a lane");
     }
 
     #[test]

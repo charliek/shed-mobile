@@ -1,9 +1,9 @@
 //! FRB de-risking spike: a tiny bridged surface that forces the shed client
 //! core to actually link into the Flutter native lib.
 //!
-//! Each call below reaches a DIFFERENT corner of `shed-core` / `shed-app` so
-//! that neither dead-code elimination nor lazy feature resolution can quietly
-//! drop the heavy transitive deps (tokio / reqwest / rustls-ring). If these
+//! The call below reaches several corners of `shed-core` so that neither
+//! dead-code elimination nor lazy feature resolution can quietly drop the
+//! heavy transitive deps (tokio / reqwest / rustls-ring). If these
 //! symbols are present in the built `.so`/`.dylib`, the linkage risk is retired.
 
 /// Async round-trip through `shed_core::ping` (exercises the async bridge path
@@ -27,13 +27,4 @@ pub async fn shed_core_probe(echo: String) -> String {
     .is_ok();
 
     format!("{pong} | name_jitter(test,300000)={jitter} | reqwest_client_built={client_built}")
-}
-
-/// Proves `shed-app` (default features) also links — constructs an in-memory
-/// `AuditStore` (a display-free app-logic type) and reports its empty tail.
-/// This is the "shed-app is reachable, no `rc` feature needed" check.
-pub fn shed_app_probe() -> String {
-    let store = shed_app::AuditStore::new("/tmp/frb-spike-audit.log");
-    let tail = store.recent(0).len();
-    format!("shed_app::AuditStore linked (tail={tail})")
 }

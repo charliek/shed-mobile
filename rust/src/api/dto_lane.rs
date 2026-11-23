@@ -1,17 +1,17 @@
 //! Bridge-owned **agent-lane** DTOs (plan 018 §3.9): the hand-written mirror of
-//! [`shed_core::lane`]'s contract types, plus the two behaviours a client must
+//! [`shed_lane::lane`]'s contract types, plus the two behaviours a client must
 //! not re-derive.
 //!
 //! It is the sibling of [`super::dto_rc`] and follows its rules exactly, because
-//! `shed_core::lane`'s own module doc names this file's job: *"shed-mobile
+//! `shed_lane::lane`'s own module doc names this file's job: *"shed-mobile
 //! **hand-mirrors** every DTO here into Dart (the way `dto_rc.rs`/`rc_feed.dart`
-//! already mirror [`shed_core::rc`]'s feed types)."* So a fielded enum becomes a
+//! already mirror [`shed_lane::rc`]'s feed types)."* So a fielded enum becomes a
 //! Dart sealed class, a plain enum becomes a plain Dart enum, and every field is
 //! an owned `String`/`Option`/`Vec`/scalar.
 //!
 //! # The asymmetry is the contract, and here it is a matter of SHAPE
 //!
-//! `shed_core::lane`'s "unknown-value tolerance, applied ASYMMETRICALLY" rule
+//! `shed_lane::lane`'s "unknown-value tolerance, applied ASYMMETRICALLY" rule
 //! says stream/inbound types tolerate an unrecognized value and command/outbound
 //! types reject one. On the wire that is a serde question. In a hand-mirrored
 //! Rust↔Rust pair there is no decode step, so the same rule shows up as the
@@ -44,7 +44,7 @@
 //! that an independent reading would not agree —
 //! [`LaneApproval::option_for`]'s ambiguity refusal and its `Reject`-only
 //! fallback, and `is_pending`'s "an `Other` status is NOT pending" — and both
-//! are quoted at length in `shed_core::lane`. A Dart re-implementation would be
+//! are quoted at length in `shed_lane::lane`. A Dart re-implementation would be
 //! a third reading of prose that the crate exists to stop.
 //!
 //! # Two levels, one mirror (plan 025 §3.2)
@@ -62,14 +62,14 @@
 //!
 //! **Capabilities, settings and the session row ride the snapshot.** They are
 //! per session and can change with an incarnation, so they are stream state
-//! like activity (`shed_core::lane`'s module doc, "Capabilities and settings
+//! like activity (`shed_lane::lane`'s module doc, "Capabilities and settings
 //! ride the stream") — there is no capabilities getter on a lane to cache, and
 //! [`BridgeLaneSnapshot`] carries the latest of each.
 //!
 //! # What is NOT here
 //!
-//! [`shed_core::lane::LaneEvent`] does not cross. It is folded in Rust by
-//! [`shed_app::lane_view::LaneView`] and `Reset`/`Ready`/`Stale`/`Down`/
+//! [`shed_lane::lane::LaneEvent`] does not cross. It is folded in Rust by
+//! [`shed_lane::lane_view::LaneView`] and `Reset`/`Ready`/`Stale`/`Down`/
 //! `Capabilities`/`Settings`/`Unknown` never reach Dart as frames — the phone
 //! gets a nudge and pulls one atomic [`BridgeLaneSnapshot`]. A source's
 //! `SourceEvent` will not cross either, for the same reason: the phone folds it
@@ -79,12 +79,7 @@
 //! [`super::lane`].
 
 use flutter_rust_bridge::frb;
-use shed_app::lane_view::LaneViewSnapshot;
-use shed_app::slash_menu::{
-    SlashAccept, SlashAcceptKey, SlashAction, SlashDispatch, SlashFilter, SlashFilterRow,
-    SlashHidden, SlashMenu, SlashMenuRow,
-};
-use shed_core::lane::{
+use shed_lane::lane::{
     LaneAnswer, LaneApproval, LaneApprovalKind, LaneApprovalOption, LaneApprovalStatus,
     LaneCapabilities, LaneChoice, LaneCreateOptions, LaneCreateRequest, LaneCreated, LaneDecision,
     LaneError, LaneModelEffort, LanePromptOutcome, LaneProvider, LaneProviderState, LaneQuestion,
@@ -92,7 +87,12 @@ use shed_core::lane::{
     LaneSettingChange, LaneSettings, LaneSlashArg, LaneSlashSource, LaneUsage, SendMode,
     SourceCapabilities, SourceOffline,
 };
-use shed_core::roost::AgentLaneStamp;
+use shed_lane::lane_view::LaneViewSnapshot;
+use shed_lane::slash_menu::{
+    SlashAccept, SlashAcceptKey, SlashAction, SlashDispatch, SlashFilter, SlashFilterRow,
+    SlashHidden, SlashMenu, SlashMenuRow,
+};
+use shed_roost::AgentLaneStamp;
 
 use super::dto_rc::{BridgeRcActivity, BridgeRcFeedMessage};
 
@@ -101,16 +101,20 @@ use super::dto_rc::{BridgeRcActivity, BridgeRcFeedMessage};
 // ---------------------------------------------------------------------------
 
 /// Where a row's agent lane is and which adapter speaks to it (mirrors
-/// `roost::AgentLaneStamp`) — the whole of what [`super::lane::lane_open`]
-/// needs.
+/// `shed_roost::AgentLaneStamp`).
+///
+/// Since plan 038 retired the opencode adapter, `shed_roost` stamps no roost
+/// tab with a lane (craze lanes come from the craze source's roster, not a
+/// tab's metadata), so a roost row's `agent_lane` is always `None` and this
+/// type crosses only as that field's shape.
 ///
 /// **`server_url` is the REPORTED url**, never a dial url. On a remote machine
 /// the phone dials its own fixed loopback port instead (plan 018 §3.10), and the
 /// two are never conflated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeAgentLaneStamp {
-    /// The adapter token — `"opencode"` today. A kind this build has
-    /// no adapter for is refused BY NAME
+    /// The adapter token. A kind this build has no adapter for is refused BY
+    /// NAME
     /// ([`BridgeLaneError::UnsupportedLane`]), never silently rendered as no
     /// lane: `AgentLaneStamp`'s own doc makes that the client's obligation.
     pub kind: String,
@@ -147,14 +151,14 @@ impl From<AgentLaneStamp> for BridgeAgentLaneStamp {
 /// It crosses on [`BridgeLaneSnapshot::session`] — the stream's LIVE row — and,
 /// from the craze source on, as a machine's craze rows. It used to carry
 /// `#[frb(unignore)]` because nothing returned one: before plan 025 the fold
-/// projected only the session's `activity`. `shed_app::lane_view` now projects
+/// projected only the session's `activity`. `shed_lane::lane_view` now projects
 /// the whole row, so the codegen reaches it through the snapshot.
 ///
 /// The fields after `last_change_unix_ms` are plan 025's: what a craze roster
 /// row says about a session beyond its activity. Every one is optional and
 /// `None` on a row from an adapter that knows none of them (opencode's), and
 /// each is the contract's own field, mirrored as it stands
-/// (`shed_core::lane::LaneSession`).
+/// (`shed_lane::lane::LaneSession`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeLaneSession {
     pub id: String,
@@ -228,7 +232,7 @@ impl From<LaneSession> for BridgeLaneSession {
 
 /// The way back, field for field — for the one call that hands Dart's rows to
 /// shared Rust: [`super::craze::craze_fold_plan`], whose rule
-/// (`shed_app::craze_rows::fold_plan`) reads the contract's own row. Lossless:
+/// (`shed_lane::craze_rows::fold_plan`) reads the contract's own row. Lossless:
 /// every field is the contract's, mirrored as it stands.
 impl From<BridgeLaneSession> for LaneSession {
     fn from(s: BridgeLaneSession) -> Self {
@@ -755,7 +759,7 @@ impl From<LaneCapabilities> for BridgeLaneCapabilities {
 }
 
 /// **The one thing Dart reads after a nudge** — a projection of
-/// [`shed_app::lane_view::LaneViewSnapshot`], taken under ONE lock.
+/// [`shed_lane::lane_view::LaneViewSnapshot`], taken under ONE lock.
 ///
 /// One value rather than two calls, because two reads would TEAR: a frame can
 /// land between "give me the messages" and "give me the approvals", and the
@@ -797,8 +801,8 @@ pub struct BridgeLaneSnapshot {
     /// back. **Not** a cue to re-open: see [`Self::ended`].
     pub stale: Option<String>,
     /// The lifecycle: `true` once the subscription ENDED (a `Down`), and only
-    /// then. **"Ended, re-open me"** — the controller's cue to call
-    /// [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
+    /// then. **"Ended, re-open me"** — the controller's cue to open the lane
+    /// again (plan 018 §3.11), and the ONLY
     /// reconnect job Dart has: Rust owns every other retry, a silent resume
     /// included.
     pub ended: bool,
@@ -1598,7 +1602,7 @@ impl From<SourceCapabilities> for BridgeSourceCapabilities {
 /// Why a source is offline (mirrors `lane::SourceOffline`).
 ///
 /// **Tolerant**: `Other { raw }` preserves an unrecognized cause verbatim. What
-/// each cause MEANS is the UI's to decide (`shed_core::lane`'s module doc,
+/// each cause MEANS is the UI's to decide (`shed_lane::lane`'s module doc,
 /// "Sources"): `NotInstalled` is quiet — the machine simply has no such agent —
 /// while `TooOld` asks the person to update it there. `NoHub` (plan 032
 /// §3.5) is a dial that attaches only to a running hub and found none — the
@@ -2079,8 +2083,8 @@ impl From<LaneError> for BridgeLaneError {
 mod tests {
     use super::*;
 
-    use shed_core::lane::option_kind;
-    use shed_core::rc::{RcActivity, RcFeedMessage};
+    use shed_lane::lane::option_kind;
+    use shed_lane::rc::{RcActivity, RcFeedMessage};
 
     /// Every `LaneApprovalKind` the wire can produce, plus an unrecognized one.
     fn kind_cases() -> Vec<LaneApprovalKind> {
@@ -2915,11 +2919,11 @@ mod tests {
 
     // ---- plan 029: the `/` menu, a rename and a title at create ----
 
-    use shed_app::slash_menu::{self, SlashFilter};
-    use shed_core::lane::{
+    use shed_lane::lane::{
         LaneSlashCatalog, LaneSlashKind, LaneSlashMethod, LaneSlashPicker, LaneSlashRequires,
         LaneSlashRow, LaneSlashRun,
     };
+    use shed_lane::slash_menu::{self, SlashFilter};
 
     fn all_caps() -> LaneCapabilities {
         LaneCapabilities {
@@ -3229,9 +3233,9 @@ mod tests {
     }
 
     /// The pure functions are thin wrappers: they agree with
-    /// `shed_app::slash_menu` on a case each.
+    /// `shed_lane::slash_menu` on a case each.
     #[test]
-    fn the_slash_functions_agree_with_shed_app() {
+    fn the_slash_functions_agree_with_shed_lane() {
         use super::super::lane::{slash_accept, slash_dispatch, slash_filter, slash_is_working};
         let menu = sample_menu();
         let b: BridgeSlashMenu = menu.clone().into();
@@ -3293,10 +3297,10 @@ mod tests {
     /// effort row can draw — the picker bare, a level by id, in any case and
     /// by name, the reserved `default`, craze's refusal of a level the option
     /// does not offer, a valid level mid-turn, and a pick that runs the
-    /// completed draft — crosses the bridge as `shed_app::slash_menu` gives
+    /// completed draft — crosses the bridge as `shed_lane::slash_menu` gives
     /// it, the picker handed back from Dart as the menu carried it.
     #[test]
-    fn the_effort_row_dispatches_through_the_bridge_as_shed_app_does() {
+    fn the_effort_row_dispatches_through_the_bridge_as_shed_lane_does() {
         use super::super::lane::{slash_accept, slash_dispatch};
         let menu = sample_menu();
         let b: BridgeSlashMenu = menu.clone().into();

@@ -58,15 +58,19 @@ BridgeLaneApprovalOption? laneOptionFor({
 );
 
 /// Where a row's agent lane is and which adapter speaks to it (mirrors
-/// `roost::AgentLaneStamp`) — the whole of what [`super::lane::lane_open`]
-/// needs.
+/// `shed_roost::AgentLaneStamp`).
+///
+/// Since plan 038 retired the opencode adapter, `shed_roost` stamps no roost
+/// tab with a lane (craze lanes come from the craze source's roster, not a
+/// tab's metadata), so a roost row's `agent_lane` is always `None` and this
+/// type crosses only as that field's shape.
 ///
 /// **`server_url` is the REPORTED url**, never a dial url. On a remote machine
 /// the phone dials its own fixed loopback port instead (plan 018 §3.10), and the
 /// two are never conflated.
 class BridgeAgentLaneStamp {
-  /// The adapter token — `"opencode"` today. A kind this build has
-  /// no adapter for is refused BY NAME
+  /// The adapter token. A kind this build has no adapter for is refused BY
+  /// NAME
   /// ([`BridgeLaneError::UnsupportedLane`]), never silently rendered as no
   /// lane: `AgentLaneStamp`'s own doc makes that the client's obligation.
   final String kind;
@@ -889,14 +893,14 @@ class BridgeLaneSavedSessions {
 /// It crosses on [`BridgeLaneSnapshot::session`] — the stream's LIVE row — and,
 /// from the craze source on, as a machine's craze rows. It used to carry
 /// `#[frb(unignore)]` because nothing returned one: before plan 025 the fold
-/// projected only the session's `activity`. `shed_app::lane_view` now projects
+/// projected only the session's `activity`. `shed_lane::lane_view` now projects
 /// the whole row, so the codegen reaches it through the snapshot.
 ///
 /// The fields after `last_change_unix_ms` are plan 025's: what a craze roster
 /// row says about a session beyond its activity. Every one is optional and
 /// `None` on a row from an adapter that knows none of them (opencode's), and
 /// each is the contract's own field, mirrored as it stands
-/// (`shed_core::lane::LaneSession`).
+/// (`shed_lane::lane::LaneSession`).
 class BridgeLaneSession {
   final String id;
   final String title;
@@ -1133,7 +1137,7 @@ class BridgeLaneSettings {
 }
 
 /// **The one thing Dart reads after a nudge** — a projection of
-/// [`shed_app::lane_view::LaneViewSnapshot`], taken under ONE lock.
+/// [`shed_lane::lane_view::LaneViewSnapshot`], taken under ONE lock.
 ///
 /// One value rather than two calls, because two reads would TEAR: a frame can
 /// land between "give me the messages" and "give me the approvals", and the
@@ -1179,8 +1183,8 @@ class BridgeLaneSnapshot {
   final String? stale;
 
   /// The lifecycle: `true` once the subscription ENDED (a `Down`), and only
-  /// then. **"Ended, re-open me"** — the controller's cue to call
-  /// [`super::lane::lane_open`] again (plan 018 §3.11), and the ONLY
+  /// then. **"Ended, re-open me"** — the controller's cue to open the lane
+  /// again (plan 018 §3.11), and the ONLY
   /// reconnect job Dart has: Rust owns every other retry, a silent resume
   /// included.
   final bool ended;

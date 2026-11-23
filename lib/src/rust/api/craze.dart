@@ -15,7 +15,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// The command the craze tunnel execs on the far side, verbatim — craze's
 /// published ladder ending in `craze bridge --hub`, plus the exec-only PATH
-/// (`shed_core::craze::bridge_hub_command`, plan 025 §3.4).
+/// (`shed_lane::craze::bridge_hub_command`, plan 025 §3.4).
 ///
 /// **Dart composes no part of it**, for [`super::roost::roost_remote_command`]'s
 /// reason: which rung wins and how the script is quoted is pinned by shed's
@@ -24,7 +24,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 String crazeRemoteCommand() =>
     RustLib.instance.api.crateApiCrazeCrazeRemoteCommand();
 
-/// **Test mode only**: the JAILED bridge argv (`shed_core::craze::
+/// **Test mode only**: the JAILED bridge argv (`shed_lane::craze::
 /// bridge_hub_argv_jailed` — `["sh", "-c", <rungs 1–2 only, no exec PATH>]`).
 ///
 /// The hermetic harness (`integration_test/craze_test.dart`) runs its craze
@@ -43,7 +43,7 @@ String crazeNewRequestId() =>
     RustLib.instance.api.crateApiCrazeCrazeNewRequestId();
 
 /// **The row merge for ONE machine** (plan 025 §3.6.3, D4) —
-/// `shed_app::craze_rows::fold_plan`, the rule the desktop runs, called rather
+/// `shed_lane::craze_rows::fold_plan`, the rule the desktop runs, called rather
 /// than re-derived.
 ///
 /// `hub` is the machine's craze rows **only while its craze feed is live**, and
@@ -143,7 +143,7 @@ Future<BridgeLaneCreated> crazeCreate({
 /// [`craze_create`] **REPLAYING a held request** — the sheet re-sending the
 /// request id (and the exact directory and title, plan 029 P11) it kept from
 /// an unknown outcome. Through shed-craze's
-/// [`create_held`](shed_core::lane::AgentSource::create_held) (plan 026
+/// [`create_held`](shed_lane::lane::AgentSource::create_held) (plan 026
 /// §3.1), so every attempt — the first included — is a retry, and only
 /// craze's own answer about the request ends the id.
 ///
@@ -212,8 +212,8 @@ Future<BridgeLaneReopened> crazeReopen({
 }) => RustLib.instance.api.crateApiCrazeCrazeReopen(src: src, id: id);
 
 /// **Open one craze session's transcript** — the source's lane on `host_id`
-/// (the row's id, P11), as the SAME [`BridgeLane`] an opencode lane is, so every
-/// `lane_*` verb serves it.
+/// (the row's id, P11), as a [`BridgeLane`], so every `lane_*` verb serves
+/// it.
 ///
 /// No forward and no stamp: the lane reaches its session through the hub's
 /// splice over this source's own dial, one connection of its own (D10). It binds
@@ -307,7 +307,7 @@ class BridgeCrazeSnapshot {
 }
 
 /// What the merge decided for one machine (mirrors
-/// `shed_app::craze_rows::FoldPlan`): every roost tab it folds away, in tab id
+/// `shed_lane::craze_rows::FoldPlan`): every roost tab it folds away, in tab id
 /// order — at most one per hub row absorbed (the newest), the rest hidden. A tab
 /// in this list is NOT shown as a roost row.
 class BridgeFoldPlan {
@@ -350,7 +350,7 @@ class BridgeFoldedTab {
 }
 
 /// One roost tab on the machine being folded, as the merge needs it (mirrors
-/// `shed_app::craze_rows::RoostTabRef`).
+/// `shed_lane::craze_rows::RoostTabRef`).
 ///
 /// `craze_owner` is `Some(X)` **only** for a tab roost reports as craze's
 /// (`kind == Craze`), `X` being its ownership session id — the provider session

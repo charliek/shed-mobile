@@ -23,6 +23,9 @@ pub enum BridgeShedStatus {
     Running,
     Stopped,
     Starting,
+    /// A stop in progress; only a backend with an asynchronous lifecycle
+    /// (remote) sends it.
+    Stopping,
     Error,
     Unknown,
 }
@@ -33,6 +36,7 @@ impl From<ShedStatus> for BridgeShedStatus {
             ShedStatus::Running => BridgeShedStatus::Running,
             ShedStatus::Stopped => BridgeShedStatus::Stopped,
             ShedStatus::Starting => BridgeShedStatus::Starting,
+            ShedStatus::Stopping => BridgeShedStatus::Stopping,
             ShedStatus::Error => BridgeShedStatus::Error,
             ShedStatus::Unknown => BridgeShedStatus::Unknown,
         }
@@ -308,6 +312,7 @@ mod tests {
             (ShedStatus::Running, BridgeShedStatus::Running),
             (ShedStatus::Stopped, BridgeShedStatus::Stopped),
             (ShedStatus::Starting, BridgeShedStatus::Starting),
+            (ShedStatus::Stopping, BridgeShedStatus::Stopping),
             (ShedStatus::Error, BridgeShedStatus::Error),
             (ShedStatus::Unknown, BridgeShedStatus::Unknown),
         ] {
@@ -333,6 +338,7 @@ mod tests {
             memory_mb: Some(16_384),
             created_at: Some("2026-01-01T00:00:00Z".into()),
             started_at: Some("2026-01-02T00:00:00Z".into()),
+            status_reason: Some("capacity".into()),
             active_namespaces: vec!["ns1".into(), "ns2".into()],
         };
         let b = BridgeShed::from(s.clone());
@@ -358,6 +364,7 @@ mod tests {
             memory_mb: None,
             created_at: None,
             started_at: None,
+            status_reason: None,
             active_namespaces: vec![],
         };
         let be = BridgeShed::from(empty);

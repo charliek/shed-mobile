@@ -1395,7 +1395,6 @@ mod tests {
             "BridgeLaneSettingChange_Model",
             "BridgeLaneSettings",
             "BridgeLaneSnapshot",
-            "BridgeLaneSpec",
             "BridgeLaneUsage",
             "BridgeSendMode",
             "BridgeSourceCapabilities",
@@ -1963,7 +1962,7 @@ mod tests {
             .parent()
             .unwrap()
             .join(WIRED_AGENTS_DART);
-        let rendered = render_wired_agents_dart(&shed_core::roost::bootstrap::ROOST_WIRED_AGENTS);
+        let rendered = render_wired_agents_dart(&shed_roost::bootstrap::ROOST_WIRED_AGENTS);
         if std::env::var_os("SHED_MOBILE_REGEN").is_some_and(|v| v == "1") {
             std::fs::write(&path, &rendered)
                 .unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));

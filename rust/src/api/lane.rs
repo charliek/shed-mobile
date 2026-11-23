@@ -1,9 +1,15 @@
 //! **One agent lane, on the phone** (plan 018 §3.9) — the client half of
-//! [`shed_core::lane`], shaped exactly like the desktop's
-//! (`desktop/tauri/src-tauri/src/lane.rs`) and for the same reasons.
+//! [`shed_lane::lane`], shaped exactly like the desktop's and for the same
+//! reasons.
+//!
+//! Craze is the only agent lane (plan 038 retired the opencode adapter): a
+//! lane is opened through a machine's craze source by
+//! [`super::craze::craze_lane_open`], which hands the adapter it opened to
+//! [`open_adapter`]. Everything in this module is written against
+//! `dyn AgentLane` and names no concrete adapter.
 //!
 //! ```text
-//!   Dart: machine row ──agent_lane{kind, session_id, server_url}──▶ lane_open
+//!   Dart: craze row ──craze_lane_open(source, host_id)──▶ open_adapter
 //!                     ◀── one `true` nudge ───────────────────────  lane_nudges
 //!                     ──▶ lane_snapshot(since_seq) ── one atomic read
 //!
@@ -20,8 +26,8 @@
 //!
 //! * **Rust owns the adapter, the subscription pump and the staged view.** The
 //!   fold is [`LaneView`] — the SAME fold the
-//!   desktop uses, moved down into `shed-app` in this plan precisely so there is
-//!   not a second one. Nothing here re-implements staging, generations or the
+//!   desktop uses, shared in `shed-lane` precisely so there is not a second
+//!   one. Nothing here re-implements staging, generations or the
 //!   `since_seq` cut.
 //! * **Dart gets a nudge and pulls one atomic snapshot.** Not a stream of
 //!   frames: an FRB `StreamSink` carrying every `LaneEvent` would be a second
@@ -53,7 +59,7 @@
 //!
 //! # There is no registry
 //!
-//! Two [`lane_open`] calls are two lanes. "One lane per row" is the Riverpod
+//! Two lane opens are two lanes. "One lane per row" is the Riverpod
 //! provider's job (§3.11), which is where the phone's identity for a row lives;
 //! a second map in here would be a second answer to the same question. That is
 //! the one structural difference from the desktop, whose `Lanes` map exists
@@ -70,10 +76,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use flutter_rust_bridge::frb;
-use shed_app::lane_view::LaneView;
-use shed_app::slash_menu;
-use shed_core::lane::{AgentLane, AgentSource, LaneError, LaneEvent};
-use shed_opencode::OpencodeSource;
+use shed_lane::lane::{AgentLane, LaneError, LaneEvent};
+use shed_lane::lane_view::LaneView;
+use shed_lane::slash_menu;
 
 use crate::frb_generated::StreamSink;
 
@@ -84,19 +89,6 @@ use super::dto_lane::{
     BridgeSlashAcceptKey, BridgeSlashDispatch, BridgeSlashFilter, BridgeSlashMenu,
 };
 use super::dto_rc::BridgeRcActivity;
-
-/// The `agent_lane` kinds THIS BUILD has an adapter for.
-///
-/// Three readers: [`lane_open`]'s pre-dispatch guard and the refusal it
-/// raises; [`super::dto_rc::BridgeRcSession::from_roost_dto`], which drops any
-/// stamp whose kind is not here so a row never offers a Transcript this build
-/// cannot open (plan 025 CM1 finding 3 — at the pinned shed rev roost still
-/// yields a `gx` stamp, and an unfiltered DTO conversion let a tap acquire a
-/// forward and open a `LaneScreen` that `lane_open` would then refuse). The
-/// `match` in [`build_client`] is deliberately not a fourth — that is where a
-/// kind binds to a constructor, the one place a concrete adapter type may be
-/// named.
-pub(crate) const LANE_KINDS: [&str; 1] = ["opencode"];
 
 /// The re-subscribe backoff, floor and ceiling — **the desktop's constants**
 /// (`lane.rs`'s `RESUBSCRIBE_BASE`/`RESUBSCRIBE_MAX`), deliberately identical so
@@ -112,8 +104,7 @@ const RESUBSCRIBE_BASE: Duration = Duration::from_millis(200);
 const RESUBSCRIBE_MAX: Duration = Duration::from_secs(5);
 
 /// The [`LaneEvent::Down`] reason an adapter ends a lane with when the session
-/// does not exist (opencode: a reseed answered 404; craze: `unknown_session` on
-/// connect or attach) — and the one this pump writes itself when `subscribe`
+/// does not exist (craze: `unknown_session` on connect or attach) — and the one this pump writes itself when `subscribe`
 /// is refused that way.
 const DOWN_UNKNOWN_SESSION: &str = "unknown_session";
 
@@ -122,7 +113,7 @@ const DOWN_UNKNOWN_SESSION: &str = "unknown_session";
 /// for word** (`desktop/tauri/src-tauri/src/lane.rs`), and Dart's
 /// `laneDownIsFinal` says the same.
 ///
-/// `shed_core::lane`'s module doc (plan 025 §3.3.5) names three: the session
+/// `shed_lane::lane`'s module doc (plan 025 §3.3.5) names three: the session
 /// does not exist (`unknown_session`), it was closed (`session_closed`, craze's
 /// end after a stop), or it never started (`start_failed:<cause>`). No amount
 /// of reconnecting changes any of them — a resubscribe after `session_closed`
@@ -149,24 +140,6 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 // ---------------------------------------------------------------------------
 // the handle
 // ---------------------------------------------------------------------------
-
-/// Everything [`lane_open`] needs to build one lane — the row's stamp plus the
-/// two things only the phone's transport knows.
-///
-/// **`reported_url` and `dial_url` are different values and are never
-/// conflated.** `reported_url` is the loopback URL the agent announced on ITS
-/// host; `dial_url` is where this phone actually reaches it — the near end of the
-/// `RoostTunnel`-shaped forward Dart already holds, or the same address again
-/// when the agent is on this device. The contract is explicit that an
-/// implementation which dialled the reported URL would be wrong over SSH.
-pub struct BridgeLaneSpec {
-    /// `"opencode"`. Anything else is
-    /// [`BridgeLaneError::UnsupportedLane`], refused before any I/O.
-    pub kind: String,
-    pub session_id: String,
-    pub reported_url: String,
-    pub dial_url: String,
-}
 
 /// The staged view and the dirty flag a snapshot reads — **all under one
 /// lock**.
@@ -317,63 +290,25 @@ fn teardown(inner: &Arc<LaneInner>) {
 // open
 // ---------------------------------------------------------------------------
 
-/// Open a live lane on one agent session: dispatch on `kind`, fetch the roster
-/// row, and start the pump.
+/// **A lane around an adapter somebody else built**: the session read, the
+/// counted handle, the pump.
 ///
-/// **Dispatch is the desktop `Lanes::open`'s, arm for arm**: `"opencode"` →
-/// an [`OpencodeSource`] on the dial URL with no credential source (opencode
-/// needs none — a password-protected server answers 401, which surfaces as
-/// [`BridgeLaneError::Unauthorized`] and a status-only panel), and the
-/// session-scoped lane it opens for the row's id (plan 025 §3.2.6); anything
-/// else → [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a
-/// kind with no adapter is a permanent property of the row and there is no
-/// reason to spend a round trip discovering it.
+/// The caller is [`super::craze::craze_lane_open`], whose adapter is opened
+/// through a machine's craze SOURCE (plan 025 §3.7.2: a craze session has no
+/// stamp and no URL — its lane is the source's to open, by hostId, over the
+/// source's own dial). It ends in the one handle every verb here serves:
+/// `lane_snapshot`, `lane_send` and the rest.
 ///
-/// The roster row is fetched BEFORE the subscription starts, for the desktop's
-/// reason: a 404 here is an honest `unknown_session` the caller can render,
-/// where the same failure inside the pump would be a `Down` the panel has to
-/// wait for. It is also the call that fails on a password-protected agent.
-///
-/// Everything runs on [`bridge_rt`] — not tidiness: the pump and the adapter's
-/// held HTTP connections OUTLIVE this call, so they must be created on a runtime
-/// that outlives it. FRB's per-call executor goes away when the call returns.
-pub async fn lane_open(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError> {
-    // Refused before the runtime hop, so the test that asserts "no I/O" is
-    // asserting something structural rather than an ordering inside a task.
-    if !LANE_KINDS.contains(&spec.kind.as_str()) {
-        return Err(BridgeLaneError::UnsupportedLane { kind: spec.kind });
-    }
-    on_bridge_rt(async move { open_inner(spec).await }).await
-}
-
-async fn open_inner(spec: BridgeLaneSpec) -> Result<BridgeLane, BridgeLaneError> {
-    let client = build_client(&spec).await?;
-    open_adapter(client, spec.session_id).await
-}
-
-/// **A lane around an adapter somebody else built** — everything [`lane_open`]
-/// does after its dispatch: the session read, the counted handle, the pump.
-///
-/// Two callers. [`open_inner`], for a row's stamp; and
-/// [`super::craze::craze_lane_open`], whose adapter is opened through a
-/// machine's craze SOURCE rather than built from a stamp (plan 025 §3.7.2: a
-/// craze session has no stamp and no URL — its lane is the source's to open,
-/// by hostId, over the source's own dial). Both end in the SAME handle, so
-/// `lane_snapshot`, `lane_send` and every other verb serve a craze lane
-/// unchanged.
-///
-/// Must run on [`bridge_rt`]: the pump it spawns outlives the call.
+/// Must run on [`bridge_rt`]: the pump it spawns outlives the call. FRB's
+/// per-call executor goes away when the call returns.
 pub(super) async fn open_adapter(
     client: Arc<dyn AgentLane>,
     session_id: String,
 ) -> Result<BridgeLane, BridgeLaneError> {
-    // The session read before the pump starts. For opencode it is the roster
-    // GET — also the call that fails on a password-protected agent, so a 404
-    // here is an honest `unknown_session` the caller can render before the
-    // pump ever starts (opening the lane above was binding, not dialling: this
-    // is the first I/O). For craze it dials nothing: it answers the row the
-    // source opened the lane with, and `unknown_session` for a hostId the
-    // source has never listed.
+    // The session read before the pump starts. For craze it dials nothing: it
+    // answers the row the source opened the lane with, and `unknown_session`
+    // for a hostId the source has never listed — an honest refusal the caller
+    // can render before the pump ever starts.
     client.session().await.map_err(BridgeLaneError::from)?;
 
     let inner = Arc::new(LaneInner {
@@ -400,40 +335,6 @@ pub(super) async fn open_adapter(
     let pump = spawn_pump(Arc::clone(&inner), client);
     lock(&inner.tasks).pump = Some(pump.abort_handle());
     Ok(BridgeLane { inner })
-}
-
-/// **The one place this module names a concrete adapter.** Everything after it
-/// is written against `dyn AgentLane`.
-///
-/// Through the adapter's SOURCE, the contract's two levels (plan 025 §3.2.1):
-/// the source is built on the dial URL and `open`s the session-scoped lane for
-/// the row's id — binding, not dialling, so nothing here touches the network.
-/// The source is dropped once it has opened the lane; the lane holds the
-/// transport it shares with it.
-async fn build_client(spec: &BridgeLaneSpec) -> Result<Arc<dyn AgentLane>, BridgeLaneError> {
-    match spec.kind.as_str() {
-        "opencode" => {
-            let url =
-                reqwest::Url::parse(&spec.dial_url).map_err(|e| BridgeLaneError::BadRequest {
-                    msg: format!(
-                        "the agent server dial url {:?} is not usable: {e}",
-                        spec.dial_url
-                    ),
-                })?;
-            let source = OpencodeSource::new(url, None).map_err(BridgeLaneError::from)?;
-            source
-                .open(&spec.session_id)
-                .await
-                .map_err(BridgeLaneError::from)
-        }
-        // Unreachable: `lane_open`'s guard ran before anything was built.
-        // Restated rather than `unreachable!()` so that adding a kind to one
-        // list and forgetting the other is a refusal, not a panic across the
-        // FFI boundary.
-        other => Err(BridgeLaneError::UnsupportedLane {
-            kind: other.to_string(),
-        }),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,7 +513,7 @@ async fn forward_loop(inner: Arc<LaneInner>, push: impl Fn() -> NudgeResult) {
 /// `full: true`, which is what makes a generation change, a resubscription and a
 /// cursor evicted by the 500-row cap all answer "replace what you hold" instead
 /// of a delta with a hole in it. That rule is
-/// [`shed_app::lane_view::LaneView::snapshot`]'s and is not restated here.
+/// [`shed_lane::lane_view::LaneView::snapshot`]'s and is not restated here.
 ///
 /// Sync: it is a memory read behind a mutex. Making Dart await it would add a
 /// microtask to the one call it makes on every nudge.
@@ -693,8 +594,8 @@ pub async fn lane_answer(
 /// ends this lane for good ([`down_is_final`]) — and, for a session no roster
 /// has listed yet, lets its created row go (Amendment A16), so the row leaves.
 ///
-/// A session whose capabilities say `stop: false` (a TUI-hosted craze session,
-/// every opencode one) refuses it — [`BridgeLaneError::Failed`] naming the
+/// A session whose capabilities say `stop: false` (a TUI-hosted craze session)
+/// refuses it — [`BridgeLaneError::Failed`] naming the
 /// adapter — and a panel offers no Stop there. A receipt lost to a drop is
 /// [`BridgeLaneError::OutcomeUnknown`]: the session may already be closing, and
 /// the stream says whether it is.
@@ -719,8 +620,7 @@ pub async fn lane_stop(lane: &BridgeLane) -> Result<(), BridgeLaneError> {
 /// `Settings` ([`BridgeLaneSnapshot::settings_frames`]) says where the session
 /// is.
 ///
-/// A session whose capabilities say `settings: false` (every opencode one)
-/// refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
+/// A session whose capabilities say `settings: false` refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
 /// offers no settings there.
 pub async fn lane_set(
     lane: &BridgeLane,
@@ -755,7 +655,7 @@ pub async fn lane_set_title(
 }
 
 /// **The menu panel for a draft** (plan 029, P5): a thin call into
-/// `shed_app::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
+/// `shed_lane::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
 /// `TextSelection.extentOffset`); `working` is [`slash_is_working`].
 #[frb(sync)]
 pub fn slash_filter(
@@ -802,6 +702,18 @@ pub fn lane_close(lane: &BridgeLane) {
     teardown(&lane.inner);
 }
 
+/// Claim the lane's nudge stream with a test's own push — [`lane_nudges`] with
+/// the [`StreamSink`] a `cargo test` process cannot construct. Test-only: what
+/// a cell outside this module uses to hold the stream open across a lane's
+/// end, through the shipped forwarder lifecycle.
+#[cfg(test)]
+pub(super) fn claim_nudges(
+    lane: &BridgeLane,
+    push: impl Fn() -> NudgeResult + Send + 'static,
+) -> bool {
+    spawn_forwarder(&lane.inner, push)
+}
+
 /// Whether the lane's pump has stopped for good — a final `Down`, or the lane
 /// closed. Test-only: what a cell reads to prove a final end resubscribes
 /// nothing, rather than inferring it from silence on the wire alone.
@@ -846,10 +758,8 @@ mod tests {
 
     use std::sync::atomic::AtomicU64;
 
-    use shed_core::rc::RcFeedMessage;
-    use shed_opencode::testing::FakeOpencode;
-
-    use shed_core::lane::{LaneCapabilities, LaneChoice, LaneSettings};
+    use shed_lane::lane::{LaneCapabilities, LaneChoice, LaneSettings};
+    use shed_lane::rc::RcFeedMessage;
 
     use crate::api::bridge_rt::live_counters;
     use crate::api::testsupport::{test_guard, wait_until};
@@ -857,7 +767,7 @@ mod tests {
     /// A lane with **no adapter and no pump** — the shape the view, nudge and
     /// teardown tests want.
     ///
-    /// It is counted exactly as [`lane_open`] counts one, so every leak
+    /// It is counted exactly as [`open_adapter`] counts one, so every leak
     /// assertion below is against the real counter and not a test-local
     /// substitute.
     fn bare_lane() -> BridgeLane {
@@ -928,230 +838,6 @@ mod tests {
             },
             cursor: None,
         }
-    }
-
-    /// Poll `cond` on the test's own runtime — never [`wait_until`], which
-    /// blocks the thread, and the in-process fakes' accept loops are spawned on
-    /// the TEST runtime. Blocking it deadlocks them.
-    async fn until(within: Duration, mut cond: impl FnMut() -> bool) -> bool {
-        let deadline = std::time::Instant::now() + within;
-        loop {
-            if cond() {
-                return true;
-            }
-            if std::time::Instant::now() >= deadline {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    }
-
-    // ---- dispatch ----
-
-    /// **A kind with no adapter is refused BEFORE any I/O**, and the negative
-    /// control is the point: a real server is standing right there on the dial
-    /// URL and must see no request at all.
-    ///
-    /// It matters because the refusal is a permanent property of the row — there
-    /// is no reason to spend a round trip discovering it, and on a phone that
-    /// round trip is an SSH exec.
-    #[tokio::test]
-    async fn an_unsupported_kind_is_refused_before_any_io() {
-        let _g = test_guard();
-        let fake = FakeOpencode::start().await;
-        // `let Err(..) else` rather than `expect_err`: a `BridgeLane` is opaque
-        // and deliberately has no `Debug`, so the panic message cannot render
-        // the Ok side.
-        let Err(err) = lane_open(BridgeLaneSpec {
-            kind: "claude-rc".to_string(),
-            session_id: "ses_a".to_string(),
-            reported_url: fake.base_url().to_string(),
-            dial_url: fake.base_url().to_string(),
-        })
-        .await
-        else {
-            panic!("a kind with no adapter must be refused, not opened");
-        };
-        assert_eq!(
-            err,
-            BridgeLaneError::UnsupportedLane {
-                kind: "claude-rc".to_string()
-            },
-            "the refusal must NAME the kind — a newer build may well speak it"
-        );
-        assert!(
-            fake.get_paths().is_empty() && fake.post_paths().is_empty(),
-            "the refusal dialled the server: {:?} / {:?}",
-            fake.get_paths(),
-            fake.post_paths()
-        );
-        assert_eq!(live_counters().active_lanes, 0);
-    }
-
-    /// The opencode arm, end to end against the real adapter: dispatch through
-    /// `OpencodeSource`, the roster GET, the capabilities the SEED carries, and
-    /// a teardown that returns every counter.
-    #[tokio::test]
-    async fn an_opencode_lane_dispatches_and_tears_down() {
-        let _g = test_guard();
-        let fake = FakeOpencode::start().await;
-        fake.add_session("ses_a", "fix the thing", "/home/shed/proj", None);
-        fake.set_status("ses_a", "idle");
-
-        let lane = lane_open(BridgeLaneSpec {
-            kind: "opencode".to_string(),
-            session_id: "ses_a".to_string(),
-            reported_url: fake.base_url().to_string(),
-            dial_url: fake.base_url().to_string(),
-        })
-        .await
-        .expect("the opencode lane opens");
-
-        // From the snapshot, once the seed has swapped in — there is no getter
-        // to read them from at open (plan 025 §3.2.1).
-        assert!(
-            until(Duration::from_secs(10), || lane_snapshot(&lane, None)
-                .capabilities
-                .is_some())
-            .await,
-            "the seed never carried the session's capabilities into the view"
-        );
-        let caps = lane_snapshot(&lane, None)
-            .capabilities
-            .expect("seeded capabilities");
-        assert_eq!(caps.kind, "opencode");
-        assert!(!caps.interject, "opencode cannot interject");
-        assert!(!caps.history_cursor, "opencode has no history cursor");
-        assert!(caps.approvals && caps.cancel);
-        assert!(
-            !caps.settings && !caps.stop,
-            "opencode has no settings and cannot be stopped from here"
-        );
-        assert_eq!(
-            lane_snapshot(&lane, None).settings_frames,
-            0,
-            "opencode never sends a Settings frame"
-        );
-        assert_eq!(live_counters().active_lanes, 1);
-
-        lane_close(&lane);
-        assert_eq!(live_counters().active_lanes, 0);
-        // Idempotent: a second close must not decrement again. The counters are
-        // `u64`, so a double decrement would wrap to `u64::MAX` and every later
-        // leak assertion would pass for the wrong reason.
-        lane_close(&lane);
-        lane_close(&lane);
-        assert_eq!(live_counters().active_lanes, 0);
-        // A closed lane still projects — a panel unwinding does not need its
-        // reads to start throwing — capabilities included.
-        let closed = lane_snapshot(&lane, None);
-        assert!(closed.messages.is_empty());
-        assert_eq!(
-            closed.capabilities.map(|c| c.kind).as_deref(),
-            Some("opencode")
-        );
-    }
-
-    /// The pump, the fold and the nudge, end to end against the real adapter:
-    /// the view fills without Dart having seen a single frame.
-    #[tokio::test]
-    async fn the_pump_folds_a_live_subscription_into_the_view() {
-        let _g = test_guard();
-        let fake = FakeOpencode::start().await;
-        fake.add_session("ses_a", "fix the thing", "/home/shed/proj", None);
-        fake.set_status("ses_a", "busy");
-        fake.set_simple_transcript("ses_a", "do the thing", "doing the thing");
-
-        let lane = lane_open(BridgeLaneSpec {
-            kind: "opencode".to_string(),
-            session_id: "ses_a".to_string(),
-            reported_url: fake.base_url().to_string(),
-            dial_url: fake.base_url().to_string(),
-        })
-        .await
-        .expect("the lane opens");
-
-        assert!(
-            until(Duration::from_secs(10), || !lane_snapshot(&lane, None)
-                .messages
-                .is_empty())
-            .await,
-            "the pump never folded the seed into the view"
-        );
-        let snap = lane_snapshot(&lane, None);
-        assert!(snap.full, "a cursorless read is a full read");
-        assert_eq!(snap.stale, None, "a live generation is not stale");
-        assert!(
-            snap.generation >= 1,
-            "a completed seed moves the generation"
-        );
-
-        lane_close(&lane);
-        assert_eq!(live_counters().active_lanes, 0);
-    }
-
-    /// **The terminal `Down`**: the pump ends, the view is marked stale with the
-    /// reason AND ended, and the NUDGE STREAM STAYS OPEN — which is the whole of
-    /// how Dart tells "ended, re-open me" from "closed by me".
-    #[tokio::test]
-    async fn a_deleted_session_ends_the_pump_stale_but_leaves_the_stream_open() {
-        let _g = test_guard();
-        let fake = FakeOpencode::start().await;
-        fake.add_session("ses_a", "fix the thing", "/home/shed/proj", None);
-        fake.set_status("ses_a", "idle");
-
-        let lane = lane_open(BridgeLaneSpec {
-            kind: "opencode".to_string(),
-            session_id: "ses_a".to_string(),
-            reported_url: fake.base_url().to_string(),
-            dial_url: fake.base_url().to_string(),
-        })
-        .await
-        .expect("the lane opens");
-        let sink = CountingSink::new(false);
-        assert!(spawn_forwarder(&lane.inner, sink.push_fn()));
-
-        // The session goes away and the stream is cut, so the adapter reseeds
-        // into a 404.
-        fake.remove_session("ses_a");
-        fake.close_streams();
-
-        assert!(
-            until(Duration::from_secs(15), || lane_snapshot(&lane, None)
-                .stale
-                .is_some())
-            .await,
-            "a deleted session never marked the view stale"
-        );
-        assert_eq!(
-            lane_snapshot(&lane, None).stale.as_deref(),
-            Some(DOWN_UNKNOWN_SESSION),
-            "the terminal reason is the adapter's own, not a paraphrase"
-        );
-        assert!(
-            lane_snapshot(&lane, None).ended,
-            "a terminal Down ENDS the lane — the one thing Dart re-opens on"
-        );
-        // Awaited for the reason above: the push lands on `bridge_rt`, not on
-        // this thread.
-        assert!(
-            until(Duration::from_secs(5), || sink.pushes() >= 1).await,
-            "the last Down raised no nudge"
-        );
-        // Still counted: the pump is finished, the lane is not.
-        assert_eq!(live_counters().active_lanes, 1);
-        assert_eq!(live_counters().active_lane_forwarders, 1);
-
-        lane_close(&lane);
-        assert!(
-            until(Duration::from_secs(5), || live_counters().active_lanes == 0).await,
-            "close left the counters at {:?}",
-            (
-                live_counters().active_lanes,
-                live_counters().active_lane_forwarders
-            )
-        );
-        assert_eq!(live_counters().active_lane_forwarders, 0);
     }
 
     // ---- the nudge ----
@@ -1431,7 +1117,7 @@ mod tests {
     /// are this snapshot's answer.
     #[test]
     fn the_snapshot_names_the_effort_option_and_a_model_switch_moves_effort() {
-        use shed_core::lane::{
+        use shed_lane::lane::{
             LaneSetting, LaneSlashArg, LaneSlashCatalog, LaneSlashKind, LaneSlashPicker,
             LaneSlashRequires, LaneSlashRow, LaneSlashRun, LaneSlashSource,
         };
@@ -1634,7 +1320,7 @@ mod tests {
             "re-attach bound",
             "protocol: another host answered",
             "craze unavailable: not installed",
-            "the opencode event stream ended",
+            "the hub event stream ended",
             "closed",
             "session_closed_soon",
             "down: unknown_session",

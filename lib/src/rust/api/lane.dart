@@ -8,32 +8,9 @@ import 'dto_lane.dart';
 import 'dto_rc.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply`, `build_client`, `client`, `down_is_final`, `forward_loop`, `lock`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_adapter`, `open_inner`, `spawn_forwarder`, `spawn_pump`, `teardown`
+// These functions are ignored because they are not marked as `pub`: `apply`, `client`, `down_is_final`, `forward_loop`, `lock`, `next_backoff`, `note_down`, `on_bridge_rt`, `open_adapter`, `spawn_forwarder`, `spawn_pump`, `teardown`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LaneInner`, `LaneState`, `LaneTasks`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `drop`
-
-/// Open a live lane on one agent session: dispatch on `kind`, fetch the roster
-/// row, and start the pump.
-///
-/// **Dispatch is the desktop `Lanes::open`'s, arm for arm**: `"opencode"` →
-/// an [`OpencodeSource`] on the dial URL with no credential source (opencode
-/// needs none — a password-protected server answers 401, which surfaces as
-/// [`BridgeLaneError::Unauthorized`] and a status-only panel), and the
-/// session-scoped lane it opens for the row's id (plan 025 §3.2.6); anything
-/// else → [`BridgeLaneError::UnsupportedLane`] **before any I/O**, because a
-/// kind with no adapter is a permanent property of the row and there is no
-/// reason to spend a round trip discovering it.
-///
-/// The roster row is fetched BEFORE the subscription starts, for the desktop's
-/// reason: a 404 here is an honest `unknown_session` the caller can render,
-/// where the same failure inside the pump would be a `Down` the panel has to
-/// wait for. It is also the call that fails on a password-protected agent.
-///
-/// Everything runs on [`bridge_rt`] — not tidiness: the pump and the adapter's
-/// held HTTP connections OUTLIVE this call, so they must be created on a runtime
-/// that outlives it. FRB's per-call executor goes away when the call returns.
-Future<BridgeLane> laneOpen({required BridgeLaneSpec spec}) =>
-    RustLib.instance.api.crateApiLaneLaneOpen(spec: spec);
 
 /// Stream this lane's nudges. **One claim**: a second call on the same handle is
 /// a no-op rather than a silent split of the nudges between two consumers.
@@ -63,7 +40,7 @@ Stream<bool> laneNudges({required BridgeLane lane}) =>
 /// `full: true`, which is what makes a generation change, a resubscription and a
 /// cursor evicted by the 500-row cap all answer "replace what you hold" instead
 /// of a delta with a hole in it. That rule is
-/// [`shed_app::lane_view::LaneView::snapshot`]'s and is not restated here.
+/// [`shed_lane::lane_view::LaneView::snapshot`]'s and is not restated here.
 ///
 /// Sync: it is a memory read behind a mutex. Making Dart await it would add a
 /// microtask to the one call it makes on every nudge.
@@ -123,8 +100,8 @@ Future<void> laneAnswer({
 /// ends this lane for good ([`down_is_final`]) — and, for a session no roster
 /// has listed yet, lets its created row go (Amendment A16), so the row leaves.
 ///
-/// A session whose capabilities say `stop: false` (a TUI-hosted craze session,
-/// every opencode one) refuses it — [`BridgeLaneError::Failed`] naming the
+/// A session whose capabilities say `stop: false` (a TUI-hosted craze session)
+/// refuses it — [`BridgeLaneError::Failed`] naming the
 /// adapter — and a panel offers no Stop there. A receipt lost to a drop is
 /// [`BridgeLaneError::OutcomeUnknown`]: the session may already be closing, and
 /// the stream says whether it is.
@@ -147,8 +124,7 @@ Future<void> laneStop({required BridgeLane lane}) =>
 /// `Settings` ([`BridgeLaneSnapshot::settings_frames`]) says where the session
 /// is.
 ///
-/// A session whose capabilities say `settings: false` (every opencode one)
-/// refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
+/// A session whose capabilities say `settings: false` refuses it — [`BridgeLaneError::Failed`] naming the adapter — and a panel
 /// offers no settings there.
 Future<void> laneSet({
   required BridgeLane lane,
@@ -171,7 +147,7 @@ Future<BridgeSetTitleOutcome> laneSetTitle({
 }) => RustLib.instance.api.crateApiLaneLaneSetTitle(lane: lane, title: title);
 
 /// **The menu panel for a draft** (plan 029, P5): a thin call into
-/// `shed_app::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
+/// `shed_lane::slash_menu::filter`. `caret` is UTF-16 code units (Flutter's
 /// `TextSelection.extentOffset`); `working` is [`slash_is_working`].
 BridgeSlashFilter slashFilter({
   required BridgeSlashMenu menu,
@@ -226,45 +202,3 @@ void laneClose({required BridgeLane lane}) =>
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<BridgeLane>>
 abstract class BridgeLane implements RustOpaqueInterface {}
-
-/// Everything [`lane_open`] needs to build one lane — the row's stamp plus the
-/// two things only the phone's transport knows.
-///
-/// **`reported_url` and `dial_url` are different values and are never
-/// conflated.** `reported_url` is the loopback URL the agent announced on ITS
-/// host; `dial_url` is where this phone actually reaches it — the near end of the
-/// `RoostTunnel`-shaped forward Dart already holds, or the same address again
-/// when the agent is on this device. The contract is explicit that an
-/// implementation which dialled the reported URL would be wrong over SSH.
-class BridgeLaneSpec {
-  /// `"opencode"`. Anything else is
-  /// [`BridgeLaneError::UnsupportedLane`], refused before any I/O.
-  final String kind;
-  final String sessionId;
-  final String reportedUrl;
-  final String dialUrl;
-
-  const BridgeLaneSpec({
-    required this.kind,
-    required this.sessionId,
-    required this.reportedUrl,
-    required this.dialUrl,
-  });
-
-  @override
-  int get hashCode =>
-      kind.hashCode ^
-      sessionId.hashCode ^
-      reportedUrl.hashCode ^
-      dialUrl.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is BridgeLaneSpec &&
-          runtimeType == other.runtimeType &&
-          kind == other.kind &&
-          sessionId == other.sessionId &&
-          reportedUrl == other.reportedUrl &&
-          dialUrl == other.dialUrl;
-}

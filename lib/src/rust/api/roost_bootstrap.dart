@@ -98,7 +98,7 @@ Future<BridgeBootstrapStep> roostBootstrapFeedExec({
 /// probe's one `session.identify` could only ever come back as "the probe could
 /// not be completed", and the phone could never offer an install or a start.
 ///
-/// The mapping is `shed_app::roost`'s, one for one: [`BridgeReachKind::NotInstalled`]
+/// The mapping is `shed_roost::reach`'s, one for one: [`BridgeReachKind::NotInstalled`]
 /// and [`BridgeReachKind::NoSession`] become roost's own kebab codes, and the
 /// other two become `transport` — which the machine reads as "the probe could
 /// not be completed" rather than as a state of the far side. A runner that
@@ -854,7 +854,7 @@ sealed class BridgeBootstrapStep with _$BridgeBootstrapStep {
     /// **Carried rather than left to the runner to invent.** shed-core's
     /// `Step::Exec` does not name a stderr cap — it is the client's choice,
     /// and the desktop makes its own ([`STDERR_TAIL_CAP`], 4 KiB, private to
-    /// `shed-app`). A Dart runner with no value here would pick a second
+    /// `shed-roost`). A Dart runner with no value here would pick a second
     /// number, and the two clients would then truncate the same failure
     /// differently for no reason anybody could find later. So the number
     /// crosses with the other two caps, from [`STDERR_TAIL_CAP`] below.

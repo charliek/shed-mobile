@@ -383,7 +383,17 @@ class BridgeShedImage {
 
 /// A shed's lifecycle status (mirrors `ShedStatus`; an unknown wire value folds
 /// to `Unknown`). A plain fieldless enum → a plain Dart enum.
-enum BridgeShedStatus { running, stopped, starting, error, unknown }
+enum BridgeShedStatus {
+  running,
+  stopped,
+  starting,
+
+  /// A stop in progress; only a backend with an asynchronous lifecycle
+  /// (remote) sends it.
+  stopping,
+  error,
+  unknown,
+}
 
 /// `GET /api/system/df` (mirrors `models::SystemDiskUsage`).
 class BridgeSystemDiskUsage {

@@ -13,10 +13,10 @@
 #
 # ALL FOUR shed crates are patched together, always. The manifest pins them to
 # one rev, and a patch that covered only some of them would resolve the rest
-# from the git rev — two shed-cores in one graph, and the type mismatches that
-# follow.
+# from the git rev — two shed-cores (or shed-lanes) in one graph, and the type
+# mismatches that follow.
 [patch."https://github.com/charliek/shed"]
-shed-core     = { path = "../../shed/crates/shed-core" }
-shed-app      = { path = "../../shed/crates/shed-app" }
-shed-opencode = { path = "../../shed/crates/shed-opencode" }
-shed-craze    = { path = "../../shed/crates/shed-craze" }
+shed-core  = { path = "../../shed/crates/shed-core" }
+shed-lane  = { path = "../../shed/crates/shed-lane" }
+shed-roost = { path = "../../shed/crates/shed-roost" }
+shed-craze = { path = "../../shed/crates/shed-craze" }
