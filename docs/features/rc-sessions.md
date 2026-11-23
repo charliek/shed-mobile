@@ -56,7 +56,7 @@ installed craze. See the craze section of
 
 **One row per session.** A craze session's status is craze's (plan 025 D4): with
 the craze feed live, a roost tab running a craze TUI is folded into the hub
-row it names (the rule is shed's own `shed_app::craze_rows::fold_plan`, called
+row it names (the rule is shed's own `shed_lane::craze_rows::fold_plan`, called
 over the bridge — never re-derived in Dart), and its terminal actions — Peek and
 End tab — act on that tab by its id. With the feed down, nothing is folded:
 roost's tab stands alone again beside the hub row's last-known, dimmed copy.
@@ -130,7 +130,7 @@ create's form.
 
 ### A craze session's transcript
 
-The transcript screen is the same one an opencode lane opens, and it takes
+The transcript screen takes
 everything a session can do from what the lane's stream last said about that
 session — its capabilities, its settings and its row — never from a copy taken
 when it opened.
@@ -143,7 +143,7 @@ when it opened.
 | Interject | Offered only when the capabilities say `interject`, and live only while a turn is running. |
 | Reconnecting | The lane's own connection dropped and craze is resuming it from where it was: the banner says "reconnecting…", the transcript stays on screen, and when the resume lands the banner goes — the same transcript, nothing re-read. |
 | Ended | The banner says why the lane ended. A session that is gone (`unknown_session`), was stopped (`session_closed`) or never started (`start_failed: <cause>`) is never re-opened, and the banner is all the screen says: the composer is off and nothing adds "given up on". Any other end is re-opened on a backoff ("Reconnecting…"). |
-| A stopped session's last rows | craze 0.2.0 drops a stopping session from its list at once, ahead of the session's last events. So when a craze session's row leaves while its transcript is open and live, the transcript keeps its own connection for a 10-second grace: the closing rows still arrive, and the stop's `session_closed` ends it as above. A row listed again in that time changes nothing. While the grace runs, an end that is not final and a restart of the machine's craze connection re-open nothing; the grace decides. If it runs out with no end, the transcript reads once more and is given up on: "This lane has been given up on — its row or session is gone." A lane given up on an error says "This lane has been given up on: <error>". An opencode row that leaves gives its lane up at once, as before. |
+| A stopped session's last rows | craze 0.2.0 drops a stopping session from its list at once, ahead of the session's last events. So when a craze session's row leaves while its transcript is open and live, the transcript keeps its own connection for a 10-second grace: the closing rows still arrive, and the stop's `session_closed` ends it as above. A row listed again in that time changes nothing. While the grace runs, an end that is not final and a restart of the machine's craze connection re-open nothing; the grace decides. If it runs out with no end, the transcript reads once more and is given up on: "This lane has been given up on — its row or session is gone." A lane given up on an error says "This lane has been given up on: <error>". |
 | A lost answer | A send whose answer was lost — the connection dropped while it was in flight — may or may not have started a turn and is never resent: the typed text stays, and the screen says to check the transcript before sending again. |
 | Settings | The settings chip and sheet, below. |
 
@@ -153,8 +153,7 @@ A session whose capabilities say `settings` carries a chip under the transcript
 header — the current model, effort and fast (`Grok 4.6 · High · fast`; "fast"
 only when it is on) — and tapping it opens the session's settings sheet
 (`lib/features/lanes/lane_settings_sheet.dart`, the desktop's sheet as rules —
-`lib/lanes/lane_settings.dart`). A session that does not offer settings (every
-opencode one) has no chip at all: hidden, never disabled, and an open sheet
+`lib/lanes/lane_settings.dart`). A session that does not offer settings has no chip at all: hidden, never disabled, and an open sheet
 leaves if the session stops offering them.
 
 | Part | Behaviour |
@@ -177,7 +176,7 @@ judged by. A model whose options name none has no effort in its chip.
 On a session whose capabilities say `slash`, a `/` draft opens a menu above the
 composer listing the commands the session can run (an empty draft offers a `/`
 button that starts one). What it lists, what a typed command does, and when a
-command is refused are the shared core's rules (`shed_app::slash_menu`, reached
+command is refused are the shared core's rules (`shed_lane::slash_menu`, reached
 over the bridge — the phone decides none of it): a rename, a mode, Stop (behind
 its confirm), `/model` (the settings sheet), and the agent's own commands sent
 as prompts. A command that waits for the turn is dimmed while one runs, and
@@ -195,7 +194,7 @@ refused "runs after this turn".
 What a target can launch as a roost tab comes from `roostCapabilities()` —
 **synthesized, not probed**: roost is a terminal multiplexer with agent
 adapters, not shed's guest agent, so there is nothing to ask. The create form
-offers exactly `claude-rc` and `opencode` as roost tabs, plus `craze` where the
+offers exactly `claude-rc` and `opencode` as roost tabs (a roost tab has no transcript: only a craze session opens one), plus `craze` where the
 target's craze source can create (plan 025 O3; see
 [Creating a craze session](#creating-a-craze-session)). A row running any other
 kind directly (`codex`, `cursor`, `gx`, `grok`) still shows up and reads as a

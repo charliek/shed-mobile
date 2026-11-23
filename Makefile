@@ -60,7 +60,7 @@ cargo-test:
 	  root=$$(pwd); \
 	  cp "$$root/rust/Cargo.lock" "$$root/rust/.Cargo.lock.canonical"; \
 	  trap 'mv -f "$$root/rust/.Cargo.lock.canonical" "$$root/rust/Cargo.lock"' EXIT INT TERM; \
-	  ( cd rust && cargo update --offline -q -p shed-core -p shed-app -p shed-opencode -p shed-craze && cargo test ); \
+	  ( cd rust && cargo update --offline -q -p shed-core -p shed-lane -p shed-roost -p shed-craze && cargo test ); \
 	else \
 	  cd rust && cargo test --locked; \
 	fi
@@ -79,11 +79,11 @@ test:
 	flutter test
 
 # The hermetic integration harness on the Flutter LINUX DESKTOP build
-# (integration_test/ — the agent-lane cells plus the two FRB-surface files).
+# (integration_test/ — the craze lane cells plus the FRB-surface and roost files).
 #
-# It drives the real bridge against shed's own opencode fake, hosted by
-# $(SHED_CHECKOUT)/desktop/tools/shedtest/fake_lane_server.py — so it needs a
-# shed checkout (a sibling by default) and `python3`, but no sshd, no network
+# It drives the real bridge against craze's own fakes and shed's roost-vectors
+# goldens ($(SHED_CHECKOUT)/crates/fixtures/roost-vectors) — so it needs a
+# shed checkout (a sibling by default), but no sshd, no network
 # and no agent. The craze cells (integration_test/craze_test.dart) also need
 # craze's pinned binaries: export SHED_CRAZE_BIN_DIR (shed's `make
 # craze-binaries` prints it) — they SKIP without it, and SHED_CRAZE_REQUIRE=1
@@ -115,7 +115,7 @@ test-integration-linux:
 	  echo "test-integration-linux needs xvfb-run + dbus-run-session (apt install xvfb dbus-x11)" >&2; \
 	  exit 1; \
 	fi; \
-	if [ ! -f "$(SHED_CHECKOUT)/desktop/tools/shedtest/fake_lane_server.py" ]; then \
+	if [ ! -f "$(SHED_CHECKOUT)/crates/fixtures/roost-vectors/agent-table.json" ]; then \
 	  echo "no shed checkout at $(SHED_CHECKOUT) — set SHED_CHECKOUT=/path/to/shed" >&2; \
 	  exit 1; \
 	fi; \

@@ -46,9 +46,10 @@ Regenerating the bridge glue is a two-step codegen — `make frb-gen` (see below
 ### Rust bridge codegen (two-step)
 
 The client core is shared Rust (`rust/src/api/*.rs`), depending on four shed
-crates pinned to the same git rev — `shed-core` + `shed-app`, plus the two
-agent-lane adapters `shed-opencode` (plan 015) and `shed-craze` (plan 025; the
-`shed-gx` adapter from plan 017 was retired in the same plan) — reached over
+crates pinned to the same git rev — `shed-core`, `shed-lane` (the lane
+contract, the `/` menu and the craze row fold), `shed-roost` and `shed-craze`
+(the one agent lane; the opencode lane is gone, and so are the `shed-app` and
+`shed-opencode` crates) — reached over
 `flutter_rust_bridge`
 **2.13.0-beta.5**. FRB 2.13 renders
 fielded Rust enums as Dart **sealed classes** (via `freezed`), so regenerating is
@@ -70,13 +71,14 @@ sibling-checkout dev builds against `../shed/crates` via a gitignored
 enable it; the committed `Cargo.lock` always resolves the canonical `git+rev`.
 
 A fifth git dependency, `roost-ipc` (roost's own IPC crate), is pinned
-**separately and must stay in lockstep with the rev shed-core's own manifest
-pins** — both link the same IPC wire, and a mismatch is not just a style
-nit: cargo unifies git deps on `(url, rev)`, so a `roost-ipc` rev that
-disagrees with shed-core's produces TWO copies of the crate in one dependency
+**separately and must stay in lockstep with the rev shed's workspace pins
+for `shed-roost`** (`[workspace.dependencies]` in shed's `crates/Cargo.toml`;
+`shed-roost` is the only shed crate that links it) — both link the same IPC
+wire, and a mismatch is not just a style nit: cargo unifies git deps on
+`(url, rev)`, so a `roost-ipc` rev that disagrees with shed-roost's produces TWO copies of the crate in one dependency
 graph and `TabOpenParams`/`remote_command` stop type-checking. Bumping
 `roost-ipc` is therefore a two-file edit done together with the `shed-core`/
-`shed-app` bump, and `scripts/check-lock-rev.sh` asserts the committed lock
+`shed-lane`/`shed-roost`/`shed-craze` bump, and `scripts/check-lock-rev.sh` asserts the committed lock
 agrees (belt-and-braces to the compile failure, which is the real gate).
 
 **Install `cargo-expand` with the PINNED toolchain.**

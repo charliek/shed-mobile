@@ -86,12 +86,11 @@ both run every file even after one fails.
 |---|---|
 | `shed_probe_test.dart` | a Rust→Dart call into shed-core round-trips at runtime |
 | `slices_test.dart` | the five FRB bridge surfaces (mint inversion, watcher, RcRunner, create-stream, sealed errors) + the leak counters |
-| `lane_test.dart` | the agent lanes, end to end against shed's own opencode fake (including that a session whose capabilities say no settings gets no settings chip and sends nothing) |
 | `roost_goldens_test.dart` | Dart's leg of shed's three `roost-vectors` goldens — the exec chain, the agent table, and roost's stderr classifier |
-| `slash_parity_test.dart` | that the widget tests' `/` menu double (`test/features/lanes/fake_slash_rules.dart`) answers every `filter`, `dispatch`, `accept` and `isWorking` case those tests rely on exactly as the real `shed_app::slash_menu` does over FRB — `/effort`'s rows included (plan 032): the bare picker, a level by id, in any case and by name, the reserved `default` with and without a default level, an ambiguous level, craze's refusal text, and a level judged before the turn |
+| `slash_parity_test.dart` | that the widget tests' `/` menu double (`test/features/lanes/fake_slash_rules.dart`) answers every `filter`, `dispatch`, `accept` and `isWorking` case those tests rely on exactly as the real `shed_lane::slash_menu` does over FRB — `/effort`'s rows included (plan 032): the bare picker, a level by id, in any case and by name, the reserved `default` with and without a default level, an ambiguous level, craze's refusal text, and a level judged before the turn |
 | `roost_entitlement_test.dart` | that only a target THIS app run bootstrapped spawns an entitled watcher — and that the claim does not survive a relaunch |
 | `roost_bootstrap_drive_test.dart` | that the bootstrap is driven through `MachineFeed.runBootstrap`, so the entitlement is recorded as part of driving rather than by a caller who might forget |
-| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, a craze half that failed to start retried by the next start with roost left running, a stop + start landing while a start or a craze retry is in flight (the feed ends started, one watcher; a stop after the request wins), the feed's teardown, the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it), its Resume half (plan 032 M3: a saved session seeded into craze's index listed and resumed into a transcript that shows `grok-load`'s replayed answer, "Resuming…" with every other button waiting while its reopen's dial is held, no longer saved once it runs; and a session whose directory went dropped from the list as `gone`), the transcript (seed, send, answers, cancel, Stop behind its confirm, the silent resume after the lane's own connection is killed, and a session created and stopped at once leaving the rows, and — plan 032 §3.1 — a lane outliving its stopping row: a fake host marked stopping mid-turn (`mark_stopping`) leaves the roster, its late text and turn end still land on the lane's own connection inside the departure grace, and once the host quits the lane ends `unknown_session` with its ended banner alone), the settings sheet against craze's permodel cursor (the chip and rows, a model change redrawing the options, a `stale_model` refusal inline with a new command for the retry, another client's change appearing in the open sheet, and a change lost to a drop shown "not confirmed" until the resume's `Settings`), and `/effort` on the same cursor (plan 032: the row following a settings-only model switch, a bare `/effort` opening the sheet with no `effort →` line on an ACP session's models, `/effort low` sent as `session.set {kind: config, id: effort, value: low, forModel: grok-4.6}` and sent again at the current level, craze's refusal of an unknown level and of `default` without effort facts, glm-5.2's `reasoning` as its effort, and a level judged before the turn in the held-turn cell — each state-changing cell putting the session's starting effort back) |
+| `craze_test.dart` | a machine's craze source against the REAL craze hub: its rows, the roost/craze row merge, not installed / too old, an open transcript across a feed restart, a craze half that failed to start retried by the next start with roost left running, a stop + start landing while a start or a craze retry is in flight (the feed ends started, one watcher; a stop after the request wins), the feed's teardown, the create screen's craze sheet (craze's own options, the transcript at once, an unknown outcome retried under one id, a start failure's cause and a new id after it), its Resume half (plan 032 M3: a saved session seeded into craze's index listed and resumed into a transcript that shows `grok-load`'s replayed answer, "Resuming…" with every other button waiting while its reopen's dial is held, no longer saved once it runs; and a session whose directory went dropped from the list as `gone`), the transcript (seed, send, answers — and a question answer's nullable `customText` round-tripping the bridge, a hole sent and a value refused —, cancel, Stop behind its confirm, the silent resume after the lane's own connection is killed, and a session created and stopped at once leaving the rows, and — plan 032 §3.1 — a lane outliving its stopping row: a fake host marked stopping mid-turn (`mark_stopping`) leaves the roster, its late text and turn end still land on the lane's own connection inside the departure grace, and once the host quits the lane ends `unknown_session` with its ended banner alone), the settings sheet against craze's permodel cursor (the chip and rows, a model change redrawing the options, a `stale_model` refusal inline with a new command for the retry, another client's change appearing in the open sheet, and a change lost to a drop shown "not confirmed" until the resume's `Settings`), and `/effort` on the same cursor (plan 032: the row following a settings-only model switch, a bare `/effort` opening the sheet with no `effort →` line on an ACP session's models, `/effort low` sent as `session.set {kind: config, id: effort, value: low, forModel: grok-4.6}` and sent again at the current level, craze's refusal of an unknown level and of `default` without effort facts, glm-5.2's `reasoning` as its effort, and a level judged before the turn in the held-turn cell — each state-changing cell putting the session's starting effort back) |
 
 `roost_goldens_test.dart` needs the shed checkout but nothing else: no fake, no
 port, no python. It is here rather than in `test/` precisely because
@@ -99,24 +98,18 @@ port, no python. It is here rather than in `test/` precisely because
 missing would be a golden that asserts nothing on the machine that needed it
 most.
 
-`lane_test.dart` is the one with an external dependency. It drives a real
-`LaneController` and a pumped `LaneScreen` through the **real** FRB bridge
-(`BridgeLaneSource`, never a stub) against shed's own
-`desktop/tools/shedtest/fake_lane_server.py`, spawned per cell over a loopback
-control port. So it needs a **shed checkout** and `python3` — and nothing else:
+The craze cells drive a real `LaneController` and a pumped `LaneScreen` through
+the **real** FRB bridge (`BridgeLaneSource`, never a stub) against the real
+craze hub. They need a **shed checkout** (for the goldens and the pinned craze
+SHA) and craze's pinned binaries — and nothing else:
 
-- **No sshd, no forward, no network.** The harness overrides `laneReachProvider`
-  with `LaneReach.local`, so `dial_url == reported_url`. It is an explicit
-  override, never inferred from the fake's loopback host — production is
-  `LaneReach.machine` for every machine, including `localhost` (a shed VM is
-  dialled at `localhost:2222` and its agent is inside the VM). The refcounted
-  forward has its own hermetic tests.
-- **The fake is never re-derived in Dart.** Every envelope comes from the
-  Python builders by name (`POST /_/envelope/<name>`), because the opencode
-  wire vocabulary belongs next to the adapter it was recorded from. (The gx
-  lane and its credential-probe seam were retired in plan 025, CM1 —
-  shed-mobile#33.)
-- **The shed checkout must be the pinned rev.** The fakes and the adapters under
+- **No sshd, no network.** The rig runs craze's bridge as a local process, so
+  the lane's dial needs no forward. The refcounted-forward machinery of the old
+  opencode lane is gone with the lane.
+- **The wire is observable.** The rig logs what each craze bridge carried
+  (`verbsOf('asks.answer')`, `session.prompt`, ...), so a cell asserts the real
+  request a decision produced, not only what rendered on screen.
+- **The shed checkout must be the pinned rev.** The goldens and the crates under
   test are one tree; CI checks out
   `scripts/check-lock-rev.sh --print-shed-rev` and asserts the sha.
 
@@ -200,9 +193,6 @@ Rules that matter when adding a cell:
 - Every cell carries a 60 s timeout, and every fake is stopped from a
   `tearDown` — so a failing cell leaves nothing bound to a loopback port. The
   fake also watches its own stdin, so a killed run leaks nothing either.
-- **The opencode wire body is reachable too, not just the render.** The
-  opencode fake's own `post_body`/`post_paths` pair lets a cell assert the
-  real request body a decision produced, not only what rendered on screen.
 
 `make test-integration-linux` also warns when the local Flutter differs from the
 CI pin, and restores `pubspec.lock` / `analysis_options.yaml` after the run —
