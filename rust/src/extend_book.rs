@@ -238,7 +238,8 @@ impl ExtendBook {
     }
 
     /// Settle what `server`'s listing (`rows`, every shed it listed), sent after
-    /// `mark` was taken, shows at `now`. Only for a listing that succeeded.
+    /// `mark` was taken and at `now` (the time it was SENT, [`listing`]), shows.
+    /// Only for a listing that succeeded.
     pub(crate) fn observe(&self, server: &str, rows: &[Shed], mark: u64, now: i64) {
         self.lock().by_shed.retain(|(s, name), slot| match slot {
             Slot::Unknown(r) if s == server && r.seq <= mark => {
@@ -405,6 +406,28 @@ where
     }
 }
 
+/// Run one listing of `server` (`list`) and settle what it shows (`rows`) of
+/// the unknown outcomes. The mark and the time are both taken BEFORE it is
+/// sent: the server may have sampled the lease as soon as the request arrived,
+/// so the not-applied wait ([`EXTEND_SETTLE_MS`]) is measured to then, never to
+/// when the reply came back. A listing that fails settles nothing.
+pub(crate) async fn listing<T, E, F>(
+    book: &ExtendBook,
+    server: &str,
+    now: &(dyn Fn() -> i64 + Send + Sync),
+    list: F,
+    rows: impl FnOnce(&T) -> Vec<Shed>,
+) -> Result<T, E>
+where
+    F: Future<Output = Result<T, E>>,
+{
+    let mark = book.listing_mark();
+    let sent_at = now();
+    let out = list.await?;
+    book.observe(server, &rows(&out), mark, sent_at);
+    Ok(out)
+}
+
 /// Stamp each listed shed with its extend whose outcome is not known.
 pub(crate) fn stamp(book: &ExtendBook, server: &str, shed: &mut BridgeShed) {
     shed.extend_unknown_hours = book.unknown_hours(server, &shed.name);
@@ -558,6 +581,52 @@ mod tests {
             T0 + EXTEND_SETTLE_MS,
         );
         assert_eq!(book.unknown_hours("s", "w"), None, "not applied");
+    }
+
+    /// The not-applied wait is measured to when the listing was sent: one sent
+    /// before the 150 s point that returns after it does not settle the record
+    /// as not applied; one sent after it does.
+    #[test]
+    fn a_listing_is_timed_when_it_is_sent_not_when_it_returns() {
+        let book = ExtendBook::new();
+        record(&book, unknown(T0, 6, T0));
+        let clock = Clock::new(T0 + EXTEND_SETTLE_MS - 1000);
+        let now = clock.f();
+        let unmoved = || vec![shed("w", "c1", T0)];
+        let slow = run(listing(
+            &book,
+            "s",
+            &now,
+            async {
+                // The reply arrives after the 150 s point.
+                clock.set(T0 + EXTEND_SETTLE_MS + 5000);
+                Ok::<_, ()>(unmoved())
+            },
+            |rows| rows.clone(),
+        ));
+        assert!(slow.is_ok());
+        assert_eq!(book.unknown_hours("s", "w"), Some(6), "sent too soon");
+
+        // A listing that fails settles nothing.
+        let failed = run(listing(
+            &book,
+            "s",
+            &now,
+            async { Err::<Vec<Shed>, _>("down") },
+            |rows| rows.clone(),
+        ));
+        assert_eq!(failed, Err("down"));
+        assert_eq!(book.unknown_hours("s", "w"), Some(6));
+
+        let late = run(listing(
+            &book,
+            "s",
+            &now,
+            async { Ok::<_, ()>(unmoved()) },
+            |rows| rows.clone(),
+        ));
+        assert!(late.is_ok());
+        assert_eq!(book.unknown_hours("s", "w"), None, "sent after it");
     }
 
     #[test]

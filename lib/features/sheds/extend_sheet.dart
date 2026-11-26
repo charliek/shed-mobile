@@ -58,7 +58,9 @@ class _ExtendSheetState extends State<ExtendSheet> {
   Widget build(BuildContext context) {
     final c = context.shed;
     final hours = _hours;
-    return Padding(
+    // Scrolls, so the controls stay reachable when the keyboard leaves little
+    // height.
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         20,
         20,

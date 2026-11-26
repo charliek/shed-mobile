@@ -141,10 +141,14 @@ impl BridgeClient {
     /// whose outcome was unknown, and stamps each shed with any still unknown.
     pub async fn overview(&self) -> Result<BridgeOverview, BridgeError> {
         let client = self.inner.clone();
-        let mark = EXTENDS.listing_mark();
-        let o = run(async move { client.overview().await }).await?;
-        let rows: Vec<_> = o.sheds.iter().map(|r| r.shed.clone()).collect();
-        EXTENDS.observe(&self.server_name, &rows, mark, extend_book::now_ms());
+        let o = extend_book::listing(
+            &EXTENDS,
+            &self.server_name,
+            &extend_book::now_ms,
+            run(async move { client.overview().await }),
+            |o| o.sheds.iter().map(|r| r.shed.clone()).collect(),
+        )
+        .await?;
         let mut o = BridgeOverview::from(o);
         for row in &mut o.sheds {
             extend_book::stamp(&EXTENDS, &self.server_name, &mut row.shed);
@@ -155,9 +159,14 @@ impl BridgeClient {
     /// The server's sheds. A listing, as [`Self::overview`].
     pub async fn list_sheds(&self) -> Result<Vec<BridgeShed>, BridgeError> {
         let client = self.inner.clone();
-        let mark = EXTENDS.listing_mark();
-        let rows = run(async move { client.list_sheds().await }).await?;
-        EXTENDS.observe(&self.server_name, &rows, mark, extend_book::now_ms());
+        let rows = extend_book::listing(
+            &EXTENDS,
+            &self.server_name,
+            &extend_book::now_ms,
+            run(async move { client.list_sheds().await }),
+            |rows| rows.clone(),
+        )
+        .await?;
         Ok(rows
             .into_iter()
             .map(|s| {
