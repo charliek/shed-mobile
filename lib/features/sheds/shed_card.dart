@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_section.dart';
 import '../../bridge/bridge_adapters.dart';
+import '../../providers.dart';
+import '../../shed/cloud.dart';
 import '../../shed/format.dart';
 import '../../shed/shed_status.dart';
 import '../../src/rust/api/client.dart';
@@ -14,6 +16,7 @@ import '../../widgets/runtime_badge.dart';
 import '../../widgets/square_icon_button.dart';
 import '../../widgets/status_badge.dart';
 import '../rc/shed_detail_screen.dart';
+import 'extend_sheet.dart';
 import 'shed_actions.dart';
 
 /// The single shed-row widget, shared by the cross-host Sheds tab and the
@@ -25,6 +28,11 @@ import 'shed_actions.dart';
 /// buttons sit below the tappable content and win the gesture, so tapping one
 /// acts without also navigating). Restart is a client-side stop→start; on
 /// failure the card reflects the now-stopped state and surfaces it.
+///
+/// A cloud shed (plan 041) also wears a `Cloud` badge, its meta line ends with
+/// the lease's time left (amber under its warning time, red once ended), and its
+/// actions follow the cloud rules ([cloudActions]): no restart, and an Extend
+/// that opens [showExtendSheet] and sends through [runShedExtend].
 class ShedCard extends ConsumerStatefulWidget {
   const ShedCard({required this.serverName, required this.shed, super.key});
 
@@ -99,11 +107,39 @@ class _ShedCardState extends ConsumerState<ShedCard> {
   Future<void> _delete() async {
     if (_busy || _confirming) return;
     setState(() => _confirming = true);
-    final ok = await confirmShedDelete(context, widget.shed.name);
+    final ok = await confirmShedDelete(
+      context,
+      widget.shed.name,
+      cloud: widget.shed.cloud != null,
+    );
     if (!mounted) return;
     setState(() => _confirming = false);
     if (ok) {
       await _run('shed-delete', (c) => c.delete(name: widget.shed.name));
+    }
+  }
+
+  // Extend a cloud shed's lease: the sheet picks the hours, the shared helper
+  // sends the extend and refreshes both shed views.
+  Future<void> _extend(BridgeShedLease lease) async {
+    if (_busy) return;
+    final hours = await showExtendSheet(
+      context,
+      name: widget.shed.name,
+      lease: lease,
+    );
+    if (hours == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await runShedExtend(
+        ref,
+        context,
+        serverName: widget.serverName,
+        name: widget.shed.name,
+        hours: hours,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -166,6 +202,12 @@ class _ShedCardState extends ConsumerState<ShedCard> {
   Widget _header(ShedColors c, StatusDisplay st, String wire) {
     final s = widget.shed;
     final meta = shedMetaLine(s);
+    final cloud = s.cloud;
+    final lease = cloud == null
+        ? null
+        : cloudLease(cloud, ref.watch(cloudNowProvider));
+    final metaStyle = monoStyle(fontSize: 12, color: c.fg3);
+    final unknownHours = s.extendUnknownHours;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -186,6 +228,10 @@ class _ShedCardState extends ConsumerState<ShedCard> {
             ),
             const SizedBox(width: 10),
             RuntimeBadge(s.backend),
+            if (cloud != null) ...[
+              const SizedBox(width: 8),
+              CloudBadge(key: ValueKey('all-shed-cloud-$_base')),
+            ],
             if (s.image != null) ...[
               const SizedBox(width: 8),
               Flexible(child: _ImageChip(image: s.image!)),
@@ -200,13 +246,39 @@ class _ShedCardState extends ConsumerState<ShedCard> {
           overflow: TextOverflow.ellipsis,
           style: monoStyle(fontSize: 11.5, color: c.toneFg(st.tone)),
         ),
-        if (meta.isNotEmpty) ...[
+        if (meta.isNotEmpty || lease != null) ...[
           const SizedBox(height: 5),
-          Text(
-            meta,
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: meta),
+                if (lease != null) ...[
+                  if (meta.isNotEmpty) const TextSpan(text: ' · '),
+                  TextSpan(
+                    text: lease.words,
+                    style: metaStyle.copyWith(
+                      color: switch (lease.state) {
+                        LeaseState.soon => c.warnFg,
+                        LeaseState.ended => c.errFg,
+                        LeaseState.ok || LeaseState.unknown => c.fg3,
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            key: ValueKey('all-shed-meta-$_base'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: monoStyle(fontSize: 12, color: c.fg3),
+            style: metaStyle,
+          ),
+        ],
+        if (unknownHours != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            unresolvedExtendWords(unknownHours),
+            key: ValueKey('all-shed-extend-unknown-$_base'),
+            style: sansStyle(fontSize: 12, color: c.warnFg),
           ),
         ],
       ],
@@ -231,16 +303,17 @@ class _ShedCardState extends ConsumerState<ShedCard> {
       );
     }
     final s = widget.shed;
+    final cloud = s.cloud;
+    if (cloud != null) {
+      return _cloudActions(
+        c,
+        cloudActions(s, cloud, ref.watch(cloudNowProvider)),
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SquareIconButton(
-          key: ValueKey('all-shed-open-$_base'),
-          icon: Icons.chevron_right,
-          size: 36,
-          tooltip: 'Sessions',
-          onPressed: _open,
-        ),
+        _openButton(),
         if (bridgeShedIsRunning(s)) ...[
           const SizedBox(width: 8),
           SquareIconButton(
@@ -253,39 +326,79 @@ class _ShedCardState extends ConsumerState<ShedCard> {
             onPressed: _restart,
           ),
           const SizedBox(width: 8),
-          SquareIconButton(
-            key: ValueKey('all-shed-stop-$_base'),
-            icon: Icons.stop,
-            size: 36,
-            background: c.errBg,
-            iconColor: c.errFg,
-            tooltip: 'Stop',
-            onPressed: () => _toggle(start: false),
-          ),
+          _stopButton(c),
         ] else ...[
           const SizedBox(width: 8),
-          SquareIconButton(
-            key: ValueKey('all-shed-start-$_base'),
-            icon: Icons.play_arrow,
-            size: 36,
-            background: c.okBg,
-            iconColor: c.okFg,
-            tooltip: 'Start',
-            onPressed: () => _toggle(start: true),
-          ),
+          _startButton(c),
         ],
         const SizedBox(width: 8),
-        SquareIconButton(
-          key: ValueKey('all-shed-delete-$_base'),
-          icon: Icons.delete_outline,
-          size: 36,
-          tooltip: 'Delete',
-          iconColor: c.fg3,
-          onPressed: _delete,
-        ),
+        _deleteButton(c),
       ],
     );
   }
+
+  /// A cloud shed's actions (the desktop's rules): no restart; start and stop
+  /// only before its lease ends; delete only once it is not running; Extend
+  /// while the server offers it and no earlier extend's outcome is unknown.
+  Widget _cloudActions(ShedColors c, CloudActions a) {
+    final lease = widget.shed.cloud?.lease;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _openButton(),
+        if (a.extend && lease != null) ...[
+          const SizedBox(width: 8),
+          SquareIconButton(
+            key: ValueKey('all-shed-extend-$_base'),
+            icon: Icons.more_time,
+            size: 36,
+            tooltip: 'Extend',
+            onPressed: () => _extend(lease),
+          ),
+        ],
+        if (a.stop) ...[const SizedBox(width: 8), _stopButton(c)],
+        if (a.start) ...[const SizedBox(width: 8), _startButton(c)],
+        if (a.delete) ...[const SizedBox(width: 8), _deleteButton(c)],
+      ],
+    );
+  }
+
+  Widget _openButton() => SquareIconButton(
+    key: ValueKey('all-shed-open-$_base'),
+    icon: Icons.chevron_right,
+    size: 36,
+    tooltip: 'Sessions',
+    onPressed: _open,
+  );
+
+  Widget _stopButton(ShedColors c) => SquareIconButton(
+    key: ValueKey('all-shed-stop-$_base'),
+    icon: Icons.stop,
+    size: 36,
+    background: c.errBg,
+    iconColor: c.errFg,
+    tooltip: 'Stop',
+    onPressed: () => _toggle(start: false),
+  );
+
+  Widget _startButton(ShedColors c) => SquareIconButton(
+    key: ValueKey('all-shed-start-$_base'),
+    icon: Icons.play_arrow,
+    size: 36,
+    background: c.okBg,
+    iconColor: c.okFg,
+    tooltip: 'Start',
+    onPressed: () => _toggle(start: true),
+  );
+
+  Widget _deleteButton(ShedColors c) => SquareIconButton(
+    key: ValueKey('all-shed-delete-$_base'),
+    icon: Icons.delete_outline,
+    size: 36,
+    tooltip: 'Delete',
+    iconColor: c.fg3,
+    onPressed: _delete,
+  );
 }
 
 class _ImageChip extends StatelessWidget {

@@ -1,4 +1,5 @@
 import '../src/rust/api/dto.dart';
+import 'cloud.dart';
 
 /// Pure UI formatters relocated from the deleted `shed_dtos.dart` (B3 FRB swap).
 /// These take primitive fields (or the bridge `BridgeShed`), so they stay pure
@@ -60,13 +61,22 @@ String? ageLabel(DateTime? t, {DateTime? now}) => _compactAge(t, now: now);
 String _memLabel(int mb) => mb % 1024 == 0 ? '${mb ~/ 1024} GB' : '$mb MB';
 
 /// The cross-host shed card's mono meta line — `repo · N vCPU · mem · up Nh`,
-/// dropping any absent part. Pure (pass [now] in tests).
-String shedMetaLine(BridgeShed s, {DateTime? now}) => [
-  ?_nonEmpty(s.repo),
-  if (s.cpus != null) '${s.cpus} vCPU',
-  if (s.memoryMb != null) _memLabel(s.memoryMb!),
-  ?uptimeLabel(parseServerTime(s.startedAt), now: now),
-].join(' · ');
+/// dropping any absent part; a cloud shed's size is its machine's
+/// ([cloudSizeWords]). The lease's time left follows it on the card, in its
+/// own colour ([cloudLease]). Pure (pass [now] in tests).
+String shedMetaLine(BridgeShed s, {DateTime? now}) {
+  final cloud = s.cloud;
+  return [
+    ?_nonEmpty(s.repo),
+    if (cloud != null)
+      ?_nonEmpty(cloudSizeWords(cloud))
+    else ...[
+      if (s.cpus != null) '${s.cpus} vCPU',
+      if (s.memoryMb != null) _memLabel(s.memoryMb!),
+    ],
+    ?uptimeLabel(parseServerTime(s.startedAt), now: now),
+  ].join(' · ');
+}
 
 /// The cross-host session card's mono meta line — `shed · workdir · made N ago`,
 /// dropping the age for a missing/zero/unparseable created_at. Pure.

@@ -294,6 +294,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCloudCounts dco_decode_box_autoadd_bridge_cloud_counts(dynamic raw);
+
+  @protected
   BridgeCrazeOffline dco_decode_box_autoadd_bridge_craze_offline(dynamic raw);
 
   @protected
@@ -371,6 +374,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed dco_decode_box_autoadd_bridge_shed(dynamic raw);
 
   @protected
+  BridgeShedCloud dco_decode_box_autoadd_bridge_shed_cloud(dynamic raw);
+
+  @protected
+  BridgeShedLease dco_decode_box_autoadd_bridge_shed_lease(dynamic raw);
+
+  @protected
   BridgeSlashAccept dco_decode_box_autoadd_bridge_slash_accept(dynamic raw);
 
   @protected
@@ -403,6 +412,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoostHostTarget dco_decode_box_autoadd_roost_host_target(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_16(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -475,6 +487,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeBootstrapStep dco_decode_bridge_bootstrap_step(dynamic raw);
 
   @protected
+  BridgeCloudCounts dco_decode_bridge_cloud_counts(dynamic raw);
+
+  @protected
+  BridgeCloudUsage dco_decode_bridge_cloud_usage(dynamic raw);
+
+  @protected
   BridgeControlBundle dco_decode_bridge_control_bundle(dynamic raw);
 
   @protected
@@ -503,6 +521,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeError dco_decode_bridge_error(dynamic raw);
+
+  @protected
+  BridgeExtendOutcome dco_decode_bridge_extend_outcome(dynamic raw);
 
   @protected
   BridgeFoldPlan dco_decode_bridge_fold_plan(dynamic raw);
@@ -667,7 +688,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed dco_decode_bridge_shed(dynamic raw);
 
   @protected
+  BridgeShedCloud dco_decode_bridge_shed_cloud(dynamic raw);
+
+  @protected
   BridgeShedImage dco_decode_bridge_shed_image(dynamic raw);
+
+  @protected
+  BridgeShedLease dco_decode_bridge_shed_lease(dynamic raw);
 
   @protected
   BridgeShedStatus dco_decode_bridge_shed_status(dynamic raw);
@@ -812,6 +839,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -852,6 +882,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeBootstrapSource? dco_decode_opt_box_autoadd_bridge_bootstrap_source(
+    dynamic raw,
+  );
+
+  @protected
+  BridgeCloudCounts? dco_decode_opt_box_autoadd_bridge_cloud_counts(
     dynamic raw,
   );
 
@@ -900,6 +935,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeSessionRc? dco_decode_opt_box_autoadd_bridge_session_rc(dynamic raw);
 
   @protected
+  BridgeShedCloud? dco_decode_opt_box_autoadd_bridge_shed_cloud(dynamic raw);
+
+  @protected
+  BridgeShedLease? dco_decode_opt_box_autoadd_bridge_shed_lease(dynamic raw);
+
+  @protected
   BridgeSlashAccept? dco_decode_opt_box_autoadd_bridge_slash_accept(
     dynamic raw,
   );
@@ -921,6 +962,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -1197,6 +1241,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCloudCounts sse_decode_box_autoadd_bridge_cloud_counts(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeCrazeOffline sse_decode_box_autoadd_bridge_craze_offline(
     SseDeserializer deserializer,
   );
@@ -1300,6 +1349,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed sse_decode_box_autoadd_bridge_shed(SseDeserializer deserializer);
 
   @protected
+  BridgeShedCloud sse_decode_box_autoadd_bridge_shed_cloud(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeShedLease sse_decode_box_autoadd_bridge_shed_lease(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSlashAccept sse_decode_box_autoadd_bridge_slash_accept(
     SseDeserializer deserializer,
   );
@@ -1344,6 +1403,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoostHostTarget sse_decode_box_autoadd_roost_host_target(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -1442,6 +1504,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeCloudCounts sse_decode_bridge_cloud_counts(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCloudUsage sse_decode_bridge_cloud_usage(SseDeserializer deserializer);
+
+  @protected
   BridgeControlBundle sse_decode_bridge_control_bundle(
     SseDeserializer deserializer,
   );
@@ -1482,6 +1552,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeError sse_decode_bridge_error(SseDeserializer deserializer);
+
+  @protected
+  BridgeExtendOutcome sse_decode_bridge_extend_outcome(
+    SseDeserializer deserializer,
+  );
 
   @protected
   BridgeFoldPlan sse_decode_bridge_fold_plan(SseDeserializer deserializer);
@@ -1718,7 +1793,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeShed sse_decode_bridge_shed(SseDeserializer deserializer);
 
   @protected
+  BridgeShedCloud sse_decode_bridge_shed_cloud(SseDeserializer deserializer);
+
+  @protected
   BridgeShedImage sse_decode_bridge_shed_image(SseDeserializer deserializer);
+
+  @protected
+  BridgeShedLease sse_decode_bridge_shed_lease(SseDeserializer deserializer);
 
   @protected
   BridgeShedStatus sse_decode_bridge_shed_status(SseDeserializer deserializer);
@@ -1921,6 +2002,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -1967,6 +2051,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeBootstrapSource? sse_decode_opt_box_autoadd_bridge_bootstrap_source(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeCloudCounts? sse_decode_opt_box_autoadd_bridge_cloud_counts(
     SseDeserializer deserializer,
   );
 
@@ -2027,6 +2116,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BridgeShedCloud? sse_decode_opt_box_autoadd_bridge_shed_cloud(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BridgeShedLease? sse_decode_opt_box_autoadd_bridge_shed_lease(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BridgeSlashAccept? sse_decode_opt_box_autoadd_bridge_slash_accept(
     SseDeserializer deserializer,
   );
@@ -2052,6 +2151,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -2376,6 +2478,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_cloud_counts(
+    BridgeCloudCounts self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_craze_offline(
     BridgeCrazeOffline self,
     SseSerializer serializer,
@@ -2502,6 +2610,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_bridge_shed_cloud(
+    BridgeShedCloud self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bridge_shed_lease(
+    BridgeShedLease self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_bridge_slash_accept(
     BridgeSlashAccept self,
     SseSerializer serializer,
@@ -2557,6 +2677,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     RoostHostTarget self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
@@ -2673,6 +2796,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_bridge_cloud_counts(
+    BridgeCloudCounts self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_cloud_usage(
+    BridgeCloudUsage self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_control_bundle(
     BridgeControlBundle self,
     SseSerializer serializer,
@@ -2728,6 +2863,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bridge_error(BridgeError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bridge_extend_outcome(
+    BridgeExtendOutcome self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bridge_fold_plan(
@@ -3039,8 +3180,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bridge_shed(BridgeShed self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bridge_shed_cloud(
+    BridgeShedCloud self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_shed_image(
     BridgeShedImage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_shed_lease(
+    BridgeShedLease self,
     SseSerializer serializer,
   );
 
@@ -3294,6 +3447,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -3347,6 +3506,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bridge_bootstrap_source(
     BridgeBootstrapSource? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_cloud_counts(
+    BridgeCloudCounts? self,
     SseSerializer serializer,
   );
 
@@ -3417,6 +3582,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_bridge_shed_cloud(
+    BridgeShedCloud? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_shed_lease(
+    BridgeShedLease? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_bridge_slash_accept(
     BridgeSlashAccept? self,
     SseSerializer serializer,
@@ -3448,6 +3625,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     PlatformInt64? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);

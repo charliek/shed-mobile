@@ -1150,11 +1150,18 @@ void main() {
         'craze-provider-cursor',
         'craze-provider-grok',
         'craze-provider-claude',
+        'craze-provider-antigravity',
         'craze-provider-native',
       ]);
       expect(_textAt('craze-provider-state-cursor'), 'unavailable');
       // craze 0.4.x lists claude; no claude CLI on the rig's PATH.
       expect(_textAt('craze-provider-state-claude'), 'unavailable');
+      // craze 0.5.0's fifth provider; no `agy` on the rig's PATH.
+      expect(_textAt('craze-provider-state-antigravity'), 'unavailable');
+      expect(
+        _textAt('craze-provider-reason-antigravity'),
+        'agy not found on PATH',
+      );
       expect(
         _textAt('craze-provider-reason-cursor'),
         'cursor-agent not found on PATH',
@@ -1184,7 +1191,12 @@ void main() {
             (d.startsWith('~/') && rig.work.endsWith(d.substring(1))),
       );
       expect(at, isNonNegative, reason: '${rig.work} among $recent');
-      await tester.tap(find.byKey(ValueKey('craze-recent-dir-$at')));
+      // craze 0.5.0's fifth provider row pushes the chips below the fold of
+      // the harness window: scroll to the chip, as a person would.
+      final chip = find.byKey(ValueKey('craze-recent-dir-$at'));
+      await tester.ensureVisible(chip);
+      await _pumps(tester);
+      await tester.tap(chip);
       await _pumps(tester);
       expect(_fieldText(tester, 'craze-create-cwd'), rig.work);
 

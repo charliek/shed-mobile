@@ -199,6 +199,22 @@ final shedsProvider = FutureProvider.autoDispose
       return client.listSheds();
     });
 
+/// A server's cloud usage (plan 041): the caller's cloud machines and the
+/// organization's against the account service's limits. `null` when the server
+/// has no cloud sheds (it answers 501, an older one 404) or the read failed: the
+/// usage line is then simply absent.
+final cloudUsageProvider = FutureProvider.autoDispose
+    .family<BridgeCloudUsage?, String>((ref, serverName) async {
+      final client = await ref.watch(shedClientProvider(serverName).future);
+      // Any failure is no line, never an error: a thrown error would be
+      // retried by Riverpod against a server that has no usage to give.
+      try {
+        return await client.usage();
+      } catch (_) {
+        return null;
+      }
+    });
+
 /// Image variants available on a server (`GET /api/images`), for the create-shed
 /// Image picker. Never blocks creation — the picker falls back to "(server
 /// default)" if this errors.
@@ -315,6 +331,36 @@ void invalidateHosts(WidgetRef ref) {
 void invalidateShedViews(WidgetRef ref, String serverName) {
   ref.invalidate(shedsProvider(serverName));
   ref.invalidate(overviewProvider(serverName));
+  ref.invalidate(cloudUsageProvider(serverName));
+}
+
+/// [invalidateShedViews] from a [ProviderContainer], for a refresh that must not
+/// depend on a widget that may have unmounted (a cloud extend's completion).
+void invalidateShedViewsIn(ProviderContainer container, String serverName) {
+  container.invalidate(shedsProvider(serverName));
+  container.invalidate(overviewProvider(serverName));
+  container.invalidate(cloudUsageProvider(serverName));
+}
+
+/// How often a cloud shed's card moves its lease countdown on.
+const cloudTick = Duration(seconds: 30);
+
+/// The time a cloud shed's card shows its lease against (plan 041), moved on
+/// every [cloudTick] so the time left, its colour and which actions are offered
+/// (Extend, Start, Stop) advance with no other rebuild. Watched only by cloud
+/// cards, so the timer runs only while one is on screen. Tests override it with
+/// a clock they move.
+final cloudNowProvider = NotifierProvider.autoDispose<CloudClock, DateTime>(
+  CloudClock.new,
+);
+
+class CloudClock extends Notifier<DateTime> {
+  @override
+  DateTime build() {
+    final timer = Timer.periodic(cloudTick, (_) => state = DateTime.now());
+    ref.onDispose(timer.cancel);
+    return DateTime.now();
+  }
 }
 
 /// One shed on one host — the key every per-shed provider families on. A named
