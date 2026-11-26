@@ -90,12 +90,30 @@ abstract class BridgeClient implements RustOpaqueInterface {
 
   Future<void> deleteSession({required String shed, required String session});
 
+  /// Move a cloud shed's lease `hours` later (`POST /api/sheds/{name}/extend`).
+  ///
+  /// Never adds the hours twice: the shed is read first (its lease end before
+  /// the extend), then one request id is sent, retried under the same id when
+  /// no answer came. When shed-core marks the outcome unresolved (no reply or
+  /// a 5xx on every send, a 2xx whose shed could not be read) the result is
+  /// [`BridgeExtendOutcome::Unknown`] and every later extend of the shed is
+  /// refused unsent ([`BridgeExtendOutcome::Pending`]) until a listing shows
+  /// whether the lease moved. Runs to its end even if the caller stops
+  /// waiting, so the book always learns the outcome.
+  Future<BridgeExtendOutcome> extend({
+    required String name,
+    required PlatformInt64 hours,
+  });
+
   Future<List<BridgeShedImage>> listImages();
 
   Future<List<BridgeSession>> listSessions({required String shed});
 
+  /// The server's sheds. A listing, as [`Self::overview`].
   Future<List<BridgeShed>> listSheds();
 
+  /// The server's overview. A listing: it settles what it shows of an extend
+  /// whose outcome was unknown, and stamps each shed with any still unknown.
   Future<BridgeOverview> overview();
 
   Future<void> reset({required String name});
@@ -105,6 +123,10 @@ abstract class BridgeClient implements RustOpaqueInterface {
   Future<void> stop({required String name});
 
   Future<BridgeSystemDiskUsage> systemDf();
+
+  /// The caller's cloud machines against the account service's limits
+  /// (`GET /api/cloud/usage`). A server without cloud sheds answers 501.
+  Future<BridgeCloudUsage> usage();
 }
 
 @freezed

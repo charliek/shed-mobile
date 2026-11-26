@@ -7,8 +7,59 @@ import '../frb_generated.dart';
 import 'dto_lane.dart';
 import 'dto_rc.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'dto.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+
+/// One scope of `GET /api/cloud/usage` (mirrors `models::CloudCounts`).
+class BridgeCloudCounts {
+  final PlatformInt64 machines;
+  final PlatformInt64 running;
+  final PlatformInt64 stopped;
+  final PlatformInt64 max;
+
+  const BridgeCloudCounts({
+    required this.machines,
+    required this.running,
+    required this.stopped,
+    required this.max,
+  });
+
+  @override
+  int get hashCode =>
+      machines.hashCode ^ running.hashCode ^ stopped.hashCode ^ max.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeCloudCounts &&
+          runtimeType == other.runtimeType &&
+          machines == other.machines &&
+          running == other.running &&
+          stopped == other.stopped &&
+          max == other.max;
+}
+
+/// `GET /api/cloud/usage` (mirrors `models::CloudUsage`): `person` is `None` for
+/// a caller who is not a person of the account service (a local admin).
+class BridgeCloudUsage {
+  final BridgeCloudCounts? person;
+  final BridgeCloudCounts org;
+
+  const BridgeCloudUsage({this.person, required this.org});
+
+  @override
+  int get hashCode => person.hashCode ^ org.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeCloudUsage &&
+          runtimeType == other.runtimeType &&
+          person == other.person &&
+          org == other.org;
+}
 
 /// One image/shed/orphan disk row (mirrors `models::DiskEntry`).
 class BridgeDiskEntry {
@@ -91,6 +142,38 @@ class BridgeDiskTotals {
           snapshots == other.snapshots &&
           orphans == other.orphans &&
           all == other.all;
+}
+
+@freezed
+sealed class BridgeExtendOutcome with _$BridgeExtendOutcome {
+  const BridgeExtendOutcome._();
+
+  /// The lease moved: the shed as the server answered it.
+  const factory BridgeExtendOutcome.extended({required BridgeShed shed}) =
+      BridgeExtendOutcome_Extended;
+
+  /// Refused (or never sent): `code` and `reason` from the API error ("" when
+  /// none), its status, and the fixed words to show.
+  const factory BridgeExtendOutcome.refused({
+    required String code,
+    required String reason,
+    int? status,
+    required String words,
+  }) = BridgeExtendOutcome_Refused;
+
+  /// Sent, but shed-core could not say whether it was applied (no reply or a
+  /// 5xx on every send, a 2xx whose shed could not be read): the lease may or
+  /// may not have moved. The shed's Extend stays unavailable until a listing
+  /// shows which.
+  const factory BridgeExtendOutcome.unknown({
+    required int hours,
+    required String words,
+  }) = BridgeExtendOutcome_Unknown;
+
+  /// Not sent: an earlier extend of this shed is in flight or its outcome is
+  /// not known yet.
+  const factory BridgeExtendOutcome.pending({required String words}) =
+      BridgeExtendOutcome_Pending;
 }
 
 /// `GET /api/overview` (mirrors `models::Overview`).
@@ -274,6 +357,17 @@ class BridgeShed {
   final String? startedAt;
   final List<String> activeNamespaces;
 
+  /// A cloud shed's machine (plan 041): `Some` on every record of a remote
+  /// server with leases, `None` on every other shed.
+  final BridgeShedCloud? cloud;
+
+  /// The hours of this shed's extend whose outcome is not known (every send
+  /// ended with no answer), `None` when there is none. While it is set the
+  /// bridge refuses every extend of the shed unsent
+  /// ([`BridgeExtendOutcome::Pending`]); it clears once a listing shows whether
+  /// the lease moved (`crate::extend_book`). Filled by the client's listings.
+  final int? extendUnknownHours;
+
   const BridgeShed({
     required this.host,
     required this.name,
@@ -289,6 +383,8 @@ class BridgeShed {
     this.createdAt,
     this.startedAt,
     required this.activeNamespaces,
+    this.cloud,
+    this.extendUnknownHours,
   });
 
   @override
@@ -306,7 +402,9 @@ class BridgeShed {
       memoryMb.hashCode ^
       createdAt.hashCode ^
       startedAt.hashCode ^
-      activeNamespaces.hashCode;
+      activeNamespaces.hashCode ^
+      cloud.hashCode ^
+      extendUnknownHours.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -326,7 +424,75 @@ class BridgeShed {
           memoryMb == other.memoryMb &&
           createdAt == other.createdAt &&
           startedAt == other.startedAt &&
-          activeNamespaces == other.activeNamespaces;
+          activeNamespaces == other.activeNamespaces &&
+          cloud == other.cloud &&
+          extendUnknownHours == other.extendUnknownHours;
+}
+
+/// A cloud shed's machine as the account service reported it (mirrors
+/// `models::ShedCloud`; times verbatim, a missing member at its default).
+class BridgeShedCloud {
+  /// Which cloud, for display; absent until the service answered.
+  final String? provider;
+
+  /// The size's catalog name ("" when not said).
+  final String sizeName;
+
+  /// vCPUs and memory, 0 when not said.
+  final PlatformInt64 cpus;
+  final PlatformInt64 memoryMb;
+  final PlatformInt64 diskGb;
+
+  /// The image the machine was made from ("" when not said).
+  final String image;
+  final String createdAt;
+  final String? startedAt;
+  final String? stoppedAt;
+
+  /// `None` while the lease is unknown (the service has not answered yet).
+  final BridgeShedLease? lease;
+
+  const BridgeShedCloud({
+    this.provider,
+    required this.sizeName,
+    required this.cpus,
+    required this.memoryMb,
+    required this.diskGb,
+    required this.image,
+    required this.createdAt,
+    this.startedAt,
+    this.stoppedAt,
+    this.lease,
+  });
+
+  @override
+  int get hashCode =>
+      provider.hashCode ^
+      sizeName.hashCode ^
+      cpus.hashCode ^
+      memoryMb.hashCode ^
+      diskGb.hashCode ^
+      image.hashCode ^
+      createdAt.hashCode ^
+      startedAt.hashCode ^
+      stoppedAt.hashCode ^
+      lease.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeShedCloud &&
+          runtimeType == other.runtimeType &&
+          provider == other.provider &&
+          sizeName == other.sizeName &&
+          cpus == other.cpus &&
+          memoryMb == other.memoryMb &&
+          diskGb == other.diskGb &&
+          image == other.image &&
+          createdAt == other.createdAt &&
+          startedAt == other.startedAt &&
+          stoppedAt == other.stoppedAt &&
+          lease == other.lease;
 }
 
 /// One image (mirrors `models::ShedImage`).
@@ -379,6 +545,78 @@ class BridgeShedImage {
           digest == other.digest &&
           source == other.source &&
           sizeBytes == other.sizeBytes;
+}
+
+/// When the account service deletes a cloud shed's machine and how far it may be
+/// extended (mirrors `models::ShedCloudLease`), with the times already parsed and
+/// the extend presets already clipped to the cap, so the UI only compares with
+/// its clock.
+class BridgeShedLease {
+  /// When the machine is deleted, verbatim ("" when not said).
+  final String expiresAt;
+
+  /// [`Self::expires_at`] in unix milliseconds; `None` when it does not parse
+  /// (the lease is then shown unknown and offers no extend).
+  final PlatformInt64? expiresAtMs;
+
+  /// The cap no extend goes past, verbatim ("" when not said).
+  final String maxExpiresAt;
+
+  /// [`Self::max_expires_at`] in unix milliseconds, when it parses.
+  final PlatformInt64? maxExpiresAtMs;
+
+  /// Whether the server said an extend would be accepted now.
+  final bool extendable;
+
+  /// How long before the end (seconds) the time left is shown amber: the
+  /// server's `warn_s`, or its 2 h default when absent; 0 means never.
+  final PlatformInt64 warnS;
+
+  /// The most hours an extend may ask for: the whole hours between the end and
+  /// the cap, at most 720. 0 when no extend is offered (not extendable, or a
+  /// time that does not parse).
+  final PlatformInt64 extendMaxH;
+
+  /// The server's presets, each clipped to [`Self::extend_max_h`], deduplicated
+  /// and ascending; empty when no extend is offered. (`u32`, not `i64`: hours
+  /// are at most 720, and FRB's `Vec<i64>` decode does not type-check in Dart.)
+  final Uint32List extendPresetsH;
+
+  const BridgeShedLease({
+    required this.expiresAt,
+    this.expiresAtMs,
+    required this.maxExpiresAt,
+    this.maxExpiresAtMs,
+    required this.extendable,
+    required this.warnS,
+    required this.extendMaxH,
+    required this.extendPresetsH,
+  });
+
+  @override
+  int get hashCode =>
+      expiresAt.hashCode ^
+      expiresAtMs.hashCode ^
+      maxExpiresAt.hashCode ^
+      maxExpiresAtMs.hashCode ^
+      extendable.hashCode ^
+      warnS.hashCode ^
+      extendMaxH.hashCode ^
+      extendPresetsH.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BridgeShedLease &&
+          runtimeType == other.runtimeType &&
+          expiresAt == other.expiresAt &&
+          expiresAtMs == other.expiresAtMs &&
+          maxExpiresAt == other.maxExpiresAt &&
+          maxExpiresAtMs == other.maxExpiresAtMs &&
+          extendable == other.extendable &&
+          warnS == other.warnS &&
+          extendMaxH == other.extendMaxH &&
+          extendPresetsH == other.extendPresetsH;
 }
 
 /// A shed's lifecycle status (mirrors `ShedStatus`; an unknown wire value folds

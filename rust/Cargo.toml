@@ -34,10 +34,10 @@ flutter_rust_bridge = "=2.13.0-beta.5"
 #
 # All four must cross-compile for `aarch64-linux-android`; the Android check
 # in CI covers them.
-shed-core  = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
-shed-lane  = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
-shed-roost = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
-shed-craze = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb" }
+shed-core  = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee" }
+shed-lane  = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee" }
+shed-roost = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee" }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee" }
 # roost's own IPC crate (plan 013 S3m / the Roost Pivot). Named DIRECTLY, not
 # reached through shed-roost, for what shed-roost does not re-export: the
 # `messages` types (`Tab`, `Project`, `TabOpenParams`, `TabDumpResult`) and
@@ -84,7 +84,7 @@ base64 = "0.22"
 # NEVER for a shipped build. Same git+rev as the [dependencies] entry above;
 # cargo unifies them, and the feature adds no package to the lock (it declares
 # `test-support = []`).
-shed-roost = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb", features = ["test-support"] }
+shed-roost = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee", features = ["test-support"] }
 # The craze adapter's scripted hub (`shed_craze::testing::ScriptedDial`: every
 # connection an in-memory duplex the test plays craze on), behind the same
 # non-default `test-support` feature and the SAME git+rev — `test-support = []`,
@@ -92,7 +92,7 @@ shed-roost = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd8680
 # REAL `CrazeSource` — its roster pump, its created rows, a lane opened through
 # it and the session's end said back to it (plan 025 Amendment A16) — instead
 # of a re-implementation of one.
-shed-craze = { git = "https://github.com/charliek/shed", rev = "8b1739e6f1cd868009dc59ddf92b72aa816f51fb", features = ["test-support"] }
+shed-craze = { git = "https://github.com/charliek/shed", rev = "0fe6b53c2ec6555f64884172d9d98c5028ca09ee", features = ["test-support"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

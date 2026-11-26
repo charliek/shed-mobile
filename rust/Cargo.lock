@@ -1334,8 +1334,8 @@ dependencies = [
 
 [[package]]
 name = "shed-core"
-version = "0.10.1"
-source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
+version = "0.11.0"
+source = "git+https://github.com/charliek/shed?rev=0fe6b53c2ec6555f64884172d9d98c5028ca09ee#0fe6b53c2ec6555f64884172d9d98c5028ca09ee"
 dependencies = [
  "async-trait",
  "base64",
@@ -1356,8 +1356,8 @@ dependencies = [
 
 [[package]]
 name = "shed-craze"
-version = "0.10.1"
-source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
+version = "0.11.0"
+source = "git+https://github.com/charliek/shed?rev=0fe6b53c2ec6555f64884172d9d98c5028ca09ee#0fe6b53c2ec6555f64884172d9d98c5028ca09ee"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1371,8 +1371,8 @@ dependencies = [
 
 [[package]]
 name = "shed-lane"
-version = "0.10.1"
-source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
+version = "0.11.0"
+source = "git+https://github.com/charliek/shed?rev=0fe6b53c2ec6555f64884172d9d98c5028ca09ee#0fe6b53c2ec6555f64884172d9d98c5028ca09ee"
 dependencies = [
  "async-trait",
  "regex",
@@ -1384,8 +1384,8 @@ dependencies = [
 
 [[package]]
 name = "shed-roost"
-version = "0.10.1"
-source = "git+https://github.com/charliek/shed?rev=8b1739e6f1cd868009dc59ddf92b72aa816f51fb#8b1739e6f1cd868009dc59ddf92b72aa816f51fb"
+version = "0.11.0"
+source = "git+https://github.com/charliek/shed?rev=0fe6b53c2ec6555f64884172d9d98c5028ca09ee#0fe6b53c2ec6555f64884172d9d98c5028ca09ee"
 dependencies = [
  "async-trait",
  "base64",

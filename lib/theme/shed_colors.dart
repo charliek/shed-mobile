@@ -48,6 +48,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
     required this.runtimeVzFg,
     required this.runtimeFcBg,
     required this.runtimeFcFg,
+    required this.runtimeCloudBg,
+    required this.runtimeCloudFg,
   });
 
   final Color bg; // app background (scaffold)
@@ -96,6 +98,9 @@ class ShedColors extends ThemeExtension<ShedColors> {
   final Color runtimeVzFg;
   final Color runtimeFcBg;
   final Color runtimeFcFg;
+  // The `Cloud` tag on a cloud shed (violet, its own colour).
+  final Color runtimeCloudBg;
+  final Color runtimeCloudFg;
 
   Color toneBg(ShedStatusTone t) => switch (t) {
     ShedStatusTone.ok => okBg,
@@ -163,6 +168,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
     runtimeVzFg: Color(0xFF2A6FDB),
     runtimeFcBg: Color(0xFFFBE6CF),
     runtimeFcFg: Color(0xFFB5641A),
+    runtimeCloudBg: Color(0xFFEDE4FB),
+    runtimeCloudFg: Color(0xFF6B3FC4),
   );
 
   static const dark = ShedColors(
@@ -198,6 +205,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
     runtimeVzFg: Color(0xFF86B2F5),
     runtimeFcBg: Color(0xFF3A2A18),
     runtimeFcFg: Color(0xFFE0A86A),
+    runtimeCloudBg: Color(0xFF2C2142),
+    runtimeCloudFg: Color(0xFFB9A0EE),
   );
 
   @override
@@ -234,6 +243,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
     Color? runtimeVzFg,
     Color? runtimeFcBg,
     Color? runtimeFcFg,
+    Color? runtimeCloudBg,
+    Color? runtimeCloudFg,
   }) {
     return ShedColors(
       bg: bg ?? this.bg,
@@ -268,6 +279,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
       runtimeVzFg: runtimeVzFg ?? this.runtimeVzFg,
       runtimeFcBg: runtimeFcBg ?? this.runtimeFcBg,
       runtimeFcFg: runtimeFcFg ?? this.runtimeFcFg,
+      runtimeCloudBg: runtimeCloudBg ?? this.runtimeCloudBg,
+      runtimeCloudFg: runtimeCloudFg ?? this.runtimeCloudFg,
     );
   }
 
@@ -308,6 +321,8 @@ class ShedColors extends ThemeExtension<ShedColors> {
       runtimeVzFg: c(runtimeVzFg, other.runtimeVzFg),
       runtimeFcBg: c(runtimeFcBg, other.runtimeFcBg),
       runtimeFcFg: c(runtimeFcFg, other.runtimeFcFg),
+      runtimeCloudBg: c(runtimeCloudBg, other.runtimeCloudBg),
+      runtimeCloudFg: c(runtimeCloudFg, other.runtimeCloudFg),
     );
   }
 }

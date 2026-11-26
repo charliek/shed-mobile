@@ -10,9 +10,11 @@
 //! references them.
 
 use shed_core::models::{
-    DiskEntry, DiskSize, DiskTotals, Overview, OverviewServer, OverviewShed, Session, SessionRC,
-    Shed, ShedImage, ShedStatus, SystemDiskUsage,
+    CloudCounts, CloudUsage, DiskEntry, DiskSize, DiskTotals, Overview, OverviewServer,
+    OverviewShed, Session, SessionRC, Shed, ShedCloud, ShedCloudLease, ShedImage, ShedStatus,
+    SystemDiskUsage, DEFAULT_LEASE_WARN_S, MAX_EXTEND_HOURS,
 };
+use shed_lane::time::rfc3339_unix_ms;
 
 use super::dto_rc::BridgeRcSession;
 
@@ -60,6 +62,15 @@ pub struct BridgeShed {
     pub created_at: Option<String>,
     pub started_at: Option<String>,
     pub active_namespaces: Vec<String>,
+    /// A cloud shed's machine (plan 041): `Some` on every record of a remote
+    /// server with leases, `None` on every other shed.
+    pub cloud: Option<BridgeShedCloud>,
+    /// The hours of this shed's extend whose outcome is not known (every send
+    /// ended with no answer), `None` when there is none. While it is set the
+    /// bridge refuses every extend of the shed unsent
+    /// ([`BridgeExtendOutcome::Pending`]); it clears once a listing shows whether
+    /// the lease moved (`crate::extend_book`). Filled by the client's listings.
+    pub extend_unknown_hours: Option<u32>,
 }
 
 impl From<Shed> for BridgeShed {
@@ -79,8 +90,173 @@ impl From<Shed> for BridgeShed {
             created_at: s.created_at,
             started_at: s.started_at,
             active_namespaces: s.active_namespaces,
+            cloud: s.cloud.map(Into::into),
+            extend_unknown_hours: None,
         }
     }
+}
+
+/// A cloud shed's machine as the account service reported it (mirrors
+/// `models::ShedCloud`; times verbatim, a missing member at its default).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeShedCloud {
+    /// Which cloud, for display; absent until the service answered.
+    pub provider: Option<String>,
+    /// The size's catalog name ("" when not said).
+    pub size_name: String,
+    /// vCPUs and memory, 0 when not said.
+    pub cpus: i64,
+    pub memory_mb: i64,
+    pub disk_gb: i64,
+    /// The image the machine was made from ("" when not said).
+    pub image: String,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub stopped_at: Option<String>,
+    /// `None` while the lease is unknown (the service has not answered yet).
+    pub lease: Option<BridgeShedLease>,
+}
+
+impl From<ShedCloud> for BridgeShedCloud {
+    fn from(c: ShedCloud) -> Self {
+        BridgeShedCloud {
+            provider: c.provider,
+            size_name: c.size.name,
+            cpus: c.size.cpus,
+            memory_mb: c.size.memory_mb,
+            disk_gb: c.disk_gb,
+            image: c.image,
+            created_at: c.created_at,
+            started_at: c.started_at,
+            stopped_at: c.stopped_at,
+            lease: c.lease.map(Into::into),
+        }
+    }
+}
+
+/// When the account service deletes a cloud shed's machine and how far it may be
+/// extended (mirrors `models::ShedCloudLease`), with the times already parsed and
+/// the extend presets already clipped to the cap, so the UI only compares with
+/// its clock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeShedLease {
+    /// When the machine is deleted, verbatim ("" when not said).
+    pub expires_at: String,
+    /// [`Self::expires_at`] in unix milliseconds; `None` when it does not parse
+    /// (the lease is then shown unknown and offers no extend).
+    pub expires_at_ms: Option<i64>,
+    /// The cap no extend goes past, verbatim ("" when not said).
+    pub max_expires_at: String,
+    /// [`Self::max_expires_at`] in unix milliseconds, when it parses.
+    pub max_expires_at_ms: Option<i64>,
+    /// Whether the server said an extend would be accepted now.
+    pub extendable: bool,
+    /// How long before the end (seconds) the time left is shown amber: the
+    /// server's `warn_s`, or its 2 h default when absent; 0 means never.
+    pub warn_s: i64,
+    /// The most hours an extend may ask for: the whole hours between the end and
+    /// the cap, at most 720. 0 when no extend is offered (not extendable, or a
+    /// time that does not parse).
+    pub extend_max_h: i64,
+    /// The server's presets, each clipped to [`Self::extend_max_h`], deduplicated
+    /// and ascending; empty when no extend is offered. (`u32`, not `i64`: hours
+    /// are at most 720, and FRB's `Vec<i64>` decode does not type-check in Dart.)
+    pub extend_presets_h: Vec<u32>,
+}
+
+impl From<ShedCloudLease> for BridgeShedLease {
+    fn from(l: ShedCloudLease) -> Self {
+        let end = rfc3339_unix_ms(&l.expires_at);
+        let cap = rfc3339_unix_ms(&l.max_expires_at);
+        let extend_max_h = match (end, cap) {
+            (Some(end), Some(cap)) if l.extendable => {
+                ((cap - end) / 3_600_000).clamp(0, MAX_EXTEND_HOURS)
+            }
+            _ => 0,
+        };
+        let mut extend_presets_h: Vec<u32> = if extend_max_h > 0 {
+            l.presets_h
+                .iter()
+                .filter(|&&h| h >= 1)
+                .filter_map(|&h| u32::try_from(h.min(extend_max_h)).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        extend_presets_h.sort_unstable();
+        extend_presets_h.dedup();
+        BridgeShedLease {
+            expires_at: l.expires_at,
+            expires_at_ms: end,
+            max_expires_at: l.max_expires_at,
+            max_expires_at_ms: cap,
+            extendable: l.extendable,
+            warn_s: l.warn_s.unwrap_or(DEFAULT_LEASE_WARN_S),
+            extend_max_h,
+            extend_presets_h,
+        }
+    }
+}
+
+/// One scope of `GET /api/cloud/usage` (mirrors `models::CloudCounts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BridgeCloudCounts {
+    pub machines: i64,
+    pub running: i64,
+    pub stopped: i64,
+    pub max: i64,
+}
+
+impl From<CloudCounts> for BridgeCloudCounts {
+    fn from(c: CloudCounts) -> Self {
+        BridgeCloudCounts {
+            machines: c.machines,
+            running: c.running,
+            stopped: c.stopped,
+            max: c.max,
+        }
+    }
+}
+
+/// `GET /api/cloud/usage` (mirrors `models::CloudUsage`): `person` is `None` for
+/// a caller who is not a person of the account service (a local admin).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BridgeCloudUsage {
+    pub person: Option<BridgeCloudCounts>,
+    pub org: BridgeCloudCounts,
+}
+
+impl From<CloudUsage> for BridgeCloudUsage {
+    fn from(u: CloudUsage) -> Self {
+        BridgeCloudUsage {
+            person: u.person.map(Into::into),
+            org: u.org.into(),
+        }
+    }
+}
+
+/// What `BridgeClient.extend` did. Every arm's words are fixed, never the
+/// server's message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeExtendOutcome {
+    /// The lease moved: the shed as the server answered it.
+    Extended { shed: BridgeShed },
+    /// Refused (or never sent): `code` and `reason` from the API error ("" when
+    /// none), its status, and the fixed words to show.
+    Refused {
+        code: String,
+        reason: String,
+        status: Option<u16>,
+        words: String,
+    },
+    /// Sent, but shed-core could not say whether it was applied (no reply or a
+    /// 5xx on every send, a 2xx whose shed could not be read): the lease may or
+    /// may not have moved. The shed's Extend stays unavailable until a listing
+    /// shows which.
+    Unknown { hours: u32, words: String },
+    /// Not sent: an earlier extend of this shed is in flight or its outcome is
+    /// not known yet.
+    Pending { words: String },
 }
 
 /// One image (mirrors `models::ShedImage`).
@@ -340,6 +516,7 @@ mod tests {
             started_at: Some("2026-01-02T00:00:00Z".into()),
             status_reason: Some("capacity".into()),
             active_namespaces: vec!["ns1".into(), "ns2".into()],
+            cloud: None,
         };
         let b = BridgeShed::from(s.clone());
         assert_eq!(b.host, "mini3");
@@ -366,11 +543,75 @@ mod tests {
             started_at: None,
             status_reason: None,
             active_namespaces: vec![],
+            cloud: None,
         };
         let be = BridgeShed::from(empty);
         assert_eq!(be.cpus, None);
         assert_eq!(be.backend, None);
         assert!(be.active_namespaces.is_empty());
+    }
+
+    /// A cloud shed's lease: times parsed, presets clipped to the whole hours
+    /// left to the cap (deduplicated, ascending), the warning time defaulted.
+    #[test]
+    fn cloud_lease_presets_clip_to_the_cap() {
+        let shed = |lease: serde_json::Value| -> BridgeShed {
+            let s: Shed = serde_json::from_value(serde_json::json!({
+                "name": "w", "backend": "remote",
+                "cloud": {"provider": "gce",
+                          "size": {"name": "standard", "cpus": 2, "memory_mb": 8192},
+                          "disk_gb": 50, "image": "shed-full", "created_at": "2026-11-26T06:00:00Z",
+                          "lease": lease},
+            }))
+            .unwrap();
+            s.into()
+        };
+        let b = shed(serde_json::json!({
+            "expires_at": "2026-11-26T10:00:00Z", "max_expires_at": "2026-11-27T06:30:00Z",
+            "extendable": true, "presets_h": [48, 6, 12, 24, 0, -3],
+        }));
+        let c = b.cloud.expect("cloud");
+        assert_eq!(
+            (c.size_name.as_str(), c.cpus, c.memory_mb),
+            ("standard", 2, 8192)
+        );
+        assert_eq!(c.provider.as_deref(), Some("gce"));
+        let l = c.lease.expect("lease");
+        assert_eq!(l.expires_at_ms, Some(1_795_687_200_000));
+        assert_eq!(l.extend_max_h, 20, "20 whole hours to the cap");
+        assert_eq!(l.extend_presets_h, vec![6, 12, 20]);
+        assert_eq!(l.warn_s, DEFAULT_LEASE_WARN_S);
+        assert_eq!(b.extend_unknown_hours, None);
+
+        // Not extendable, or a time that does not parse: nothing offered.
+        for lease in [
+            serde_json::json!({"expires_at": "2026-11-26T10:00:00Z",
+                "max_expires_at": "2026-11-27T10:00:00Z", "extendable": false,
+                "presets_h": [6], "warn_s": 0}),
+            serde_json::json!({"expires_at": "soon",
+                "max_expires_at": "2026-11-27T10:00:00Z", "extendable": true,
+                "presets_h": [6], "warn_s": 0}),
+        ] {
+            let l = shed(lease).cloud.unwrap().lease.unwrap();
+            assert_eq!(l.extend_max_h, 0);
+            assert!(l.extend_presets_h.is_empty());
+            assert_eq!(l.warn_s, 0);
+        }
+    }
+
+    #[test]
+    fn usage_converts_with_and_without_a_person() {
+        let u: CloudUsage = serde_json::from_str(
+            r#"{"person":{"machines":2,"running":1,"stopped":1,"max":4},
+                "org":{"machines":7,"running":5,"stopped":2,"max":10}}"#,
+        )
+        .unwrap();
+        let b = BridgeCloudUsage::from(u);
+        assert_eq!(b.person.map(|p| (p.machines, p.max)), Some((2, 4)));
+        assert_eq!(b.org.machines, 7);
+        let u: CloudUsage =
+            serde_json::from_str(r#"{"person":null,"org":{"machines":7,"max":10}}"#).unwrap();
+        assert_eq!(BridgeCloudUsage::from(u).person, None);
     }
 
     #[test]

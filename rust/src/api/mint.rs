@@ -1240,6 +1240,12 @@ mod tests {
             "BridgeCredentialEvent",
             "BridgeCredentialEvent_Adopted",
             "BridgeCredentialEvent_ModeChanged",
+            // Plan 041 — cloud sheds: a machine's size, image and times, its
+            // lease (times, hours, presets), the usage counts, and an extend's
+            // outcome (a shed, fixed words, a code and reason). **No credential
+            // of any kind crosses.**
+            "BridgeCloudCounts",
+            "BridgeCloudUsage",
             "BridgeDiskEntry",
             "BridgeDiskSize",
             "BridgeDiskTotals",
@@ -1261,6 +1267,11 @@ mod tests {
             "BridgeError_TokenPinMismatch",
             "BridgeError_TokenPinMissing",
             "BridgeError_Transport",
+            "BridgeExtendOutcome",
+            "BridgeExtendOutcome_Extended",
+            "BridgeExtendOutcome_Pending",
+            "BridgeExtendOutcome_Refused",
+            "BridgeExtendOutcome_Unknown",
             // Plan 018 §3.9 — the agent-lane bridge. Every one of these is
             // agent-transcript material: session ids, tab titles, working
             // directories, an approval's own request JSON, option ids and
@@ -1541,7 +1552,9 @@ mod tests {
             "BridgeSession",
             "BridgeSessionRc",
             "BridgeShed",
+            "BridgeShedCloud",
             "BridgeShedImage",
+            "BridgeShedLease",
             "BridgeShedStatus",
             "BridgeSystemDiskUsage",
             // One `tab.dump` frame: geometry, an optional cursor position, and

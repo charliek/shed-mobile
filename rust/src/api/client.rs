@@ -51,11 +51,13 @@ use crate::frb_generated::StreamSink;
 
 use super::bridge_rt::bridge_rt;
 use super::dto::{
-    BridgeOverview, BridgeSession, BridgeShed, BridgeShedImage, BridgeSystemDiskUsage,
+    BridgeCloudUsage, BridgeExtendOutcome, BridgeOverview, BridgeSession, BridgeShed,
+    BridgeShedImage, BridgeSystemDiskUsage,
 };
 use super::error::BridgeError;
 use super::mint::BridgeMinter;
 use super::secret::BridgeSecret;
+use crate::extend_book::{self, EXTENDS};
 use crate::sink_registry::SinkRegistry;
 
 // The mobile control-token knobs (plan §3.2), distinct from shed-core's
@@ -69,6 +71,9 @@ const MINT_COOLDOWN: Duration = Duration::from_secs(60); // 60s
 #[frb(opaque)]
 pub struct BridgeClient {
     inner: Client,
+    /// The server's name, which keys its sheds' extends in the process-wide
+    /// book (`crate::extend_book`).
+    server_name: String,
 }
 
 impl BridgeClient {
@@ -110,8 +115,8 @@ impl BridgeClient {
             seed_token,
             seed_expiry_unix,
         );
-        let inner = Client::with_provider(base_url, server_name, tls_pin, provider)?;
-        Ok(BridgeClient { inner })
+        let inner = Client::with_provider(base_url, server_name.clone(), tls_pin, provider)?;
+        Ok(BridgeClient { inner, server_name })
     }
 
     /// Build an OPEN-mode client (no minter, empty token) against `base_url`.
@@ -122,8 +127,8 @@ impl BridgeClient {
         base_url: String,
         server_name: String,
     ) -> Result<BridgeClient, BridgeError> {
-        let inner = Client::new(base_url, server_name, String::new(), None, None)?;
-        Ok(BridgeClient { inner })
+        let inner = Client::new(base_url, server_name.clone(), String::new(), None, None)?;
+        Ok(BridgeClient { inner, server_name })
     }
 
     /// Borrow the inner shed-core client (for the watcher/create-stream helpers
@@ -132,20 +137,112 @@ impl BridgeClient {
         &self.inner
     }
 
+    /// The server's overview. A listing: it settles what it shows of an extend
+    /// whose outcome was unknown, and stamps each shed with any still unknown.
     pub async fn overview(&self) -> Result<BridgeOverview, BridgeError> {
         let client = self.inner.clone();
-        run(async move { client.overview().await })
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
+        let mark = EXTENDS.listing_mark();
+        let o = run(async move { client.overview().await }).await?;
+        let rows: Vec<_> = o.sheds.iter().map(|r| r.shed.clone()).collect();
+        EXTENDS.observe(&self.server_name, &rows, mark, extend_book::now_ms());
+        let mut o = BridgeOverview::from(o);
+        for row in &mut o.sheds {
+            extend_book::stamp(&EXTENDS, &self.server_name, &mut row.shed);
+        }
+        Ok(o)
     }
 
+    /// The server's sheds. A listing, as [`Self::overview`].
     pub async fn list_sheds(&self) -> Result<Vec<BridgeShed>, BridgeError> {
         let client = self.inner.clone();
-        run(async move { client.list_sheds().await })
-            .await
-            .map(|v| v.into_iter().map(Into::into).collect())
-            .map_err(Into::into)
+        let mark = EXTENDS.listing_mark();
+        let rows = run(async move { client.list_sheds().await }).await?;
+        EXTENDS.observe(&self.server_name, &rows, mark, extend_book::now_ms());
+        Ok(rows
+            .into_iter()
+            .map(|s| {
+                let mut b = BridgeShed::from(s);
+                extend_book::stamp(&EXTENDS, &self.server_name, &mut b);
+                b
+            })
+            .collect())
+    }
+
+    /// Move a cloud shed's lease `hours` later (`POST /api/sheds/{name}/extend`).
+    ///
+    /// Never adds the hours twice: the shed is read first (its lease end before
+    /// the extend), then one request id is sent, retried under the same id when
+    /// no answer came. When shed-core marks the outcome unresolved (no reply or
+    /// a 5xx on every send, a 2xx whose shed could not be read) the result is
+    /// [`BridgeExtendOutcome::Unknown`] and every later extend of the shed is
+    /// refused unsent ([`BridgeExtendOutcome::Pending`]) until a listing shows
+    /// whether the lease moved. Runs to its end even if the caller stops
+    /// waiting, so the book always learns the outcome.
+    pub async fn extend(&self, name: String, hours: i64) -> BridgeExtendOutcome {
+        let client = self.inner.clone();
+        let server = self.server_name.clone();
+        let task = bridge_rt().spawn(async move {
+            let read = async {
+                let doc = client.shed_document(&name).await?;
+                let mut shed: shed_core::models::Shed =
+                    serde_json::from_value(doc).map_err(|e| {
+                        shed_core::http::ApiFailure::from_shed(&shed_core::http::ShedError::Decode(
+                            e.to_string(),
+                        ))
+                    })?;
+                shed.host = server.clone();
+                Ok(shed)
+            };
+            let send = |h: u32| {
+                let client = client.clone();
+                let name = name.clone();
+                async move {
+                    let rid = shed_core::http::new_request_id();
+                    client.extend_with_request_id(&name, h, &rid).await
+                }
+            };
+            let mut out = extend_book::extend(
+                &EXTENDS,
+                &server,
+                &name,
+                hours,
+                &extend_book::now_ms,
+                read,
+                send,
+            )
+            .await;
+            if let BridgeExtendOutcome::Extended { shed } = &mut out {
+                extend_book::stamp(&EXTENDS, &server, shed);
+            }
+            out
+        });
+        // Not aborted when the caller drops this future: the extend finishes and
+        // records its outcome.
+        task.await.unwrap_or_else(|e| BridgeExtendOutcome::Refused {
+            code: String::new(),
+            reason: String::new(),
+            status: None,
+            words: format!("the extend failed: {e}"),
+        })
+    }
+
+    /// The caller's cloud machines against the account service's limits
+    /// (`GET /api/cloud/usage`). A server without cloud sheds answers 501.
+    pub async fn usage(&self) -> Result<BridgeCloudUsage, BridgeError> {
+        let client = self.inner.clone();
+        let joined = bridge_rt()
+            .spawn(async move { client.cloud_usage().await })
+            .await;
+        match joined {
+            Ok(Ok(u)) => Ok(u.into()),
+            Ok(Err(e)) => Err(match e.status {
+                Some(code) => BridgeError::BadStatus { code },
+                None => BridgeError::Transport { msg: e.message },
+            }),
+            Err(e) => Err(BridgeError::Transport {
+                msg: format!("bridge task join error: {e}"),
+            }),
+        }
     }
 
     pub async fn list_images(&self) -> Result<Vec<BridgeShedImage>, BridgeError> {
